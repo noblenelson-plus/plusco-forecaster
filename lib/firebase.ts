@@ -1,7 +1,7 @@
 // lib/firebase.ts
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore"; 
-
+import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD8Y56gUQc-Uzih2ApfuLB5-HF6Or-DQ9I",
@@ -9,13 +9,17 @@ const firebaseConfig = {
   projectId: "pluscoops",
   storageBucket: "pluscoops.firebasestorage.app",
   messagingSenderId: "359847900101",
-  appId: "1:359847900101:web:85dee4eaae7a80a61351ac"
+  appId: "1:359847900101:web:85dee4eaae7a80a61351ac",
 };
-
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 console.log("Firebase app initialized:", app.name);
 
-// Remplace initializeFirestore par getFirestore
+// Firestore
 export const db = getFirestore(app);
 console.log("Firestore db initialized:", db.type);
+
+// Auth
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+console.log("Firebase auth initialized");
