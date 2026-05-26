@@ -8,7 +8,9 @@ import { onAuthStateChanged } from 'firebase/auth';
 // Admin emails who have access to all clients
 const ADMIN_EMAILS = [
   'noble.nelson@pluscompany.com',
-  'adriana.viera@pluscompany.com',
+  'adriana.novoa@pluscompany.com',
+  'tristan.b-parent@pluscompany.com',
+  'tristan.b-parent@cossettemedia.com',
 ];
 
 // Types
