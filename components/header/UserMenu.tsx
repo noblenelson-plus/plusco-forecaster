@@ -1,19 +1,28 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { LogOut, ChevronDown } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { signOut } from 'firebase/auth';
+import { signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 
 export default function UserMenu() {
   const t = useTranslations('header');
+  const locale = useLocale() || 'en';
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(auth.currentUser);
   const ref = useRef<HTMLDivElement>(null);
 
-  const user = auth.currentUser;
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const displayName = user?.displayName || user?.email || 'User';
   const initials = displayName
     .split(' ')
@@ -35,7 +44,7 @@ export default function UserMenu() {
 
   const handleLogout = async () => {
     await signOut(auth);
-    router.push('/');
+    router.push(`/${locale}/login`);
   };
 
   return (

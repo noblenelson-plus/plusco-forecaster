@@ -47,12 +47,12 @@ export default function RFQDropdown() {
         `}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <FileCheck size={16} className="text-gray-400 flex-shrink-0" />
+          <FileCheck size={16} className="text-gray-400 shrink-0" />
           <span className="truncate text-gray-800">
             {selectedRFQ ? selectedRFQ.label : t('selectRFQ')}
           </span>
         </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {selectedRFQ && (
             isRFQLocked
               ? <Lock size={12} className="text-amber-500" />
@@ -86,7 +86,7 @@ export default function RFQDropdown() {
                   }
                 `}
               >
-                <span>{rfq.label}</span>
+                <span className="truncate">{rfq.label}</span>
                 <div className="flex items-center gap-1.5">
                   {rfq.status === 'Locked' ? (
                     <>

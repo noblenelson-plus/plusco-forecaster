@@ -3,7 +3,18 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { ChevronDown, Search, Building2 } from 'lucide-react';
-import { useClientRFQ } from '@/lib/client-rfq-context';
+import { useClientRFQ, Client } from '@/lib/client-rfq-context';
+
+function ClientAvatar({ client, selected }: { client: Client; selected?: boolean }) {
+  const initials = client.name.charAt(0).toUpperCase();
+  const badgeClasses = selected ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500';
+
+  return (
+    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${badgeClasses}`}>
+      {initials}
+    </div>
+  );
+}
 
 export default function ClientDropdown() {
   const { clients, selectedClient, setSelectedClient, clientsLoading } = useClientRFQ();
@@ -60,14 +71,15 @@ export default function ClientDropdown() {
         `}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <Building2 size={16} className="text-gray-400 flex-shrink-0" />
+          <Building2 size={16} className="text-gray-400 shrink-0" />
+          {selectedClient && <ClientAvatar client={selectedClient} selected />}
           <span className="truncate text-gray-800">
             {selectedClient ? selectedClient.name : t('selectClient')}
           </span>
         </div>
         <ChevronDown
           size={14}
-          className={`text-gray-400 transition-transform duration-200 flex-shrink-0 ${
+          className={`text-gray-400 transition-transform duration-200 shrink-0 ${
             isOpen ? 'rotate-180' : ''
           }`}
         />
@@ -112,15 +124,7 @@ export default function ClientDropdown() {
                     }
                   `}
                 >
-                  <div className={`
-                    w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0
-                    ${selectedClient?.id === client.id
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-gray-100 text-gray-500'
-                    }
-                  `}>
-                    {client.name.charAt(0).toUpperCase()}
-                  </div>
+                  <ClientAvatar client={client} selected={selectedClient?.id === client.id} />
                   <div className="min-w-0">
                     <div className="truncate">{client.name}</div>
                     {client.agency && (

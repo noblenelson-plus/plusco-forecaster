@@ -3,20 +3,21 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 
 export default function LoginPage() {
   const { user, loading, signInWithGoogle } = useAuth();
   const router = useRouter();
+  const locale = useLocale() || 'en';
   const [error, setError] = useState('');
   const [signingIn, setSigningIn] = useState(false);
   const t = useTranslations('pages');
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/');
+      router.replace(`/${locale}/media-spend`);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, locale]);
 
   async function handleGoogleSignIn() {
     setError('');
