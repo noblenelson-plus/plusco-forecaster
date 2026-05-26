@@ -1,0 +1,41 @@
+{
+  "nav": {
+    "client": "Client",
+    "rfqSelect": "Sélection RFQ",
+    "mediaSpend": "Dépenses médias",
+    "revenue": "Revenus",
+    "lab": "Lab",
+    "dashboard": "Tableau de bord",
+    "configure": "Configurer",
+    "products": "Produits",
+    "help": "Aide",
+    "admin": "Admin"
+  },
+  "adminSub": {
+    "clients": "Clients",
+    "rfqLock": "Verrouillage RFQ",
+    "clientAccess": "Accès client"
+  },
+  "header": {
+    "logout": "Déconnexion",
+    "language": "EN"
+  },
+  "sidebar": {
+    "client": "Client",
+    "selectClient": "Sélectionner un client",
+    "searchClient": "Rechercher un client...",
+    "noClientsFound": "Aucun client trouvé",
+    "rfq": "Période RFQ",
+    "selectRFQ": "Sélectionner un RFQ",
+    "locked": "Verrouillé",
+    "unlocked": "Déverrouillé"
+  },
+  "pages": {
+    "comingSoon": "Bientôt disponible",
+    "adminDescription": "Gérer les clients, les paramètres RFQ et les contrôles d'accès.",
+    "loginTitle": "PlusCo Forecaster",
+    "loginSubtitle": "Connectez-vous pour continuer",
+    "loginButton": "Se connecter avec Google",
+    "signinLoading": "Connexion en cours..."
+  }
+}
