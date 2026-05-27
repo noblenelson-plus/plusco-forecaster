@@ -24,3 +24,191 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Tetris login page styling */
+.stats-row {
+  @apply grid grid-cols-4 gap-4 mb-6;
+}
+
+.stat-item {
+  @apply rounded-[28px] bg-slate-100 border border-slate-200 p-4 text-center;
+}
+
+.stat-label {
+  @apply text-[0.65rem] uppercase tracking-[0.24em] text-slate-500;
+}
+
+.stat-item span:last-child {
+  @apply mt-3 text-2xl font-bold text-slate-900 block;
+}
+
+.tetris-grid {
+  @apply grid gap-1 bg-slate-100 rounded-[28px] p-4 mx-auto;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(20, minmax(0, 1fr));
+  max-width: 380px;
+}
+
+.tetris-cell {
+  @apply aspect-square rounded-xl border border-slate-300 bg-slate-200;
+}
+
+.tetris-cell.filled-I { @apply bg-amber-300; }
+.tetris-cell.filled-O { @apply bg-fuchsia-300; }
+.tetris-cell.filled-T { @apply bg-teal-400; }
+.tetris-cell.filled-S { @apply bg-emerald-400; }
+.tetris-cell.filled-Z { @apply bg-orange-400; }
+.tetris-cell.filled-J { @apply bg-sky-500; }
+.tetris-cell.filled-L { @apply bg-violet-400; }
+
+.signature-row {
+  @apply grid gap-2 mt-6 justify-center;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.letter-grid {
+  @apply grid gap-1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+}
+
+.letter-cell {
+  @apply aspect-square rounded-xl border border-slate-300 bg-slate-200;
+}
+
+.letter-cell.filled-signature {
+  @apply border-slate-300;
+}
+
+.letter-P.filled-signature { @apply bg-amber-400; }
+.letter-L.filled-signature { @apply bg-fuchsia-400; }
+.letter-U.filled-signature { @apply bg-teal-400; }
+.letter-S.filled-signature { @apply bg-emerald-400; }
+.letter-C.filled-signature { @apply bg-orange-400; }
+.letter-O.filled-signature { @apply bg-sky-500; }
+
+.game-over-overlay {
+  @apply fixed inset-0 flex items-center justify-center bg-black/30 z-50;
+}
+
+.game-over-card {
+  @apply rounded-3xl bg-white border border-slate-200 p-6 shadow-2xl w-[320px] text-center;
+}
+
+.restart-btn {
+  @apply mt-4 rounded-2xl bg-sky-500 px-4 py-2 text-white hover:bg-sky-600 transition;
+}
+
+.google-btn {
+  @apply hover:bg-slate-50 transition;
+}
+
+.signin-btn {
+  @apply hover:bg-slate-800 transition;
+}
+
+/* Tetris login page styling */
+.tetris-grid {
+  @apply grid gap-1 bg-slate-100 rounded-[28px] p-4;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(20, minmax(0, 1fr));
+  width: 100%;
+  max-width: 380px;
+  aspect-ratio: 0.58;
+  margin: 0 auto;
+}
+
+.tetris-cell {
+  @apply rounded-xl bg-slate-200 border border-slate-300;
+}
+
+.tetris-cell.filled-I {
+  @apply bg-amber-300;
+}
+
+.tetris-cell.filled-O {
+  @apply bg-fuchsia-300;
+}
+
+.tetris-cell.filled-T {
+  @apply bg-teal-400;
+}
+
+.tetris-cell.filled-S {
+  @apply bg-emerald-400;
+}
+
+.tetris-cell.filled-Z {
+  @apply bg-orange-400;
+}
+
+.tetris-cell.filled-J {
+  @apply bg-sky-500;
+}
+
+.tetris-cell.filled-L {
+  @apply bg-violet-400;
+}
+
+.stats-row {
+  @apply grid grid-cols-4 gap-4 mb-6;
+}
+
+.stat-item {
+  @apply rounded-[28px] bg-slate-100 border border-slate-200 py-4 px-3 text-center;
+}
+
+.stat-label {
+  @apply text-[0.67rem] font-semibold uppercase tracking-[0.2em] text-slate-500;
+}
+
+.stat-item span:last-child {
+  @apply block text-2xl font-bold text-slate-900;
+}
+
+.signature-row {
+  @apply grid gap-2 mt-4 justify-center;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.letter-grid {
+  @apply grid gap-1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  width: 100%;
+}
+
+.letter-cell {
+  @apply w-full aspect-square rounded-xl border border-slate-300 bg-slate-200;
+}
+
+.letter-cell.filled-signature {
+  @apply border-slate-300;
+}
+
+.letter-P.filled-signature { @apply bg-amber-400; }
+.letter-L.filled-signature { @apply bg-fuchsia-400; }
+.letter-U.filled-signature { @apply bg-teal-400; }
+.letter-S.filled-signature { @apply bg-emerald-400; }
+.letter-C.filled-signature { @apply bg-orange-400; }
+.letter-O.filled-signature { @apply bg-sky-500; }
+
+.game-over-overlay {
+  @apply fixed inset-0 bg-black/30 flex items-center justify-center z-50;
+}
+
+.game-over-card {
+  @apply rounded-3xl bg-white p-6 shadow-2xl border border-slate-200;
+}
+
+.restart-btn {
+  @apply mt-4 rounded-2xl bg-sky-500 px-4 py-2 text-white hover:bg-sky-600 transition;
+}
+
+.google-btn {
+  @apply hover:bg-slate-50 transition;
+}
+
+.signin-btn {
+  @apply hover:bg-slate-800 transition;
+}
