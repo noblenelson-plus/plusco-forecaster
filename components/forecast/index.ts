@@ -4,4 +4,4 @@ export { ForecastRow } from './ForecastRow';
 export { EditableCell } from './EditableCell';
 export { ActualsSection } from './ActualsSection';
 export { ForecastSummary } from './ForecastSummary';
-export type { ForecastRow as ForecastRowType, MonthKey } from './types';
+export type { ForecastRow as ForecastRowType } from './types';

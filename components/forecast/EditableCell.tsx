@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatCurrency, parseCurrencyString } from './utils';
-import { MONTHS_LONG, MONTHS_SHORT } from './types';
+import { MONTH_FIELDS } from './types';
 
 interface EditableCellProps {
   value: number;
@@ -20,8 +20,8 @@ export function EditableCell({ value, rowId, monthIndex, isEditable, onUpdate }:
   const [error, setError] = useState('');
 
   const handleSave = async () => {
-    const newValue = parseMonthValue(editValue);
-    const monthField = MONTHS_LONG[monthIndex];
+    const newValue = parseCurrencyString(editValue);
+    const monthField = MONTH_FIELDS[monthIndex];
 
     try {
       const docRef = doc(db, 'forecasts', rowId);
