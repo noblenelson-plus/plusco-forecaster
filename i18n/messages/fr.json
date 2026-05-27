@@ -37,5 +37,30 @@
     "loginSubtitle": "Connectez-vous pour continuer",
     "loginButton": "Se connecter avec Google",
     "signinLoading": "Connexion en cours..."
+  },
+  "months": {
+    "january": "Janvier",
+    "february": "Février",
+    "march": "Mars",
+    "april": "Avril",
+    "may": "Mai",
+    "june": "Juin",
+    "july": "Juillet",
+    "august": "Août",
+    "september": "Septembre",
+    "october": "Octobre",
+    "november": "Novembre",
+    "december": "Décembre"
+  },
+  "forecast": {
+    "selectClient": "Sélectionner un client pour afficher les prévisions",
+    "selectRFQ": "Sélectionner une période RFQ",
+    "noData": "Aucune donnée de prévision trouvée pour ce client et RFQ",
+    "label": "Étiquette",
+    "total": "Total",
+    "actuals": "Réalisations"
+  },
+  "common": {
+    "loading": "Chargement..."
   }
 }

@@ -37,5 +37,30 @@
     "loginSubtitle": "Sign in to continue",
     "loginButton": "Sign in with Google",
     "signinLoading": "Signing in..."
+  },
+  "months": {
+    "january": "January",
+    "february": "February",
+    "march": "March",
+    "april": "April",
+    "may": "May",
+    "june": "June",
+    "july": "July",
+    "august": "August",
+    "september": "September",
+    "october": "October",
+    "november": "November",
+    "december": "December"
+  },
+  "forecast": {
+    "selectClient": "Select a client to view forecasts",
+    "selectRFQ": "Select an RFQ period",
+    "noData": "No forecast data found for this client and RFQ",
+    "label": "Label",
+    "total": "Total",
+    "actuals": "Actuals"
+  },
+  "common": {
+    "loading": "Loading..."
   }
 }
