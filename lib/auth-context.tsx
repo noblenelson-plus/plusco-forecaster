@@ -15,6 +15,7 @@ import {
   signOut as firebaseSignOut,
 } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
+import { ensureUserProfile } from "./user-service";
 
 interface AuthContextType {
   user: User | null;
@@ -29,9 +30,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Écoute les changements d'état d'authentification (login, logout, refresh)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Ensure Firestore profile exists or is updated on every auth state change
+        try {
+          await ensureUserProfile(firebaseUser);
+        } catch (err) {
+          console.error("Failed to ensure user profile:", err);
+        }
+      }
+
       setUser(firebaseUser);
       setLoading(false);
       console.log(
@@ -40,7 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       );
     });
 
-    // Cleanup à la destruction du composant
     return () => unsubscribe();
   }, []);
 
@@ -71,7 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Hook pour consommer le contexte depuis n'importe quel composant
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
