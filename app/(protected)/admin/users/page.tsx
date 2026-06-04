@@ -7,6 +7,7 @@ import { db } from "../../../../lib/firebase";
 import { UserProfile, UserRole } from "../../../../lib/services/user-service";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import { useRouter } from "next/navigation";
+import UserClientsDrawer from "../../../../components/users/user-clients-drawer";
 import {
   Shield,
   User,
@@ -26,10 +27,11 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
   const [updatingUid, setUpdatingUid] = useState<string | null>(null);
 
+  // Drawer d'assignation de clients
+  const [assignUser, setAssignUser] = useState<UserProfile | null>(null);
+
   // Guard — redirect non-admins
   useEffect(() => {
-    console.log({ profileLoading, isAdmin });
-
     if (!profileLoading && !isAdmin) {
       router.replace("/");
     }
@@ -71,6 +73,14 @@ export default function AdminUsersPage() {
     } finally {
       setUpdatingUid(null);
     }
+  }
+
+  // Après Save du drawer — met à jour le compteur localement
+  function handleAssignmentsSaved(uid: string, assignedClients: string[]) {
+    setUsers((prev) =>
+      prev.map((u) => (u.uid === uid ? { ...u, assignedClients } : u))
+    );
+    setAssignUser(null);
   }
 
   const filteredUsers = users.filter(
@@ -152,12 +162,21 @@ export default function AdminUsersPage() {
                   user={u}
                   updating={updatingUid === u.uid}
                   onRoleChange={handleRoleChange}
+                  onAssignClients={() => setAssignUser(u)}
                 />
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Drawer d'assignation user → clients */}
+      <UserClientsDrawer
+        open={!!assignUser}
+        user={assignUser}
+        onClose={() => setAssignUser(null)}
+        onSaved={handleAssignmentsSaved}
+      />
     </div>
   );
 }
@@ -167,10 +186,12 @@ function UserRow({
   user,
   updating,
   onRoleChange,
+  onAssignClients,
 }: {
   user: UserProfile;
   updating: boolean;
   onRoleChange: (uid: string, role: UserRole) => void;
+  onAssignClients: () => void;
 }) {
   const initials = user.displayName
     ? user.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
@@ -228,11 +249,16 @@ function UserRow({
         </div>
       </td>
 
-      {/* Assigned clients count */}
+      {/* Assigned clients count — cliquable, ouvre le drawer d'assignation */}
       <td className="px-4 py-3 hidden sm:table-cell">
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+        <button
+          type="button"
+          onClick={onAssignClients}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-yellow-100 hover:text-yellow-800 border border-transparent hover:border-yellow-300 transition-colors cursor-pointer"
+          title="Manage client assignments"
+        >
           {user.assignedClients?.length ?? 0} client{(user.assignedClients?.length ?? 0) !== 1 ? "s" : ""}
-        </span>
+        </button>
       </td>
     </tr>
   );

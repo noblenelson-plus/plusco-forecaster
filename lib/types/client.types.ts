@@ -9,23 +9,35 @@ import type {
   ClientOffice,
   ClientGMPod,
 } from "../constants/client.constants";
+import type { MediaType, MonthlyMap } from "./common.types";
 
 export type { ClientStatus, ClientTier, FeeStructure };
 
 export type Currency = "CAD" | "USD";
 
-// Commission rates per media type per year
+/**
+ * Taux de commission (%) par type de média, par année, avec granularité
+ * mensuelle.
+ *
+ * Format stocké : TOUJOURS mensuel (12 valeurs par type). Le cas courant
+ * "même taux toute l'année" est représenté par 12 valeurs identiques —
+ * l'UI détecte ce cas et affiche un champ unique (mode uniforme), mais le
+ * moteur de calcul Revenue n'a qu'un seul format à gérer :
+ *
+ *   commission(month) = mediaSpend(type, month) × rate(type, month) / 100
+ *
+ * Exemple :
+ * {
+ *   2026: {
+ *     social:       { 1: 12, 2: 12, ..., 12: 12 },   // uniforme 12%
+ *     programmatic: { 1: 10, 2: 10, ..., 12: 15 },   // ajusté en déc.
+ *   }
+ * }
+ *
+ * Un type de média absent = pas de commission sur ce type pour l'année.
+ */
 export interface CommissionsConfig {
-  [year: number]: {
-    social?: number;
-    programmatic?: number;
-    ooh?: number;
-    print?: number;
-    tv?: number;
-    radio?: number;
-    sem?: number;
-    digitalDirect?: number;
-  };
+  [year: number]: Partial<Record<MediaType, MonthlyMap>>;
 }
 
 export interface Client {

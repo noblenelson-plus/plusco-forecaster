@@ -2,8 +2,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Loader2, Trash2, ChevronDown, ImagePlus } from "lucide-react";
-import { Client, ClientFormData, Currency, FeeStructure, ClientStatus, ClientTier } from "../../lib/types/client.types";
+import { X, Loader2, Trash2, ChevronDown, ImagePlus, Percent } from "lucide-react";
+import { Client, ClientFormData, Currency, FeeStructure, ClientStatus, ClientTier, CommissionsConfig } from "../../lib/types/client.types";
 import {
   CLIENT_STATUSES,
   CLIENT_TIERS,
@@ -15,10 +15,13 @@ import {
   CLIENT_FEE_STRUCTURES,
 } from "../../lib/constants/client.constants";
 import { saveClient, deleteClient, uploadClientLogo } from "../../lib/services/client-service";
+import ClientAccessSection from "./client-access-section";
+import CommissionsDrawer from "./commissions-drawer";
 
 interface ClientDrawerProps {
   open: boolean;
   client: Client | null;
+  isAdmin: boolean;
   onClose: () => void;
   onSaved: (client: Client) => void;
   onDeleted: (cl_id: string) => void;
@@ -45,6 +48,7 @@ const EMPTY_FORM: ClientFormData = {
 export default function ClientDrawer({
   open,
   client,
+  isAdmin,
   onClose,
   onSaved,
   onDeleted,
@@ -59,6 +63,9 @@ export default function ClientDrawer({
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Drawer commissions (empilé par-dessus celui-ci)
+  const [commissionsOpen, setCommissionsOpen] = useState(false);
 
   // Populate form when editing
   useEffect(() => {
@@ -87,6 +94,7 @@ export default function ClientDrawer({
     }
     setError("");
     setConfirmDelete(false);
+    setCommissionsOpen(false);
   }, [client, open]);
 
   function set<K extends keyof ClientFormData>(key: K, value: ClientFormData[K]) {
@@ -148,6 +156,20 @@ export default function ClientDrawer({
       setDeleting(false);
     }
   }
+
+  // Les taux sont déjà persistés par le CommissionsDrawer —
+  // on synchronise seulement le state local du formulaire pour que
+  // le compteur reste à jour et qu'un Save ultérieur n'écrase rien.
+  function handleCommissionsSaved(_clId: string, config: CommissionsConfig) {
+    set("commissionsConfig", config);
+    setCommissionsOpen(false);
+  }
+
+  // Compteur de types configurés pour l'année courante (résumé Finance)
+  const currentYear = new Date().getFullYear();
+  const configuredCount = Object.keys(
+    form.commissionsConfig?.[currentYear] ?? {}
+  ).length;
 
   return (
     <>
@@ -312,6 +334,11 @@ export default function ClientDrawer({
             </Field>
           </Section>
 
+          {/* Section: Access — qui peut voir ce client (édition seulement) */}
+          {isEditing && client && (
+            <ClientAccessSection clId={client.cl_id} isAdmin={isAdmin} />
+          )}
+
           {/* Section: Classification */}
           <Section label="Classification">
             <div className="grid grid-cols-3 gap-3">
@@ -351,6 +378,27 @@ export default function ClientDrawer({
                 Separate multiple GAIA numbers with commas.
               </p>
             </Field>
+
+            {/* Commissions — édition seulement (le client doit exister) */}
+            {isEditing && (
+              <Field label="Commissions">
+                <button
+                  type="button"
+                  onClick={() => setCommissionsOpen(true)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 border border-gray-200 rounded-lg bg-white hover:border-yellow-400 hover:bg-yellow-50/50 transition-colors group"
+                >
+                  <span className="flex items-center gap-2 text-sm text-gray-700">
+                    <span className="w-7 h-7 rounded-lg bg-yellow-100 text-yellow-700 flex items-center justify-center group-hover:bg-yellow-400 group-hover:text-gray-900 transition-colors">
+                      <Percent size={13} strokeWidth={2.5} />
+                    </span>
+                    Manage commissions
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {configuredCount} type{configuredCount !== 1 ? "s" : ""} · {currentYear}
+                  </span>
+                </button>
+              </Field>
+            )}
           </Section>
 
           {/* Section: Notes */}
@@ -423,6 +471,18 @@ export default function ClientDrawer({
           </button>
         </div>
       </div>
+
+      {/* Drawer commissions — empilé au-dessus (z-50 partagé, monté après) */}
+      <CommissionsDrawer
+        open={commissionsOpen}
+        client={
+          client
+            ? { ...client, commissionsConfig: form.commissionsConfig ?? {} }
+            : null
+        }
+        onClose={() => setCommissionsOpen(false)}
+        onSaved={handleCommissionsSaved}
+      />
     </>
   );
 }
