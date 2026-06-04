@@ -54,12 +54,22 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
       onClick={() => onEdit(client)}
       className="group w-full text-left bg-white border border-gray-200 rounded-xl p-5 hover:border-yellow-400 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-yellow-400"
     >
-      {/* Top row — avatar + status */}
+      {/* Top row — logo/avatar + status */}
       <div className="flex items-start justify-between mb-4">
         <div
-          className={`w-11 h-11 rounded-xl ${avatarBg} flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm`}
+          className={`w-11 h-11 rounded-xl ${
+            client.CL_Logo ? "bg-transparent" : avatarBg
+          } flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden`}
         >
-          {initials}
+          {client.CL_Logo ? (
+            <img
+              src={client.CL_Logo}
+              alt={`${client.CL_Name} logo`}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="text-white text-sm font-bold">{initials}</span>
+          )}
         </div>
         <span
           className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
