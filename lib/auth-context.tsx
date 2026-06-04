@@ -15,7 +15,7 @@ import {
   signOut as firebaseSignOut,
 } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
-import { ensureUserProfile } from "./user-service";
+import { ensureUserProfile } from "./services/user-service";
 
 interface AuthContextType {
   user: User | null;

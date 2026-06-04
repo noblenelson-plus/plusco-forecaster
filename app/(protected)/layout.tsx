@@ -3,14 +3,79 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Menu } from "lucide-react";
+import { Menu, LogOut } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import Sidebar from "../../components/_shared/sidebar";
 
+function AccessPendingScreen() {
+  const { user, signOut } = useAuth();
+  const { profile } = useUserProfile();
+
+  const initials = profile?.displayName
+    ? profile.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+    : user?.email?.[0].toUpperCase() ?? "?";
+
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 p-8">
+      <div className="w-full max-w-md">
+
+        {/* Logo */}
+        <div className="text-center mb-10">
+          <span className="text-2xl font-bold text-white tracking-tight">
+            Plusco <span className="text-yellow-400">Forecaster</span>
+          </span>
+        </div>
+
+        {/* Card */}
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl p-8 shadow-sm text-center">
+
+          {/* Avatar + name */}
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center text-gray-900 text-xs font-bold flex-shrink-0">
+              {initials}
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-medium text-white leading-tight">
+                {profile?.displayName ?? "—"}
+              </p>
+              <p className="text-xs text-gray-400">{user?.email}</p>
+            </div>
+          </div>
+
+          {/* Message */}
+          <h1 className="text-lg font-semibold text-white mb-2">
+            Access pending
+          </h1>
+          <p className="text-sm text-gray-400 leading-relaxed mb-2">
+            Your account has been created but no clients have been assigned to
+            you yet. Please contact:
+          </p>
+          <a
+            href="mailto:adriana.novoa@pluscompany.com"
+            className="inline-block text-sm font-medium text-yellow-400 hover:text-yellow-300 transition-colors mb-8"
+          >
+            adriana.novoa@pluscompany.com
+          </a>
+
+          {/* Sign out */}
+          <button
+            onClick={signOut}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-600 text-sm font-medium text-gray-400 hover:bg-gray-700 hover:text-white transition-colors"
+          >
+            <LogOut size={15} />
+            Sign out
+          </button>
+        </div>
+
+      </div>
+    </main>
+  );
+}
+
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
-  const { loading: profileLoading } = useUserProfile();
+  const { profile, isAdmin, loading: profileLoading } = useUserProfile();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -34,6 +99,12 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   }
 
   if (!user) return null;
+
+  // Access gate — user is authenticated but has no clients and is not admin
+  const hasAccess = isAdmin || (profile?.assignedClients?.length ?? 0) > 0;
+  if (!hasAccess) {
+    return <AccessPendingScreen />;
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -72,7 +143,6 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
           <span className="font-bold text-gray-900 tracking-tight">
             Plusco <span className="text-yellow-400">Forecaster</span>
           </span>
-          {/* Spacer to center the title */}
           <div className="w-8" />
         </header>
 

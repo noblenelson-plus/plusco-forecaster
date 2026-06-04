@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../auth-context";
-import { UserProfile } from "../user-service";
+import { UserProfile } from "../services/user-service";
 
 interface UseUserProfileResult {
   profile: UserProfile | null;

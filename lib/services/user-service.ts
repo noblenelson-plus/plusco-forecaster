@@ -7,7 +7,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { User } from "firebase/auth";
-import { db } from "./firebase";
+import { db } from "../firebase";
 
 export type UserRole = "ADMIN" | "BUSINESS_LEAD";
 

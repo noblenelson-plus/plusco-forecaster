@@ -5,44 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * Middleware de protection des routes.
  *
- * Stratégie :
- * - Les routes /admin/* sont protégées côté serveur.
- * - Firebase Auth étant client-side, on vérifie la présence du cookie de session
- *   Firebase (__session ou firebase:authUser) comme signal d'authentification.
- * - La vérification du rôle ADMIN reste côté client (useUserProfile + redirect).
- *   Une vérification serveur complète nécessiterait Firebase Admin SDK + session cookies
- *   custom, ce qui sera ajouté en Phase 2 (hardening sécurité).
- *
- * Routes protégées :
- * - /admin/* → redirige vers /auth/login si aucun cookie d'auth détecté
- * - Toutes les autres routes protégées → gérées par ProtectedLayout côté client
+ * Stratégie actuelle :
+ * - Firebase Auth stocke la session dans localStorage (pas dans les cookies HTTP).
+ * - Une vérification cookie côté serveur n'est donc pas fiable sans Firebase Admin SDK
+ *   + session cookies custom (prévu en Phase 2 — hardening sécurité).
+ * - La protection des routes est entièrement gérée côté client :
+ *   - ProtectedLayout : redirige vers /auth/login si non authentifié
+ *   - useUserProfile + guard dans chaque page admin : redirige si rôle insuffisant
  */
 
-// Cookie keys Firebase peut écrire selon la config
-const FIREBASE_AUTH_COOKIE_KEYS = [
-  "__session",
-  "firebase:authUser",
-];
-
-function hasAuthCookie(request: NextRequest): boolean {
-  return FIREBASE_AUTH_COOKIE_KEYS.some((key) =>
-    request.cookies.has(key)
-  );
-}
-
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Protect /admin/* routes
-  if (pathname.startsWith("/admin")) {
-    if (!hasAuthCookie(request)) {
-      const loginUrl = new URL("/auth/login", request.url);
-      // Preserve the original destination for post-login redirect
-      loginUrl.searchParams.set("redirect", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
   return NextResponse.next();
 }
 

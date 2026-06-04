@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { db } from "../../../../lib/firebase";
-import { UserProfile, UserRole } from "../../../../lib/user-service";
+import { UserProfile, UserRole } from "../../../../lib/services/user-service";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import { useRouter } from "next/navigation";
 import {
@@ -28,6 +28,8 @@ export default function AdminUsersPage() {
 
   // Guard — redirect non-admins
   useEffect(() => {
+    console.log({ profileLoading, isAdmin });
+
     if (!profileLoading && !isAdmin) {
       router.replace("/");
     }
