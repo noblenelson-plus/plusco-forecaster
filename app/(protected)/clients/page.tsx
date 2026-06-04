@@ -9,6 +9,8 @@ import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import ClientGrid from "../../../components/clients/client-grid";
 import ClientFilters from "../../../components/clients/client-filters";
 import ClientDrawer from "../../../components/clients/client-drawer";
+import type { ClientStatus } from "../../../lib/constants/client.constants";
+
 
 export default function ClientsPage() {
   const { profile, isAdmin } = useUserProfile();
@@ -19,7 +21,7 @@ export default function ClientsPage() {
 
   // Filter state
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+const [statusFilter, setStatusFilter] = useState<"ALL" | ClientStatus>("ALL");
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -73,8 +75,8 @@ export default function ClientsPage() {
       c.CL_Name.toLowerCase().includes(search.toLowerCase()) ||
       c.CL_Agency.toLowerCase().includes(search.toLowerCase());
     const matchesStatus =
-      statusFilter === "ALL" || c.Client_Status_2026 === statusFilter;
-    return matchesSearch && matchesStatus;
+  statusFilter === "ALL" || c.Client_Status_2026 === statusFilter;
+      return matchesSearch && matchesStatus;
   });
 
   // Handlers

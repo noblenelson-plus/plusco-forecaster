@@ -1,14 +1,13 @@
 // lib/services/client-service.ts
 
 import {
-  collection,
   doc,
   setDoc,
   deleteDoc,
   writeBatch,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db } from "../firebase";
+import { db, storage } from "../firebase";
 import { Client, ClientFormData } from "../types/client.types";
 import {
   CLIENT_STATUSES,
@@ -31,6 +30,34 @@ const VALID_GM_PODS     = CLIENT_GM_PODS.map((g) => g.value);
 const VALID_FEE_STRUCTS = CLIENT_FEE_STRUCTURES.map((f) => f.value);
 const VALID_CURRENCIES  = ["CAD", "USD"];
 
+const REQUIRED_COLUMNS = [
+  "CL_Name",
+  "CL_Agency",
+  "Client_Fee_Structure",
+  "CL_Currency",
+  "CL_Tier",
+  "Client_Status_2026",
+] as const;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface ValidatedRow {
+  id: string;
+  data: Record<string, unknown>;
+}
+
+export interface CSVValidationResult {
+  fileName: string;
+  validRows: ValidatedRow[];
+  errors: string[];
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateClientId(name: string): string {
@@ -42,12 +69,38 @@ function generateClientId(name: string): string {
   return `CL_${slug}_${Date.now()}`;
 }
 
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current.trim());
+  return result;
+}
+
+function escapeCSV(value: unknown): string {
+  const str = value == null ? "" : String(value);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
 // ─── Logo Upload ──────────────────────────────────────────────────────────────
 
-/**
- * Uploads a logo image to Firebase Storage and returns the download URL.
- * Path: client-logos/{slug}_{timestamp}.{ext}
- */
 export async function uploadClientLogo(file: File, clientName: string): Promise<string> {
   const ext = file.name.split(".").pop() ?? "png";
   const slug = clientName
@@ -55,7 +108,6 @@ export async function uploadClientLogo(file: File, clientName: string): Promise<
     .replace(/[^a-z0-9]+/g, "_")
     .slice(0, 30);
   const path = `client-logos/${slug}_${Date.now()}.${ext}`;
-
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, file);
   return getDownloadURL(storageRef);
@@ -68,16 +120,14 @@ export async function saveClient(
   cl_id: string | null
 ): Promise<Client> {
   const id = cl_id ?? generateClientId(formData.CL_Name);
-  const ref = doc(db, "clients", id);
-
+  const docRef = doc(db, "clients", id);
   const now = new Date().toISOString();
   const payload = {
     ...formData,
     updatedAt: now,
     ...(cl_id ? {} : { createdAt: now }),
   };
-
-  await setDoc(ref, payload, { merge: true });
+  await setDoc(docRef, payload, { merge: true });
   return { cl_id: id, ...payload } as Client;
 }
 
@@ -105,14 +155,6 @@ const CSV_COLUMNS = [
   "Client_Notes",
 ] as const;
 
-function escapeCSV(value: unknown): string {
-  const str = value == null ? "" : String(value);
-  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
 export function exportClientsToCSV(clients: Client[]): void {
   const header = CSV_COLUMNS.join(",");
   const rows = clients.map((c) =>
@@ -122,7 +164,6 @@ export function exportClientsToCSV(clients: Client[]): void {
       return escapeCSV(value);
     }).join(",")
   );
-
   const csv = [header, ...rows].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -133,21 +174,20 @@ export function exportClientsToCSV(clients: Client[]): void {
   URL.revokeObjectURL(url);
 }
 
-// ─── CSV Import ───────────────────────────────────────────────────────────────
+// ─── CSV Validation (dry run — no writes) ────────────────────────────────────
 
-const REQUIRED_COLUMNS = ["CL_Name", "CL_Agency", "Client_Fee_Structure", "CL_Currency", "CL_Tier", "Client_Status_2026"] as const;
-
-export interface ImportResult {
-  imported: number;
-  skipped: number;
-  errors: string[];
-}
-
-export async function parseClientsFromCSV(file: File): Promise<ImportResult> {
+/**
+ * Parses and validates a CSV file without writing to Firestore.
+ * Returns a CSVValidationResult with valid rows and error messages.
+ * Call commitCSVImport() to actually write the valid rows.
+ */
+export async function validateCSV(file: File): Promise<CSVValidationResult> {
   const text = await file.text();
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
-  if (lines.length < 2) throw new Error("CSV file is empty or missing data rows.");
+  if (lines.length < 2) {
+    throw new Error("CSV file is empty or missing data rows.");
+  }
 
   const headers = lines[0].split(",").map((h) => h.trim());
 
@@ -157,36 +197,40 @@ export async function parseClientsFromCSV(file: File): Promise<ImportResult> {
   }
 
   const errors: string[] = [];
-  const validRows: { id: string; data: Record<string, unknown> }[] = [];
+  const validRows: ValidatedRow[] = [];
 
   for (let i = 1; i < lines.length; i++) {
     const lineNumber = i + 1;
     const values = parseCSVLine(lines[i]);
 
     if (values.length !== headers.length) {
-      errors.push(`Row ${lineNumber}: column count mismatch (expected ${headers.length}, got ${values.length})`);
+      errors.push(
+        `Row ${lineNumber}: column count mismatch (expected ${headers.length}, got ${values.length})`
+      );
       continue;
     }
 
     const row: Record<string, unknown> = {};
     headers.forEach((h, idx) => { row[h] = values[idx]; });
 
-    // Validate all constrained fields
+    // Validate constrained fields
     const validations: [string, string, string[]][] = [
-      ["Client_Fee_Structure", row.Client_Fee_Structure as string, VALID_FEE_STRUCTS],
-      ["CL_Currency",          row.CL_Currency as string,          VALID_CURRENCIES],
-      ["CL_Tier",              row.CL_Tier as string,              VALID_TIERS],
-      ["Client_Status_2026",   row.Client_Status_2026 as string,   VALID_STATUSES],
-      ["CL_Agency",            row.CL_Agency as string,            VALID_AGENCIES],
+      ["Client_Fee_Structure",    row.Client_Fee_Structure as string,    VALID_FEE_STRUCTS],
+      ["CL_Currency",             row.CL_Currency as string,             VALID_CURRENCIES],
+      ["CL_Tier",                 row.CL_Tier as string,                 VALID_TIERS],
+      ["Client_Status_2026",      row.Client_Status_2026 as string,      VALID_STATUSES],
+      ["CL_Agency",               row.CL_Agency as string,               VALID_AGENCIES],
       ["CL_Business_Unit_Region", row.CL_Business_Unit_Region as string, VALID_REGIONS],
-      ["CL_Office",            row.CL_Office as string,            [...VALID_OFFICES, ""]],
-      ["GM_Pod",               row.GM_Pod as string,               [...VALID_GM_PODS, ""]],
+      ["CL_Office",               row.CL_Office as string,               [...VALID_OFFICES, ""]],
+      ["GM_Pod",                  row.GM_Pod as string,                  [...VALID_GM_PODS, ""]],
     ];
 
     let hasError = false;
     for (const [field, value, allowed] of validations) {
       if (value && !allowed.includes(value)) {
-        errors.push(`Row ${lineNumber}: invalid ${field} "${value}" — allowed: ${allowed.filter(Boolean).join(", ")}`);
+        errors.push(
+          `Row ${lineNumber}: invalid ${field} "${value}" — allowed: ${allowed.filter(Boolean).join(", ")}`
+        );
         hasError = true;
       }
     }
@@ -196,6 +240,7 @@ export async function parseClientsFromCSV(file: File): Promise<ImportResult> {
     const gaiaRaw = (row.CL_GAIA_Number as string) ?? "";
     row.CL_GAIA_Number = gaiaRaw ? gaiaRaw.split("|").map((s) => s.trim()) : [];
 
+    // Resolve document ID
     const id = (row.cl_id as string)?.trim() || generateClientId(row.CL_Name as string);
     const now = new Date().toISOString();
     row.createdAt = row.createdAt ?? now;
@@ -206,8 +251,18 @@ export async function parseClientsFromCSV(file: File): Promise<ImportResult> {
     validRows.push({ id, data: row });
   }
 
-  // Batch write (max 500 per batch)
+  return { fileName: file.name, validRows, errors };
+}
+
+// ─── CSV Commit (batch write) ─────────────────────────────────────────────────
+
+/**
+ * Writes pre-validated rows to Firestore in batches of 500.
+ * Should only be called after validateCSV() and user confirmation.
+ */
+export async function commitCSVImport(validRows: ValidatedRow[]): Promise<ImportResult> {
   const BATCH_SIZE = 500;
+
   for (let start = 0; start < validRows.length; start += BATCH_SIZE) {
     const batch = writeBatch(db);
     validRows.slice(start, start + BATCH_SIZE).forEach(({ id, data }) => {
@@ -216,27 +271,9 @@ export async function parseClientsFromCSV(file: File): Promise<ImportResult> {
     await batch.commit();
   }
 
-  return { imported: validRows.length, skipped: errors.length, errors };
-}
-
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (char === "," && !inQuotes) {
-      result.push(current.trim());
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-
-  result.push(current.trim());
-  return result;
+  return {
+    imported: validRows.length,
+    skipped: 0,
+    errors: [],
+  };
 }
