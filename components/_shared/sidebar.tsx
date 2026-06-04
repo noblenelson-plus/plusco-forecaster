@@ -11,12 +11,13 @@ import {
   Upload,
   Briefcase,
   Users,
-  Settings,
+  CalendarRange,
   LogOut,
   X,
 } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import ForecastSelectors from "./forecast-selectors";
 
 interface NavItem {
   label: string;
@@ -27,14 +28,14 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard",    href: "/",               icon: <LayoutDashboard size={18} />, section: "main" },
-  { label: "Media Spend",  href: "/media",          icon: <TrendingUp size={18} />,      section: "main" },
-  { label: "Revenue",      href: "/revenue",        icon: <DollarSign size={18} />,      section: "main" },
-  { label: "Labs",         href: "/labs",           icon: <FlaskConical size={18} />,    section: "main" },
-  { label: "Bulk Edits",   href: "/bulk-edits",     icon: <Upload size={18} />,          section: "main" },
-  { label: "Clients",      href: "/clients",        icon: <Briefcase size={18} />,       section: "main" },
-  { label: "Users",        href: "/admin/users",    icon: <Users size={18} />,           section: "admin", adminOnly: true },
-  { label: "Settings",     href: "/admin/settings", icon: <Settings size={18} />,        section: "admin", adminOnly: true },
+  { label: "Dashboard",    href: "/",            icon: <LayoutDashboard size={18} />, section: "main" },
+  { label: "Media Spend",  href: "/media",       icon: <TrendingUp size={18} />,      section: "main" },
+  { label: "Revenue",      href: "/revenue",     icon: <DollarSign size={18} />,      section: "main" },
+  { label: "Labs",         href: "/labs",        icon: <FlaskConical size={18} />,    section: "main" },
+  { label: "Bulk Edits",   href: "/bulk-edits",  icon: <Upload size={18} />,          section: "main" },
+  { label: "Clients",      href: "/clients",     icon: <Briefcase size={18} />,       section: "main" },
+  { label: "Users",        href: "/admin/users", icon: <Users size={18} />,           section: "admin", adminOnly: true },
+  { label: "RFQs",         href: "/admin/rfqs",  icon: <CalendarRange size={18} />,   section: "admin", adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -74,6 +75,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
           </button>
         )}
       </div>
+
+      {/* Sélecteurs globaux — Client / Année / RFQ */}
+      <ForecastSelectors />
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto">

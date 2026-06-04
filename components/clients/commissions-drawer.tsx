@@ -323,24 +323,24 @@ export default function CommissionsDrawer({
               >
                 {/* Ligne principale */}
                 <div className="flex items-center gap-3 px-4 py-3">
-                  {/* Toggle on/off */}
-                  <button
-                    type="button"
-                    onClick={() => toggleEnabled(type)}
-                    className={`
-                      relative w-9 h-5 rounded-full flex-shrink-0 transition-colors
-                      ${row.enabled ? "bg-yellow-400" : "bg-gray-200"}
-                    `}
-                    title={row.enabled ? "Disable commission" : "Enable commission"}
-                  >
-                    <span
-                      className={`
-                        absolute top-0.5 w-4 h-4 rounded-full bg-white shadow
-                        transition-transform
-                        ${row.enabled ? "translate-x-[18px]" : "translate-x-0.5"}
-                      `}
-                    />
-                  </button>
+                        {/* Toggle on/off */}
+                        <button
+                        type="button"
+                        onClick={() => toggleEnabled(type)}
+                        className={`
+                            relative w-9 h-5 rounded-full flex-shrink-0 transition-colors
+                            ${row.enabled ? "bg-yellow-400" : "bg-gray-200"}
+                        `}
+                        title={row.enabled ? "Disable commission" : "Enable commission"}
+                        >
+                        <span
+                            className={`
+                            absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow
+                            transition-transform duration-150
+                            ${row.enabled ? "translate-x-4" : "translate-x-0"}
+                            `}
+                        />
+                        </button>
 
                   {/* Nom du type */}
                   <span
