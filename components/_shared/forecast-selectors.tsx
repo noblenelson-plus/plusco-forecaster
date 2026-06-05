@@ -55,17 +55,26 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 type Theme = "dark" | "light";
 type Orientation = "vertical" | "horizontal";
+type SelectorField = "client" | "year" | "rfq";
+
+const ALL_FIELDS: SelectorField[] = ["client", "year", "rfq"];
 
 interface ForecastSelectorsProps {
   /** "vertical" → sidebar stack · "horizontal" → top-of-page row. */
   orientation?: Orientation;
   /** "dark" → sidebar styling · "light" → on-page styling. */
   theme?: Theme;
+  /**
+   * Which selectors to render, in order. Defaults to all three. The dashboard
+   * uses ["year", "rfq"] — its client scope is a separate multi-select filter.
+   */
+  fields?: SelectorField[];
 }
 
 export default function ForecastSelectors({
   orientation = "vertical",
   theme = "dark",
+  fields = ALL_FIELDS,
 }: ForecastSelectorsProps = {}) {
   const { profile, isAdmin } = useUserProfile();
 
@@ -82,9 +91,13 @@ export default function ForecastSelectors({
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [rfqs, setRFQs] = useState<RFQ[]>([]);
 
-  // Fetch clients (scoped by role)
+  const showClient = fields.includes("client");
+  const showYear = fields.includes("year");
+  const showRFQ = fields.includes("rfq");
+
+  // Fetch clients (scoped by role) — skipped when the client selector is hidden.
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || !showClient) return;
 
     async function fetchClients() {
       try {
@@ -128,7 +141,7 @@ export default function ForecastSelectors({
     }
 
     fetchClients();
-  }, [profile, isAdmin]);
+  }, [profile, isAdmin, showClient]);
 
   // Subscribe to RFQs (real-time lock status)
   useEffect(() => {
@@ -162,39 +175,44 @@ export default function ForecastSelectors({
     <div className={containerClass}>
 
       {/* Client — searchable */}
-      <SearchableDropdown
-        theme={theme}
-        widthClass={horizontal ? "w-56" : ""}
-        icon={<Briefcase size={14} />}
-        placeholder="Select client..."
-        value={selectedClient?.CL_Name ?? null}
-        items={clients.map((c) => ({
-          key: c.cl_id,
-          label: c.CL_Name,
-          sublabel: c.CL_Agency,
-          selected: selectedClient?.cl_id === c.cl_id,
-          onSelect: () => setClient(c),
-        }))}
-        emptyMessage="No clients found"
-      />
+      {showClient && (
+        <SearchableDropdown
+          theme={theme}
+          widthClass={horizontal ? "w-56" : ""}
+          icon={<Briefcase size={14} />}
+          placeholder="Select client..."
+          value={selectedClient?.CL_Name ?? null}
+          items={clients.map((c) => ({
+            key: c.cl_id,
+            label: c.CL_Name,
+            sublabel: c.CL_Agency,
+            selected: selectedClient?.cl_id === c.cl_id,
+            onSelect: () => setClient(c),
+          }))}
+          emptyMessage="No clients found"
+        />
+      )}
 
       {/* Year */}
-      <SimpleDropdown
-        theme={theme}
-        widthClass={horizontal ? "w-32" : ""}
-        icon={<CalendarRange size={14} />}
-        placeholder="Year..."
-        value={selectedYear ? String(selectedYear) : null}
-        items={years.map((y) => ({
-          key: String(y),
-          label: String(y),
-          selected: selectedYear === y,
-          onSelect: () => setYear(y),
-        }))}
-        emptyMessage="No RFQs created yet"
-      />
+      {showYear && (
+        <SimpleDropdown
+          theme={theme}
+          widthClass={horizontal ? "w-32" : ""}
+          icon={<CalendarRange size={14} />}
+          placeholder="Year..."
+          value={selectedYear ? String(selectedYear) : null}
+          items={years.map((y) => ({
+            key: String(y),
+            label: String(y),
+            selected: selectedYear === y,
+            onSelect: () => setYear(y),
+          }))}
+          emptyMessage="No RFQs created yet"
+        />
+      )}
 
       {/* RFQ — with lock icon */}
+      {showRFQ && (
       <SimpleDropdown
         theme={theme}
         widthClass={horizontal ? "w-40" : ""}
@@ -226,6 +244,7 @@ export default function ForecastSelectors({
         }))}
         emptyMessage={selectedYear ? "No RFQs for this year" : "Select a year first"}
       />
+      )}
     </div>
   );
 }

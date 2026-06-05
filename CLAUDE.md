@@ -25,13 +25,14 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Firebase
 
 - **Write code comments and JSDoc in English.** UI strings and identifiers are already English. Much of the existing code has French comments: translate them to English whenever you edit a file for any reason (translate the comments in that file as part of the change), but don't open files solely to translate them.
 - Service files (`lib/services/*-service.ts`) own all Firestore reads/writes for one collection. Components and hooks should call services, not Firestore directly — except real-time `onSnapshot` subscriptions, which hooks set up themselves (see `use-user-profile.ts`).
-- Type definitions live in `lib/types/*.types.ts` and are re-exported from `lib/types/index.ts`.
+- Type definitions live in `lib/types/*.types.ts`, most re-exported from `lib/types/index.ts` (note `forecaster.types.ts` is imported directly, not via the barrel).
+- `lib/format/*` holds pure, Firebase-free helpers (money formatting, `distribute()` for splitting a total across weights with exact-cent rounding, CSV (de)serialization, labs-penetration math). Reuse these instead of re-deriving the math in components.
 
 ## Architecture
 
 ### Auth & access control (entirely client-side)
 
-`middleware.ts` is intentionally a no-op pass-through: Firebase Auth stores the session in localStorage (not cookies), so server-side route protection isn't possible without the Admin SDK + custom session cookies (planned "Phase 2", not yet built). **All route/role protection is client-side** and must be treated as UX, not a security boundary — real enforcement belongs in Firestore security rules.
+`middleware.ts` is intentionally a no-op pass-through: Firebase Auth stores the session in localStorage (not cookies), so server-side route protection isn't possible without the Admin SDK + custom session cookies (planned "Phase 2", not yet built). **All route/role protection is client-side** and must be treated as UX, not a security boundary — real enforcement belongs in Firestore security rules. Those rules live in `firestoreRules.txt` (kept in sync by hand; deploy them with the Firebase console/CLI). When you change a collection's shape or who may read/write it, update that file too.
 
 The chain:
 1. `AuthProvider` (`lib/auth-context.tsx`) wraps the app, exposes `useAuth()`, and on every auth state change calls `ensureUserProfile()` to create/update the Firestore `users/{uid}` doc (new users default to role `BUSINESS_LEAD`).
@@ -43,7 +44,7 @@ User↔client assignment is stored **only** as `assignedClients: string[]` on th
 
 ### The forecast grid (the core feature)
 
-Three data-entry axes — **Media, Revenue, Labs** — share one generic grid engine. The grid is driven by an `AxisConfig` (declared in `forecaster.types.ts`, e.g. `MEDIA_AXIS_CONFIG`); a page just picks a config and renders. Revenue and Labs follow the Media page as a template.
+All three data-entry axes — **Media, Revenue, Labs** — live on one unified page, `app/(protected)/forecast/page.tsx`, as switchable tabs sharing one generic grid engine. The grid is driven by an `AxisConfig` (declared in `forecaster.types.ts`, e.g. `MEDIA_AXIS_CONFIG`); the page just picks the active tab's config and renders. Older per-axis routes like `app/(protected)/media/page.tsx` are now thin `redirect()` stubs to `/forecast` — keep them so old links resolve. The Client/Year/RFQ selectors and the comparison selector sit at the top of this page (`forecast-selectors.tsx`), not in the sidebar.
 
 Data model (`forecaster.types.ts`), three levels:
 - **Category** (level 1): `BL_INPUT` (business-lead entries, grouped into buckets) vs `ADMIN_INPUT` (admin-only `actuals`).
@@ -65,6 +66,16 @@ Editing flow (`use-forecaster-grid.ts`) — **explicit save**, not autosave:
 ### Clients
 
 `clients` collection. Client field values (status, tier, agency, region, office, GM pod, fee structure) are constrained by sets in `lib/constants/client.constants.ts`. CSV import/export lives in `client-service.ts`: `validateCSV()` is a dry run (no writes) that validates against those sets, and `commitCSVImport()` writes confirmed rows in batches of 500. Commission rates (`commission-service.ts`) are always stored monthly: `commissionsConfig[year][mediaType] = MonthlyMap`, with helpers to collapse/detect a uniform 12-month rate.
+
+### Dashboard (analytics, read-only)
+
+The app's home page (`app/(protected)/page.tsx`) is a read-only analytics dashboard that aggregates forecast data across many clients, parallel to the per-client editing in `/forecast`. It lives under `lib/dashboard/*` (logic) and `components/dashboard/*` (UI), organized as three decoupled layers:
+
+- **Filters** (`lib/dashboard/filters/`): a faceted, cascading multi-select over the accessible clients. Everything is driven by the `FACETS` registry (`facets.ts`) — `use-dashboard-filters.ts` never names a facet; each facet's dropdown shows only values present among clients passing every *other* active facet. Add a filter by adding a `Facet` entry, nothing else.
+- **Data** (`lib/dashboard/data/`): `useScopeForecastData(scope)` fetches one `data_entries` doc per in-scope client in parallel for the global Year + RFQ, merges the axes, and reshapes them via the pure functions in `aggregate.ts` into Media/Revenue/Labs breakdowns. A cancellation flag discards stale fetches when filters change mid-flight.
+- **Widgets** (`lib/dashboard/widgets/`): the `WIDGETS` registry renders cards/charts in order; add one by dropping a `{ scope }` component under `components/dashboard/widgets/` and registering it. Tab content lives in `components/dashboard/tabs/` (Media/Revenue/Labs), charts in `components/dashboard/charts/`.
+
+The dashboard reads the same global Year + RFQ from `forecast-selection.store.ts`; its client scope is local filter state, independent of the editing page's selected client.
 
 ## Firebase configuration
 

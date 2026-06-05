@@ -8,7 +8,7 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
-  Sparkles,
+  FlaskConical,
   CalendarPlus,
 } from "lucide-react";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
@@ -206,7 +206,7 @@ export default function AdminLabsPage() {
         ) : years.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-gray-400">
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-              <Sparkles size={24} className="opacity-40" />
+              <FlaskConical size={24} className="opacity-40" />
             </div>
             <p className="text-sm font-medium text-gray-500">
               No LABS partners yet
@@ -376,7 +376,7 @@ function PartnerRow({
     <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
       <div className="flex items-center gap-3 min-w-0">
         <div className="w-8 h-8 rounded-lg bg-yellow-100 flex items-center justify-center flex-shrink-0">
-          <Sparkles size={14} className="text-yellow-600" />
+          <FlaskConical size={14} className="text-yellow-600" />
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">

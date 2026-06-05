@@ -1,0 +1,136 @@
+// firestore.rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ─── Helpers ────────────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "ADMIN";
+    }
+    function isBusinessLead() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "BUSINESS_LEAD";
+    }
+    function isAssignedToClient(clientId) {
+      return isAuthenticated() &&
+        clientId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedClients;
+    }
+    function canAccessClient(clientId) {
+      return isAdmin() || isAssignedToClient(clientId);
+    }
+    // Locking lives on the rfqs document, not on data_entries.
+    // data_entries carry `year` (int) and `rfq` (e.g. "RFQ0"); the matching
+    // rfqs doc id is `{year}_{type}` (e.g. "2026_RFQ0").
+    function rfqUnlocked(year, rfq) {
+      let rfqId = string(year) + '_' + rfq;
+      return exists(/databases/$(database)/documents/rfqs/$(rfqId)) &&
+        get(/databases/$(database)/documents/rfqs/$(rfqId)).data.status != "LOCKED";
+    }
+    // ─── users ──────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      // Tous les utilisateurs authentifiés peuvent lire les profils.
+      // Nécessaire pour que les BLs voient qui a accès à leurs clients
+      // (ClientAccessSection fait une lecture liste de la collection).
+      // Trade-off assumé : emails / rôles / assignations visibles par
+      // tout employé connecté — outil interne, domaine restreint.
+      allow read: if isAuthenticated();
+
+      // A user can create their own profile document on first login (bootstrap)
+      // Admins can also create profiles (e.g. pre-provisioning)
+      allow create: if (isAuthenticated() && request.auth.uid == uid)
+                    || isAdmin();
+
+      // Admins can update any profile (role changes, client assignments, etc.)
+      // A user can update their own profile ONLY for safe fields —
+      // role and assignedClients are strictly reserved for admins.
+      allow update: if isAdmin() ||
+                    (
+                      isAuthenticated() &&
+                      request.auth.uid == uid &&
+                      !request.resource.data.diff(resource.data)
+                        .affectedKeys()
+                        .hasAny(['role', 'assignedClients'])
+                    );
+
+      // Nobody can delete user profiles from the client
+      allow delete: if false;
+    }
+    // ─── clients ────────────────────────────────────────────────────────────
+    match /clients/{clientId} {
+      // Admins see all — BLs only see assigned clients
+      allow read: if canAccessClient(clientId);
+
+      // Only admins can create or delete clients
+      allow create, delete: if isAdmin();
+
+      // Update :
+      // — Admins : sans restriction.
+      // — BLs assignés au client : SEULEMENT commissionsConfig (+ updatedAt).
+      //   Toute écriture touchant une autre clé du document est refusée.
+      //   (Le CommissionsDrawer écrit via dot-path "commissionsConfig.{year}",
+      //   ce qui n'affecte que ces deux clés top-level.)
+      allow update: if isAdmin() ||
+                    (
+                      isBusinessLead() &&
+                      isAssignedToClient(clientId) &&
+                      request.resource.data.diff(resource.data)
+                        .affectedKeys()
+                        .hasOnly(['commissionsConfig', 'updatedAt'])
+                    );
+    }
+    // ─── labs_partners ──────────────────────────────────────────────────────
+    match /labs_partners/{partnerId} {
+      // All authenticated users can read partners (needed to populate LABS rows)
+      allow read: if isAuthenticated();
+      // Only admins can manage the global partner registry
+      allow create, update, delete: if isAdmin();
+    }
+    // ─── data_entries ────────────────────────────────────────────────────────
+    // Document ID format: {cl_id}_{year}_{rfq} e.g. CL_001_2026_RFQ0
+    // We extract the clientId from the document's clientId field
+    match /data_entries/{entryId} {
+      // Read: admin sees all, BL only sees their assigned clients
+      allow read: if isAuthenticated() &&
+        canAccessClient(resource.data.clientId);
+
+      // Create: the document is created client-side on the first Save
+      // (saveAxisData → setDoc with merge), so a BL assigned to the client may
+      // create it — as long as the RFQ is not locked. Admins always may.
+      allow create: if isAdmin() ||
+        (
+          isBusinessLead() &&
+          isAssignedToClient(request.resource.data.clientId) &&
+          rfqUnlocked(request.resource.data.year, request.resource.data.rfq)
+        );
+
+      // Update: admin always — BL only for an assigned client while the RFQ is
+      // unlocked, and without re-keying the document (clientId stays put).
+      allow update: if isAdmin() ||
+        (
+          isBusinessLead() &&
+          isAssignedToClient(resource.data.clientId) &&
+          request.resource.data.clientId == resource.data.clientId &&
+          rfqUnlocked(resource.data.year, resource.data.rfq)
+        );
+
+      // BLs cannot update actuals or gaiaAdjustment fields
+      // This is enforced at the Server Action level as Firestore Rules
+      // cannot easily diff nested map fields — keep logic in backend
+      // Nobody can delete entries from the client
+      allow delete: if false;
+    }
+    // ─── rfqs ───────────────────────────────────────────────────────────────
+// Document ID format: {year}_{type} e.g. 2026_RFQ1
+match /rfqs/{rfqId} {
+  // All authenticated users can read RFQs
+  // (needed to populate the year/RFQ selectors in the sidebar)
+  allow read: if isAuthenticated();
+
+  // Only admins can create, lock/unlock, or delete RFQs
+  allow create, update, delete: if isAdmin();
+}
+  }
+}

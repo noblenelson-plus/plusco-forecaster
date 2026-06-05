@@ -35,6 +35,7 @@ import {
   FolderPlus,
   SplitSquareHorizontal,
   Download,
+  Info,
 } from "lucide-react";
 import type {
   AxisConfig,
@@ -68,9 +69,24 @@ const MONTH_LABELS = [
 /** Shared empty set for rows with no closed months (avoids re-allocating). */
 const EMPTY_MONTHS: Set<number> = new Set();
 
+/**
+ * Presentation-only per-row extras, resolved by the page from a row's type.
+ * Labs uses it to surface each partner's media type (badge), description
+ * (tooltip) and a cap warning; Media leaves it undefined. Kept off AxisConfig
+ * on purpose — it's a rendering concern, not data the hook needs.
+ */
+export interface RowMeta {
+  /** Small chip shown after the label — e.g. the partner's media type. */
+  badge?: string;
+  /** Hover tooltip on an info icon — e.g. the partner's description. */
+  tooltip?: string;
+}
+
 interface ForecastGridProps {
   config: AxisConfig;
   grid: UseForecasterGridResult;
+  /** Optional per-row extras (badge/tooltip/warning), resolved by row type. */
+  rowMeta?: (rowType: string) => RowMeta | undefined;
 }
 
 /** A single editable row in display order — BL rows first, then actuals. */
@@ -80,7 +96,7 @@ interface OrderedRow {
   bucketId: string | null;
 }
 
-export default function ForecastGrid({ config, grid }: ForecastGridProps) {
+export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProps) {
   const blReadOnly = grid.locked;
 
   const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
@@ -234,6 +250,7 @@ export default function ForecastGrid({ config, grid }: ForecastGridProps) {
                     bucket={bucket}
                     config={config}
                     grid={grid}
+                    rowMeta={rowMeta}
                     readOnly={blReadOnly}
                     sel={sel}
                     rowIndex={rowIndex}
@@ -271,6 +288,7 @@ export default function ForecastGrid({ config, grid }: ForecastGridProps) {
               <ActualsSection
                 config={config}
                 grid={grid}
+                rowMeta={rowMeta}
                 sel={sel}
                 rowIndex={rowIndex}
                 draggingRef={draggingRef}
@@ -433,7 +451,7 @@ function AddRowTypeSelect({
           </option>
           {options.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {o.hint ? `${o.label} · ${o.hint}` : o.label}
             </option>
           ))}
         </select>
@@ -468,6 +486,20 @@ function availableTypes(
   );
 }
 
+/**
+ * A row whose type is no longer offered by the axis config — e.g. a Labs partner
+ * removed from the year's admin/labs setup. Its data is kept (the row keeps its
+ * stored label) but it can't be re-selected; the grid flags it. Guarded on a
+ * non-empty option list so rows aren't flagged while options are still loading;
+ * Media types are always present, so this never triggers there.
+ */
+function isRetiredType(config: AxisConfig, rowType: string): boolean {
+  return (
+    config.rowTypeOptions.length > 0 &&
+    !config.rowTypeOptions.some((o) => o.value === rowType)
+  );
+}
+
 // ─── A data row (BL or actuals) — label + spread button + 12 cells + total ──
 
 function DataRow({
@@ -481,6 +513,8 @@ function DataRow({
   draggingRef,
   rowBg,
   labelClass,
+  retired,
+  meta,
   onSpread,
 }: {
   row: ForecastRow;
@@ -494,6 +528,10 @@ function DataRow({
   /** Sticky-cell background — must be opaque to cover scrolled content. */
   rowBg: string;
   labelClass: string;
+  /** Type no longer offered by the config (e.g. a removed Labs partner). */
+  retired?: boolean;
+  /** Presentation extras (badge/tooltip/warning) for this row. */
+  meta?: RowMeta;
   onSpread: () => void;
 }) {
   const r = rowIndex.get(row.rowId)!;
@@ -509,6 +547,26 @@ function DataRow({
       <td className={`sticky left-0 z-10 ${rowBg} px-4 py-1.5 border-b border-gray-100`}>
         <div className="flex items-center gap-1.5 pl-2">
           <span className={`text-sm ${labelClass}`}>{row.label}</span>
+          {/* Media-type chip (Labs). */}
+          {meta?.badge && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-gray-100 text-gray-500">
+              {meta.badge}
+            </span>
+          )}
+          {/* Description tooltip (Labs). */}
+          {meta?.tooltip && (
+            <span title={meta.tooltip} className="text-gray-300 hover:text-gray-500 cursor-help">
+              <Info size={12} />
+            </span>
+          )}
+          {retired && (
+            <span
+              title="No longer configured — kept for its existing data, but can't be re-added."
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-amber-100 text-amber-700"
+            >
+              Not configured
+            </span>
+          )}
           {!readOnly && (
             <>
               <button
@@ -561,6 +619,7 @@ function BucketSection({
   bucket,
   config,
   grid,
+  rowMeta,
   readOnly,
   sel,
   rowIndex,
@@ -571,6 +630,7 @@ function BucketSection({
   bucket: ForecastBucket;
   config: AxisConfig;
   grid: UseForecasterGridResult;
+  rowMeta?: (rowType: string) => RowMeta | undefined;
   readOnly: boolean;
   sel: ReturnType<typeof useGridSelection>;
   rowIndex: Map<string, number>;
@@ -651,6 +711,8 @@ function BucketSection({
               draggingRef={draggingRef}
               rowBg="bg-white group-hover:bg-gray-50"
               labelClass="text-gray-700"
+              retired={isRetiredType(config, row.rowType)}
+              meta={rowMeta?.(row.rowType)}
               onSpread={() => setSpreadRow(row)}
             />
           ))
@@ -686,12 +748,14 @@ function BucketSection({
 function ActualsSection({
   config,
   grid,
+  rowMeta,
   sel,
   rowIndex,
   draggingRef,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
+  rowMeta?: (rowType: string) => RowMeta | undefined;
   sel: ReturnType<typeof useGridSelection>;
   rowIndex: Map<string, number>;
   draggingRef: React.MutableRefObject<boolean>;
@@ -746,6 +810,8 @@ function ActualsSection({
             draggingRef={draggingRef}
             rowBg="bg-gray-50/40 group-hover:bg-gray-50"
             labelClass="text-gray-700"
+            retired={isRetiredType(config, row.rowType)}
+            meta={rowMeta?.(row.rowType)}
             onSpread={() => setSpreadRow(row)}
           />
         ))

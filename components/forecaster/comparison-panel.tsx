@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import type {
   AxisConfig,
+  AxisData,
   ComparisonSide,
 } from "../../lib/types/forecaster.types";
 import {
@@ -130,6 +131,22 @@ export default function ComparisonPanel({
     [ref, grid.referenceData]
   );
 
+  // rowType → display label, recovered from the live data rows. Lets orphaned
+  // types (e.g. a Labs partner removed from the year's config) show their stored
+  // name instead of the raw rowType id when aggregation drops the label.
+  const labelByType = useMemo(() => {
+    const map = new Map<string, string>();
+    const collect = (d: AxisData | null) => {
+      if (!d) return;
+      for (const b of d.buckets)
+        for (const r of b.rows) if (!map.has(r.rowType)) map.set(r.rowType, r.label);
+      for (const r of d.actuals) if (!map.has(r.rowType)) map.set(r.rowType, r.label);
+    };
+    collect(grid.data);
+    collect(grid.referenceData);
+    return map;
+  }, [grid.data, grid.referenceData]);
+
   const rows = useMemo<PanelRowData[]>(() => {
     const present = new Set([...Object.keys(baseAgg), ...Object.keys(refAgg)]);
     const ordered = config.rowTypeOptions
@@ -137,7 +154,7 @@ export default function ComparisonPanel({
       .map((o) => ({ type: o.value, label: o.label }));
     const extras = [...present]
       .filter((t) => !config.rowTypeOptions.some((o) => o.value === t))
-      .map((t) => ({ type: t, label: t }));
+      .map((t) => ({ type: t, label: labelByType.get(t) ?? t }));
     return [...ordered, ...extras].map(({ type, label }, i) => {
       const currentMonths = baseAgg[type] ?? emptyMonthly();
       const referenceMonths = refAgg[type] ?? emptyMonthly();
@@ -151,7 +168,7 @@ export default function ComparisonPanel({
         color: PALETTE[i % PALETTE.length],
       };
     });
-  }, [baseAgg, refAgg, config.rowTypeOptions]);
+  }, [baseAgg, refAgg, config.rowTypeOptions, labelByType]);
 
   const grand = useMemo(
     () => ({

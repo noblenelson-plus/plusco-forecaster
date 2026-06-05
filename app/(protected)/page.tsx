@@ -1,97 +1,117 @@
 // app/(protected)/page.tsx
 "use client";
 
-import { useState } from "react";
-import { db } from "../../lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
-import { useAuth } from "../../lib/auth-context";
+/**
+ * Dashboard — visualizes forecast data (ratios / charts) aggregated across the
+ * filtered client scope for the globally-selected Year + RFQ.
+ *
+ * Composition:
+ *   [Context bar]  Year · RFQ (global submission context)
+ *   [Filter bar]   dynamic, cascading multi-select facets → client scope
+ *   [Grid]         widgets from the registry, rendered against that scope
+ */
 
-const adjectives = ["Happy", "Brave", "Swift", "Mighty", "Friendly"];
-const animals = ["Tiger", "Whale", "Dolphin", "Koala", "Fox"];
+import { useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import DashboardContextBar from "../../components/dashboard/dashboard-context-bar";
+import DashboardFilterBar from "../../components/dashboard/filters/dashboard-filter-bar";
+import {
+  DASHBOARD_TABS,
+  type DashboardTab,
+} from "../../components/dashboard/tabs/dashboard-tabs.config";
+import MediaSpendTab from "../../components/dashboard/tabs/media-spend-tab";
+import RevenueTab from "../../components/dashboard/tabs/revenue-tab";
+import LabsTab from "../../components/dashboard/tabs/labs-tab";
+import { useAccessibleClients } from "../../lib/hooks/use-accessible-clients";
+import { useUsersMap } from "../../lib/hooks/use-users-map";
+import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
+import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
+import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
+import type { DashboardScope } from "../../lib/dashboard/widgets/widget.types";
 
-export default function Home() {
-  const { user, signOut } = useAuth();
-  const [status, setStatus] = useState("One More");
-  const [error, setError] = useState("");
-  const [names, setNames] = useState<string[]>([]);
+export default function DashboardPage() {
+  const { clients, loading, error } = useAccessibleClients();
+  const usersMap = useUsersMap();
+  const { selectedYear, selectedRFQ } = useForecastSelection();
 
-  async function handleClick() {
-    const name = `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${
-      animals[Math.floor(Math.random() * animals.length)]
-    }`;
-    setStatus("Saving...");
-    setError("");
+  const {
+    facetViews,
+    filteredClientIds,
+    totalAccessible,
+    hasActiveFilters,
+    reset,
+  } = useDashboardFilters(clients, usersMap);
 
-    try {
-      await addDoc(collection(db, "test"), {
-        name: name,
-        timestamp: new Date().toISOString(),
-        userId: user?.uid ?? null,
-        userEmail: user?.email ?? null,
-      });
+  const scope = useMemo<DashboardScope>(
+    () => ({ clientIds: filteredClientIds, year: selectedYear, rfq: selectedRFQ }),
+    [filteredClientIds, selectedYear, selectedRFQ]
+  );
 
-      setNames((prev) => [name, ...prev]);
-      setStatus("One More");
-    } catch (err: any) {
-      setError("ERROR: " + (err?.code || "UNKNOWN") + " — " + err?.message);
-      setNames((prev) => [name, ...prev]);
-      setStatus("One More");
-    }
-  }
-
-  async function handleSignOut() {
-    try {
-      await signOut();
-      // La redirection vers /auth/login est gérée automatiquement
-      // par le ProtectedLayout dès que user devient null
-    } catch (err: any) {
-      setError("Sign-out error: " + (err?.code || "UNKNOWN"));
-    }
-  }
+  // Active analysis tab + the forecast data for the current scope. The data is
+  // fetched once here (not per tab) so switching tabs doesn't refetch.
+  const [tab, setTab] = useState<DashboardTab>("media");
+  const forecastData = useScopeForecastData(scope);
 
   return (
-    <main className="flex min-h-screen flex-col bg-white">
-      {/* Header avec user + logout */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-        <div className="text-sm text-gray-600">
-          Signed in as <span className="font-medium">{user?.email}</span>
+    <div className="flex min-h-screen flex-col bg-white">
+      <header className="sticky top-0 z-20 flex flex-col bg-white">
+        <DashboardContextBar />
+        <DashboardFilterBar
+          facetViews={facetViews}
+          filteredCount={filteredClientIds.length}
+          totalAccessible={totalAccessible}
+          hasActiveFilters={hasActiveFilters}
+          onReset={reset}
+        />
+
+        {/* Analysis tabs — sit directly under the filters. */}
+        <div className="flex items-center gap-1 border-b border-gray-200 px-6">
+          {DASHBOARD_TABS.map((t) => {
+            const Icon = t.icon;
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "border-yellow-400 text-gray-900"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                <Icon size={16} className={active ? "text-yellow-500" : ""} />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
-        <button
-          onClick={handleSignOut}
-          className="text-sm text-gray-600 hover:text-gray-900 underline"
-        >
-          Sign out
-        </button>
       </header>
 
-      {/* Contenu principal */}
-      <div className="flex flex-1 flex-col items-center justify-center p-8">
-        <h1 className="text-3xl font-bold mb-4">PlusCo Forecaster</h1>
-
-        <button
-          onClick={handleClick}
-          className="bg-yellow-400 px-8 py-3 rounded-full font-semibold mb-4 hover:bg-yellow-500 transition-colors"
-        >
-          {status}
-        </button>
-
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-800 px-6 py-3 rounded mb-4 max-w-xl text-sm">
+      <main className="mx-auto w-full max-w-[1700px] flex-1 p-6 md:p-8">
+        {error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
-        )}
-
-        {names.length > 0 && (
-          <div className="w-full max-w-xl">
-            <h2 className="font-bold mb-2">Generated this session:</h2>
-            {names.map((n, i) => (
-              <div key={i} className="bg-gray-50 rounded p-3 mb-2">
-                {n}
-              </div>
-            ))}
+        ) : loading ? (
+          <div className="flex h-64 items-center justify-center text-gray-400">
+            <Loader2 size={20} className="animate-spin" />
           </div>
+        ) : totalAccessible === 0 ? (
+          <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
+            No clients are available for your account yet.
+          </div>
+        ) : forecastData.error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {forecastData.error}
+          </div>
+        ) : tab === "media" ? (
+          <MediaSpendTab data={forecastData} />
+        ) : tab === "revenue" ? (
+          <RevenueTab data={forecastData} />
+        ) : (
+          <LabsTab data={forecastData} />
         )}
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

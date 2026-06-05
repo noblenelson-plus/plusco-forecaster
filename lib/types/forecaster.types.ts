@@ -93,7 +93,10 @@ export function buildDataEntryId(
 
 export interface RowTypeOption {
   value: string;
+  /** Stored on the row when added (e.g. the partner name). */
   label: string;
+  /** Optional secondary text shown only in the add dropdown (e.g. media type). */
+  hint?: string;
 }
 
 /**
@@ -277,3 +280,37 @@ export const MEDIA_AXIS_CONFIG: AxisConfig = {
   // Media actuals come from MediaOcean. (Revenue's source will be "GAIA".)
   actualsLabel: "MediaOcean",
 };
+
+// ─── Labs axis config ────────────────────────────────────────────────────────
+
+import type { LabsPartner } from "./labs.types";
+
+/**
+ * Labs mirrors Media (multi-bucket projects, MediaOcean actuals), with one
+ * difference: its row types are not a static list but the lab partners
+ * configured for the selected year in admin/labs. Hence a factory rather than a
+ * constant — the page rebuilds it from the year's partners.
+ *
+ * `rowType` carries the partner id (stable across RFQ docs, so comparison still
+ * matches by bucket name + rowType); the label is the partner name, captured on
+ * the row at add-time, so a row keeps its name even if the partner is later
+ * removed from the year's config (it then shows as "not configured" in the grid).
+ */
+export function buildLabsAxisConfig(partners: LabsPartner[]): AxisConfig {
+  return {
+    axisId: "labs",
+    title: "Labs",
+    bucketLabel: "Project",
+    rowTypeLabel: "Partner",
+    rowTypeOptions: partners.map((p) => ({
+      value: p.partnerId,
+      label: p.name,
+      hint: MEDIA_TYPE_LABELS[p.mediaType],
+    })),
+    allowMultipleBuckets: true,
+    // The same partner twice in one project makes no sense — forbidden.
+    allowDuplicateRowTypes: false,
+    // Labs actuals come from MediaOcean, like Media.
+    actualsLabel: "MediaOcean",
+  };
+}
