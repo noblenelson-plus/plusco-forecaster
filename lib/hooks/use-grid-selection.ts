@@ -27,8 +27,12 @@ import { parseMoney } from "../format/money";
 export interface GridRowDescriptor {
   /** Stable key (the rowId) — used by the grid to focus the right cell. */
   key: string;
-  /** A read-only row still takes part in copy, but rejects paste/fill/edit. */
-  readOnly: boolean;
+  /**
+   * Is the cell at column `col` (0–11) read-only? Read-only cells still take
+   * part in copy, but reject paste/fill/edit. Per-cell (not per-row) so closed
+   * periods can lock individual month columns for Business Leads.
+   */
+  cellReadOnly: (col: number) => boolean;
   /** Builds the cell coordinate for a given month (1–12). */
   coordFor: (month: number) => CellCoord;
 }
@@ -155,7 +159,7 @@ export function useGridSelection({
 
   const beginEdit = useCallback(
     (r: number, c: number, seed?: string) => {
-      if (locked || rows[r]?.readOnly) return;
+      if (locked || rows[r]?.cellReadOnly(c)) return;
       setAnchor({ r, c });
       setFocus({ r, c });
       setEditSeed(seed ?? "");
@@ -184,7 +188,7 @@ export function useGridSelection({
   const commitEdit = useCallback(
     (value: number, mv: EditMove = "down") => {
       setEditing(false);
-      if (focus && !locked && !rows[focus.r]?.readOnly) {
+      if (focus && !locked && !rows[focus.r]?.cellReadOnly(focus.c)) {
         setCells([{ coord: rows[focus.r].coordFor(monthOf(focus.c)), value }]);
       }
       if (mv === "down") move(1, 0, false);
@@ -236,8 +240,8 @@ export function useGridSelection({
         // One source value → fill the whole current selection (Excel behaviour).
         const v = parseMoney(grid[0][0]);
         for (let r = rect.minR; r <= rect.maxR; r++) {
-          if (rows[r].readOnly) continue;
           for (let c = rect.minC; c <= rect.maxC; c++) {
+            if (rows[r].cellReadOnly(c)) continue;
             updates.push({ coord: rows[r].coordFor(monthOf(c)), value: v });
           }
         }
@@ -245,10 +249,10 @@ export function useGridSelection({
         // Place the block with its top-left at the selection's top-left.
         for (let i = 0; i < grid.length; i++) {
           const r = rect.minR + i;
-          if (r > maxR || rows[r].readOnly) continue;
+          if (r > maxR) continue;
           for (let j = 0; j < grid[i].length; j++) {
             const c = rect.minC + j;
-            if (c > COLS - 1) continue;
+            if (c > COLS - 1 || rows[r].cellReadOnly(c)) continue;
             updates.push({
               coord: rows[r].coordFor(monthOf(c)),
               value: parseMoney(grid[i][j]),
@@ -269,7 +273,7 @@ export function useGridSelection({
     for (let c = rect.minC; c <= rect.maxC; c++) {
       const src = getValue(rows[rect.minR].coordFor(monthOf(c)));
       for (let r = rect.minR + 1; r <= rect.maxR; r++) {
-        if (rows[r].readOnly) continue;
+        if (rows[r].cellReadOnly(c)) continue;
         updates.push({ coord: rows[r].coordFor(monthOf(c)), value: src });
       }
     }
@@ -280,9 +284,9 @@ export function useGridSelection({
     if (!rect || locked || rect.minC === rect.maxC) return;
     const updates: { coord: CellCoord; value: number }[] = [];
     for (let r = rect.minR; r <= rect.maxR; r++) {
-      if (rows[r].readOnly) continue;
       const src = getValue(rows[r].coordFor(monthOf(rect.minC)));
       for (let c = rect.minC + 1; c <= rect.maxC; c++) {
+        if (rows[r].cellReadOnly(c)) continue;
         updates.push({ coord: rows[r].coordFor(monthOf(c)), value: src });
       }
     }
@@ -293,8 +297,8 @@ export function useGridSelection({
     if (!rect || locked) return;
     const updates: { coord: CellCoord; value: number }[] = [];
     for (let r = rect.minR; r <= rect.maxR; r++) {
-      if (rows[r].readOnly) continue;
       for (let c = rect.minC; c <= rect.maxC; c++) {
+        if (rows[r].cellReadOnly(c)) continue;
         updates.push({ coord: rows[r].coordFor(monthOf(c)), value: 0 });
       }
     }

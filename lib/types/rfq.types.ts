@@ -65,3 +65,24 @@ export function sortRFQs(rfqs: RFQ[]): RFQ[] {
     return RFQ_TYPE_ORDER[a.type] - RFQ_TYPE_ORDER[b.type];
   });
 }
+
+// ─── Closed periods ─────────────────────────────────────────────────────────
+
+/**
+ * Months (1–12) that are "closed" for each RFQ type. A closed period is shown
+ * locked (greyed + padlock) and cannot be edited by Business Leads; admins are
+ * never restricted by it. RFQ0 has no closed months; each quarterly RFQ closes
+ * its own quarter; FINAL closes the whole year.
+ */
+export const RFQ_CLOSED_MONTHS: Record<RFQType, number[]> = {
+  RFQ0: [],
+  RFQ1: [1, 2, 3],
+  RFQ2: [4, 5, 6],
+  RFQ3: [7, 8, 9],
+  FINAL: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+};
+
+/** Is `month` (1–12) a closed period for the given RFQ type? */
+export function isMonthClosed(type: RFQType, month: number): boolean {
+  return RFQ_CLOSED_MONTHS[type].includes(month);
+}

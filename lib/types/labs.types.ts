@@ -4,13 +4,16 @@ import type { MediaType, MonthlyMap } from "./common.types";
 
 export type LabsInputMode = "PERCENTAGE" | "DIRECT";
 
-// Global LABS partner — created by Admins, shared across clients
+// Global LABS partner — created by Admins, shared across clients.
+// A partner carries its own characteristics: name, year, media type and
+// an optional description. Allocations reference the partner by id and
+// reuse its media type.
 export interface LabsPartner {
   partnerId: string;
   name: string;
   description?: string;
-  mediaType: MediaType;
   year: number;
+  mediaType: MediaType;
 }
 
 // A single LABS allocation row inside a client's DataEntry

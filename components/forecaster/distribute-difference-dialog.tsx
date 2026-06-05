@@ -21,7 +21,7 @@
 
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, SplitSquareHorizontal, Target } from "lucide-react";
+import { X, SplitSquareHorizontal, Target, Lock } from "lucide-react";
 import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import { parseMoney, formatMoney, formatSigned } from "../../lib/format/money";
 import { distribute } from "../../lib/format/distribute";
@@ -30,6 +30,9 @@ const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+// Stable empty set so the default prop value doesn't change identity each render.
+const EMPTY_LOCKED: Set<number> = new Set();
 
 type MonthMode = "equal" | "weighted";
 type AllocMode = "single" | "split";
@@ -56,6 +59,13 @@ interface DistributeDifferenceDialogProps {
   projects: ProjectTarget[];
   /** Aggregate month profile of this type (all projects) — for the month grid. */
   monthProfile: MonthlyMap;
+  /**
+   * When set (1–12), the dialog opens pre-targeted to that single month: only
+   * it is ticked by default, and `current`/`reference` are that month's values.
+   */
+  initialMonth?: number;
+  /** Months (1–12) closed for the current RFQ — greyed out and not selectable. */
+  lockedMonths?: Set<number>;
   /** Emits per-project, per-month deltas to add. rowType is added by the caller. */
   onApply: (updates: { bucketId: string; month: number; delta: number }[]) => void;
   onClose: () => void;
@@ -74,9 +84,13 @@ export default function DistributeDifferenceDialog({
   referenceLabel,
   projects,
   monthProfile,
+  initialMonth,
+  lockedMonths,
   onApply,
   onClose,
 }: DistributeDifferenceDialogProps) {
+  const locked = lockedMonths ?? EMPTY_LOCKED;
+
   // Default amount = the gap to close toward the reference.
   const gap = Math.round((reference - current) * 100) / 100;
   const [amount, setAmount] = useState(() => (gap !== 0 ? String(gap) : ""));
@@ -84,11 +98,16 @@ export default function DistributeDifferenceDialog({
   const [monthMode, setMonthMode] = useState<MonthMode>("equal");
   const [allocMode, setAllocMode] = useState<AllocMode>("single");
 
-  // Month selection — default to the months where this type already has volume,
-  // or all months when the type is empty so far.
+  // Month selection — when a single (non-locked) month is targeted, tick only
+  // it. Otherwise default to the months where this type already has volume, or
+  // all months when the type is empty so far. Locked months are never ticked.
   const [checked, setChecked] = useState<Set<number>>(() => {
-    const withVolume = MONTHS.filter((m) => (monthProfile[m] ?? 0) !== 0);
-    return new Set(withVolume.length ? withVolume : MONTHS);
+    if (initialMonth != null && !locked.has(initialMonth))
+      return new Set([initialMonth]);
+    const withVolume = MONTHS.filter(
+      (m) => (monthProfile[m] ?? 0) !== 0 && !locked.has(m)
+    );
+    return new Set(withVolume.length ? withVolume : MONTHS.filter((m) => !locked.has(m)));
   });
 
   // Single-project destination — default to the project holding the most of
@@ -136,6 +155,7 @@ export default function DistributeDifferenceDialog({
     (allocMode === "single" ? !!single : splitValid);
 
   function toggleMonth(m: number) {
+    if (locked.has(m)) return;
     setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(m)) next.delete(m);
@@ -145,7 +165,7 @@ export default function DistributeDifferenceDialog({
   }
 
   function setAllMonths(on: boolean) {
-    setChecked(on ? new Set(MONTHS) : new Set());
+    setChecked(on ? new Set(MONTHS.filter((m) => !locked.has(m))) : new Set());
   }
 
   function setPercent(bucketId: string, value: string) {
@@ -244,9 +264,9 @@ export default function DistributeDifferenceDialog({
                 <span className="text-gray-500">
                   {currentLabel}{" "}
                   <span className="font-semibold text-gray-900 tabular-nums">
-                    {formatMoney(current)}
+                    ({formatMoney(current)})
                   </span>{" "}
-                  · vs {referenceLabel}{" "}
+                    vs {referenceLabel}{" "}
                   <span className="font-medium text-gray-700 tabular-nums">
                     {formatMoney(reference)}
                   </span>
@@ -303,17 +323,23 @@ export default function DistributeDifferenceDialog({
                 </div>
                 <div className="grid grid-cols-6 gap-1.5">
                   {MONTHS.map((m, i) => {
+                    const isLocked = locked.has(m);
                     const on = checked.has(m);
                     return (
                       <button
                         key={m}
                         onClick={() => toggleMonth(m)}
-                        className={`py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                          on
+                        disabled={isLocked}
+                        title={isLocked ? "Closed period — locked" : undefined}
+                        className={`py-1.5 text-xs font-medium rounded-lg border transition-colors inline-flex items-center justify-center gap-1 ${
+                          isLocked
+                            ? "bg-gray-100/80 border-gray-200 text-gray-300 cursor-not-allowed"
+                            : on
                             ? "bg-yellow-400 border-yellow-400 text-gray-900"
                             : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
                         }`}
                       >
+                        {isLocked && <Lock size={9} />}
                         {MONTH_LABELS[i]}
                       </button>
                     );

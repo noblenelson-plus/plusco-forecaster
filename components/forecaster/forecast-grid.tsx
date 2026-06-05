@@ -34,6 +34,7 @@ import {
   RotateCcw,
   FolderPlus,
   SplitSquareHorizontal,
+  Download,
 } from "lucide-react";
 import type {
   AxisConfig,
@@ -54,6 +55,8 @@ import {
   type GridRowDescriptor,
 } from "../../lib/hooks/use-grid-selection";
 import { MONTHS } from "../../lib/types/common.types";
+import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
+import { downloadAxisCSV } from "../../lib/format/forecast-csv";
 import { SpreadsheetCell, TotalCell } from "./editable-cell";
 import SpreadDialog from "./spread-dialog";
 
@@ -61,6 +64,9 @@ const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+/** Shared empty set for rows with no closed months (avoids re-allocating). */
+const EMPTY_MONTHS: Set<number> = new Set();
 
 interface ForecastGridProps {
   config: AxisConfig;
@@ -72,7 +78,6 @@ interface OrderedRow {
   rowId: string;
   category: InputCategory;
   bucketId: string | null;
-  readOnly: boolean;
 }
 
 export default function ForecastGrid({ config, grid }: ForecastGridProps) {
@@ -101,7 +106,6 @@ export default function ForecastGrid({ config, grid }: ForecastGridProps) {
           rowId: row.rowId,
           category: "BL_INPUT",
           bucketId: bucket.bucketId,
-          readOnly: blReadOnly,
         });
       }
     }
@@ -110,11 +114,10 @@ export default function ForecastGrid({ config, grid }: ForecastGridProps) {
         rowId: row.rowId,
         category: "ADMIN_INPUT",
         bucketId: null,
-        readOnly: !grid.canEditActuals,
       });
     }
     return list;
-  }, [grid.data, blReadOnly, grid.canEditActuals, collapsed]);
+  }, [grid.data, collapsed]);
 
   const rowIndex = useMemo(
     () => new Map(orderedRows.map((r, i) => [r.rowId, i])),
@@ -125,7 +128,13 @@ export default function ForecastGrid({ config, grid }: ForecastGridProps) {
     () =>
       orderedRows.map((r) => ({
         key: r.rowId,
-        readOnly: r.readOnly,
+        // Per-cell: actuals follow the admin flag; BL rows are locked when the
+        // RFQ is locked or — for a BL — when the month is a closed period.
+        cellReadOnly: (col: number) => {
+          if (r.category === "ADMIN_INPUT") return !grid.canEditActuals;
+          if (blReadOnly) return true;
+          return !grid.canEditClosed && grid.closedMonths.has(MONTHS[col]);
+        },
         coordFor: (month: number) => ({
           category: r.category,
           bucketId: r.bucketId,
@@ -133,7 +142,7 @@ export default function ForecastGrid({ config, grid }: ForecastGridProps) {
           month,
         }),
       })),
-    [orderedRows]
+    [orderedRows, blReadOnly, grid.canEditActuals, grid.canEditClosed, grid.closedMonths]
   );
 
   const sel = useGridSelection({
@@ -181,14 +190,23 @@ export default function ForecastGrid({ config, grid }: ForecastGridProps) {
                 <th className="sticky left-0 z-10 bg-gray-50 text-left px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs w-52">
                   {config.bucketLabel} / {config.rowTypeLabel}
                 </th>
-                {MONTH_LABELS.map((m) => (
-                  <th
-                    key={m}
-                    className="px-1.5 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs text-right min-w-[72px]"
-                  >
-                    {m}
-                  </th>
-                ))}
+                {MONTH_LABELS.map((m, ci) => {
+                  const closed = grid.closedMonths.has(ci + 1);
+                  return (
+                    <th
+                      key={m}
+                      title={closed ? "Closed period" : undefined}
+                      className={`px-1.5 py-2.5 font-semibold uppercase tracking-wider text-xs text-right min-w-[72px] ${
+                        closed ? "text-gray-400 bg-gray-100/70" : "text-gray-500"
+                      }`}
+                    >
+                      <span className="inline-flex w-full items-center justify-end gap-1">
+                        {closed && <Lock size={10} className="text-gray-400" />}
+                        {m}
+                      </span>
+                    </th>
+                  );
+                })}
                 <th className="px-2.5 py-2.5 font-semibold text-gray-700 uppercase tracking-wider text-xs text-right min-w-[88px] bg-gray-100/60">
                   Total
                 </th>
@@ -274,14 +292,28 @@ function GridToolbar({
   config: AxisConfig;
   grid: UseForecasterGridResult;
 }) {
+  const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const [addingBucket, setAddingBucket] = useState(false);
   const [bucketName, setBucketName] = useState("");
+
+  // Something to export only if any BL row or actuals row holds a line.
+  const hasData =
+    grid.data.buckets.some((b) => b.rows.length > 0) ||
+    grid.data.actuals.length > 0;
 
   function submitBucket() {
     const name = bucketName.trim();
     if (name) grid.addBucket(name);
     setBucketName("");
     setAddingBucket(false);
+  }
+
+  function downloadCSV() {
+    downloadAxisCSV(grid.data, config, {
+      clientName: selectedClient?.CL_Name,
+      year: selectedYear,
+      rfqType: selectedRFQ?.type,
+    });
   }
 
   return (
@@ -330,6 +362,16 @@ function GridToolbar({
               Add {config.bucketLabel.toLowerCase()}
             </button>
           ))}
+
+        <button
+          onClick={downloadCSV}
+          disabled={!hasData}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50 transition-colors"
+          title="Download this axis as a CSV file"
+        >
+          <Download size={14} />
+          CSV
+        </button>
 
         {grid.hasChanges && (
           <button
@@ -455,6 +497,12 @@ function DataRow({
   onSpread: () => void;
 }) {
   const r = rowIndex.get(row.rowId)!;
+  // Closed periods only lock BL_INPUT cells, and only for users who can't edit
+  // them (BLs). Actuals are admin-only already, so they are never "closed".
+  const closedHere =
+    category === "BL_INPUT" && !grid.canEditClosed
+      ? grid.closedMonths
+      : EMPTY_MONTHS;
 
   return (
     <tr className="group">
@@ -487,13 +535,15 @@ function DataRow({
       </td>
       {MONTHS.map((m, ci) => {
         const coord = { category, bucketId, rowId: row.rowId, month: m };
+        const closed = closedHere.has(m);
         return (
           <SpreadsheetCell
             key={m}
             r={r}
             c={ci}
             value={row.months[m] ?? 0}
-            readOnly={readOnly}
+            readOnly={readOnly || closed}
+            closed={closed}
             dirty={grid.dirtyMap.has(buildCellKey(coord))}
             sel={sel}
             draggingRef={draggingRef}
@@ -610,6 +660,7 @@ function BucketSection({
         <SpreadDialog
           rowLabel={`${bucket.name} · ${spreadRow.label}`}
           months={spreadRow.months}
+          lockedMonths={grid.canEditClosed ? undefined : grid.closedMonths}
           onClose={() => setSpreadRow(null)}
           onApply={(updates) =>
             grid.setCells(

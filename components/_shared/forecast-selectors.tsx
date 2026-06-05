@@ -42,6 +42,17 @@ import {
 import type { RFQ } from "../../lib/types/rfq.types";
 import type { ClientSummary } from "../../lib/types/client.types";
 
+// Firestore limits "in" queries to 30 values — split into batches.
+const IN_QUERY_LIMIT = 30;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 type Theme = "dark" | "light";
 type Orientation = "vertical" | "horizontal";
 
@@ -77,20 +88,26 @@ export default function ForecastSelectors({
 
     async function fetchClients() {
       try {
-        let snapshot;
+        let docs;
         if (isAdmin) {
-          snapshot = await getDocs(collection(db, "clients"));
+          docs = (await getDocs(collection(db, "clients"))).docs;
         } else {
           const assigned = profile?.assignedClients ?? [];
           if (assigned.length === 0) {
             setClients([]);
             return;
           }
-          snapshot = await getDocs(
-            query(collection(db, "clients"), where("__name__", "in", assigned))
+          // Firestore caps "in" queries at 30 values; batch when a BL has more.
+          const snapshots = await Promise.all(
+            chunk(assigned, IN_QUERY_LIMIT).map((ids) =>
+              getDocs(
+                query(collection(db, "clients"), where("__name__", "in", ids))
+              )
+            )
           );
+          docs = snapshots.flatMap((s) => s.docs);
         }
-        const data: ClientSummary[] = snapshot.docs
+        const data: ClientSummary[] = docs
           .map((d) => {
             const c = d.data();
             return {

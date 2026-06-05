@@ -10,6 +10,7 @@ import {
   Briefcase,
   Users,
   CalendarRange,
+  Sparkles,
   LogOut,
   X,
 } from "lucide-react";
@@ -31,6 +32,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Clients",      href: "/clients",     icon: <Briefcase size={18} />,       section: "main" },
   { label: "Users",        href: "/admin/users", icon: <Users size={18} />,           section: "admin", adminOnly: true },
   { label: "RFQs",         href: "/admin/rfqs",  icon: <CalendarRange size={18} />,   section: "admin", adminOnly: true },
+    { label: "LABS",         href: "/admin/labs",  icon: <Sparkles size={18} />,   section: "admin", adminOnly: true },
+
 ];
 
 interface SidebarProps {

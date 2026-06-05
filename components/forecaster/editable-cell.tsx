@@ -92,6 +92,8 @@ interface SpreadsheetCellProps {
   c: number;
   value: number;
   readOnly: boolean;
+  /** Closed period (locked month for this user) — greyed, not editable. */
+  closed?: boolean;
   dirty: boolean;
   sel: GridSelection;
   /** Shared drag flag owned by the grid (true while a select-drag is active). */
@@ -103,6 +105,7 @@ export function SpreadsheetCell({
   c,
   value,
   readOnly,
+  closed = false,
   dirty,
   sel,
   draggingRef,
@@ -152,11 +155,12 @@ export function SpreadsheetCell({
             onDoubleClick={() => {
               if (!readOnly) sel.beginEdit(r, c);
             }}
-            className={`w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md cursor-cell
+            className={`w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md
               outline-none select-none transition-colors
-              ${selected ? "bg-yellow-200/70" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
+              ${closed ? "cursor-not-allowed" : "cursor-cell"}
+              ${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
               ${active ? "ring-2 ring-inset ring-yellow-400" : ""}
-              ${dirty ? "text-gray-900 font-medium" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}
+              ${closed ? "text-gray-300" : dirty ? "text-gray-900 font-medium" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}
             `}
           >
             {display || "—"}

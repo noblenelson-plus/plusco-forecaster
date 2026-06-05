@@ -32,6 +32,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   SplitSquareHorizontal,
+  ChevronRight,
 } from "lucide-react";
 import type {
   AxisConfig,
@@ -42,6 +43,7 @@ import {
   computeVariance,
   emptyMonthly,
 } from "../../lib/types/forecaster.types";
+import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import type { UseForecasterGridResult } from "../../lib/hooks/use-forecaster-grid";
 import { sumMonths } from "../../lib/hooks/use-forecaster-grid";
 import type { RFQType } from "../../lib/types/rfq.types";
@@ -66,8 +68,17 @@ interface PanelRowData {
   label: string;
   current: number;
   reference: number;
+  /** Per-month profile of the base (BL Input) — drives the expandable detail. */
+  currentMonths: MonthlyMap;
+  /** Per-month profile of the reference side. */
+  referenceMonths: MonthlyMap;
   color: string;
 }
+
+const MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
 /** Stable color palette assigned by row order so list/bars/donut agree. */
 const PALETTE = [
@@ -99,8 +110,13 @@ export default function ComparisonPanel({
 }: ComparisonPanelProps) {
   const ref = grid.compareRef;
   const [view, setView] = useState<ViewMode>("list");
-  // Media type whose difference is being distributed (null = dialog closed).
-  const [distributeType, setDistributeType] = useState<string | null>(null);
+  // Difference currently being distributed (null = dialog closed). `month` is the
+  // targeted month (1–12) when distributing a single month, or null for the
+  // whole-year gap.
+  const [target, setTarget] = useState<{
+    type: string;
+    month: number | null;
+  } | null>(null);
 
   const baseAgg = useMemo(
     () => aggregateByType(grid.data, "BL_INPUT"),
@@ -122,13 +138,19 @@ export default function ComparisonPanel({
     const extras = [...present]
       .filter((t) => !config.rowTypeOptions.some((o) => o.value === t))
       .map((t) => ({ type: t, label: t }));
-    return [...ordered, ...extras].map(({ type, label }, i) => ({
-      type,
-      label,
-      current: sumMonths(baseAgg[type] ?? {}),
-      reference: sumMonths(refAgg[type] ?? {}),
-      color: PALETTE[i % PALETTE.length],
-    }));
+    return [...ordered, ...extras].map(({ type, label }, i) => {
+      const currentMonths = baseAgg[type] ?? emptyMonthly();
+      const referenceMonths = refAgg[type] ?? emptyMonthly();
+      return {
+        type,
+        label,
+        current: sumMonths(currentMonths),
+        reference: sumMonths(referenceMonths),
+        currentMonths,
+        referenceMonths,
+        color: PALETTE[i % PALETTE.length],
+      };
+    });
   }, [baseAgg, refAgg, config.rowTypeOptions]);
 
   const grand = useMemo(
@@ -147,9 +169,19 @@ export default function ComparisonPanel({
   // there is at least one project (bucket) to receive it.
   const canDistribute = !grid.locked && grid.data.buckets.length > 0;
 
-  const distributeRow = distributeType
-    ? rows.find((r) => r.type === distributeType)
+  const distributeRow = target
+    ? rows.find((r) => r.type === target.type)
     : null;
+  // Month-scoped operands when a single month is targeted, else the annual totals.
+  const targetMonth = target?.month ?? null;
+  const distCurrent =
+    distributeRow && targetMonth != null
+      ? distributeRow.currentMonths[targetMonth] ?? 0
+      : distributeRow?.current ?? 0;
+  const distReference =
+    distributeRow && targetMonth != null
+      ? distributeRow.referenceMonths[targetMonth] ?? 0
+      : distributeRow?.reference ?? 0;
 
   return (
     <>
@@ -188,7 +220,11 @@ export default function ComparisonPanel({
         <ListView
           rows={rows}
           grand={grand}
-          onDistribute={canDistribute ? setDistributeType : undefined}
+          onDistribute={
+            canDistribute
+              ? (type, month) => setTarget({ type, month })
+              : undefined
+          }
         />
       ) : view === "bars" ? (
         <BarsView
@@ -209,10 +245,16 @@ export default function ComparisonPanel({
 
     {distributeRow && (
       <DistributeDifferenceDialog
-        typeLabel={distributeRow.label}
+        typeLabel={
+          targetMonth != null
+            ? `${distributeRow.label} · ${MONTH_LABELS[targetMonth - 1]}`
+            : distributeRow.label
+        }
         bucketLabel={config.bucketLabel}
-        current={distributeRow.current}
-        reference={distributeRow.reference}
+        current={distCurrent}
+        reference={distReference}
+        initialMonth={targetMonth ?? undefined}
+        lockedMonths={grid.canEditClosed ? undefined : grid.closedMonths}
         currentLabel={`${currentRfq} — BL Input`}
         referenceLabel={`${ref.rfq} — ${sideLabel(ref.side, config)}`}
         monthProfile={baseAgg[distributeRow.type] ?? emptyMonthly()}
@@ -235,7 +277,7 @@ export default function ComparisonPanel({
             }))
           )
         }
-        onClose={() => setDistributeType(null)}
+        onClose={() => setTarget(null)}
       />
     )}
     </>
@@ -288,9 +330,24 @@ function ListView({
 }: {
   rows: PanelRowData[];
   grand: { current: number; reference: number };
-  /** When set, each type row is clickable to distribute its difference. */
-  onDistribute?: (type: string) => void;
+  /**
+   * When set, a type row (month = null) or a single month (month = 1–12) is
+   * clickable to distribute its difference.
+   */
+  onDistribute?: (type: string, month: number | null) => void;
 }) {
+  // Set of type rows whose monthly detail is expanded.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+
+  function toggle(type: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }
+
   return (
     <>
       {/* Column hint — what the two numbers on the right mean. */}
@@ -301,16 +358,181 @@ function ListView({
 
       <div className="px-4">
         {rows.map((r) => (
-          <PanelRow
+          <ListTypeRow
             key={r.type}
-            {...r}
-            onClick={onDistribute ? () => onDistribute(r.type) : undefined}
+            row={r}
+            expanded={expanded.has(r.type)}
+            onToggle={() => toggle(r.type)}
+            onDistribute={
+              onDistribute ? (month) => onDistribute(r.type, month) : undefined
+            }
           />
         ))}
       </div>
 
       <GrandTotalBar grand={grand} />
     </>
+  );
+}
+
+/**
+ * A type row in the list view: a chevron toggles the 12-month detail, and the
+ * rest of the row stays the annual "distribute the gap" target. Each expanded
+ * month is itself a distribute target scoped to that month.
+ */
+function ListTypeRow({
+  row,
+  expanded,
+  onToggle,
+  onDistribute,
+}: {
+  row: PanelRowData;
+  expanded: boolean;
+  onToggle: () => void;
+  /** month = null distributes the annual gap; 1–12 targets that month. */
+  onDistribute?: (month: number | null) => void;
+}) {
+  const clickable = !!onDistribute;
+  return (
+    <div className="border-b border-gray-100 last:border-b-0">
+      <div className="group flex items-center gap-1.5 py-2.5">
+        {/* Chevron — expand/collapse only, never distributes. */}
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse months" : "Expand months"}
+          className="-ml-1 shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+        >
+          <ChevronRight
+            size={14}
+            className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
+        </button>
+
+        {/* Row body — clickable to distribute the annual difference. */}
+        <div
+          role={clickable ? "button" : undefined}
+          tabIndex={clickable ? 0 : undefined}
+          onClick={clickable ? () => onDistribute!(null) : undefined}
+          onKeyDown={
+            clickable
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onDistribute!(null);
+                  }
+                }
+              : undefined
+          }
+          title={
+            clickable
+              ? `Distribute ${row.label} difference into projects`
+              : undefined
+          }
+          className={`flex min-w-0 flex-1 items-center justify-between gap-3 ${
+            clickable
+              ? "-mx-1 cursor-pointer rounded-lg px-1 transition-colors hover:bg-gray-50"
+              : ""
+          }`}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: row.color }}
+            />
+            <span className="truncate text-sm text-gray-700">{row.label}</span>
+            {clickable && (
+              <SplitSquareHorizontal
+                size={12}
+                className="shrink-0 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100"
+              />
+            )}
+          </span>
+
+          <div className="flex shrink-0 items-center gap-2.5">
+            <span className="text-sm font-semibold tabular-nums text-gray-900">
+              {formatMoney(row.current)}
+            </span>
+            <VariancePill current={row.current} reference={row.reference} />
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded monthly detail — all 12 months. */}
+      {expanded && (
+        <div className="pb-2 pl-6">
+          {MONTHS.map((m) => (
+            <MonthRow
+              key={m}
+              label={MONTH_LABELS[m - 1]}
+              current={row.currentMonths[m] ?? 0}
+              reference={row.referenceMonths[m] ?? 0}
+              onClick={onDistribute ? () => onDistribute(m) : undefined}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One month inside an expanded type row — a month-scoped distribute target. */
+function MonthRow({
+  label,
+  current,
+  reference,
+  onClick,
+}: {
+  label: string;
+  current: number;
+  reference: number;
+  onClick?: () => void;
+}) {
+  const clickable = !!onClick;
+  return (
+    <div
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick!();
+              }
+            }
+          : undefined
+      }
+      title={
+        clickable ? `Distribute ${label} difference into projects` : undefined
+      }
+      className={`group/m flex items-center justify-between gap-3 py-1.5 ${
+        clickable
+          ? "-mx-1 cursor-pointer rounded-md px-1 transition-colors hover:bg-gray-50"
+          : ""
+      }`}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="w-8 shrink-0 text-xs tabular-nums text-gray-500">
+          {label}
+        </span>
+        {clickable && (
+          <SplitSquareHorizontal
+            size={11}
+            className="shrink-0 text-gray-300 opacity-0 transition-opacity group-hover/m:opacity-100"
+          />
+        )}
+      </span>
+
+      <div className="flex shrink-0 items-center gap-2.5">
+        <span className="text-xs font-medium tabular-nums text-gray-700">
+          {formatMoney(current)}
+        </span>
+        <VariancePill current={current} reference={reference} />
+      </div>
+    </div>
   );
 }
 

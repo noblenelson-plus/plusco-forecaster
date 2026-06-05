@@ -17,7 +17,7 @@
  */
 
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Lock } from "lucide-react";
 import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import { parseMoney } from "../../lib/format/money";
 import { distribute } from "../../lib/format/distribute";
@@ -27,12 +27,17 @@ const MONTH_LABELS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
+// Stable empty set so the default prop value doesn't change identity each render.
+const EMPTY_LOCKED: Set<number> = new Set();
+
 type Mode = "equal" | "weighted";
 type Behavior = "lineTotal" | "replace" | "add";
 
 interface SpreadDialogProps {
   rowLabel: string;
   months: MonthlyMap;
+  /** Months (1–12) closed for the current RFQ — greyed out and not selectable. */
+  lockedMonths?: Set<number>;
   onApply: (updates: { month: number; value: number }[]) => void;
   onClose: () => void;
 }
@@ -40,16 +45,18 @@ interface SpreadDialogProps {
 export default function SpreadDialog({
   rowLabel,
   months,
+  lockedMonths,
   onApply,
   onClose,
 }: SpreadDialogProps) {
+  const locked = lockedMonths ?? EMPTY_LOCKED;
   const hasExisting = MONTHS.some((m) => (months[m] ?? 0) !== 0);
 
   const [amount, setAmount] = useState("");
   const [mode, setMode] = useState<Mode>("equal");
   const [behavior, setBehavior] = useState<Behavior>("lineTotal");
   const [checked, setChecked] = useState<Set<number>>(
-    () => new Set(MONTHS.filter((m) => (months[m] ?? 0) !== 0))
+    () => new Set(MONTHS.filter((m) => (months[m] ?? 0) !== 0 && !locked.has(m)))
   );
 
   const checkedArr = MONTHS.filter((m) => checked.has(m));
@@ -59,6 +66,7 @@ export default function SpreadDialog({
   const canApply = checkedArr.length > 0;
 
   function toggle(m: number) {
+    if (locked.has(m)) return;
     setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(m)) next.delete(m);
@@ -68,7 +76,7 @@ export default function SpreadDialog({
   }
 
   function setAll(on: boolean) {
-    setChecked(on ? new Set(MONTHS) : new Set());
+    setChecked(on ? new Set(MONTHS.filter((m) => !locked.has(m))) : new Set());
   }
 
   function apply() {
@@ -86,6 +94,9 @@ export default function SpreadDialog({
     const updates: { month: number; value: number }[] = [];
     if (effectiveBehavior === "lineTotal") {
       for (const m of MONTHS) {
+        // Never touch a locked month — leave its existing value untouched
+        // rather than resetting it to 0.
+        if (locked.has(m)) continue;
         updates.push({ month: m, value: shareOf.get(m) ?? 0 });
       }
     } else if (effectiveBehavior === "replace") {
@@ -168,17 +179,23 @@ export default function SpreadDialog({
             </div>
             <div className="grid grid-cols-6 gap-1.5">
               {MONTHS.map((m, i) => {
+                const isLocked = locked.has(m);
                 const on = checked.has(m);
                 return (
                   <button
                     key={m}
                     onClick={() => toggle(m)}
-                    className={`py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                      on
+                    disabled={isLocked}
+                    title={isLocked ? "Closed period — locked" : undefined}
+                    className={`py-1.5 text-xs font-medium rounded-lg border transition-colors inline-flex items-center justify-center gap-1 ${
+                      isLocked
+                        ? "bg-gray-100/80 border-gray-200 text-gray-300 cursor-not-allowed"
+                        : on
                         ? "bg-yellow-400 border-yellow-400 text-gray-900"
                         : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
                     }`}
                   >
+                    {isLocked && <Lock size={9} />}
                     {MONTH_LABELS[i]}
                   </button>
                 );

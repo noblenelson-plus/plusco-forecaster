@@ -27,6 +27,7 @@ import { useUserProfile } from "./use-user-profile";
 import { useForecastSelection } from "../stores/forecast-selection.store";
 import { fetchAxisData, saveAxisData } from "../services/data-entry-service";
 import { MONTHS, type MonthlyMap } from "../types/common.types";
+import { RFQ_CLOSED_MONTHS } from "../types/rfq.types";
 import {
   type AxisConfig,
   type AxisData,
@@ -94,6 +95,10 @@ export interface UseForecasterGridResult {
   locked: boolean;
   /** L'utilisateur peut-il éditer les actuals (ADMIN_INPUT) ? */
   canEditActuals: boolean;
+  /** Mois (1–12) en période fermée pour le RFQ sélectionné — verrou visuel. */
+  closedMonths: Set<number>;
+  /** L'utilisateur peut-il éditer les cellules en période fermée ? (admins oui) */
+  canEditClosed: boolean;
 
   /** Copie de travail courante. */
   data: AxisData;
@@ -153,6 +158,14 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
 
   const selectionReady = !!selectedClient && !!selectedYear && !!selectedRFQ;
   const locked = selectedRFQ?.status === "LOCKED";
+
+  // Périodes fermées du RFQ courant : verrou par mois pour les BL (les admins
+  // ne sont jamais restreints). Indépendant du lock global du RFQ.
+  const closedMonths = useMemo(
+    () => new Set(selectedRFQ ? RFQ_CLOSED_MONTHS[selectedRFQ.type] : []),
+    [selectedRFQ?.type]
+  );
+  const canEditClosed = isAdmin;
 
   // Snapshot Firestore (état "propre") + copie de travail
   const [original, setOriginal] = useState<AxisData>(emptyAxisData());
@@ -287,8 +300,22 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     [data]
   );
 
+  // Une cellule est-elle modifiable par l'utilisateur courant ? Garde unique
+  // appliquée à tous les chemins d'écriture (saisie, coller, remplir, spread,
+  // distribution) — empêche les BL d'écrire dans une période fermée.
+  const isCoordEditable = useCallback(
+    (coord: CellCoord) => {
+      if (locked) return false;
+      if (coord.category === "ADMIN_INPUT") return isAdmin;
+      if (!canEditClosed && closedMonths.has(coord.month)) return false;
+      return true;
+    },
+    [locked, isAdmin, canEditClosed, closedMonths]
+  );
+
   const setCellValue = useCallback(
     (coord: CellCoord, value: number) => {
+      if (!isCoordEditable(coord)) return;
       setData((prev) => {
         const next = clone(prev);
         if (coord.category === "ADMIN_INPUT") {
@@ -313,14 +340,16 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
         return next;
       });
     },
-    [original]
+    [original, isCoordEditable]
   );
 
   // Batch write — applies many cell updates in a single state + dirty-map pass.
   // Used by paste, fill (Ctrl+D / Ctrl+R) and the spread tool, which would
-  // otherwise clone the whole AxisData once per cell.
+  // otherwise clone the whole AxisData once per cell. Updates targeting a cell
+  // the user can't edit (closed period for a BL) are dropped up front.
   const setCells = useCallback(
-    (updates: { coord: CellCoord; value: number }[]) => {
+    (rawUpdates: { coord: CellCoord; value: number }[]) => {
+      const updates = rawUpdates.filter((u) => isCoordEditable(u.coord));
       if (updates.length === 0) return;
       setData((prev) => {
         const next = clone(prev);
@@ -349,7 +378,7 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
         return next;
       });
     },
-    [original]
+    [original, isCoordEditable]
   );
 
   // Add deltas onto BL_INPUT cells, targeting a row by (bucket, rowType) rather
@@ -360,13 +389,22 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
   // once, then accumulated.
   const addToCells = useCallback(
     (
-      updates: {
+      rawUpdates: {
         bucketId: string;
         rowType: string;
         month: number;
         delta: number;
       }[]
     ) => {
+      // Drop deltas aimed at a closed period the user can't edit (BL).
+      const updates = rawUpdates.filter((u) =>
+        isCoordEditable({
+          category: "BL_INPUT",
+          bucketId: u.bucketId,
+          rowId: null,
+          month: u.month,
+        })
+      );
       if (updates.length === 0) return;
 
       const next = clone(data);
@@ -409,7 +447,7 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
       });
       if (createdAny) setStructureDirty(true);
     },
-    [data, original, config]
+    [data, original, config, isCoordEditable]
   );
 
   // ─── Structure (buckets / rows) ─────────────────────────────────────────
@@ -572,6 +610,8 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     error,
     locked,
     canEditActuals: isAdmin && !locked,
+    closedMonths,
+    canEditClosed,
     data,
     dirtyMap,
     dirtyCount: dirtyMap.size,
