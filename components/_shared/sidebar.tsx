@@ -59,7 +59,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
       {/* Logo + close button (mobile) */}
       <div className="px-5 py-5 border-b border-gray-800 flex items-center justify-between">
         <span className="text-white font-bold text-lg tracking-tight">
-          Plusco <span className="text-yellow-400">Forecaster</span>
+          PlusCo <span className="text-yellow-400">Forecaster</span>
         </span>
         {onClose && (
           <button

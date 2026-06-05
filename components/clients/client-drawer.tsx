@@ -2,8 +2,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { collection, getDocs } from "firebase/firestore";
 import { X, Loader2, Trash2, ChevronDown, ImagePlus, Percent } from "lucide-react";
-import { Client, ClientFormData, Currency, FeeStructure, ClientStatus, ClientTier, CommissionsConfig } from "../../lib/types/client.types";
+import { db } from "../../lib/firebase";
+import {
+  Client,
+  ClientFormData,
+  Currency,
+  FeeStructure,
+  ClientStatus,
+  ClientTier,
+  CommissionsConfig,
+} from "../../lib/types/client.types";
 import {
   CLIENT_STATUSES,
   CLIENT_TIERS,
@@ -27,23 +37,36 @@ interface ClientDrawerProps {
   onDeleted: (cl_id: string) => void;
 }
 
+// Empty form: all dropdowns start blank except Status (defaults to ACTIVE).
+// The "" values on strict-typed fields are validated away before saveClient.
 const EMPTY_FORM: ClientFormData = {
   CL_Name: "",
   CL_Logo: "",
-  CL_Agency: "Mekanism",
-  CL_Business_Unit_Region: "QC/East",
-  CL_Office: "Montreal",
+  CL_Agency: "",
+  CL_Business_Unit_Region: "",
+  CL_Office: "",
   CL_Business_Lead: "",
   CL_Digital_Lead: "",
-  Client_Fee_Structure: "RETAINER",
-  GM_Pod: "Brooke Leland",
-  CL_Currency: "CAD",
+  Client_Fee_Structure: "" as FeeStructure,
+  GM_Pod: "",
+  CL_Currency: "" as Currency,
   CL_GAIA_Number: [],
-  CL_Tier: "FULL",
+  CL_Tier: "" as ClientTier,
   Client_Status_2026: "ACTIVE",
   Client_Notes: "",
   commissionsConfig: {},
 };
+
+// Required dropdowns checked before save (Status excluded, always defaulted).
+const REQUIRED_FIELDS: Array<[keyof ClientFormData, string]> = [
+  ["CL_Agency", "Agency"],
+  ["CL_Business_Unit_Region", "Region"],
+  ["CL_Office", "Office"],
+  ["Client_Fee_Structure", "Fee structure"],
+  ["GM_Pod", "GM Pod"],
+  ["CL_Currency", "Currency"],
+  ["CL_Tier", "Tier"],
+];
 
 export default function ClientDrawer({
   open,
@@ -64,7 +87,7 @@ export default function ClientDrawer({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Drawer commissions (empilé par-dessus celui-ci)
+  // Commissions drawer (stacked above this one)
   const [commissionsOpen, setCommissionsOpen] = useState(false);
 
   // Populate form when editing
@@ -118,10 +141,30 @@ export default function ClientDrawer({
     }
   }
 
+  // Case-insensitive duplicate check by CL_Name across the whole collection.
+  async function checkDuplicateName(name: string): Promise<boolean> {
+    const target = name.trim().toLowerCase();
+    if (!target) return false;
+    const snapshot = await getDocs(collection(db, "clients"));
+    return snapshot.docs.some((d) => {
+      const data = d.data() as { CL_Name?: string };
+      return (data.CL_Name ?? "").trim().toLowerCase() === target;
+    });
+  }
+
   async function handleSave() {
+    // Name required
     if (!form.CL_Name.trim()) {
       setError("Client name is required.");
       return;
+    }
+
+    // Required dropdowns
+    for (const [key, label] of REQUIRED_FIELDS) {
+      if (!form[key] || form[key] === "") {
+        setError(`Please select a ${label}.`);
+        return;
+      }
     }
 
     const gaiaNumbers = gaiaInput
@@ -131,7 +174,18 @@ export default function ClientDrawer({
 
     setSaving(true);
     setError("");
+
     try {
+      // Duplicate name check (only on Create)
+      if (!isEditing) {
+        const exists = await checkDuplicateName(form.CL_Name);
+        if (exists) {
+          setError("Client already exists.");
+          setSaving(false);
+          return;
+        }
+      }
+
       const saved = await saveClient(
         { ...form, CL_GAIA_Number: gaiaNumbers },
         client?.cl_id ?? null
@@ -157,15 +211,15 @@ export default function ClientDrawer({
     }
   }
 
-  // Les taux sont déjà persistés par le CommissionsDrawer —
-  // on synchronise seulement le state local du formulaire pour que
-  // le compteur reste à jour et qu'un Save ultérieur n'écrase rien.
+  // Commissions are persisted by the CommissionsDrawer itself. We just sync
+  // local form state so the counter stays current and a later Save doesn't
+  // overwrite anything.
   function handleCommissionsSaved(_clId: string, config: CommissionsConfig) {
     set("commissionsConfig", config);
     setCommissionsOpen(false);
   }
 
-  // Compteur de types configurés pour l'année courante (résumé Finance)
+  // Configured types count for the current year (Finance summary)
   const currentYear = new Date().getFullYear();
   const configuredCount = Object.keys(
     form.commissionsConfig?.[currentYear] ?? {}
@@ -219,7 +273,6 @@ export default function ClientDrawer({
             {/* Logo */}
             <Field label="Logo">
               <div className="flex items-center gap-3">
-                {/* Preview */}
                 <div className="w-12 h-12 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
                   {form.CL_Logo ? (
                     <img
@@ -232,7 +285,6 @@ export default function ClientDrawer({
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  {/* URL input */}
                   <input
                     type="text"
                     value={form.CL_Logo ?? ""}
@@ -240,7 +292,6 @@ export default function ClientDrawer({
                     placeholder="Paste image URL..."
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent mb-1.5"
                   />
-                  {/* Upload button */}
                   <button
                     type="button"
                     onClick={() => logoInputRef.current?.click()}
@@ -272,18 +323,20 @@ export default function ClientDrawer({
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Agency">
+              <Field label="Agency *">
                 <Select
                   value={form.CL_Agency}
                   onChange={(v) => set("CL_Agency", v)}
                   options={CLIENT_AGENCIES}
+                  placeholder="Select agency"
                 />
               </Field>
-              <Field label="Fee structure">
+              <Field label="Fee structure *">
                 <Select
                   value={form.Client_Fee_Structure}
                   onChange={(v) => set("Client_Fee_Structure", v as FeeStructure)}
                   options={CLIENT_FEE_STRUCTURES}
+                  placeholder="Select fee structure"
                 />
               </Field>
             </div>
@@ -292,18 +345,20 @@ export default function ClientDrawer({
           {/* Section: Location */}
           <Section label="Location">
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Region">
+              <Field label="Region *">
                 <Select
                   value={form.CL_Business_Unit_Region}
                   onChange={(v) => set("CL_Business_Unit_Region", v)}
                   options={CLIENT_REGIONS}
+                  placeholder="Select region"
                 />
               </Field>
-              <Field label="Office">
+              <Field label="Office *">
                 <Select
                   value={form.CL_Office}
                   onChange={(v) => set("CL_Office", v)}
                   options={CLIENT_OFFICES}
+                  placeholder="Select office"
                 />
               </Field>
             </div>
@@ -311,30 +366,31 @@ export default function ClientDrawer({
 
           {/* Section: Team */}
           <Section label="Team">
-            <Field label="GM Pod">
+            <Field label="GM Pod *">
               <Select
                 value={form.GM_Pod}
                 onChange={(v) => set("GM_Pod", v)}
                 options={CLIENT_GM_PODS}
+                placeholder="Select GM Pod"
               />
             </Field>
-            <Field label="Business Lead (UID)">
+            <Field label="Business Lead (email)">
               <Input
                 value={form.CL_Business_Lead}
                 onChange={(v) => set("CL_Business_Lead", v)}
-                placeholder="Firebase UID"
+                placeholder="e.g. lead@cossettemedia.com"
               />
             </Field>
-            <Field label="Digital Lead (UID)">
+            <Field label="Digital Lead (email)">
               <Input
                 value={form.CL_Digital_Lead ?? ""}
                 onChange={(v) => set("CL_Digital_Lead", v)}
-                placeholder="Firebase UID (optional)"
+                placeholder="e.g. digital@cossettemedia.com (optional)"
               />
             </Field>
           </Section>
 
-          {/* Section: Access — qui peut voir ce client (édition seulement) */}
+          {/* Section: Access (edit only) */}
           {isEditing && client && (
             <ClientAccessSection clId={client.cl_id} isAdmin={isAdmin} />
           )}
@@ -342,11 +398,12 @@ export default function ClientDrawer({
           {/* Section: Classification */}
           <Section label="Classification">
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Tier">
+              <Field label="Tier *">
                 <Select
                   value={form.CL_Tier}
                   onChange={(v) => set("CL_Tier", v as ClientTier)}
                   options={CLIENT_TIERS}
+                  placeholder="Select tier"
                 />
               </Field>
               <Field label="Status">
@@ -356,11 +413,12 @@ export default function ClientDrawer({
                   options={CLIENT_STATUSES}
                 />
               </Field>
-              <Field label="Currency">
+              <Field label="Currency *">
                 <Select
                   value={form.CL_Currency}
                   onChange={(v) => set("CL_Currency", v as Currency)}
                   options={CLIENT_CURRENCIES}
+                  placeholder="Select currency"
                 />
               </Field>
             </div>
@@ -379,7 +437,6 @@ export default function ClientDrawer({
               </p>
             </Field>
 
-            {/* Commissions — édition seulement (le client doit exister) */}
             {isEditing && (
               <Field label="Commissions">
                 <button
@@ -472,7 +529,7 @@ export default function ClientDrawer({
         </div>
       </div>
 
-      {/* Drawer commissions — empilé au-dessus (z-50 partagé, monté après) */}
+      {/* Stacked commissions drawer */}
       <CommissionsDrawer
         open={commissionsOpen}
         client={
@@ -533,20 +590,30 @@ function Select({
   value,
   onChange,
   options,
+  placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: readonly { value: string; label: string }[];
+  placeholder?: string;
 }) {
+  const isEmpty = value === "";
   return (
     <div className="relative">
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none px-3 py-2 pr-8 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent cursor-pointer"
+        className={`w-full appearance-none px-3 py-2 pr-8 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent cursor-pointer ${
+          isEmpty && placeholder ? "text-gray-400" : "text-gray-900"
+        }`}
       >
+        {placeholder && (
+          <option value="" disabled>
+            {placeholder}
+          </option>
+        )}
         {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
+          <option key={opt.value} value={opt.value} className="text-gray-900">
             {opt.label}
           </option>
         ))}

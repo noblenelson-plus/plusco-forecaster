@@ -19,7 +19,7 @@ return (
     {/* Logo */}
     <div className="text-center mb-10">
       <span className="text-2xl font-bold text-white tracking-tight">
-        Plusco <span className="text-yellow-400">Forecaster</span>
+        PlusCo <span className="text-yellow-400">Forecaster</span>
       </span>
     </div>
 
@@ -135,7 +135,7 @@ return (
         <Menu size={20} />
       </button>
       <span className="font-bold text-gray-900 tracking-tight">
-        Plusco <span className="text-yellow-400">Forecaster</span>
+        PlusCo <span className="text-yellow-400">Forecaster</span>
       </span>
       <div className="w-8" />
     </header>

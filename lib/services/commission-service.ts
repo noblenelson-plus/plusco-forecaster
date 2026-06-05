@@ -10,27 +10,27 @@ import {
 } from "../types/common.types";
 
 /**
- * Service de gestion des commissions client.
+ * Client commission management service.
  *
- * Format stocké (voir client.types.ts) : toujours mensuel.
+ * Stored format (see client.types.ts): always monthly.
  *   commissionsConfig[year][mediaType] = { 1: %, 2: %, ..., 12: % }
  *
- * Accessible à tous les users ayant accès au client (admins + BLs
- * assignés) — la rule Firestore n'autorise les BLs qu'à modifier
- * commissionsConfig / updatedAt sur le doc client, rien d'autre.
+ * Accessible to all users with access to the client (admins + assigned
+ * BLs) — the Firestore rule only allows BLs to modify commissionsConfig
+ * / updatedAt on the client doc, nothing else.
  */
 
-// ─── Helpers de construction ──────────────────────────────────────────────────
+// ─── Construction helpers ─────────────────────────────────────────────────────
 
-/** 12 mois au même taux — le cas courant ("uniforme"). */
+/** 12 months at the same rate — the common ("uniform") case. */
 export function uniformRate(rate: number): MonthlyMap {
   return Object.fromEntries(MONTHS.map((m) => [m, rate]));
 }
 
 /**
- * Détecte si une MonthlyMap est uniforme (12 valeurs identiques).
- * Retourne le taux si uniforme, null sinon — pratique pour initialiser
- * l'UI en mode champ unique vs mode mensuel déplié.
+ * Detects whether a MonthlyMap is uniform (12 identical values).
+ * Returns the rate if uniform, null otherwise — handy for initializing
+ * the UI in single-field mode vs expanded monthly mode.
  */
 export function detectUniformRate(map: MonthlyMap | undefined): number | null {
   if (!map) return null;
@@ -39,7 +39,7 @@ export function detectUniformRate(map: MonthlyMap | undefined): number | null {
   return values.every((v) => v === first) ? first : null;
 }
 
-/** Taux effectif pour un type/année/mois — 0 si non configuré. */
+/** Effective rate for a type/year/month — 0 if not configured. */
 export function getRate(
   config: CommissionsConfig,
   year: number,
@@ -49,12 +49,12 @@ export function getRate(
   return config?.[year]?.[mediaType]?.[month] ?? 0;
 }
 
-/** L'année a-t-elle au moins un type configuré ? */
+/** Does the year have at least one configured type? */
 export function hasYearConfig(config: CommissionsConfig, year: number): boolean {
   return Object.keys(config?.[year] ?? {}).length > 0;
 }
 
-/** Années configurées, triées décroissant (pour le sélecteur d'année). */
+/** Configured years, sorted descending (for the year selector). */
 export function configuredYears(config: CommissionsConfig): number[] {
   return Object.keys(config ?? {})
     .map(Number)
@@ -63,9 +63,17 @@ export function configuredYears(config: CommissionsConfig): number[] {
 }
 
 /**
- * Copie la config d'une année vers une autre (deep copy).
- * Retourne une NOUVELLE CommissionsConfig — ne mute pas l'originale.
- * Si l'année source est vide, la cible est créée vide.
+ * Copies the config from one year to another, carrying ONLY December's
+ * value of each media type and applying it uniformly across the 12
+ * months of the target year.
+ *
+ * Rationale: rates often shift at year-end, so December is the most
+ * representative starting point for the following year.
+ *
+ * Returns a NEW CommissionsConfig — does not mutate the original.
+ * If the source year is empty, the target is created empty.
+ * If December is missing for a given media type, falls back to 0
+ * (consistent with getRate's `?? 0` convention).
  */
 export function copyYearConfig(
   config: CommissionsConfig,
@@ -75,7 +83,8 @@ export function copyYearConfig(
   const source = config?.[fromYear] ?? {};
   const copied: Partial<Record<MediaType, MonthlyMap>> = {};
   (Object.keys(source) as MediaType[]).forEach((type) => {
-    copied[type] = { ...source[type]! };
+    const decemberRate = source[type]?.[12] ?? 0;
+    copied[type] = uniformRate(decemberRate);
   });
   return { ...config, [toYear]: copied };
 }
@@ -90,8 +99,8 @@ export interface CommissionValidationError {
 }
 
 /**
- * Valide la config d'une année : taux numériques, entre 0 et 100.
- * Retourne la liste des violations (vide = OK).
+ * Validates a year's config: numeric rates between 0 and 100.
+ * Returns the list of violations (empty = OK).
  */
 export function validateYearConfig(
   yearConfig: Partial<Record<MediaType, MonthlyMap>>
@@ -116,14 +125,14 @@ export function validateYearConfig(
   return errors;
 }
 
-// ─── Persistance ──────────────────────────────────────────────────────────────
+// ─── Persistence ──────────────────────────────────────────────────────────────
 
 /**
- * Remplace la config d'UNE année sur le doc client, sans toucher aux
- * autres années (dot-path Firestore : "commissionsConfig.2026").
+ * Replaces ONE year's config on the client doc without touching the
+ * other years (Firestore dot-path: "commissionsConfig.2026").
  *
- * Écriture compatible avec la rule BL : seules les clés
- * commissionsConfig + updatedAt sont affectées.
+ * Write compatible with the BL rule: only commissionsConfig + updatedAt
+ * keys are affected.
  */
 export async function saveYearCommissions(
   clId: string,
@@ -145,9 +154,9 @@ export async function saveYearCommissions(
 }
 
 /**
- * Supprime entièrement la config d'une année.
- * (On écrit un objet vide plutôt que deleteField() pour rester simple
- * et compatible avec hasYearConfig.)
+ * Fully removes a year's config.
+ * (We write an empty object rather than deleteField() to stay simple
+ * and compatible with hasYearConfig.)
  */
 export async function clearYearCommissions(
   clId: string,

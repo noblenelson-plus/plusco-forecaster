@@ -27,13 +27,12 @@ import { useUserProfile } from "./use-user-profile";
 import { useForecastSelection } from "../stores/forecast-selection.store";
 import { fetchAxisData, saveAxisData } from "../services/data-entry-service";
 import { MONTHS, type MonthlyMap } from "../types/common.types";
-import type { RFQType } from "../types/rfq.types";
 import {
   type AxisConfig,
   type AxisData,
   type CellCoord,
+  type ComparisonRef,
   type DirtyMap,
-  type ForecastBucket,
   type ForecastRow,
   buildCellKey,
   emptyAxisData,
@@ -73,7 +72,8 @@ function clone<T>(value: T): T {
 /** Lit la valeur d'une coordonnée dans un AxisData (0 si absente). */
 function getValueIn(data: AxisData, coord: CellCoord): number {
   if (coord.category === "ADMIN_INPUT") {
-    return data.actuals[coord.month] ?? 0;
+    const row = data.actuals.find((r) => r.rowId === coord.rowId);
+    return row?.months[coord.month] ?? 0;
   }
   const bucket = data.buckets.find((b) => b.bucketId === coord.bucketId);
   const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
@@ -104,6 +104,21 @@ export interface UseForecasterGridResult {
   // Édition de cellules
   getCellValue: (coord: CellCoord) => number;
   setCellValue: (coord: CellCoord, value: number) => void;
+  /** Batch write — one state + dirty-map update for many cells (paste, fill, spread). */
+  setCells: (updates: { coord: CellCoord; value: number }[]) => void;
+  /**
+   * Add deltas onto BL_INPUT cells, targeting a row by (bucket, rowType) and
+   * creating it if the project lacks that type. Used by the comparison panel
+   * to distribute a media-type difference into projects across months.
+   */
+  addToCells: (
+    updates: {
+      bucketId: string;
+      rowType: string;
+      month: number;
+      delta: number;
+    }[]
+  ) => void;
 
   // Structure
   addBucket: (name: string) => void;
@@ -111,16 +126,20 @@ export interface UseForecasterGridResult {
   removeBucket: (bucketId: string) => void;
   addRow: (bucketId: string, rowType: string) => void;
   removeRow: (bucketId: string, rowId: string) => void;
+  /** Actuals (ADMIN_INPUT) — lignes typées, sans bucket. */
+  addActualsRow: (rowType: string) => void;
+  removeActualsRow: (rowId: string) => void;
 
-  // Comparaison
-  compareRfq: RFQType | null;
-  setCompareRfq: (rfq: RFQType | null) => void;
+  // Comparaison — base fixe = BL du RFQ courant
+  compareRef: ComparisonRef | null;
+  setCompareRef: (ref: ComparisonRef | null) => void;
+  /**
+   * AxisData de référence (live `data` si auto-référence sur le RFQ courant,
+   * sinon le doc chargé). La vue de comparaison l'agrège via aggregateByType
+   * selon `compareRef.side`. null tant qu'aucune comparaison n'est active.
+   */
   referenceData: AxisData | null;
   referenceLoading: boolean;
-  /** Ligne correspondante dans le RFQ de référence (par nom + type). */
-  findReferenceRow: (bucketName: string, rowType: string) => ForecastRow | null;
-  /** Bucket correspondant dans la référence (par nom). */
-  findReferenceBucket: (bucketName: string) => ForecastBucket | null;
 
   // Persistance
   save: () => Promise<void>;
@@ -145,9 +164,9 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Comparaison
-  const [compareRfq, setCompareRfq] = useState<RFQType | null>(null);
-  const [referenceData, setReferenceData] = useState<AxisData | null>(null);
+  // Comparaison — base fixe (BL du RFQ courant) vs référence (rfq, side)
+  const [compareRef, setCompareRef] = useState<ComparisonRef | null>(null);
+  const [fetchedReference, setFetchedReference] = useState<AxisData | null>(null);
   const [referenceLoading, setReferenceLoading] = useState(false);
 
   // ─── Chargement du triplet sélectionné ──────────────────────────────────
@@ -201,28 +220,41 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
 
   // Changer de triplet invalide la comparaison en cours
   useEffect(() => {
-    setCompareRfq(null);
-    setReferenceData(null);
+    setCompareRef(null);
+    setFetchedReference(null);
   }, [selectedClient?.cl_id, selectedYear, selectedRFQ?.rfq_id]);
 
   // ─── Chargement du RFQ de référence ─────────────────────────────────────
+  // Un seul doc suffit : le `side` choisit ensuite quelle partie agréger
+  // (buckets = BL, actuals = ADMIN). Si la référence est le RFQ courant
+  // (niveau 2), on n'effectue aucun fetch : la copie de travail live `data`
+  // sert de référence (voir `referenceData` plus bas), pour comparer aussi
+  // les éditions non sauvegardées.
+
+  const selfReference =
+    !!compareRef && compareRef.rfq === selectedRFQ?.type;
 
   useEffect(() => {
-    if (!selectionReady || !compareRfq) {
-      setReferenceData(null);
+    if (!selectionReady || !compareRef || selfReference) {
+      setFetchedReference(null);
       return;
     }
 
     let cancelled = false;
     setReferenceLoading(true);
 
-    fetchAxisData(selectedClient!.cl_id, selectedYear!, compareRfq, config.axisId)
+    fetchAxisData(
+      selectedClient!.cl_id,
+      selectedYear!,
+      compareRef.rfq,
+      config.axisId
+    )
       .then((axisData) => {
-        if (!cancelled) setReferenceData(axisData);
+        if (!cancelled) setFetchedReference(axisData);
       })
       .catch(() => {
         // Référence indisponible ≠ erreur bloquante : on désactive juste
-        if (!cancelled) setReferenceData(null);
+        if (!cancelled) setFetchedReference(null);
       })
       .finally(() => {
         if (!cancelled) setReferenceLoading(false);
@@ -231,7 +263,22 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     return () => {
       cancelled = true;
     };
-  }, [selectionReady, compareRfq, selectedClient?.cl_id, selectedYear, config.axisId]);
+  }, [
+    selectionReady,
+    compareRef?.rfq,
+    selfReference,
+    selectedClient?.cl_id,
+    selectedYear,
+    config.axisId,
+  ]);
+
+  // Référence effective exposée à l'UI : `data` live si auto-référence
+  // (RFQ courant), sinon le doc chargé. null tant qu'aucune comparaison.
+  const referenceData: AxisData | null = !compareRef
+    ? null
+    : selfReference
+    ? data
+    : fetchedReference;
 
   // ─── Édition de cellules ────────────────────────────────────────────────
 
@@ -245,7 +292,9 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
       setData((prev) => {
         const next = clone(prev);
         if (coord.category === "ADMIN_INPUT") {
-          next.actuals[coord.month] = value;
+          const row = next.actuals.find((r) => r.rowId === coord.rowId);
+          if (!row) return prev;
+          row.months[coord.month] = value;
         } else {
           const bucket = next.buckets.find((b) => b.bucketId === coord.bucketId);
           const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
@@ -265,6 +314,102 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
       });
     },
     [original]
+  );
+
+  // Batch write — applies many cell updates in a single state + dirty-map pass.
+  // Used by paste, fill (Ctrl+D / Ctrl+R) and the spread tool, which would
+  // otherwise clone the whole AxisData once per cell.
+  const setCells = useCallback(
+    (updates: { coord: CellCoord; value: number }[]) => {
+      if (updates.length === 0) return;
+      setData((prev) => {
+        const next = clone(prev);
+        for (const { coord, value } of updates) {
+          if (coord.category === "ADMIN_INPUT") {
+            const row = next.actuals.find((r) => r.rowId === coord.rowId);
+            if (row) row.months[coord.month] = value;
+          } else {
+            const bucket = next.buckets.find(
+              (b) => b.bucketId === coord.bucketId
+            );
+            const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
+            if (row) row.months[coord.month] = value;
+          }
+        }
+        return next;
+      });
+
+      setDirtyMap((prev) => {
+        const next = new Map(prev);
+        for (const { coord, value } of updates) {
+          const key = buildCellKey(coord);
+          if (getValueIn(original, coord) !== value) next.set(key, value);
+          else next.delete(key);
+        }
+        return next;
+      });
+    },
+    [original]
+  );
+
+  // Add deltas onto BL_INPUT cells, targeting a row by (bucket, rowType) rather
+  // than by rowId, and creating the row when the project doesn't have that type
+  // yet. Used by the comparison panel's "distribute difference" tool, which
+  // pushes a media-type variance into one or several projects across months.
+  // Several deltas for the same (bucket, rowType) resolve to one row — created
+  // once, then accumulated.
+  const addToCells = useCallback(
+    (
+      updates: {
+        bucketId: string;
+        rowType: string;
+        month: number;
+        delta: number;
+      }[]
+    ) => {
+      if (updates.length === 0) return;
+
+      const next = clone(data);
+      let createdAny = false;
+      const touched: { coord: CellCoord; value: number }[] = [];
+
+      for (const u of updates) {
+        const bucket = next.buckets.find((b) => b.bucketId === u.bucketId);
+        if (!bucket) continue;
+        let row = bucket.rows.find((r) => r.rowType === u.rowType);
+        if (!row) {
+          const label =
+            config.rowTypeOptions.find((o) => o.value === u.rowType)?.label ??
+            u.rowType;
+          row = newRow(u.rowType, label);
+          bucket.rows.push(row);
+          createdAny = true;
+        }
+        row.months[u.month] = (row.months[u.month] ?? 0) + u.delta;
+        touched.push({
+          coord: {
+            category: "BL_INPUT",
+            bucketId: bucket.bucketId,
+            rowId: row.rowId,
+            month: u.month,
+          },
+          value: row.months[u.month],
+        });
+      }
+
+      setData(next);
+      setDirtyMap((prev) => {
+        const nextMap = new Map(prev);
+        for (const { coord, value } of touched) {
+          const key = buildCellKey(coord);
+          if (getValueIn(original, coord) !== value) nextMap.set(key, value);
+          else nextMap.delete(key);
+        }
+        return nextMap;
+      });
+      if (createdAny) setStructureDirty(true);
+    },
+    [data, original, config]
   );
 
   // ─── Structure (buckets / rows) ─────────────────────────────────────────
@@ -341,27 +486,40 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     });
   }, []);
 
-  // ─── Comparaison : correspondances par nom + type ───────────────────────
+  // ─── Actuals (ADMIN_INPUT) — lignes typées, sans bucket ─────────────────
 
-  const findReferenceBucket = useCallback(
-    (bucketName: string): ForecastBucket | null => {
-      if (!referenceData) return null;
-      return (
-        referenceData.buckets.find(
-          (b) => b.name.trim().toLowerCase() === bucketName.trim().toLowerCase()
-        ) ?? null
-      );
+  const addActualsRow = useCallback(
+    (rowType: string) => {
+      const label =
+        config.rowTypeOptions.find((o) => o.value === rowType)?.label ?? rowType;
+      setData((prev) => {
+        if (
+          !config.allowDuplicateRowTypes &&
+          prev.actuals.some((r) => r.rowType === rowType)
+        ) {
+          return prev; // doublon interdit — no-op
+        }
+        return { ...prev, actuals: [...prev.actuals, newRow(rowType, label)] };
+      });
+      setStructureDirty(true);
     },
-    [referenceData]
+    [config]
   );
 
-  const findReferenceRow = useCallback(
-    (bucketName: string, rowType: string): ForecastRow | null => {
-      const bucket = findReferenceBucket(bucketName);
-      return bucket?.rows.find((r) => r.rowType === rowType) ?? null;
-    },
-    [findReferenceBucket]
-  );
+  const removeActualsRow = useCallback((rowId: string) => {
+    setData((prev) => ({
+      ...prev,
+      actuals: prev.actuals.filter((r) => r.rowId !== rowId),
+    }));
+    setStructureDirty(true);
+    setDirtyMap((prev) => {
+      const next = new Map(prev);
+      [...next.keys()].forEach((k) => {
+        if (k.includes(`:${rowId}:`)) next.delete(k);
+      });
+      return next;
+    });
+  }, []);
 
   // ─── Persistance ────────────────────────────────────────────────────────
 
@@ -420,17 +578,19 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     hasChanges,
     getCellValue,
     setCellValue,
+    setCells,
+    addToCells,
     addBucket,
     renameBucket,
     removeBucket,
     addRow,
     removeRow,
-    compareRfq,
-    setCompareRfq,
+    addActualsRow,
+    removeActualsRow,
+    compareRef,
+    setCompareRef,
     referenceData,
     referenceLoading,
-    findReferenceRow,
-    findReferenceBucket,
     save,
     discard,
   };

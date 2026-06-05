@@ -2,34 +2,46 @@
 "use client";
 
 /**
- * Grid de prévision générique — piloté par un AxisConfig + le hook
- * useForecasterGrid. Utilisé tel quel par Media, puis Revenue et Labs.
+ * Generic forecast grid — driven by an AxisConfig + the useForecasterGrid
+ * hook. Used as-is by Media, then Revenue and Labs.
  *
- * Anatomie :
- *   [Toolbar]  compare · add bucket · discard/save (+ compteur dirty)
- *   [Table]    Jan → Déc + Total
- *     ├─ Bucket (header : nom éditable, add row, delete)
- *     │    ├─ Rows typées (EditableCell × 12 + TotalCell)
- *     │    └─ Sous-total bucket
- *     ├─ ... autres buckets
- *     ├─ TOTAL (grand total BL_INPUT)
- *     └─ Actuals (ADMIN_INPUT — éditable admin seulement)
+ * Anatomy:
+ *   [Toolbar]  add bucket · discard/save (+ dirty counter)
+ *   [Table]    Jan → Dec + Total
+ *     ├─ Bucket header — editable name + the bucket subtotal on the SAME row
+ *     │    └─ Typed rows (SpreadsheetCell × 12 + row total) with a spread tool
+ *     ├─ ... other buckets
+ *     ├─ TOTAL (BL_INPUT grand total)
+ *     └─ Actuals (ADMIN_INPUT — one row per type, admin-editable only)
  *
- * Les suppressions (ligne/bucket) sont locales jusqu'au Save —
- * récupérables via Discard, donc pas de confirmation bloquante.
+ * Data entry is spreadsheet-style: cells form a selectable grid (rows × 12
+ * months) wired to useGridSelection — click/drag/Shift to select, Ctrl/Cmd+C/V
+ * to copy & paste (round-trips with Excel via TSV), Ctrl/Cmd+D/R to fill,
+ * arrows/Tab/Enter to navigate. The spread tool distributes one amount across
+ * ticked months.
+ *
+ * Deletions (row/bucket) are local until Save — recoverable via Discard.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Trash2,
   Loader2,
   Lock,
   ChevronDown,
+  ChevronRight,
   RotateCcw,
   FolderPlus,
+  SplitSquareHorizontal,
 } from "lucide-react";
-import type { AxisConfig, ForecastBucket } from "../../lib/types/forecaster.types";
+import type {
+  AxisConfig,
+  ForecastBucket,
+  ForecastRow,
+  InputCategory,
+  RowTypeOption,
+} from "../../lib/types/forecaster.types";
 import { buildCellKey } from "../../lib/types/forecaster.types";
 import {
   type UseForecasterGridResult,
@@ -37,8 +49,13 @@ import {
   monthTotals,
   grandMonthTotals,
 } from "../../lib/hooks/use-forecaster-grid";
+import {
+  useGridSelection,
+  type GridRowDescriptor,
+} from "../../lib/hooks/use-grid-selection";
 import { MONTHS } from "../../lib/types/common.types";
-import { EditableCell, TotalCell } from "./editable-cell";
+import { SpreadsheetCell, TotalCell } from "./editable-cell";
+import SpreadDialog from "./spread-dialog";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -50,19 +67,91 @@ interface ForecastGridProps {
   grid: UseForecasterGridResult;
 }
 
-export default function ForecastGrid({
-  config,
-  grid,
-}: ForecastGridProps) {
-  const comparing = grid.referenceData !== null;
+/** A single editable row in display order — BL rows first, then actuals. */
+interface OrderedRow {
+  rowId: string;
+  category: InputCategory;
+  bucketId: string | null;
+  readOnly: boolean;
+}
+
+export default function ForecastGrid({ config, grid }: ForecastGridProps) {
   const blReadOnly = grid.locked;
 
-  // Totaux mémorisés
   const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
-  const refGrandTotals = useMemo(
-    () => (grid.referenceData ? grandMonthTotals(grid.referenceData) : null),
-    [grid.referenceData]
+
+  // Collapsed buckets — hidden rows are also excluded from the selection model
+  // below so keyboard navigation / paste never reach rows you can't see.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleCollapse = (bucketId: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(bucketId)) next.delete(bucketId);
+      else next.add(bucketId);
+      return next;
+    });
+
+  // ─── Selection model — flat ordered list of editable rows × 12 months ───
+  const orderedRows = useMemo<OrderedRow[]>(() => {
+    const list: OrderedRow[] = [];
+    for (const bucket of grid.data.buckets) {
+      if (collapsed.has(bucket.bucketId)) continue;
+      for (const row of bucket.rows) {
+        list.push({
+          rowId: row.rowId,
+          category: "BL_INPUT",
+          bucketId: bucket.bucketId,
+          readOnly: blReadOnly,
+        });
+      }
+    }
+    for (const row of grid.data.actuals) {
+      list.push({
+        rowId: row.rowId,
+        category: "ADMIN_INPUT",
+        bucketId: null,
+        readOnly: !grid.canEditActuals,
+      });
+    }
+    return list;
+  }, [grid.data, blReadOnly, grid.canEditActuals, collapsed]);
+
+  const rowIndex = useMemo(
+    () => new Map(orderedRows.map((r, i) => [r.rowId, i])),
+    [orderedRows]
   );
+
+  const descriptors = useMemo<GridRowDescriptor[]>(
+    () =>
+      orderedRows.map((r) => ({
+        key: r.rowId,
+        readOnly: r.readOnly,
+        coordFor: (month: number) => ({
+          category: r.category,
+          bucketId: r.bucketId,
+          rowId: r.rowId,
+          month,
+        }),
+      })),
+    [orderedRows]
+  );
+
+  const sel = useGridSelection({
+    rows: descriptors,
+    getValue: grid.getCellValue,
+    setCells: grid.setCells,
+    locked: grid.locked,
+  });
+
+  // Shared drag flag — set on cell mousedown, cleared on window mouseup.
+  const draggingRef = useRef(false);
+  useEffect(() => {
+    const up = () => {
+      draggingRef.current = false;
+    };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -80,7 +169,12 @@ export default function ForecastGrid({
           <span className="text-sm">Loading {config.title}...</span>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
+        <div
+          className="bg-white border border-gray-200 rounded-xl overflow-x-auto"
+          onKeyDown={sel.onKeyDown}
+          onCopy={sel.onCopy}
+          onPaste={sel.onPaste}
+        >
           <table className="w-full text-sm border-collapse min-w-[1100px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
@@ -122,85 +216,47 @@ export default function ForecastGrid({
                     bucket={bucket}
                     config={config}
                     grid={grid}
-                    comparing={comparing}
                     readOnly={blReadOnly}
+                    sel={sel}
+                    rowIndex={rowIndex}
+                    draggingRef={draggingRef}
+                    collapsed={collapsed.has(bucket.bucketId)}
+                    onToggleCollapse={() => toggleCollapse(bucket.bucketId)}
                   />
                 ))
               )}
 
-              {/* ─── Grand total BL_INPUT ─── */}
+              {/* ─── BL_INPUT grand total ─── */}
               {grid.data.buckets.length > 0 && (
                 <tr className="bg-gray-900">
                   <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider">
                     Total
                   </td>
                   {MONTHS.map((m) => (
-                    <td key={m} className="px-2.5 py-2 text-right align-top">
+                    <td key={m} className="px-2.5 py-2 text-right align-middle">
                       <p className="text-sm font-bold text-white tabular-nums">
                         {grandTotals[m]
                           ? Math.round(grandTotals[m]).toLocaleString("en-CA")
                           : "—"}
                       </p>
-                      {refGrandTotals && (
-                        <p className="text-[11px] text-gray-400 tabular-nums">
-                          {refGrandTotals[m]
-                            ? Math.round(refGrandTotals[m]).toLocaleString("en-CA")
-                            : "—"}
-                        </p>
-                      )}
                     </td>
                   ))}
-                  <td className="px-2.5 py-2 text-right align-top bg-gray-800">
+                  <td className="px-2.5 py-2 text-right align-middle bg-gray-800">
                     <p className="text-sm font-bold text-yellow-400 tabular-nums">
                       {Math.round(sumMonths(grandTotals)).toLocaleString("en-CA")}
                     </p>
-                    {refGrandTotals && (
-                      <p className="text-[11px] text-gray-400 tabular-nums">
-                        {Math.round(sumMonths(refGrandTotals)).toLocaleString("en-CA")}
-                      </p>
-                    )}
                   </td>
                 </tr>
               )}
 
-              {/* ─── Actuals (ADMIN_INPUT) ─── */}
-              <tr className="bg-blue-50/40 border-t-2 border-blue-100">
-                <td className="sticky left-0 z-10 bg-blue-50/40 px-4 py-2">
-                  <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">
-                    {config.actualsLabel}
-                  </span>
-                  {!grid.canEditActuals && (
-                    <Lock size={10} className="inline ml-1.5 text-blue-300 -mt-0.5" />
-                  )}
-                </td>
-                {MONTHS.map((m) => {
-                  const coord = {
-                    category: "ADMIN_INPUT" as const,
-                    bucketId: null,
-                    rowId: null,
-                    month: m,
-                  };
-                  return (
-                    <EditableCell
-                      key={m}
-                      value={grid.data.actuals[m] ?? 0}
-                      onChange={(v) => grid.setCellValue(coord, v)}
-                      reference={
-                        comparing ? grid.referenceData!.actuals[m] ?? 0 : null
-                      }
-                      dirty={grid.dirtyMap.has(buildCellKey(coord))}
-                      readOnly={!grid.canEditActuals}
-                    />
-                  );
-                })}
-                <TotalCell
-                  value={sumMonths(grid.data.actuals)}
-                  reference={
-                    comparing ? sumMonths(grid.referenceData!.actuals) : null
-                  }
-                  emphasis="bucket"
-                />
-              </tr>
+              {/* ─── Actuals (ADMIN_INPUT) — one row per type ─── */}
+              <ActualsSection
+                config={config}
+                grid={grid}
+                sel={sel}
+                rowIndex={rowIndex}
+                draggingRef={draggingRef}
+              />
             </tbody>
           </table>
         </div>
@@ -230,7 +286,7 @@ function GridToolbar({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      {/* Left — lock badge (comparison selector now lives in the page context bar) */}
+      {/* Left — lock badge */}
       <div className="flex items-center gap-2">
         {grid.locked && (
           <span className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 border border-gray-200">
@@ -240,7 +296,7 @@ function GridToolbar({
         )}
       </div>
 
-      {/* Droite — add bucket + discard/save */}
+      {/* Right — add bucket + discard/save */}
       <div className="flex items-center gap-2">
         {!grid.locked &&
           config.allowMultipleBuckets &&
@@ -304,99 +360,211 @@ function GridToolbar({
   );
 }
 
-// ─── Section bucket (header + rows + sous-total) ─────────────────────────────
+// ─── Inline "add row type" select (shared by bucket & actuals) ───────────────
+
+function AddRowTypeSelect({
+  label,
+  options,
+  onPick,
+}: {
+  label: string;
+  options: RowTypeOption[];
+  onPick: (rowType: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+
+  if (adding) {
+    return (
+      <div className="relative">
+        <select
+          autoFocus
+          defaultValue=""
+          onChange={(e) => {
+            if (e.target.value) onPick(e.target.value);
+            setAdding(false);
+          }}
+          onBlur={() => setAdding(false)}
+          className="appearance-none pl-3 pr-8 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
+        >
+          <option value="" disabled>
+            {label}...
+          </option>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={12}
+          className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setAdding(true)}
+      disabled={options.length === 0}
+      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg disabled:opacity-40 transition-colors"
+    >
+      <Plus size={12} />
+      {label}
+    </button>
+  );
+}
+
+/** Row types still available given the rows already present (no duplicates). */
+function availableTypes(
+  config: AxisConfig,
+  rows: ForecastRow[]
+): RowTypeOption[] {
+  if (config.allowDuplicateRowTypes) return config.rowTypeOptions;
+  return config.rowTypeOptions.filter(
+    (o) => !rows.some((r) => r.rowType === o.value)
+  );
+}
+
+// ─── A data row (BL or actuals) — label + spread button + 12 cells + total ──
+
+function DataRow({
+  row,
+  category,
+  bucketId,
+  readOnly,
+  grid,
+  sel,
+  rowIndex,
+  draggingRef,
+  rowBg,
+  labelClass,
+  onSpread,
+}: {
+  row: ForecastRow;
+  category: InputCategory;
+  bucketId: string | null;
+  readOnly: boolean;
+  grid: UseForecasterGridResult;
+  sel: ReturnType<typeof useGridSelection>;
+  rowIndex: Map<string, number>;
+  draggingRef: React.MutableRefObject<boolean>;
+  /** Sticky-cell background — must be opaque to cover scrolled content. */
+  rowBg: string;
+  labelClass: string;
+  onSpread: () => void;
+}) {
+  const r = rowIndex.get(row.rowId)!;
+
+  return (
+    <tr className="group">
+      <td className={`sticky left-0 z-10 ${rowBg} px-4 py-1.5 border-b border-gray-100`}>
+        <div className="flex items-center gap-1.5 pl-2">
+          <span className={`text-sm ${labelClass}`}>{row.label}</span>
+          {!readOnly && (
+            <>
+              <button
+                onClick={onSpread}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-gray-700 transition-all"
+                title="Distribute an amount across months"
+              >
+                <SplitSquareHorizontal size={12} />
+              </button>
+              <button
+                onClick={() =>
+                  category === "ADMIN_INPUT"
+                    ? grid.removeActualsRow(row.rowId)
+                    : grid.removeRow(bucketId!, row.rowId)
+                }
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-red-500 transition-all"
+                title="Remove row (until saved)"
+              >
+                <Trash2 size={11} />
+              </button>
+            </>
+          )}
+        </div>
+      </td>
+      {MONTHS.map((m, ci) => {
+        const coord = { category, bucketId, rowId: row.rowId, month: m };
+        return (
+          <SpreadsheetCell
+            key={m}
+            r={r}
+            c={ci}
+            value={row.months[m] ?? 0}
+            readOnly={readOnly}
+            dirty={grid.dirtyMap.has(buildCellKey(coord))}
+            sel={sel}
+            draggingRef={draggingRef}
+          />
+        );
+      })}
+      <TotalCell value={sumMonths(row.months)} emphasis="row" />
+    </tr>
+  );
+}
+
+// ─── Bucket section (header with inline subtotal + rows) ─────────────────────
 
 function BucketSection({
   bucket,
   config,
   grid,
-  comparing,
   readOnly,
+  sel,
+  rowIndex,
+  draggingRef,
+  collapsed,
+  onToggleCollapse,
 }: {
   bucket: ForecastBucket;
   config: AxisConfig;
   grid: UseForecasterGridResult;
-  comparing: boolean;
   readOnly: boolean;
+  sel: ReturnType<typeof useGridSelection>;
+  rowIndex: Map<string, number>;
+  draggingRef: React.MutableRefObject<boolean>;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }) {
-  const [addingRow, setAddingRow] = useState(false);
-
   const bucketTotals = useMemo(() => monthTotals(bucket.rows), [bucket.rows]);
-  const refBucket = comparing ? grid.findReferenceBucket(bucket.name) : null;
-  const refBucketTotals = useMemo(
-    () => (refBucket ? monthTotals(refBucket.rows) : null),
-    [refBucket]
-  );
-
-  // Types encore disponibles dans ce bucket
-  const availableTypes = config.allowDuplicateRowTypes
-    ? config.rowTypeOptions
-    : config.rowTypeOptions.filter(
-        (o) => !bucket.rows.some((r) => r.rowType === o.value)
-      );
+  const types = availableTypes(config, bucket.rows);
+  const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
 
   return (
     <>
-      {/* Header du bucket */}
+      {/* Bucket header — name + controls on the left, subtotal across the row */}
       <tr className="bg-gray-50/80 border-t border-gray-200">
-        <td colSpan={14} className="px-4 py-2">
-          <div className="flex items-center gap-2">
+        <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 border-b border-gray-100">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onToggleCollapse}
+              className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200/70 transition-colors flex-shrink-0"
+              title={collapsed ? "Expand project" : "Collapse project"}
+            >
+              {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+            </button>
             <input
               type="text"
               value={bucket.name}
               disabled={readOnly}
               onChange={(e) => grid.renameBucket(bucket.bucketId, e.target.value)}
-              className="font-semibold text-gray-900 text-sm bg-transparent border border-transparent rounded-md px-1.5 py-0.5 -ml-1.5
+              className="font-semibold text-gray-900 text-sm bg-transparent border border-transparent rounded-md px-1.5 py-0.5 min-w-0 flex-1
                 hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white
-                disabled:hover:border-transparent w-56"
+                disabled:hover:border-transparent"
             />
 
             {!readOnly && (
               <>
-                {/* Add row */}
-                {addingRow ? (
-                  <div className="relative">
-                    <select
-                      autoFocus
-                      defaultValue=""
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          grid.addRow(bucket.bucketId, e.target.value);
-                        }
-                        setAddingRow(false);
-                      }}
-                      onBlur={() => setAddingRow(false)}
-                      className="appearance-none pl-3 pr-8 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
-                    >
-                      <option value="" disabled>
-                        {config.rowTypeLabel}...
-                      </option>
-                      {availableTypes.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={12}
-                      className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-                    />
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setAddingRow(true)}
-                    disabled={availableTypes.length === 0}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg disabled:opacity-40 transition-colors"
-                  >
-                    <Plus size={12} />
-                    {config.rowTypeLabel}
-                  </button>
-                )}
-
-                {/* Delete bucket */}
+                <AddRowTypeSelect
+                  label={config.rowTypeLabel}
+                  options={types}
+                  onPick={(rowType) => grid.addRow(bucket.bucketId, rowType)}
+                />
                 <button
                   onClick={() => grid.removeBucket(bucket.bucketId)}
-                  className="ml-auto p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  className="p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
                   title={`Remove ${config.bucketLabel.toLowerCase()} (until saved)`}
                 >
                   <Trash2 size={13} />
@@ -405,84 +573,165 @@ function BucketSection({
             )}
           </div>
         </td>
+        {MONTHS.map((m) => (
+          <TotalCell key={m} value={bucketTotals[m] ?? 0} emphasis="bucket" />
+        ))}
+        <TotalCell value={sumMonths(bucketTotals)} emphasis="bucket" />
       </tr>
 
-      {/* Rows */}
-      {bucket.rows.length === 0 ? (
+      {/* Rows — hidden while the project is collapsed */}
+      {!collapsed &&
+        (bucket.rows.length === 0 ? (
+          <tr>
+            <td colSpan={14} className="px-8 py-2.5 text-xs text-gray-400 border-b border-gray-100">
+              No {config.rowTypeLabel.toLowerCase()} yet — add one above.
+            </td>
+          </tr>
+        ) : (
+          bucket.rows.map((row) => (
+            <DataRow
+              key={row.rowId}
+              row={row}
+              category="BL_INPUT"
+              bucketId={bucket.bucketId}
+              readOnly={readOnly}
+              grid={grid}
+              sel={sel}
+              rowIndex={rowIndex}
+              draggingRef={draggingRef}
+              rowBg="bg-white group-hover:bg-gray-50"
+              labelClass="text-gray-700"
+              onSpread={() => setSpreadRow(row)}
+            />
+          ))
+        ))}
+
+      {spreadRow && (
+        <SpreadDialog
+          rowLabel={`${bucket.name} · ${spreadRow.label}`}
+          months={spreadRow.months}
+          onClose={() => setSpreadRow(null)}
+          onApply={(updates) =>
+            grid.setCells(
+              updates.map((u) => ({
+                coord: {
+                  category: "BL_INPUT" as const,
+                  bucketId: bucket.bucketId,
+                  rowId: spreadRow.rowId,
+                  month: u.month,
+                },
+                value: u.value,
+              }))
+            )
+          }
+        />
+      )}
+    </>
+  );
+}
+
+// ─── Actuals section (ADMIN_INPUT — typed rows, no bucket) ───────────────────
+
+function ActualsSection({
+  config,
+  grid,
+  sel,
+  rowIndex,
+  draggingRef,
+}: {
+  config: AxisConfig;
+  grid: UseForecasterGridResult;
+  sel: ReturnType<typeof useGridSelection>;
+  rowIndex: Map<string, number>;
+  draggingRef: React.MutableRefObject<boolean>;
+}) {
+  const actuals = grid.data.actuals;
+  const readOnly = !grid.canEditActuals;
+  const totals = useMemo(() => monthTotals(actuals), [actuals]);
+  const types = availableTypes(config, actuals);
+  const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
+
+  return (
+    <>
+      {/* Section header */}
+      <tr className="bg-gray-50 border-t-2 border-gray-200">
+        <td colSpan={14} className="px-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+              {config.actualsLabel}
+            </span>
+            {readOnly && <Lock size={10} className="text-gray-400" />}
+            {!readOnly && (
+              <AddRowTypeSelect
+                label={config.rowTypeLabel}
+                options={types}
+                onPick={(rowType) => grid.addActualsRow(rowType)}
+              />
+            )}
+          </div>
+        </td>
+      </tr>
+
+      {/* Actuals rows */}
+      {actuals.length === 0 ? (
         <tr>
-          <td colSpan={14} className="px-8 py-2.5 text-xs text-gray-400 border-b border-gray-100">
-            No {config.rowTypeLabel.toLowerCase()} yet — add one above.
+          <td colSpan={14} className="px-8 py-2.5 text-xs text-gray-400 bg-gray-50/40 border-b border-gray-100">
+            {readOnly
+              ? "No actuals recorded."
+              : `No actuals yet — add a ${config.rowTypeLabel.toLowerCase()} above.`}
           </td>
         </tr>
       ) : (
-        bucket.rows.map((row) => {
-          const refRow = comparing
-            ? grid.findReferenceRow(bucket.name, row.rowType)
-            : null;
-          return (
-            <tr key={row.rowId} className="group hover:bg-gray-50/60 transition-colors">
-              <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-4 py-1.5 border-b border-gray-100">
-                <div className="flex items-center gap-1.5 pl-2">
-                  <span className="text-sm text-gray-700">{row.label}</span>
-                  {!readOnly && (
-                    <button
-                      onClick={() => grid.removeRow(bucket.bucketId, row.rowId)}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-red-500 transition-all"
-                      title="Remove row (until saved)"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  )}
-                </div>
-              </td>
-              {MONTHS.map((m) => {
-                const coord = {
-                  category: "BL_INPUT" as const,
-                  bucketId: bucket.bucketId,
-                  rowId: row.rowId,
-                  month: m,
-                };
-                return (
-                  <EditableCell
-                    key={m}
-                    value={row.months[m] ?? 0}
-                    onChange={(v) => grid.setCellValue(coord, v)}
-                    reference={comparing ? refRow?.months[m] ?? 0 : null}
-                    dirty={grid.dirtyMap.has(buildCellKey(coord))}
-                    readOnly={readOnly}
-                  />
-                );
-              })}
-              <TotalCell
-                value={sumMonths(row.months)}
-                reference={comparing ? sumMonths(refRow?.months ?? {}) : null}
-                emphasis="row"
-              />
-            </tr>
-          );
-        })
+        actuals.map((row) => (
+          <DataRow
+            key={row.rowId}
+            row={row}
+            category="ADMIN_INPUT"
+            bucketId={null}
+            readOnly={readOnly}
+            grid={grid}
+            sel={sel}
+            rowIndex={rowIndex}
+            draggingRef={draggingRef}
+            rowBg="bg-gray-50/40 group-hover:bg-gray-50"
+            labelClass="text-gray-700"
+            onSpread={() => setSpreadRow(row)}
+          />
+        ))
       )}
 
-      {/* Sous-total du bucket */}
-      {bucket.rows.length > 1 && (
-        <tr className="bg-gray-50/60">
-          <td className="sticky left-0 z-10 bg-gray-50/60 px-4 py-1.5 border-b border-gray-100 pl-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            Subtotal
+      {/* Actuals total */}
+      {actuals.length > 0 && (
+        <tr className="bg-gray-100 border-b border-gray-200">
+          <td className="sticky left-0 z-10 bg-gray-100 px-4 py-1.5 pl-6 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+            {config.actualsLabel} total
           </td>
           {MONTHS.map((m) => (
-            <TotalCell
-              key={m}
-              value={bucketTotals[m] ?? 0}
-              reference={comparing ? refBucketTotals?.[m] ?? 0 : null}
-              emphasis="bucket"
-            />
+            <TotalCell key={m} value={totals[m] ?? 0} emphasis="bucket" />
           ))}
-          <TotalCell
-            value={sumMonths(bucketTotals)}
-            reference={comparing ? sumMonths(refBucketTotals ?? {}) : null}
-            emphasis="bucket"
-          />
+          <TotalCell value={sumMonths(totals)} emphasis="bucket" />
         </tr>
+      )}
+
+      {spreadRow && (
+        <SpreadDialog
+          rowLabel={`${config.actualsLabel} · ${spreadRow.label}`}
+          months={spreadRow.months}
+          onClose={() => setSpreadRow(null)}
+          onApply={(updates) =>
+            grid.setCells(
+              updates.map((u) => ({
+                coord: {
+                  category: "ADMIN_INPUT" as const,
+                  bucketId: null,
+                  rowId: spreadRow.rowId,
+                  month: u.month,
+                },
+                value: u.value,
+              }))
+            )
+          }
+        />
       )}
     </>
   );

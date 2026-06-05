@@ -1,52 +1,52 @@
 // lib/types/forecaster.types.ts
 
 /**
- * Modèle de données générique des 3 axes de saisie (Media, Revenue, Labs).
+ * Generic data model shared by the 3 data-entry axes (Media, Revenue, Labs).
  *
- * Hiérarchie :
- *   Niveau 1 — Catégorie : BL_INPUT (saisie BL) vs ADMIN_INPUT (actuals admin)
- *   Niveau 2 — Bucket    : groupe de lignes (projet/campagne pour Media)
- *   Niveau 3 — Row       : ligne typée (media type / revenue stream / partenaire)
- *                          portant 12 valeurs mensuelles ($)
+ * Hierarchy:
+ *   Level 1 — Category : BL_INPUT (BL entries) vs ADMIN_INPUT (admin actuals)
+ *   Level 2 — Bucket   : a group of rows (project/campaign for Media)
+ *   Level 3 — Row      : a typed row (media type / revenue stream / partner)
+ *                        carrying 12 monthly values ($)
  *
- * Stockage Firestore — collection "data_entries" :
- *   Document ID : {cl_id}_{year}_{rfqType}   ex. "CL_ACME_123_2026_RFQ0"
- *   Les données de chaque axe vivent sous axes.{axisId}, ce qui permet
- *   au service de lire/écrire n'importe quel axe via un simple dot-path
- *   ("axes.media") sans toucher aux autres.
+ * Firestore storage — "data_entries" collection:
+ *   Document ID: {cl_id}_{year}_{rfqType}   e.g. "CL_ACME_123_2026_RFQ0"
+ *   Each axis's data lives under axes.{axisId}, which lets the service
+ *   read/write any axis through a simple dot-path ("axes.media") without
+ *   touching the others.
  *
- * Le verrouillage n'est PAS dupliqué ici : il est porté par le document
- * RFQ (collection "rfqs", temps réel) — un RFQ LOCKED rend toute saisie
- * read-only, quel que soit l'axe.
+ * Locking is NOT duplicated here: it is owned by the RFQ document
+ * ("rfqs" collection, real-time) — a LOCKED RFQ makes every entry
+ * read-only, whatever the axis.
  */
 
 import type { MonthlyMap } from "./common.types";
 import type { RFQType } from "./rfq.types";
 
-// ─── Identifiants d'axe et catégories ────────────────────────────────────────
+// ─── Axis identifiers and categories ─────────────────────────────────────────
 
 export type AxisId = "media" | "revenue" | "labs";
 
-/** Niveau 1 — qui a le droit d'éditer la donnée. */
+/** Level 1 — who is allowed to edit the data. */
 export type InputCategory = "BL_INPUT" | "ADMIN_INPUT";
 
-// ─── Niveau 3 — Row ──────────────────────────────────────────────────────────
+// ─── Level 3 — Row ───────────────────────────────────────────────────────────
 
 /**
- * Ligne de saisie générique.
- * `rowType` est volontairement un string libre : MediaType pour Media,
- * stream pour Revenue, partnerId pour Labs. Chaque axe contraint les
- * valeurs permises via son AxisConfig (rowTypeOptions).
+ * Generic data-entry row.
+ * `rowType` is intentionally a free string: MediaType for Media, stream for
+ * Revenue, partnerId for Labs. Each axis constrains the allowed values via its
+ * AxisConfig (rowTypeOptions).
  */
 export interface ForecastRow {
   rowId: string;
   rowType: string;
-  /** Libellé affiché — dérivé du type ou saisi (ex. nom de partenaire). */
+  /** Displayed label — derived from the type or entered (e.g. partner name). */
   label: string;
   months: MonthlyMap;
 }
 
-// ─── Niveau 2 — Bucket ───────────────────────────────────────────────────────
+// ─── Level 2 — Bucket ────────────────────────────────────────────────────────
 
 export interface ForecastBucket {
   bucketId: string;
@@ -54,19 +54,23 @@ export interface ForecastBucket {
   rows: ForecastRow[];
 }
 
-// ─── Données d'un axe (BL_INPUT + ADMIN_INPUT) ───────────────────────────────
+// ─── Axis data (BL_INPUT + ADMIN_INPUT) ──────────────────────────────────────
 
 export interface AxisData {
-  /** BL_INPUT — saisie des Business Leads, groupée en buckets. */
+  /** BL_INPUT — Business Lead entries, grouped into buckets. */
   buckets: ForecastBucket[];
-  /** ADMIN_INPUT — actuals mensuels injectés par les admins (read-only BL). */
-  actuals: MonthlyMap;
+  /**
+   * ADMIN_INPUT — actuals injected by admins (read-only for BLs).
+   * One row per rowType (media type for Media), same shape as BL rows but
+   * without a bucket: actuals ignore the notion of project.
+   */
+  actuals: ForecastRow[];
 }
 
-// ─── Document Firestore "data_entries" ───────────────────────────────────────
+// ─── Firestore "data_entries" document ───────────────────────────────────────
 
 export interface DataEntry {
-  /** = ID du document : {cl_id}_{year}_{rfqType} */
+  /** = document ID: {cl_id}_{year}_{rfqType} */
   entry_id: string;
   clientId: string;
   year: number;
@@ -85,7 +89,7 @@ export function buildDataEntryId(
   return `${clientId}_${year}_${rfq}`;
 }
 
-// ─── Configuration d'axe (ce qui rend le grid réutilisable) ──────────────────
+// ─── Axis configuration (what makes the grid reusable) ───────────────────────
 
 export interface RowTypeOption {
   value: string;
@@ -93,34 +97,39 @@ export interface RowTypeOption {
 }
 
 /**
- * Décrit le comportement d'un axe pour le grid générique.
- * Media : multi-buckets (projets), lignes typées par media type.
- * Revenue (à venir) : mono-bucket implicite, lignes = streams.
- * Labs (à venir) : mono-bucket, lignes = partenaires.
+ * Describes an axis's behavior for the generic grid.
+ * Media: multi-bucket (projects), rows typed by media type.
+ * Revenue (upcoming): implicit single bucket, rows = streams.
+ * Labs (upcoming): single bucket, rows = partners.
  */
 export interface AxisConfig {
   axisId: AxisId;
-  /** Titre de la page / du grid — ex. "Media Spend". */
+  /** Page / grid title — e.g. "Media Spend". */
   title: string;
-  /** Libellé d'un bucket — ex. "Project". */
+  /** Label for a bucket — e.g. "Project". */
   bucketLabel: string;
-  /** Libellé du type de ligne — ex. "Media type". */
+  /** Label for the row type — e.g. "Media type". */
   rowTypeLabel: string;
-  /** Types de lignes permis (Niveau 3). */
+  /** Allowed row types (Level 3). */
   rowTypeOptions: RowTypeOption[];
-  /** false → un seul bucket implicite, l'UI masque la notion de groupe. */
+  /** false → a single implicit bucket; the UI hides the group notion. */
   allowMultipleBuckets: boolean;
-  /** Une même valeur de rowType peut-elle apparaître 2× dans un bucket ? */
+  /** Can the same rowType value appear twice in a bucket? */
   allowDuplicateRowTypes: boolean;
-  /** Libellé de la section actuals — ex. "Actuals (admin)". */
+  /**
+   * Label for the actuals source — e.g. "MediaOcean" (Media), "GAIA" (Revenue).
+   * Drives the actuals section header and the comparison selector's actuals
+   * option, so renaming the source per axis is config-only.
+   */
   actualsLabel: string;
 }
 
-// ─── Coordonnées de cellule + dirty tracking ─────────────────────────────────
+// ─── Cell coordinates + dirty tracking ───────────────────────────────────────
 
 /**
- * Coordonnée d'une cellule éditable.
- * Les actuals utilisent category ADMIN_INPUT et bucketId/rowId à null.
+ * Coordinate of an editable cell.
+ * BL_INPUT  → bucketId + rowId set.
+ * ADMIN_INPUT (actuals) → bucketId null, rowId = id of the actuals row.
  */
 export interface CellCoord {
   category: InputCategory;
@@ -129,21 +138,58 @@ export interface CellCoord {
   month: number;
 }
 
-/** Clé sérialisée pour la dirty map — stable et lisible en debug. */
+/** Serialized key for the dirty map — stable and debug-readable. */
 export function buildCellKey(coord: CellCoord): string {
   return `${coord.category}:${coord.bucketId ?? "-"}:${coord.rowId ?? "-"}:${coord.month}`;
 }
 
-/** Map cellule → nouvelle valeur, en attente de Save. */
+/** Map cell → new value, pending Save. */
 export type DirtyMap = Map<string, number>;
 
-// ─── Comparaison entre RFQs ──────────────────────────────────────────────────
+// ─── Comparison ──────────────────────────────────────────────────────────────
+
+/**
+ * A comparison always opposes a base (the current RFQ's BL_INPUT) to a
+ * reference described by `(rfq, side)`. The 3 cases collapse into one:
+ *   (other RFQ, BL_INPUT)      → BL vs BL
+ *   (current RFQ, ADMIN_INPUT) → BL vs actuals (same RFQ)
+ *   (other RFQ, ADMIN_INPUT)   → BL vs actuals (other RFQ)
+ * It is always aggregated to the total per rowType × month (no project).
+ */
+export type ComparisonSide = InputCategory;
+
+export interface ComparisonRef {
+  rfq: RFQType;
+  side: ComparisonSide;
+}
+
+/**
+ * Monthly total per rowType for a given side of an AxisData.
+ *   BL_INPUT    → aggregates all rows across all buckets (no project).
+ *   ADMIN_INPUT → aggregates the actuals rows.
+ * Multiple rows of the same type are summed.
+ */
+export function aggregateByType(
+  data: AxisData,
+  side: ComparisonSide
+): Record<string, MonthlyMap> {
+  const rows =
+    side === "ADMIN_INPUT" ? data.actuals : data.buckets.flatMap((b) => b.rows);
+  const totals: Record<string, MonthlyMap> = {};
+  rows.forEach((row) => {
+    const acc = (totals[row.rowType] ??= emptyMonthly());
+    MONTHS.forEach((m) => {
+      acc[m] += row.months[m] ?? 0;
+    });
+  });
+  return totals;
+}
 
 export interface CellVariance {
   current: number;
   reference: number;
   absolute: number;        // current − reference
-  /** En % de la référence — null si référence = 0 (division impossible). */
+  /** As a % of the reference — null when reference = 0 (division impossible). */
   relative: number | null;
 }
 
@@ -169,11 +215,11 @@ export function emptyMonthly(): MonthlyMap {
 }
 
 export function emptyAxisData(): AxisData {
-  return { buckets: [], actuals: emptyMonthly() };
+  return { buckets: [], actuals: [] };
 }
 
 let idCounter = 0;
-/** ID court unique côté client — suffisant pour des éléments imbriqués au doc. */
+/** Short client-side unique ID — enough for elements nested inside the doc. */
 function localId(prefix: string): string {
   idCounter += 1;
   return `${prefix}_${Date.now().toString(36)}_${idCounter}`;
@@ -201,7 +247,7 @@ export function newDataEntry(
   };
 }
 
-// ─── Config de l'axe Media ───────────────────────────────────────────────────
+// ─── Media axis config ───────────────────────────────────────────────────────
 
 import { MEDIA_TYPES, type MediaType } from "./common.types";
 
@@ -226,7 +272,8 @@ export const MEDIA_AXIS_CONFIG: AxisConfig = {
     label: MEDIA_TYPE_LABELS[t],
   })),
   allowMultipleBuckets: true,
-  // Deux lignes "Social" dans un même projet n'ont pas de sens — interdit.
+  // Two "Social" rows in the same project make no sense — forbidden.
   allowDuplicateRowTypes: false,
-  actualsLabel: "Actuals",
+  // Media actuals come from MediaOcean. (Revenue's source will be "GAIA".)
+  actualsLabel: "MediaOcean",
 };

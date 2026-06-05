@@ -28,9 +28,11 @@ import {
 } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import ForecastGrid from "../../../components/forecaster/forecast-grid";
+import ComparisonPanel from "../../../components/forecaster/comparison-panel";
 import { useForecasterGrid } from "../../../lib/hooks/use-forecaster-grid";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { MEDIA_AXIS_CONFIG } from "../../../lib/types/forecaster.types";
+import type { ComparisonSide } from "../../../lib/types/forecaster.types";
 import { subscribeToRFQs, getRFQsForYear } from "../../../lib/services/rfq-service";
 import type { RFQ, RFQType } from "../../../lib/types/rfq.types";
 
@@ -49,22 +51,40 @@ export default function ForecastPage() {
   // Only the Media axis is implemented for now; Revenue & Labs are placeholders.
   const grid = useForecasterGrid(MEDIA_AXIS_CONFIG);
 
-  // RFQs of the year — to feed the "vs RFQx" comparison selector.
+  // Comparison only applies to the active axis grid. Today that's Media only.
+  const compareActive = tab === "media";
+
+  // RFQs of the year — to feed the reference-RFQ selector (includes current).
   const [rfqs, setRFQs] = useState<RFQ[]>([]);
   useEffect(() => {
     const unsubscribe = subscribeToRFQs(setRFQs);
     return () => unsubscribe();
   }, []);
 
-  const compareOptions = useMemo(() => {
+  const rfqOptions = useMemo(() => {
     if (!selectedYear || !selectedRFQ) return [];
-    return getRFQsForYear(rfqs, selectedYear)
-      .filter((r) => r.rfq_id !== selectedRFQ.rfq_id)
-      .map((r) => ({ value: r.type, label: r.type }));
+    return getRFQsForYear(rfqs, selectedYear).map((r) => ({
+      value: r.type,
+      label: r.type === selectedRFQ.type ? `${r.type} (current)` : r.type,
+    }));
   }, [rfqs, selectedYear, selectedRFQ]);
 
-  // Comparison only applies to the active axis grid. Today that's Media only.
-  const compareActive = tab === "media";
+  // Picking a reference RFQ opens the live comparison panel beside the grid;
+  // clearing closes it. The chosen side defaults to BL Input.
+  function selectRefRfq(rfq: RFQType | null) {
+    if (!rfq) {
+      grid.setCompareRef(null);
+      return;
+    }
+    grid.setCompareRef({ rfq, side: grid.compareRef?.side ?? "BL_INPUT" });
+  }
+
+  function selectRefSide(side: ComparisonSide) {
+    if (!grid.compareRef) return;
+    grid.setCompareRef({ rfq: grid.compareRef.rfq, side });
+  }
+
+  const hasComparison = compareActive && !!grid.compareRef;
 
   return (
     <div>
@@ -74,9 +94,12 @@ export default function ForecastPage() {
           <ForecastSelectors orientation="horizontal" theme="light" />
 
           <ComparisonSelector
-            options={compareOptions}
-            value={compareActive ? grid.compareRfq : null}
-            onChange={(rfq) => grid.setCompareRfq(rfq)}
+            rfqOptions={rfqOptions}
+            refRfq={compareActive ? grid.compareRef?.rfq ?? null : null}
+            refSide={grid.compareRef?.side ?? "BL_INPUT"}
+            onSelectRfq={selectRefRfq}
+            onSelectSide={selectRefSide}
+            actualsLabel={MEDIA_AXIS_CONFIG.actualsLabel}
             loading={compareActive && grid.referenceLoading}
             disabled={!compareActive}
           />
@@ -106,12 +129,28 @@ export default function ForecastPage() {
       </div>
 
       {/* ─── Content ─── */}
-      <div className="p-6 max-w-[1500px] mx-auto">
+      <div className="p-6 max-w-[1700px] mx-auto">
         {tab === "media" ? (
           !grid.selectionReady ? (
             <SelectionPrompt />
           ) : (
-            <ForecastGrid config={MEDIA_AXIS_CONFIG} grid={grid} />
+            <div className="flex items-start gap-4">
+              {/* Editing grid — always editable, even while comparing */}
+              <div className="flex-1 min-w-0">
+                <ForecastGrid config={MEDIA_AXIS_CONFIG} grid={grid} />
+              </div>
+
+              {/* Live comparison panel — sticks beside the grid while editing */}
+              {hasComparison && (
+                <div className="w-[320px] flex-shrink-0 self-start sticky top-32">
+                  <ComparisonPanel
+                    config={MEDIA_AXIS_CONFIG}
+                    grid={grid}
+                    currentRfq={selectedRFQ!.type}
+                  />
+                </div>
+              )}
+            </div>
           )
         ) : (
           <ComingSoon label={TABS.find((t) => t.id === tab)!.label} />
@@ -121,48 +160,84 @@ export default function ForecastPage() {
   );
 }
 
-// ─── Comparison selector (moved out of the grid toolbar) ─────────────────────
+// ─── Comparison selector — reference RFQ + side ──────────────────────────────
+// The base is always "this RFQ — BL Input"; the user picks what to compare it
+// against: any RFQ of the year (including the current one) and a side. The
+// actuals side label is axis-driven (MediaOcean for Media, GAIA for Revenue).
 
 function ComparisonSelector({
-  options,
-  value,
-  onChange,
+  rfqOptions,
+  refRfq,
+  refSide,
+  onSelectRfq,
+  onSelectSide,
+  actualsLabel,
   loading,
   disabled,
 }: {
-  options: { value: RFQType; label: string }[];
-  value: RFQType | null;
-  onChange: (rfq: RFQType | null) => void;
+  rfqOptions: { value: RFQType; label: string }[];
+  refRfq: RFQType | null;
+  refSide: ComparisonSide;
+  onSelectRfq: (rfq: RFQType | null) => void;
+  onSelectSide: (side: ComparisonSide) => void;
+  actualsLabel: string;
   loading: boolean;
   disabled: boolean;
 }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="relative">
-        <GitCompareArrows
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-        />
-        <select
-          value={value ?? ""}
-          onChange={(e) => onChange((e.target.value || null) as RFQType | null)}
-          disabled={disabled || options.length === 0}
-          className="appearance-none pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer disabled:opacity-50"
-        >
-          <option value="">No comparison</option>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              vs {o.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          size={13}
-          className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-        />
-      </div>
+      {/* Vertical divider — sets the comparison group apart from the
+          Client/Year/RFQ selectors so the two dropdowns aren't mistaken for
+          part of the active selection. */}
+      <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
 
-      {loading && <Loader2 size={14} className="animate-spin text-gray-400" />}
+      {/* Comparison group — labelled box wrapping the two reference dropdowns. */}
+      <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50/70 pl-2.5 pr-2 py-1.5">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 select-none">
+          <GitCompareArrows size={13} />
+          Comparison
+        </span>
+
+        {/* Reference RFQ */}
+        <div className="relative">
+          <select
+            value={refRfq ?? ""}
+            onChange={(e) => onSelectRfq((e.target.value || null) as RFQType | null)}
+            disabled={disabled || rfqOptions.length === 0}
+            className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer disabled:opacity-50"
+          >
+            <option value="">Compare with...</option>
+            {rfqOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            size={13}
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+        </div>
+
+        {/* Reference side */}
+        <div className="relative">
+          <select
+            value={refSide}
+            onChange={(e) => onSelectSide(e.target.value as ComparisonSide)}
+            disabled={disabled || !refRfq}
+            className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer disabled:opacity-50"
+          >
+            <option value="BL_INPUT">BL Input</option>
+            <option value="ADMIN_INPUT">{actualsLabel}</option>
+          </select>
+          <ChevronDown
+            size={13}
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+        </div>
+
+        {loading && <Loader2 size={14} className="animate-spin text-gray-400" />}
+      </div>
     </div>
   );
 }

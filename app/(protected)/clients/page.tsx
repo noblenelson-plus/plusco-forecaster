@@ -33,6 +33,7 @@ export default function ClientsPage() {
   // Filter state
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | ClientStatus>("ALL");
+  const [agencyFilter, setAgencyFilter] = useState<"ALL" | string>("ALL");
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -95,7 +96,9 @@ export default function ClientsPage() {
       c.CL_Agency.toLowerCase().includes(search.toLowerCase());
     const matchesStatus =
       statusFilter === "ALL" || c.Client_Status_2026 === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesAgency =
+      agencyFilter === "ALL" || c.CL_Agency === agencyFilter;
+    return matchesSearch && matchesStatus && matchesAgency;
   });
 
   // Handlers
@@ -145,6 +148,8 @@ export default function ClientsPage() {
           onSearchChange={setSearch}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
+          agencyFilter={agencyFilter}
+          onAgencyFilterChange={setAgencyFilter}
           clients={clients}
           filteredClients={filteredClients}
           isAdmin={isAdmin}

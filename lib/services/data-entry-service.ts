@@ -65,7 +65,20 @@ export async function fetchAxisData(
   axisId: AxisId
 ): Promise<AxisData> {
   const entry = await fetchDataEntry(clientId, year, rfq);
-  return entry?.axes?.[axisId] ?? emptyAxisData();
+  return normalizeAxisData(entry?.axes?.[axisId]);
+}
+
+/**
+ * Coerce a raw stored axis into a usable AxisData.
+ * Legacy docs stored `actuals` as a single MonthlyMap (no media type); that
+ * shape is no longer supported, so a non-array `actuals` is ignored (→ []).
+ */
+function normalizeAxisData(raw: Partial<AxisData> | undefined): AxisData {
+  if (!raw) return emptyAxisData();
+  return {
+    buckets: Array.isArray(raw.buckets) ? raw.buckets : [],
+    actuals: Array.isArray(raw.actuals) ? raw.actuals : [],
+  };
 }
 
 // ─── Écriture ─────────────────────────────────────────────────────────────────

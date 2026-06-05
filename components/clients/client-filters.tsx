@@ -4,17 +4,20 @@
 import { useRef, useState } from "react";
 import { Search, Plus, Upload, Download } from "lucide-react";
 import { Client } from "../../lib/types/client.types";
-import { ClientStatus } from "../../lib/constants/client.constants";
+import { ClientStatus, CLIENT_AGENCIES } from "../../lib/constants/client.constants";
 import { exportClientsToCSV, validateCSV, CSVValidationResult } from "../../lib/services/client-service";
 import ImportModal from "./import-modal";
 
 type StatusFilter = "ALL" | ClientStatus;
+type AgencyFilter = "ALL" | string;
 
 interface ClientFiltersProps {
   search: string;
   onSearchChange: (value: string) => void;
   statusFilter: StatusFilter;
   onStatusFilterChange: (value: StatusFilter) => void;
+  agencyFilter: AgencyFilter;
+  onAgencyFilterChange: (value: AgencyFilter) => void;
   clients: Client[];
   filteredClients: Client[];
   isAdmin: boolean;
@@ -29,11 +32,18 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "NEW_CLIENT", label: "New" },
 ];
 
+const AGENCY_OPTIONS: { value: AgencyFilter; label: string }[] = [
+  { value: "ALL", label: "All" },
+  ...CLIENT_AGENCIES.map((a) => ({ value: a.value, label: a.label })),
+];
+
 export default function ClientFilters({
   search,
   onSearchChange,
   statusFilter,
   onStatusFilterChange,
+  agencyFilter,
+  onAgencyFilterChange,
   clients,
   filteredClients,
   isAdmin,
@@ -81,7 +91,8 @@ export default function ClientFilters({
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      {/* Row 1 — search + status filter + actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
 
         {/* Left — search + status filter */}
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
@@ -164,6 +175,25 @@ export default function ClientFilters({
 
           </div>
         )}
+      </div>
+
+      {/* Row 2 — agency filter tabs */}
+      <div className="flex items-center gap-2 mb-6">
+        <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5 flex-wrap">
+          {AGENCY_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onAgencyFilterChange(opt.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                agencyFilter === opt.value
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Import error (fatal — before modal) */}
