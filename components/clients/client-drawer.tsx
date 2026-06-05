@@ -1,9 +1,9 @@
-// components/clients/client-drawer.tsx
+//# filepath: components/clients/client-drawer.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
-import { X, Loader2, Trash2, ChevronDown, ImagePlus, Percent } from "lucide-react";
+import { X, Loader2, Trash2, ChevronDown, ImagePlus, Percent, Copy, Check } from "lucide-react";
 import { db } from "../../lib/firebase";
 import {
   Client,
@@ -85,6 +85,7 @@ export default function ClientDrawer({
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Commissions drawer (stacked above this one)
@@ -118,6 +119,7 @@ export default function ClientDrawer({
     setError("");
     setConfirmDelete(false);
     setCommissionsOpen(false);
+    setCopiedId(false);
   }, [client, open]);
 
   function set<K extends keyof ClientFormData>(key: K, value: ClientFormData[K]) {
@@ -211,6 +213,17 @@ export default function ClientDrawer({
     }
   }
 
+  async function handleCopyId() {
+    if (!client) return;
+    try {
+      await navigator.clipboard.writeText(client.cl_id);
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy text: ", err);
+    }
+  }
+
   // Commissions are persisted by the CommissionsDrawer itself. We just sync
   // local form state so the counter stays current and a later Save doesn't
   // overwrite anything.
@@ -242,18 +255,33 @@ export default function ClientDrawer({
         `}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">
+        <div className="bg-gray-900 px-6 py-5 flex items-start justify-between">
+          <div className="min-w-0 pr-4">
+            <h2 className="text-base font-semibold text-white truncate">
               {isEditing ? "Edit client" : "New client"}
             </h2>
-            {isEditing && (
-              <p className="text-xs text-gray-400 mt-0.5">{client.cl_id}</p>
+            {isEditing && client && (
+              <div className="mt-1">
+                <p className="text-sm font-medium text-gray-300 truncate">
+                  {client.CL_Name}
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <p className="text-xs text-gray-500 font-mono truncate">{client.cl_id}</p>
+                  <button
+                    type="button"
+                    onClick={handleCopyId}
+                    className="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                    title="Copy Client ID"
+                  >
+                    {copiedId ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors flex-shrink-0"
           >
             <X size={18} />
           </button>

@@ -77,7 +77,8 @@ export default function ClientsPage() {
         const data = docs.map((d) => ({
           cl_id: d.id,
           ...(d.data() as Omit<Client, "cl_id">),
-        }));
+        })).sort((a, b) => a.CL_Name.localeCompare(b.CL_Name)); // Added alphabetical sort
+        
         setClients(data);
       } catch (err: any) {
         setError("Failed to load clients: " + (err?.message ?? "Unknown error"));
@@ -115,10 +116,14 @@ export default function ClientsPage() {
   function handleClientSaved(savedClient: Client) {
     setClients((prev) => {
       const exists = prev.find((c) => c.cl_id === savedClient.cl_id);
+      let newClients;
       if (exists) {
-        return prev.map((c) => (c.cl_id === savedClient.cl_id ? savedClient : c));
+        newClients = prev.map((c) => (c.cl_id === savedClient.cl_id ? savedClient : c));
+      } else {
+        newClients = [savedClient, ...prev];
       }
-      return [savedClient, ...prev];
+      // Re-sort in case a name changed or a new client was added
+      return newClients.sort((a, b) => a.CL_Name.localeCompare(b.CL_Name));
     });
     setDrawerOpen(false);
     setEditingClient(null);
@@ -175,7 +180,7 @@ export default function ClientsPage() {
         <ClientDrawer
           open={drawerOpen}
           client={editingClient}
-            isAdmin={isAdmin}
+          isAdmin={isAdmin}
           onClose={() => {
             setDrawerOpen(false);
             setEditingClient(null);
