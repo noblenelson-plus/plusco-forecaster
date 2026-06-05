@@ -2,13 +2,17 @@
 "use client";
 
 /**
- * Sélecteurs globaux de la sidebar (sous le logo) :
- *  — Client  : dropdown avec recherche (admin = tous, BL = assignés)
- *  — Année   : dropdown des années existantes dans la collection rfqs
- *  — RFQ     : dropdown des RFQs de l'année, avec icône lock/unlock
+ * Global selectors — Client / Year / RFQ.
  *
- * La sélection est écrite dans le store Zustand useForecastSelection,
- * partagé entre toutes les pages.
+ *  — Client : searchable dropdown (admin = all clients, BL = assigned ones)
+ *  — Year   : dropdown of the years present in the rfqs collection
+ *  — RFQ    : dropdown of the year's RFQs, with a lock/unlock icon
+ *
+ * The selection is written to the Zustand store useForecastSelection,
+ * shared across every page.
+ *
+ * The component is themeable / orientable so it can live either in the dark
+ * sidebar (vertical) or at the top of the forecast page (horizontal, light).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -38,7 +42,20 @@ import {
 import type { RFQ } from "../../lib/types/rfq.types";
 import type { ClientSummary } from "../../lib/types/client.types";
 
-export default function ForecastSelectors() {
+type Theme = "dark" | "light";
+type Orientation = "vertical" | "horizontal";
+
+interface ForecastSelectorsProps {
+  /** "vertical" → sidebar stack · "horizontal" → top-of-page row. */
+  orientation?: Orientation;
+  /** "dark" → sidebar styling · "light" → on-page styling. */
+  theme?: Theme;
+}
+
+export default function ForecastSelectors({
+  orientation = "vertical",
+  theme = "dark",
+}: ForecastSelectorsProps = {}) {
   const { profile, isAdmin } = useUserProfile();
 
   const {
@@ -119,11 +136,18 @@ export default function ForecastSelectors() {
     [rfqs, selectedYear]
   );
 
+  const horizontal = orientation === "horizontal";
+  const containerClass = horizontal
+    ? "flex flex-wrap items-center gap-2"
+    : "px-3 py-4 border-b border-gray-800 space-y-2";
+
   return (
-    <div className="px-3 py-4 border-b border-gray-800 space-y-2">
+    <div className={containerClass}>
 
       {/* Client — searchable */}
       <SearchableDropdown
+        theme={theme}
+        widthClass={horizontal ? "w-56" : ""}
         icon={<Briefcase size={14} />}
         placeholder="Select client..."
         value={selectedClient?.CL_Name ?? null}
@@ -139,6 +163,8 @@ export default function ForecastSelectors() {
 
       {/* Year */}
       <SimpleDropdown
+        theme={theme}
+        widthClass={horizontal ? "w-32" : ""}
         icon={<CalendarRange size={14} />}
         placeholder="Year..."
         value={selectedYear ? String(selectedYear) : null}
@@ -153,6 +179,8 @@ export default function ForecastSelectors() {
 
       {/* RFQ — with lock icon */}
       <SimpleDropdown
+        theme={theme}
+        widthClass={horizontal ? "w-40" : ""}
         icon={
           selectedRFQ ? (
             selectedRFQ.status === "LOCKED" ? (
@@ -185,7 +213,57 @@ export default function ForecastSelectors() {
   );
 }
 
-// ─── Shared dropdown primitives (dark sidebar styling) ────────────────────────
+// ─── Theme tokens ─────────────────────────────────────────────────────────────
+
+const TRIGGER_STYLES: Record<
+  Theme,
+  { open: string; closed: string; icon: string; value: string; placeholder: string; chevron: string }
+> = {
+  dark: {
+    open: "bg-gray-800 border-gray-600",
+    closed: "bg-gray-800/60 border-gray-700 hover:bg-gray-800",
+    icon: "text-gray-400",
+    value: "text-white font-medium",
+    placeholder: "text-gray-500",
+    chevron: "text-gray-500",
+  },
+  light: {
+    open: "bg-white border-gray-300 ring-2 ring-yellow-400",
+    closed: "bg-white border-gray-200 hover:bg-gray-50",
+    icon: "text-gray-400",
+    value: "text-gray-900 font-medium",
+    placeholder: "text-gray-400",
+    chevron: "text-gray-400",
+  },
+};
+
+const PANEL_STYLES: Record<
+  Theme,
+  { panel: string; empty: string; itemBase: string; itemSelected: string; sublabel: string; searchBorder: string; searchInput: string; searchIcon: string }
+> = {
+  dark: {
+    panel: "bg-gray-800 border-gray-700",
+    empty: "text-gray-500",
+    itemBase: "text-gray-300 hover:bg-gray-700/60 hover:text-white",
+    itemSelected: "bg-gray-700 text-white",
+    sublabel: "text-gray-500",
+    searchBorder: "border-gray-700",
+    searchInput: "text-white placeholder-gray-500",
+    searchIcon: "text-gray-500",
+  },
+  light: {
+    panel: "bg-white border-gray-200",
+    empty: "text-gray-400",
+    itemBase: "text-gray-700 hover:bg-gray-50 hover:text-gray-900",
+    itemSelected: "bg-gray-100 text-gray-900",
+    sublabel: "text-gray-400",
+    searchBorder: "border-gray-200",
+    searchInput: "text-gray-900 placeholder-gray-400",
+    searchIcon: "text-gray-400",
+  },
+};
+
+// ─── Shared dropdown primitives ───────────────────────────────────────────────
 
 interface DropdownItem {
   key: string;
@@ -215,6 +293,7 @@ function TriggerButton({
   open,
   disabled,
   onClick,
+  theme,
 }: {
   icon: React.ReactNode;
   value: string | null;
@@ -222,27 +301,27 @@ function TriggerButton({
   open: boolean;
   disabled?: boolean;
   onClick: () => void;
+  theme: Theme;
 }) {
+  const t = TRIGGER_STYLES[theme];
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border
-        ${open ? "bg-gray-800 border-gray-600" : "bg-gray-800/60 border-gray-700 hover:bg-gray-800"}
+        ${open ? t.open : t.closed}
         ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
       `}
     >
-      <span className="text-gray-400 flex-shrink-0">{icon}</span>
+      <span className={`${t.icon} flex-shrink-0`}>{icon}</span>
       <span
-        className={`flex-1 text-left truncate ${
-          value ? "text-white font-medium" : "text-gray-500"
-        }`}
+        className={`flex-1 text-left truncate ${value ? t.value : t.placeholder}`}
       >
         {value ?? placeholder}
       </span>
       <ChevronDown
         size={13}
-        className={`text-gray-500 flex-shrink-0 transition-transform ${
+        className={`${t.chevron} flex-shrink-0 transition-transform ${
           open ? "rotate-180" : ""
         }`}
       />
@@ -254,19 +333,24 @@ function DropdownPanel({
   items,
   emptyMessage,
   onClose,
+  theme,
   children,
 }: {
   items: DropdownItem[];
   emptyMessage: string;
   onClose: () => void;
+  theme: Theme;
   children?: React.ReactNode; // optional search input slot
 }) {
+  const t = PANEL_STYLES[theme];
   return (
-    <div className="absolute left-0 right-0 mt-1 z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+    <div
+      className={`absolute left-0 right-0 mt-1 z-50 border rounded-lg shadow-xl overflow-hidden ${t.panel}`}
+    >
       {children}
       <ul className="max-h-56 overflow-y-auto py-1">
         {items.length === 0 ? (
-          <li className="px-3 py-3 text-xs text-gray-500 text-center">
+          <li className={`px-3 py-3 text-xs text-center ${t.empty}`}>
             {emptyMessage}
           </li>
         ) : (
@@ -278,15 +362,13 @@ function DropdownPanel({
                   onClose();
                 }}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                  item.selected
-                    ? "bg-gray-700 text-white"
-                    : "text-gray-300 hover:bg-gray-700/60 hover:text-white"
+                  item.selected ? t.itemSelected : t.itemBase
                 }`}
               >
                 <div className="flex-1 min-w-0">
                   <p className="truncate">{item.label}</p>
                   {item.sublabel && (
-                    <p className="text-xs text-gray-500 truncate">
+                    <p className={`text-xs truncate ${t.sublabel}`}>
                       {item.sublabel}
                     </p>
                   )}
@@ -311,6 +393,8 @@ function SimpleDropdown({
   items,
   emptyMessage,
   disabled,
+  theme,
+  widthClass = "",
 }: {
   icon: React.ReactNode;
   placeholder: string;
@@ -318,13 +402,16 @@ function SimpleDropdown({
   items: DropdownItem[];
   emptyMessage: string;
   disabled?: boolean;
+  theme: Theme;
+  widthClass?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useClickOutside(() => setOpen(false));
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={`relative ${widthClass}`} ref={ref}>
       <TriggerButton
+        theme={theme}
         icon={icon}
         value={value}
         placeholder={placeholder}
@@ -334,6 +421,7 @@ function SimpleDropdown({
       />
       {open && (
         <DropdownPanel
+          theme={theme}
           items={items}
           emptyMessage={emptyMessage}
           onClose={() => setOpen(false)}
@@ -349,17 +437,22 @@ function SearchableDropdown({
   value,
   items,
   emptyMessage,
+  theme,
+  widthClass = "",
 }: {
   icon: React.ReactNode;
   placeholder: string;
   value: string | null;
   items: DropdownItem[];
   emptyMessage: string;
+  theme: Theme;
+  widthClass?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useClickOutside(() => setOpen(false));
   const inputRef = useRef<HTMLInputElement>(null);
+  const t = PANEL_STYLES[theme];
 
   // Focus search input when opening
   useEffect(() => {
@@ -377,8 +470,9 @@ function SearchableDropdown({
   );
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={`relative ${widthClass}`} ref={ref}>
       <TriggerButton
+        theme={theme}
         icon={icon}
         value={value}
         placeholder={placeholder}
@@ -387,14 +481,15 @@ function SearchableDropdown({
       />
       {open && (
         <DropdownPanel
+          theme={theme}
           items={filtered}
           emptyMessage={emptyMessage}
           onClose={() => setOpen(false)}
         >
-          <div className="relative border-b border-gray-700">
+          <div className={`relative border-b ${t.searchBorder}`}>
             <Search
               size={13}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+              className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.searchIcon}`}
             />
             <input
               ref={inputRef}
@@ -402,7 +497,7 @@ function SearchableDropdown({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search..."
-              className="w-full pl-8 pr-3 py-2 text-sm bg-transparent text-white placeholder-gray-500 focus:outline-none"
+              className={`w-full pl-8 pr-3 py-2 text-sm bg-transparent focus:outline-none ${t.searchInput}`}
             />
           </div>
         </DropdownPanel>
