@@ -27,9 +27,12 @@ import {
   Loader2,
   AlertTriangle,
   Percent,
+  BookOpen,
 } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
+import HowToGuide from "../../../components/forecaster/how-to-guide";
 import ForecastGrid, { type RowMeta } from "../../../components/forecaster/forecast-grid";
+import RevenueGrid from "../../../components/forecaster/revenue-grid";
 import ComparisonPanel from "../../../components/forecaster/comparison-panel";
 import LabsPenetrationPanel from "../../../components/forecaster/labs-penetration-panel";
 import LabsCoverageSplitDialog, {
@@ -37,9 +40,18 @@ import LabsCoverageSplitDialog, {
 } from "../../../components/forecaster/labs-coverage-split-dialog";
 import { useForecasterGrid } from "../../../lib/hooks/use-forecaster-grid";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
+import { subscribeToClient } from "../../../lib/services/client-service";
+import { syncRevenueCommission } from "../../../lib/services/data-entry-service";
+import type { CommissionsConfig } from "../../../lib/types/client.types";
+import {
+  computeCommission,
+  ensureRevenueShape,
+} from "../../../lib/format/revenue-commission";
 import {
   MEDIA_AXIS_CONFIG,
   MEDIA_TYPE_LABELS,
+  REVENUE_AXIS_CONFIG,
+  REVENUE_COMMISSION_TYPE,
   buildLabsAxisConfig,
   emptyMonthly,
 } from "../../../lib/types/forecaster.types";
@@ -58,16 +70,17 @@ import {
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { RFQ, RFQType } from "../../../lib/types/rfq.types";
 
-type Tab = "media" | "revenue" | "labs";
+type Tab = "media" | "revenue" | "labs" | "howto";
 
 const TABS: { id: Tab; label: string; icon: typeof TrendingUp }[] = [
   { id: "media", label: "Media Spend", icon: TrendingUp },
   { id: "revenue", label: "Revenue", icon: DollarSign },
   { id: "labs", label: "Labs", icon: FlaskConical },
+  { id: "howto", label: "How to", icon: BookOpen },
 ];
 
 export default function ForecastPage() {
-  const { selectedYear, selectedRFQ } = useForecastSelection();
+  const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const [tab, setTab] = useState<Tab>("media");
   // Labs penetration panel — open by default on the Labs tab, toggleable.
   const [penetrationOpen, setPenetrationOpen] = useState(true);
@@ -96,15 +109,69 @@ export default function ForecastPage() {
     [partnersForYear]
   );
 
-  // One grid engine per axis; only the active tab's grid is rendered. Revenue is
-  // still a placeholder.
-  const mediaGrid = useForecasterGrid(MEDIA_AXIS_CONFIG);
+  // Commission (BL) is derived from the Media spend forecast (same submission)
+  // and the client's commission rates. The store only carries a ClientSummary,
+  // so the client's commissionsConfig is subscribed here in real time — a rate
+  // change reflects immediately in the displayed (and synced) commission.
+  const [clientConfig, setClientConfig] = useState<CommissionsConfig | null>(null);
+  useEffect(() => {
+    if (!selectedClient) {
+      setClientConfig(null);
+      return;
+    }
+    const unsubscribe = subscribeToClient(selectedClient.cl_id, (client) => {
+      setClientConfig(client?.commissionsConfig ?? {});
+    });
+    return () => unsubscribe();
+  }, [selectedClient?.cl_id]);
+  const yearRates = useMemo(
+    () => (selectedYear ? clientConfig?.[selectedYear] : undefined),
+    [clientConfig, selectedYear]
+  );
+
+  // One grid engine per axis; only the active tab's grid is rendered. Saving
+  // Media re-syncs the derived Revenue commission for the same submission.
+  const mediaGrid = useForecasterGrid(MEDIA_AXIS_CONFIG, {
+    onSaved: () => {
+      if (!selectedClient || !selectedYear || !selectedRFQ) return;
+      syncRevenueCommission(
+        selectedClient.cl_id,
+        selectedYear,
+        selectedRFQ.type,
+        yearRates
+      ).catch((err) =>
+        console.error("Revenue commission sync failed:", err)
+      );
+    },
+  });
   const labsGrid = useForecasterGrid(labsConfig);
 
-  // Active axis — Media and Labs are implemented; Revenue is "coming soon".
-  const compareActive = tab === "media" || tab === "labs";
-  const activeGrid = tab === "labs" ? labsGrid : mediaGrid;
-  const activeConfig = tab === "labs" ? labsConfig : MEDIA_AXIS_CONFIG;
+  const commission = useMemo(
+    () => computeCommission(mediaGrid.data, yearRates),
+    [mediaGrid.data, yearRates]
+  );
+  // Stable overlay array — the hook treats this Commission row as read-only and
+  // persists it on Save.
+  const revenueComputedRows = useMemo(
+    () => [{ rowType: REVENUE_COMMISSION_TYPE, months: commission.months }],
+    [commission.months]
+  );
+  const revenueGrid = useForecasterGrid(REVENUE_AXIS_CONFIG, {
+    normalizeLoaded: ensureRevenueShape,
+    computedRows: revenueComputedRows,
+  });
+  const revenueNoRates = !yearRates || Object.keys(yearRates).length === 0;
+
+  // Active axis — all three are implemented; comparison is available on each.
+  const compareActive = true;
+  const activeGrid =
+    tab === "labs" ? labsGrid : tab === "revenue" ? revenueGrid : mediaGrid;
+  const activeConfig =
+    tab === "labs"
+      ? labsConfig
+      : tab === "revenue"
+      ? REVENUE_AXIS_CONFIG
+      : MEDIA_AXIS_CONFIG;
 
   // Partner lookup by id — resolves a Labs row's media type/description and
   // attributes Labs spend to a media type for the penetration breakdown.
@@ -296,16 +363,19 @@ export default function ForecastPage() {
         <div className="flex flex-wrap items-center gap-3 px-6 py-3">
           <ForecastSelectors orientation="horizontal" theme="light" />
 
-          <ComparisonSelector
-            rfqOptions={rfqOptions}
-            refRfq={compareActive ? activeGrid.compareRef?.rfq ?? null : null}
-            refSide={activeGrid.compareRef?.side ?? "BL_INPUT"}
-            onSelectRfq={selectRefRfq}
-            onSelectSide={selectRefSide}
-            actualsLabel={activeConfig.actualsLabel}
-            loading={compareActive && activeGrid.referenceLoading}
-            disabled={!compareActive}
-          />
+          {/* Comparison is a grid concern — hidden on the How-to tab. */}
+          {tab !== "howto" && (
+            <ComparisonSelector
+              rfqOptions={rfqOptions}
+              refRfq={compareActive ? activeGrid.compareRef?.rfq ?? null : null}
+              refSide={activeGrid.compareRef?.side ?? "BL_INPUT"}
+              onSelectRfq={selectRefRfq}
+              onSelectSide={selectRefSide}
+              actualsLabel={activeConfig.actualsLabel}
+              loading={compareActive && activeGrid.referenceLoading}
+              disabled={!compareActive}
+            />
+          )}
 
           {/* Labs penetration panel toggle (Labs tab only). */}
           {tab === "labs" && (
@@ -320,7 +390,7 @@ export default function ForecastPage() {
               }`}
             >
               <Percent size={14} />
-              Penetration
+              Share
             </button>
           )}
         </div>
@@ -350,54 +420,66 @@ export default function ForecastPage() {
 
       {/* ─── Content ─── */}
       <div className="p-6 max-w-[1700px] mx-auto">
-        {compareActive ? (
-          !activeGrid.selectionReady ? (
-            <SelectionPrompt />
-          ) : (
-            <div className="flex items-start gap-4">
-              {/* Editing grid — always editable, even while comparing */}
-              <div className="flex-1 min-w-0 space-y-4">
-                {/* Labs with no partner configured for the year — the partner
-                    dropdown is empty, so hint where to configure them. */}
-                {tab === "labs" &&
-                  partnersLoaded &&
-                  partnersForYear.length === 0 && <NoPartnersBanner year={selectedYear} />}
+        {tab === "howto" ? (
+          // Standalone guide — no submission required, jumps to the axis tabs.
+          <HowToGuide onJump={setTab} />
+        ) : !activeGrid.selectionReady ? (
+          <SelectionPrompt />
+        ) : (
+          <div className="flex items-start gap-4">
+            {/* Editing grid — always editable, even while comparing */}
+            <div className="flex-1 min-w-0 space-y-4">
+              {/* Labs with no partner configured for the year — the partner
+                  dropdown is empty, so hint where to configure them. */}
+              {tab === "labs" &&
+                partnersLoaded &&
+                partnersForYear.length === 0 && <NoPartnersBanner year={selectedYear} />}
 
-                {/* Labs over-cap — partners exceed 100% of a planned media type. */}
-                {tab === "labs" && penetration.hasOver && (
-                  <LabsOverCapBanner result={penetration} />
-                )}
+              {/* Labs over-cap — partners exceed 100% of a planned media type. */}
+              {tab === "labs" && penetration.hasOver && (
+                <LabsOverCapBanner result={penetration} />
+              )}
 
+              {tab === "revenue" ? (
+                <RevenueGrid
+                  grid={revenueGrid}
+                  commission={commission}
+                  noRates={revenueNoRates}
+                />
+              ) : (
                 <ForecastGrid
                   config={activeConfig}
                   grid={activeGrid}
                   rowMeta={tab === "labs" ? labsRowMeta : undefined}
                 />
-              </div>
-
-              {/* Right column — penetration (Labs) and/or comparison panels. */}
-              {(showPenetration || hasComparison) && (
-                <div className="w-[360px] flex-shrink-0 self-start sticky top-32 space-y-4">
-                  {showPenetration && (
-                    <LabsPenetrationPanel
-                      result={penetration}
-                      canEdit={canEditPenetration}
-                      onSetCoverage={setPartnerCoverage}
-                    />
-                  )}
-                  {hasComparison && (
-                    <ComparisonPanel
-                      config={activeConfig}
-                      grid={activeGrid}
-                      currentRfq={selectedRFQ!.type}
-                    />
-                  )}
-                </div>
               )}
             </div>
-          )
-        ) : (
-          <ComingSoon label={TABS.find((t) => t.id === tab)!.label} />
+
+            {/* Right column — penetration (Labs) and/or comparison panels. */}
+            {(showPenetration || hasComparison) && (
+              <div className="w-[360px] flex-shrink-0 self-start sticky top-32 space-y-4">
+                {showPenetration && (
+                  <LabsPenetrationPanel
+                    result={penetration}
+                    canEdit={canEditPenetration}
+                    onSetCoverage={setPartnerCoverage}
+                  />
+                )}
+                {hasComparison && (
+                  <ComparisonPanel
+                    config={activeConfig}
+                    grid={activeGrid}
+                    currentRfq={selectedRFQ!.type}
+                    disableDistributeFor={
+                      tab === "revenue"
+                        ? new Set([REVENUE_COMMISSION_TYPE])
+                        : undefined
+                    }
+                  />
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -539,22 +621,6 @@ function SelectionPrompt() {
           </span>
         ))}
       </div>
-    </div>
-  );
-}
-
-// ─── Placeholder for axes not yet implemented (Revenue / Labs) ───────────────
-
-function ComingSoon({ label }: { label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 text-gray-400 bg-white border border-gray-200 rounded-xl">
-      <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-        <FlaskConical size={24} className="opacity-40" />
-      </div>
-      <p className="text-sm font-medium text-gray-500 mb-1">{label} — coming soon</p>
-      <p className="text-xs text-gray-400">
-        This forecast axis isn&apos;t available yet.
-      </p>
     </div>
   );
 }

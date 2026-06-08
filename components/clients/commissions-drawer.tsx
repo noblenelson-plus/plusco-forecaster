@@ -25,6 +25,7 @@ import {
   validateYearConfig,
   saveYearCommissions,
 } from "../../lib/services/commission-service";
+import { propagateCommissionForYear } from "../../lib/services/data-entry-service";
 
 interface CommissionsDrawerProps {
   open: boolean;
@@ -208,6 +209,14 @@ export default function CommissionsDrawer({
     setError("");
     try {
       await saveYearCommissions(client.cl_id, year, yearConfig);
+      // Re-sync the derived Revenue commission across every (unlocked) RFQ of
+      // the year so Firestore reflects the new rates immediately. Best-effort —
+      // a propagation failure must not fail the rate save itself.
+      try {
+        await propagateCommissionForYear(client.cl_id, year, yearConfig);
+      } catch (err) {
+        console.error("Commission propagation failed:", err);
+      }
       const newConfig: CommissionsConfig = {
         ...(client.commissionsConfig ?? {}),
         [year]: yearConfig,

@@ -3,16 +3,18 @@
 /**
  * KPI tile — an icon + label over a large headline figure, with an optional
  * sub-line (context or a delta). Used for the metric strip atop each tab.
+ * Built on the shared shadcn/ui Card primitive.
  */
 
 import type { LucideIcon } from "lucide-react";
+import { Card } from "../../ui/card";
 
 export default function StatCard({
   icon: Icon,
   label,
   value,
   sub,
-  accent = "text-yellow-500",
+  accent = "text-primary",
 }: {
   icon?: LucideIcon;
   label: string;
@@ -22,15 +24,15 @@ export default function StatCard({
   accent?: string;
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+    <Card className="gap-0 p-5">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         {Icon && <Icon size={15} className={accent} />}
         {label}
       </div>
-      <div className="mt-2 text-2xl font-bold tabular-nums text-gray-900">
+      <div className="mt-2 text-2xl font-bold tabular-nums text-foreground">
         {value}
       </div>
-      {sub && <div className="mt-1 text-xs text-gray-400">{sub}</div>}
-    </div>
+      {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+    </Card>
   );
 }

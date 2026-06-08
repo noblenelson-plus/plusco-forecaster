@@ -22,13 +22,20 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import type { RFQType } from "../types/rfq.types";
+import { RFQ_TYPE_ORDER, buildRFQId } from "../types/rfq.types";
+import type { MediaType, MonthlyMap } from "../types/common.types";
 import {
   type AxisData,
   type AxisId,
   type DataEntry,
   buildDataEntryId,
   emptyAxisData,
+  REVENUE_COMMISSION_TYPE,
 } from "../types/forecaster.types";
+import {
+  computeCommission,
+  ensureRevenueShape,
+} from "../format/revenue-commission";
 
 const COLLECTION = "data_entries";
 
@@ -124,6 +131,60 @@ export async function saveAxisData(
   const snapshot = await getDoc(doc(db, COLLECTION, entryId));
   if (snapshot.exists() && !snapshot.data().createdAt) {
     await updateDoc(doc(db, COLLECTION, entryId), { createdAt: now });
+  }
+}
+
+// ─── Revenue commission sync (derived from Media + rates) ────────────────────
+
+/**
+ * Recomputes the Revenue Commission row from the persisted Media forecast and
+ * the given commission rates, and writes it to Firestore — preserving the other
+ * revenue streams (their stored values are re-read and kept). Used to keep the
+ * commission in sync whenever Media is saved or the client's rates change.
+ *
+ * `yearRates` is the `commissionsConfig[year]` slice (passed in so this stays
+ * decoupled from the clients collection).
+ */
+export async function syncRevenueCommission(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  yearRates: Partial<Record<MediaType, MonthlyMap>> | undefined,
+  userUid?: string
+): Promise<void> {
+  const media = await fetchAxisData(clientId, year, rfq, "media");
+  const revenue = ensureRevenueShape(
+    await fetchAxisData(clientId, year, rfq, "revenue")
+  );
+  const { months } = computeCommission(media, yearRates);
+  const row = revenue.buckets[0]?.rows.find(
+    (r) => r.rowType === REVENUE_COMMISSION_TYPE
+  );
+  if (row) row.months = months;
+  await saveAxisData(clientId, year, rfq, "revenue", revenue, userUid);
+}
+
+/**
+ * Propagates a commission-rate change across every RFQ of a (client, year):
+ * recomputes and writes the Revenue Commission for each existing submission.
+ * RFQs with no submission are skipped (nothing to sync), and LOCKED RFQs are
+ * skipped — a locked submission is a frozen snapshot and must not be rewritten.
+ */
+export async function propagateCommissionForYear(
+  clientId: string,
+  year: number,
+  yearRates: Partial<Record<MediaType, MonthlyMap>> | undefined,
+  userUid?: string
+): Promise<void> {
+  const types = (Object.keys(RFQ_TYPE_ORDER) as RFQType[]).sort(
+    (a, b) => RFQ_TYPE_ORDER[a] - RFQ_TYPE_ORDER[b]
+  );
+  for (const type of types) {
+    const entry = await fetchDataEntry(clientId, year, type);
+    if (!entry) continue; // no submission for this RFQ — nothing to sync
+    const rfqSnap = await getDoc(doc(db, "rfqs", buildRFQId(year, type)));
+    if (rfqSnap.exists() && rfqSnap.data().status === "LOCKED") continue;
+    await syncRevenueCommission(clientId, year, type, yearRates, userUid);
   }
 }
 

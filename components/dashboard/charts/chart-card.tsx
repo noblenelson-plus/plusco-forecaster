@@ -2,10 +2,19 @@
 
 /**
  * Card shell for a dashboard chart — title row (optional icon + subtitle) over
- * the chart body. Matches the app's card style (rounded-xl, subtle shadow).
+ * the chart body. Built on the shared shadcn/ui Card primitive so every card on
+ * the dashboard shares one consistent surface, spacing and shadow.
  */
 
 import type { LucideIcon } from "lucide-react";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardAction,
+  CardContent,
+} from "../../ui/card";
 
 export default function ChartCard({
   title,
@@ -23,22 +32,18 @@ export default function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className={`flex flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-sm ${
-        className ?? ""
-      }`}
-    >
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <Card className={className}>
+      <CardHeader className="pb-0">
         <div className="flex items-center gap-2">
-          {Icon && <Icon size={16} className="flex-shrink-0 text-yellow-500" />}
+          {Icon && <Icon size={16} className="flex-shrink-0 text-primary" />}
           <div>
-            <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
-            {subtitle && <p className="mt-0.5 text-xs text-gray-400">{subtitle}</p>}
+            <CardTitle>{title}</CardTitle>
+            {subtitle && <CardDescription className="mt-0.5">{subtitle}</CardDescription>}
           </div>
         </div>
-        {action}
-      </div>
-      <div className="flex-1">{children}</div>
-    </div>
+        {action && <CardAction>{action}</CardAction>}
+      </CardHeader>
+      <CardContent className="pt-0">{children}</CardContent>
+    </Card>
   );
 }

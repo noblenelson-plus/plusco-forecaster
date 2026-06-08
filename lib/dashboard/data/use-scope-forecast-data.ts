@@ -29,11 +29,13 @@ import {
 import type { MonthlyMap } from "../../types/common.types";
 import type { LabsPartner } from "../../types/labs.types";
 import type { DashboardScope } from "../widgets/widget.types";
+import { aggregateByType } from "../../types/forecaster.types";
 import {
   computeLabsMonthly,
   computeMediaBreakdown,
   computeRevenueBreakdown,
   mergeAxisData,
+  type ClientMediaBreakdown,
   type MediaBreakdown,
   type RevenueBreakdown,
 } from "./aggregate";
@@ -57,6 +59,9 @@ interface RawScopeData {
   media: AxisData;
   labs: AxisData;
   revenue: AxisData;
+  /** Per-client media (BL) spend, keyed by media type then month. Drives the
+   *  per-client data table; the merged `media` axis drives the charts. */
+  mediaByClient: ClientMediaBreakdown[];
   clientsWithData: number;
 }
 
@@ -64,6 +69,7 @@ const EMPTY_RAW: RawScopeData = {
   media: emptyAxisData(),
   labs: emptyAxisData(),
   revenue: emptyAxisData(),
+  mediaByClient: [],
   clientsWithData: 0,
 };
 
@@ -75,6 +81,8 @@ export interface ScopeForecastData {
   clientCount: number;
   clientsWithData: number;
   media: MediaBreakdown;
+  /** One entry per in-scope client with media spend, for the data table. */
+  mediaByClient: ClientMediaBreakdown[];
   revenue: RevenueBreakdown;
   labs: LabsPenetrationResult;
   labsMonthly: MonthlyMap;
@@ -119,24 +127,33 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
         const mediaList: AxisData[] = [];
         const labsList: AxisData[] = [];
         const revenueList: AxisData[] = [];
+        const mediaByClient: ClientMediaBreakdown[] = [];
         let clientsWithData = 0;
 
-        for (const entry of entries) {
+        entries.forEach((entry, i) => {
           const media = axisOf(entry, "media");
           const labs = axisOf(entry, "labs");
           const revenue = axisOf(entry, "revenue");
           mediaList.push(media);
           labsList.push(labs);
           revenueList.push(revenue);
+          if (hasAnyInput(media)) {
+            // Per-client BL media spend per type per month, for the table.
+            mediaByClient.push({
+              clientId: clientIds[i],
+              byType: aggregateByType(media, "BL_INPUT"),
+            });
+          }
           if (hasAnyInput(media) || hasAnyInput(labs) || hasAnyInput(revenue)) {
             clientsWithData += 1;
           }
-        }
+        });
 
         setRaw({
           media: mergeAxisData(mediaList),
           labs: mergeAxisData(labsList),
           revenue: mergeAxisData(revenueList),
+          mediaByClient,
           clientsWithData,
         });
       } catch (err) {
@@ -190,6 +207,7 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
     clientCount: clientIds.length,
     clientsWithData: effective.clientsWithData,
     media,
+    mediaByClient: effective.mediaByClient,
     revenue,
     labs,
     labsMonthly,

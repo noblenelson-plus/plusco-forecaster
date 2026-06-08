@@ -4,6 +4,7 @@
  * Media Spend tab — headline KPIs over a mix of charts:
  *   • Channel mix (donut)        • Digital share of media (gauge)
  *   • Digital channel detail (bars)  • Digital vs traditional monthly (trend)
+ * then a per-client / per-media-type data table with CSV export.
  */
 
 import {
@@ -19,6 +20,7 @@ import DonutChart from "../charts/donut-chart";
 import GaugeChart from "../charts/gauge-chart";
 import BarList from "../charts/bar-list";
 import TrendChart from "../charts/trend-chart";
+import MediaDataTable from "../media-data-table";
 import { DIGITAL_COLOR, TRADITIONAL_COLOR } from "../charts/colors";
 import { formatCompactMoney, formatPct } from "../charts/format";
 import { LoadingTab, NoContextNotice, EmptyDataNotice } from "./tab-states";
@@ -26,7 +28,15 @@ import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-fo
 
 const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 0);
 
-export default function MediaSpendTab({ data }: { data: ScopeForecastData }) {
+export default function MediaSpendTab({
+  data,
+  clientNameById,
+  fileLabel,
+}: {
+  data: ScopeForecastData;
+  clientNameById: Record<string, string>;
+  fileLabel?: string;
+}) {
   if (!data.hasContext) return <NoContextNotice />;
   if (data.loading) return <LoadingTab />;
   if (data.media.totalAnnual === 0) return <EmptyDataNotice />;
@@ -36,8 +46,8 @@ export default function MediaSpendTab({ data }: { data: ScopeForecastData }) {
   const digitalChannels = channels.filter((c) => c.digital);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="space-y-8">
+      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
         <StatCard
           icon={TrendingUp}
           label="Total media spend"
@@ -66,11 +76,14 @@ export default function MediaSpendTab({ data }: { data: ScopeForecastData }) {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* Asymmetric 5-col grid: donut 60% / gauge 40% on top, bars 40% /
+          trend 60% below — every chart sits at 40–60%, no full-width gaps. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <ChartCard
           title="Channel mix"
           subtitle="Annual BL spend by media channel"
           icon={TrendingUp}
+          className="lg:col-span-3"
         >
           <DonutChart
             segments={channels.map((c) => ({
@@ -88,10 +101,11 @@ export default function MediaSpendTab({ data }: { data: ScopeForecastData }) {
           title="Digital share of media"
           subtitle="Share of total media in digital channels"
           icon={Percent}
+          className="lg:col-span-2"
         >
           <GaugeChart
             value={media.digitalShare ?? 0}
-            color={DIGITAL_COLOR}
+            variant="indigo"
             valueLabel={formatPct(media.digitalShare)}
             caption="of media is digital"
           />
@@ -101,6 +115,7 @@ export default function MediaSpendTab({ data }: { data: ScopeForecastData }) {
           title="Digital channels"
           subtitle="Spend per digital channel · share of total media"
           icon={Monitor}
+          className="lg:col-span-2"
         >
           {digitalChannels.length > 0 ? (
             <BarList
@@ -126,6 +141,7 @@ export default function MediaSpendTab({ data }: { data: ScopeForecastData }) {
           title="Monthly spend — digital vs traditional"
           subtitle="BL media spend by month"
           icon={TrendingUp}
+          className="lg:col-span-3"
         >
           <TrendChart
             series={[
@@ -144,6 +160,12 @@ export default function MediaSpendTab({ data }: { data: ScopeForecastData }) {
           />
         </ChartCard>
       </div>
+
+      <MediaDataTable
+        mediaByClient={data.mediaByClient}
+        clientNameById={clientNameById}
+        fileLabel={fileLabel}
+      />
     </div>
   );
 }

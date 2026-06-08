@@ -80,7 +80,7 @@ function RatioHeader({ result }: { result: LabsPenetrationResult }) {
     <div className="px-4 py-3 border-b border-gray-200 bg-gray-900 text-white">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
         <FlaskConical size={13} />
-        Labs penetration
+        Labs share
       </div>
 
       <div className="flex items-end justify-between gap-2">

@@ -58,6 +58,11 @@ interface ComparisonPanelProps {
   grid: UseForecasterGridResult;
   /** RFQ currently being edited — the base operand. */
   currentRfq: RFQType;
+  /**
+   * Row types that must not offer the "distribute the difference" action —
+   * e.g. Revenue's computed Commission row, which can't be hand-adjusted.
+   */
+  disableDistributeFor?: Set<string>;
 }
 
 type ViewMode = "list" | "bars" | "donut";
@@ -108,6 +113,7 @@ export default function ComparisonPanel({
   config,
   grid,
   currentRfq,
+  disableDistributeFor,
 }: ComparisonPanelProps) {
   const ref = grid.compareRef;
   const [view, setView] = useState<ViewMode>("list");
@@ -242,6 +248,7 @@ export default function ComparisonPanel({
               ? (type, month) => setTarget({ type, month })
               : undefined
           }
+          disableDistributeFor={disableDistributeFor}
         />
       ) : view === "bars" ? (
         <BarsView
@@ -344,6 +351,7 @@ function ListView({
   rows,
   grand,
   onDistribute,
+  disableDistributeFor,
 }: {
   rows: PanelRowData[];
   grand: { current: number; reference: number };
@@ -352,6 +360,8 @@ function ListView({
    * clickable to distribute its difference.
    */
   onDistribute?: (type: string, month: number | null) => void;
+  /** Row types excluded from distribution (e.g. the computed Commission row). */
+  disableDistributeFor?: Set<string>;
 }) {
   // Set of type rows whose monthly detail is expanded.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -381,7 +391,9 @@ function ListView({
             expanded={expanded.has(r.type)}
             onToggle={() => toggle(r.type)}
             onDistribute={
-              onDistribute ? (month) => onDistribute(r.type, month) : undefined
+              onDistribute && !disableDistributeFor?.has(r.type)
+                ? (month) => onDistribute(r.type, month)
+                : undefined
             }
           />
         ))}

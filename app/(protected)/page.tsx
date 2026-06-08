@@ -52,8 +52,15 @@ export default function DashboardPage() {
   const [tab, setTab] = useState<DashboardTab>("media");
   const forecastData = useScopeForecastData(scope);
 
+  const clientNameById = useMemo(
+    () => Object.fromEntries(clients.map((c) => [c.cl_id, c.CL_Name])),
+    [clients]
+  );
+  const fileLabel =
+    selectedYear && selectedRFQ ? `${selectedYear}-${selectedRFQ.type}` : undefined;
+
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="flex min-h-screen flex-col bg-muted">
       <header className="sticky top-0 z-20 flex flex-col bg-white">
         <DashboardContextBar />
         <DashboardFilterBar
@@ -75,11 +82,11 @@ export default function DashboardPage() {
                 onClick={() => setTab(t.id)}
                 className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                   active
-                    ? "border-yellow-400 text-gray-900"
-                    : "border-transparent text-gray-500 hover:text-gray-800"
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Icon size={16} className={active ? "text-yellow-500" : ""} />
+                <Icon size={16} className={active ? "text-primary" : ""} />
                 {t.label}
               </button>
             );
@@ -105,7 +112,11 @@ export default function DashboardPage() {
             {forecastData.error}
           </div>
         ) : tab === "media" ? (
-          <MediaSpendTab data={forecastData} />
+          <MediaSpendTab
+            data={forecastData}
+            clientNameById={clientNameById}
+            fileLabel={fileLabel}
+          />
         ) : tab === "revenue" ? (
           <RevenueTab data={forecastData} />
         ) : (

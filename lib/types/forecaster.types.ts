@@ -314,3 +314,70 @@ export function buildLabsAxisConfig(partners: LabsPartner[]): AxisConfig {
     actualsLabel: "MediaOcean",
   };
 }
+
+// ─── Revenue axis config ─────────────────────────────────────────────────────
+
+/**
+ * Revenue stream identifiers. Aligned with the dashboard's stream keys
+ * (lib/dashboard/data/aggregate.ts) so the same `rowType` values flow through
+ * the grid, the comparison panel and the dashboard.
+ *
+ * Unlike Media/Labs, Revenue has no project notion: a single implicit bucket
+ * holds one fixed row per BL stream, and the grid offers no add/remove. The
+ * Commission BL row is computed (media spend × commission rate), not entered —
+ * see lib/format/revenue-commission.ts.
+ */
+export type RevenueStream =
+  | "retainer"
+  | "commission"
+  | "projectFees"
+  | "productFees"
+  | "unallocated"
+  | "accrual";
+
+export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
+  retainer: "Retainer",
+  commission: "Commission",
+  projectFees: "Project Fees",
+  productFees: "Product Fees",
+  unallocated: "Unallocated",
+  accrual: "Accrual",
+};
+
+/** The Commission BL row is calculated — read-only, never hand-entered. */
+export const REVENUE_COMMISSION_TYPE: RevenueStream = "commission";
+
+/** BL Input streams, in display order. */
+export const REVENUE_BL_STREAMS: RevenueStream[] = [
+  "retainer",
+  "commission",
+  "projectFees",
+  "productFees",
+];
+
+/** Admin Input (GAIA) streams — the BL four plus Unallocated and Accrual. */
+export const REVENUE_ADMIN_STREAMS: RevenueStream[] = [
+  "retainer",
+  "commission",
+  "projectFees",
+  "productFees",
+  "unallocated",
+  "accrual",
+];
+
+export const REVENUE_AXIS_CONFIG: AxisConfig = {
+  axisId: "revenue",
+  title: "Revenue",
+  bucketLabel: "Revenue",
+  rowTypeLabel: "Stream",
+  // Every stream is listed so the comparison panel can order and label them;
+  // the grid itself seeds the fixed rows and exposes no add/remove UI.
+  rowTypeOptions: REVENUE_ADMIN_STREAMS.map((s) => ({
+    value: s,
+    label: REVENUE_STREAM_LABELS[s],
+  })),
+  allowMultipleBuckets: false,
+  allowDuplicateRowTypes: false,
+  // Revenue actuals come from GAIA (Finance), not MediaOcean.
+  actualsLabel: "GAIA",
+};

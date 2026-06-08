@@ -34,7 +34,10 @@ export default function DonutChart({
   const total = segments.reduce((acc, s) => acc + s.value, 0);
 
   return (
-    <div className="flex flex-col items-center gap-6 sm:flex-row">
+    // @container: the legend stays to the right of the donut whenever the
+    // *card* is wide enough (≥ 24rem), with a generous gap; only a very narrow
+    // column makes it stack — independent of the viewport width.
+    <div className="@container flex flex-col items-center justify-center gap-6 @sm:flex-row @sm:gap-12">
       <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
         {data.length > 0 ? (
           <PieChart width={size} height={size}>
@@ -77,9 +80,9 @@ export default function DonutChart({
         </div>
       </div>
 
-      <ul className="w-full min-w-0 flex-1 space-y-1.5">
+      <ul className="w-full max-w-xs space-y-2.5 @sm:w-auto @sm:min-w-[170px]">
         {segments.map((s, i) => (
-          <li key={i} className="flex items-center gap-2 text-xs">
+          <li key={i} className="flex items-center gap-2.5 text-xs">
             <span
               className="h-2.5 w-2.5 flex-shrink-0 rounded-sm"
               style={{ backgroundColor: s.color }}

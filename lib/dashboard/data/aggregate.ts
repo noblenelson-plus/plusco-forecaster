@@ -39,6 +39,16 @@ function isDigital(type: MediaType): boolean {
   return DIGITAL_MEDIA_TYPES.includes(type);
 }
 
+/**
+ * One in-scope client's BL media spend, broken down by media type then month.
+ * `byType` is keyed by the MediaType value (e.g. "social"); a type the client
+ * never planned is simply absent. Consumed by the per-client data table.
+ */
+export interface ClientMediaBreakdown {
+  clientId: string;
+  byType: Record<string, MonthlyMap>;
+}
+
 /** Concatenate many clients' AxisData into one — downstream helpers sum rows. */
 export function mergeAxisData(list: AxisData[]): AxisData {
   return {

@@ -35,7 +35,6 @@ export default function LabsTab({ data }: { data: ScopeForecastData }) {
 
   const target = labs.targetRatio;
   const onTarget = labs.ratio !== null && labs.ratio >= target;
-  const gaugeColor = onTarget ? "#10b981" : "#f59e0b";
 
   const partnersWithSpend = labs.byType.reduce(
     (acc, t) => acc + t.partners.filter((p) => p.annual > 0).length,
@@ -70,7 +69,7 @@ export default function LabsTab({ data }: { data: ScopeForecastData }) {
         />
         <StatCard
           icon={Percent}
-          label="Penetration rate"
+          label="Share rate"
           value={formatPct(labs.ratio)}
           sub={`Target ${formatPct(target)}`}
           accent={onTarget ? "text-emerald-500" : "text-yellow-500"}
@@ -93,14 +92,13 @@ export default function LabsTab({ data }: { data: ScopeForecastData }) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ChartCard
-          title="Penetration rate"
+          title="Share rate"
           subtitle="Labs spend as a share of planned media"
           icon={Percent}
         >
           <GaugeChart
             value={labs.ratio ?? 0}
-            target={target}
-            color={gaugeColor}
+            variant={onTarget ? "success" : "warning"}
             valueLabel={formatPct(labs.ratio)}
             caption={`of media · target ${formatPct(target)}`}
           />

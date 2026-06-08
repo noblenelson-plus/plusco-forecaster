@@ -21,7 +21,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth-context";
 import { useUserProfile } from "./use-user-profile";
 import { useForecastSelection } from "../stores/forecast-selection.store";
@@ -151,7 +151,35 @@ export interface UseForecasterGridResult {
   discard: () => void;
 }
 
-export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
+/**
+ * Optional behaviors, used by Revenue (Media/Labs pass nothing):
+ *   — normalizeLoaded : post-process the fetched AxisData before it becomes the
+ *     clean snapshot (e.g. seed Revenue's fixed rows so they aren't "dirty").
+ *     Must be a stable reference (module-level function).
+ *   — computedRows    : derived, read-only BL rows whose months are overlaid by
+ *     rowType (e.g. the computed Commission row). They display, total, compare
+ *     and save with the computed value, but are never editable nor dirty.
+ */
+export interface UseForecasterGridOptions {
+  normalizeLoaded?: (data: AxisData) => AxisData;
+  computedRows?: { rowType: string; months: MonthlyMap }[];
+  /**
+   * Called after a successful Save with the just-persisted data. Used by Media
+   * to trigger the derived Revenue commission sync. Fire-and-forget — its work
+   * runs outside the save's own loading state.
+   */
+  onSaved?: (data: AxisData) => void;
+}
+
+export function useForecasterGrid(
+  config: AxisConfig,
+  options?: UseForecasterGridOptions
+): UseForecasterGridResult {
+  const normalizeLoaded = options?.normalizeLoaded;
+  const computedRows = options?.computedRows;
+  // Latest onSaved kept in a ref so save() doesn't depend on its identity.
+  const onSavedRef = useRef(options?.onSaved);
+  onSavedRef.current = options?.onSaved;
   const { user } = useAuth();
   const { isAdmin } = useUserProfile();
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
@@ -205,8 +233,11 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     )
       .then((axisData) => {
         if (cancelled) return;
-        setOriginal(axisData);
-        setData(clone(axisData));
+        // Revenue seeds its fixed rows here so they belong to the clean
+        // snapshot and never read as unsaved changes.
+        const normalized = normalizeLoaded ? normalizeLoaded(axisData) : axisData;
+        setOriginal(normalized);
+        setData(clone(normalized));
         setDirtyMap(new Map());
         setStructureDirty(false);
       })
@@ -229,6 +260,7 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     selectedYear,
     selectedRFQ?.rfq_id,
     config.axisId,
+    normalizeLoaded,
   ]);
 
   // Changer de triplet invalide la comparaison en cours
@@ -285,32 +317,75 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     config.axisId,
   ]);
 
-  // Référence effective exposée à l'UI : `data` live si auto-référence
-  // (RFQ courant), sinon le doc chargé. null tant qu'aucune comparaison.
+  // ─── Computed rows overlay (Revenue's Commission) ───────────────────────
+  // Derived, read-only BL rows: their stored months are replaced by the
+  // computed values so cells, totals, comparison base and Save all see them,
+  // while the underlying `data` stays the user-editable working copy.
+
+  const computedTypes = useMemo(
+    () => new Set((computedRows ?? []).map((c) => c.rowType)),
+    [computedRows]
+  );
+
+  const effectiveData: AxisData = useMemo(() => {
+    if (!computedRows || computedRows.length === 0) return data;
+    const overlay = new Map(computedRows.map((c) => [c.rowType, c.months]));
+    let changed = false;
+    const buckets = data.buckets.map((b) => {
+      let rowsChanged = false;
+      const rows = b.rows.map((r) => {
+        const months = overlay.get(r.rowType);
+        if (!months) return r;
+        rowsChanged = true;
+        return { ...r, months: { ...months } };
+      });
+      if (!rowsChanged) return b;
+      changed = true;
+      return { ...b, rows };
+    });
+    return changed ? { ...data, buckets } : data;
+  }, [data, computedRows]);
+
+  // Is the coord a computed (read-only) BL row? Resolved by rowType.
+  const isComputedCoord = useCallback(
+    (coord: CellCoord) => {
+      if (computedTypes.size === 0 || coord.category !== "BL_INPUT") return false;
+      const bucket = data.buckets.find((b) => b.bucketId === coord.bucketId);
+      const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
+      return !!row && computedTypes.has(row.rowType);
+    },
+    [computedTypes, data]
+  );
+
+  // Référence effective exposée à l'UI : `data` live (overlay compris) si
+  // auto-référence (RFQ courant), sinon le doc chargé. null tant qu'aucune
+  // comparaison.
   const referenceData: AxisData | null = !compareRef
     ? null
     : selfReference
-    ? data
+    ? effectiveData
     : fetchedReference;
 
   // ─── Édition de cellules ────────────────────────────────────────────────
 
   const getCellValue = useCallback(
-    (coord: CellCoord) => getValueIn(data, coord),
-    [data]
+    (coord: CellCoord) => getValueIn(effectiveData, coord),
+    [effectiveData]
   );
 
   // Une cellule est-elle modifiable par l'utilisateur courant ? Garde unique
   // appliquée à tous les chemins d'écriture (saisie, coller, remplir, spread,
-  // distribution) — empêche les BL d'écrire dans une période fermée.
+  // distribution) — empêche les BL d'écrire dans une période fermée ou dans une
+  // ligne calculée (commission).
   const isCoordEditable = useCallback(
     (coord: CellCoord) => {
       if (locked) return false;
+      if (isComputedCoord(coord)) return false;
       if (coord.category === "ADMIN_INPUT") return isAdmin;
       if (!canEditClosed && closedMonths.has(coord.month)) return false;
       return true;
     },
-    [locked, isAdmin, canEditClosed, closedMonths]
+    [locked, isAdmin, canEditClosed, closedMonths, isComputedCoord]
   );
 
   const setCellValue = useCallback(
@@ -573,12 +648,13 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
         selectedYear!,
         selectedRFQ!.type,
         config.axisId,
-        data,
+        effectiveData,
         user?.uid
       );
-      setOriginal(clone(data));
+      setOriginal(clone(effectiveData));
       setDirtyMap(new Map());
       setStructureDirty(false);
+      onSavedRef.current?.(effectiveData);
     } catch (err: any) {
       setError("Failed to save: " + (err?.message ?? "Unknown error"));
     } finally {
@@ -592,7 +668,7 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     selectedYear,
     selectedRFQ,
     config.axisId,
-    data,
+    effectiveData,
     user?.uid,
   ]);
 
@@ -612,7 +688,7 @@ export function useForecasterGrid(config: AxisConfig): UseForecasterGridResult {
     canEditActuals: isAdmin && !locked,
     closedMonths,
     canEditClosed,
-    data,
+    data: effectiveData,
     dirtyMap,
     dirtyCount: dirtyMap.size,
     hasChanges,

@@ -5,6 +5,7 @@ import {
   setDoc,
   deleteDoc,
   writeBatch,
+  onSnapshot,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
@@ -100,6 +101,22 @@ function escapeCSV(value: unknown): string {
 }
 
 // ─── Logo Upload ──────────────────────────────────────────────────────────────
+
+/**
+ * Real-time subscription to a single client doc. Used by the forecast page to
+ * keep commission rates (commissionsConfig) live, so the Revenue Commission row
+ * reflects a rate change immediately. Returns the unsubscribe function.
+ */
+export function subscribeToClient(
+  clId: string,
+  onChange: (client: Client | null) => void
+): () => void {
+  return onSnapshot(doc(db, "clients", clId), (snap) => {
+    onChange(
+      snap.exists() ? ({ cl_id: snap.id, ...(snap.data() as Omit<Client, "cl_id">) }) : null
+    );
+  });
+}
 
 export async function uploadClientLogo(file: File, clientName: string): Promise<string> {
   const ext = file.name.split(".").pop() ?? "png";
