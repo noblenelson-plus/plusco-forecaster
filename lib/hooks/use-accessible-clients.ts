@@ -18,6 +18,7 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useUserProfile } from "./use-user-profile";
 import type { Client } from "../types/client.types";
+import { isClientHidden } from "../format/client";
 
 // Firestore caps "in" queries at 30 values — batch when a BL has more.
 const IN_QUERY_LIMIT = 30;
@@ -70,6 +71,8 @@ export function useAccessibleClients(): UseAccessibleClientsResult {
 
         const data: Client[] = docs
           .map((d) => ({ cl_id: d.id, ...(d.data() as Omit<Client, "cl_id">) }))
+          // Hidden clients are removed everywhere this hook feeds (dashboard, …).
+          .filter((c) => !isClientHidden(c))
           .sort((a, b) => a.CL_Name.localeCompare(b.CL_Name));
 
         if (!cancelled) setClients(data);

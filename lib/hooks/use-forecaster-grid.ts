@@ -26,8 +26,12 @@ import { useAuth } from "../auth-context";
 import { useUserProfile } from "./use-user-profile";
 import { useForecastSelection } from "../stores/forecast-selection.store";
 import { fetchAxisData, saveAxisData } from "../services/data-entry-service";
+import {
+  fetchAnnualActuals,
+  saveAnnualActuals,
+} from "../services/annual-actuals-service";
 import { MONTHS, type MonthlyMap } from "../types/common.types";
-import { RFQ_CLOSED_MONTHS } from "../types/rfq.types";
+import { resolveClosedMonths } from "../types/rfq.types";
 import {
   type AxisConfig,
   type AxisData,
@@ -187,11 +191,18 @@ export function useForecasterGrid(
   const selectionReady = !!selectedClient && !!selectedYear && !!selectedRFQ;
   const locked = selectedRFQ?.status === "LOCKED";
 
-  // Périodes fermées du RFQ courant : verrou par mois pour les BL (les admins
-  // ne sont jamais restreints). Indépendant du lock global du RFQ.
+  // Closed periods for the current RFQ + axis: per-month lock for BLs (admins
+  // are never restricted). Independent of the RFQ's global lock. Resolved from
+  // the admin-set per-axis override, falling back to the static default.
+  const axisClosedMonths = selectedRFQ?.closedMonths?.[config.axisId];
   const closedMonths = useMemo(
-    () => new Set(selectedRFQ ? RFQ_CLOSED_MONTHS[selectedRFQ.type] : []),
-    [selectedRFQ?.type]
+    () =>
+      new Set(
+        selectedRFQ ? resolveClosedMonths(selectedRFQ, config.axisId) : []
+      ),
+    // axisClosedMonths is read inside resolveClosedMonths; listing it (plus the
+    // RFQ type, which drives the default) keeps the memo correct.
+    [selectedRFQ?.type, config.axisId, axisClosedMonths]
   );
   const canEditClosed = isAdmin;
 
@@ -225,17 +236,30 @@ export function useForecasterGrid(
     setLoading(true);
     setError("");
 
-    fetchAxisData(
-      selectedClient!.cl_id,
-      selectedYear!,
-      selectedRFQ!.type,
-      config.axisId
-    )
-      .then((axisData) => {
+    // BL buckets always come from the submission's data_entries doc. The
+    // ADMIN_INPUT (actuals) comes from the annual_actuals doc for axes whose
+    // source is annual (Media, Labs) — shared across the year's submissions —
+    // and from the submission doc otherwise (Revenue's GAIA).
+    Promise.all([
+      fetchAxisData(
+        selectedClient!.cl_id,
+        selectedYear!,
+        selectedRFQ!.type,
+        config.axisId
+      ),
+      config.annualActuals
+        ? fetchAnnualActuals(selectedClient!.cl_id, selectedYear!, config.axisId)
+        : Promise.resolve(null),
+    ])
+      .then(([axisData, annualActuals]) => {
         if (cancelled) return;
+        const merged =
+          annualActuals !== null
+            ? { ...axisData, actuals: annualActuals }
+            : axisData;
         // Revenue seeds its fixed rows here so they belong to the clean
         // snapshot and never read as unsaved changes.
-        const normalized = normalizeLoaded ? normalizeLoaded(axisData) : axisData;
+        const normalized = normalizeLoaded ? normalizeLoaded(merged) : merged;
         setOriginal(normalized);
         setData(clone(normalized));
         setDirtyMap(new Map());
@@ -260,27 +284,34 @@ export function useForecasterGrid(
     selectedYear,
     selectedRFQ?.rfq_id,
     config.axisId,
+    config.annualActuals,
     normalizeLoaded,
   ]);
 
-  // Changer de triplet invalide la comparaison en cours
+  // Switching client invalidates any pending fetched reference. The default
+  // comparison (previous submission) is applied by the page on context change,
+  // so we don't clear compareRef here — clearing it would flash the panel empty.
   useEffect(() => {
-    setCompareRef(null);
     setFetchedReference(null);
   }, [selectedClient?.cl_id, selectedYear, selectedRFQ?.rfq_id]);
 
-  // ─── Chargement du RFQ de référence ─────────────────────────────────────
-  // Un seul doc suffit : le `side` choisit ensuite quelle partie agréger
-  // (buckets = BL, actuals = ADMIN). Si la référence est le RFQ courant
-  // (niveau 2), on n'effectue aucun fetch : la copie de travail live `data`
-  // sert de référence (voir `referenceData` plus bas), pour comparer aussi
-  // les éditions non sauvegardées.
+  // ─── Reference loading (cross-year, either side) ─────────────────────────
+  // The reference is any submission of any year, on either side. We avoid a
+  // fetch (and use the live working copy `effectiveData`) whenever the
+  // reference resolves to data already in memory:
+  //   — same submission (year + rfq match): the live BL/actuals working copy
+  //   — annual-actuals axis, ADMIN side, same year: the year's annual actuals
+  //     ARE the working copy's actuals (shared across the year's submissions)
+  // so editing reflects in the comparison without a round-trip.
 
-  const selfReference =
-    !!compareRef && compareRef.rfq === selectedRFQ?.type;
+  const liveReference =
+    !!compareRef &&
+    compareRef.year === selectedYear &&
+    (compareRef.rfq === selectedRFQ?.type ||
+      (config.annualActuals && compareRef.side === "ADMIN_INPUT"));
 
   useEffect(() => {
-    if (!selectionReady || !compareRef || selfReference) {
+    if (!selectionReady || !compareRef || liveReference) {
       setFetchedReference(null);
       return;
     }
@@ -288,17 +319,28 @@ export function useForecasterGrid(
     let cancelled = false;
     setReferenceLoading(true);
 
-    fetchAxisData(
-      selectedClient!.cl_id,
-      selectedYear!,
-      compareRef.rfq,
-      config.axisId
-    )
+    // Annual MediaOcean of the reference year (rfq irrelevant) vs. a specific
+    // submission's doc (BL buckets, or Revenue's GAIA actuals).
+    const promise: Promise<AxisData> =
+      config.annualActuals && compareRef.side === "ADMIN_INPUT"
+        ? fetchAnnualActuals(
+            selectedClient!.cl_id,
+            compareRef.year,
+            config.axisId
+          ).then((rows) => ({ buckets: [], actuals: rows }))
+        : fetchAxisData(
+            selectedClient!.cl_id,
+            compareRef.year,
+            compareRef.rfq,
+            config.axisId
+          );
+
+    promise
       .then((axisData) => {
         if (!cancelled) setFetchedReference(axisData);
       })
       .catch(() => {
-        // Référence indisponible ≠ erreur bloquante : on désactive juste
+        // An unavailable reference is not a blocking error — just disable it.
         if (!cancelled) setFetchedReference(null);
       })
       .finally(() => {
@@ -310,11 +352,13 @@ export function useForecasterGrid(
     };
   }, [
     selectionReady,
+    compareRef?.year,
     compareRef?.rfq,
-    selfReference,
+    compareRef?.side,
+    liveReference,
     selectedClient?.cl_id,
-    selectedYear,
     config.axisId,
+    config.annualActuals,
   ]);
 
   // ─── Computed rows overlay (Revenue's Commission) ───────────────────────
@@ -357,12 +401,12 @@ export function useForecasterGrid(
     [computedTypes, data]
   );
 
-  // Référence effective exposée à l'UI : `data` live (overlay compris) si
-  // auto-référence (RFQ courant), sinon le doc chargé. null tant qu'aucune
-  // comparaison.
+  // Reference exposed to the UI: the live working copy (overlay included) when
+  // the reference resolves to in-memory data (see `liveReference`), otherwise
+  // the fetched doc. null while no comparison is active.
   const referenceData: AxisData | null = !compareRef
     ? null
-    : selfReference
+    : liveReference
     ? effectiveData
     : fetchedReference;
 
@@ -643,14 +687,42 @@ export function useForecasterGrid(
     setSaving(true);
     setError("");
     try {
-      await saveAxisData(
-        selectedClient!.cl_id,
-        selectedYear!,
-        selectedRFQ!.type,
-        config.axisId,
-        effectiveData,
-        user?.uid
-      );
+      if (config.annualActuals) {
+        // Annual-actuals axis: BL buckets persist on the submission doc (actuals
+        // cleared there to purge any legacy per-submission copy); the actuals go
+        // to the shared annual doc. The annual write only fires when the actuals
+        // actually changed — a BL never edits them (admin-only) and so never
+        // triggers a write the security rules would reject.
+        await saveAxisData(
+          selectedClient!.cl_id,
+          selectedYear!,
+          selectedRFQ!.type,
+          config.axisId,
+          { buckets: effectiveData.buckets, actuals: [] },
+          user?.uid
+        );
+        const actualsChanged =
+          JSON.stringify(effectiveData.actuals) !==
+          JSON.stringify(original.actuals);
+        if (actualsChanged) {
+          await saveAnnualActuals(
+            selectedClient!.cl_id,
+            selectedYear!,
+            config.axisId,
+            effectiveData.actuals,
+            user?.uid
+          );
+        }
+      } else {
+        await saveAxisData(
+          selectedClient!.cl_id,
+          selectedYear!,
+          selectedRFQ!.type,
+          config.axisId,
+          effectiveData,
+          user?.uid
+        );
+      }
       setOriginal(clone(effectiveData));
       setDirtyMap(new Map());
       setStructureDirty(false);
@@ -668,7 +740,9 @@ export function useForecasterGrid(
     selectedYear,
     selectedRFQ,
     config.axisId,
+    config.annualActuals,
     effectiveData,
+    original,
     user?.uid,
   ]);
 

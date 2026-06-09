@@ -26,6 +26,7 @@ import {
   MEDIA_TYPE_COLORS,
   REVENUE_STREAM_COLORS,
 } from "../../../components/dashboard/charts/colors";
+import type { LabsPartner } from "../../types/labs.types";
 
 /** Channels considered "digital" — drives the digital-share metrics. */
 export const DIGITAL_MEDIA_TYPES: MediaType[] = [
@@ -74,6 +75,8 @@ export interface ChannelSlice {
 export interface MediaBreakdown {
   /** Per channel, in MEDIA_TYPES order. */
   byChannel: ChannelSlice[];
+  /** BL media spend per month, split by media type (every MediaType present). */
+  monthlyByType: Record<MediaType, MonthlyMap>;
   /** Total media (BL) per month. */
   monthly: MonthlyMap;
   digitalMonthly: MonthlyMap;
@@ -90,9 +93,11 @@ export function computeMediaBreakdown(media: AxisData): MediaBreakdown {
   const monthly = emptyMonthly();
   const digitalMonthly = emptyMonthly();
   const traditionalMonthly = emptyMonthly();
+  const monthlyByType = {} as Record<MediaType, MonthlyMap>;
 
   const byChannel: ChannelSlice[] = MEDIA_TYPES.map((mt) => {
     const months = byType[mt] ?? emptyMonthly();
+    monthlyByType[mt] = months;
     addInto(monthly, months);
     if (isDigital(mt)) addInto(digitalMonthly, months);
     else addInto(traditionalMonthly, months);
@@ -111,6 +116,7 @@ export function computeMediaBreakdown(media: AxisData): MediaBreakdown {
 
   return {
     byChannel,
+    monthlyByType,
     monthly,
     digitalMonthly,
     traditionalMonthly,
@@ -130,6 +136,11 @@ const REVENUE_STREAMS: { key: string; label: string }[] = [
   { key: "productFees", label: "Product Fees" },
 ];
 
+/** Stream key → display label (known streams; unknown keys fall back to the key). */
+export const REVENUE_STREAM_LABELS: Record<string, string> = Object.fromEntries(
+  REVENUE_STREAMS.map((s) => [s.key, s.label])
+);
+
 export interface StreamSlice {
   key: string;
   label: string;
@@ -139,8 +150,16 @@ export interface StreamSlice {
 
 export interface RevenueBreakdown {
   byStream: StreamSlice[];
+  /** BL revenue per month, split by stream key (known streams, in order). */
+  monthlyByStream: Record<string, MonthlyMap>;
   monthly: MonthlyMap;
   totalAnnual: number;
+}
+
+/** One in-scope client's BL revenue, keyed by stream key then month. */
+export interface ClientRevenueBreakdown {
+  clientId: string;
+  byStream: Record<string, MonthlyMap>;
 }
 
 export function computeRevenueBreakdown(revenue: AxisData): RevenueBreakdown {
@@ -149,14 +168,19 @@ export function computeRevenueBreakdown(revenue: AxisData): RevenueBreakdown {
   // Sum every stored stream (known or not) into the monthly total.
   for (const months of Object.values(byType)) addInto(monthly, months);
 
-  const byStream: StreamSlice[] = REVENUE_STREAMS.map((s, i) => ({
-    key: s.key,
-    label: s.label,
-    color: REVENUE_STREAM_COLORS[s.key] ?? `hsl(${i * 70}, 60%, 55%)`,
-    annual: sumMonthlyMap(byType[s.key] ?? emptyMonthly()),
-  }));
+  const monthlyByStream = {} as Record<string, MonthlyMap>;
+  const byStream: StreamSlice[] = REVENUE_STREAMS.map((s, i) => {
+    const months = byType[s.key] ?? emptyMonthly();
+    monthlyByStream[s.key] = months;
+    return {
+      key: s.key,
+      label: s.label,
+      color: REVENUE_STREAM_COLORS[s.key] ?? `hsl(${i * 70}, 60%, 55%)`,
+      annual: sumMonthlyMap(months),
+    };
+  });
 
-  return { byStream, monthly, totalAnnual: sumMonthlyMap(monthly) };
+  return { byStream, monthlyByStream, monthly, totalAnnual: sumMonthlyMap(monthly) };
 }
 
 // ─── Labs ────────────────────────────────────────────────────────────────────
@@ -168,4 +192,67 @@ export function computeLabsMonthly(labs: AxisData): MonthlyMap {
     for (const row of bucket.rows) addInto(monthly, row.months);
   }
   return monthly;
+}
+
+/**
+ * One in-scope client's Labs BL spend, keyed by partner id (`row.rowType`) then
+ * month, summed across projects. Drives the detailed Labs data table; partner
+ * names and media types are resolved later via the configured partner list.
+ */
+export interface ClientLabsRaw {
+  clientId: string;
+  byPartner: Record<string, MonthlyMap>;
+}
+
+export function labsByPartnerForClient(labs: AxisData): Record<string, MonthlyMap> {
+  const out: Record<string, MonthlyMap> = {};
+  for (const bucket of labs.buckets) {
+    for (const row of bucket.rows) {
+      const pid = row.rowType;
+      if (!out[pid]) out[pid] = emptyMonthly();
+      addInto(out[pid], row.months);
+    }
+  }
+  return out;
+}
+
+/** A fully-resolved row for the detailed Labs table: client × partner × month. */
+export interface LabsDetailRow {
+  clientId: string;
+  partnerId: string;
+  partnerName: string;
+  /** The partner's media type, or null when the partner is no longer configured. */
+  mediaType: MediaType | null;
+  months: MonthlyMap;
+  total: number;
+}
+
+/**
+ * Resolve raw per-client Labs spend into table rows, attaching each partner's
+ * name and media type from the configured partner list. Partners with spend but
+ * no current configuration are kept (name falls back to the id, type is null) so
+ * no money is silently dropped. Rows with zero spend are omitted.
+ */
+export function resolveLabsDetail(
+  labsByClient: ClientLabsRaw[],
+  partnersForYear: LabsPartner[]
+): LabsDetailRow[] {
+  const byId = new Map(partnersForYear.map((p) => [p.partnerId, p]));
+  const rows: LabsDetailRow[] = [];
+  for (const entry of labsByClient) {
+    for (const [partnerId, months] of Object.entries(entry.byPartner)) {
+      const total = sumMonthlyMap(months);
+      if (total === 0) continue;
+      const partner = byId.get(partnerId);
+      rows.push({
+        clientId: entry.clientId,
+        partnerId,
+        partnerName: partner?.name ?? partnerId,
+        mediaType: partner?.mediaType ?? null,
+        months,
+        total,
+      });
+    }
+  }
+  return rows;
 }

@@ -29,25 +29,28 @@ import {
   List,
   BarChartHorizontal,
   ChartPie,
-  ArrowUpRight,
-  ArrowDownRight,
   SplitSquareHorizontal,
   ChevronRight,
+  ChevronDown,
+  RotateCcw,
 } from "lucide-react";
 import type {
   AxisConfig,
   AxisData,
+  ComparisonRef,
   ComparisonSide,
 } from "../../lib/types/forecaster.types";
 import {
   aggregateByType,
   computeVariance,
   emptyMonthly,
+  REVENUE_GAIA_FORECAST_TYPE,
 } from "../../lib/types/forecaster.types";
 import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import type { UseForecasterGridResult } from "../../lib/hooks/use-forecaster-grid";
 import { sumMonths } from "../../lib/hooks/use-forecaster-grid";
 import type { RFQType } from "../../lib/types/rfq.types";
+import { RFQ_TYPE_ORDER } from "../../lib/types/rfq.types";
 import { formatMoney } from "./editable-cell";
 import DistributeDifferenceDialog, {
   type ProjectTarget,
@@ -56,8 +59,18 @@ import DistributeDifferenceDialog, {
 interface ComparisonPanelProps {
   config: AxisConfig;
   grid: UseForecasterGridResult;
+  /** Year currently being edited — the base operand. */
+  currentYear: number;
   /** RFQ currently being edited — the base operand. */
   currentRfq: RFQType;
+  /** All RFQs across years — feeds the reference year/submission dropdowns. */
+  allRfqs: { year: number; type: RFQType }[];
+  /** Apply a reference (or clear it with null). */
+  onSelectRef: (ref: ComparisonRef | null) => void;
+  /** Reset to the default (previous submission) comparison. */
+  onResetDefault: () => void;
+  /** Is a default comparison available (a previous submission exists)? */
+  canResetDefault: boolean;
   /**
    * Row types that must not offer the "distribute the difference" action —
    * e.g. Revenue's computed Commission row, which can't be hand-adjusted.
@@ -109,10 +122,20 @@ function signed(n: number): string {
   return n >= 0 ? `+${a}` : `−${a}`;
 }
 
+/** Sum a monthly map over a subset of months. */
+function sumOver(map: MonthlyMap, months: number[]): number {
+  return months.reduce((acc, m) => acc + (map[m] ?? 0), 0);
+}
+
 export default function ComparisonPanel({
   config,
   grid,
+  currentYear,
   currentRfq,
+  allRfqs,
+  onSelectRef,
+  onResetDefault,
+  canResetDefault,
   disableDistributeFor,
 }: ComparisonPanelProps) {
   const ref = grid.compareRef;
@@ -184,7 +207,59 @@ export default function ComparisonPanel({
     [rows]
   );
 
-  if (!ref) return null;
+  // Revenue × GAIA special case. GAIA's top-line "GAIA Forecast" row is a
+  // per-month roll-up: it is the only GAIA value in months with no detail, and
+  // is excluded in months that carry detail streams. So the comparison can't be
+  // a single per-stream table — it splits by month into a roll-up section
+  // (BL total vs the forecast) and a detailed section (BL vs GAIA streams).
+  const gaiaRollup = config.axisId === "revenue" && ref?.side === "ADMIN_INPUT";
+
+  const rollupData = useMemo<RollupData | null>(() => {
+    if (!gaiaRollup || !grid.referenceData) return null;
+    const refActuals = grid.referenceData.actuals;
+    const isDetailMonth = (m: number) =>
+      refActuals.some(
+        (r) =>
+          r.rowType !== REVENUE_GAIA_FORECAST_TYPE && (r.months[m] ?? 0) !== 0
+      );
+    const rollupMonths = MONTHS.filter((m) => !isDetailMonth(m));
+    const detailMonths = MONTHS.filter((m) => isDetailMonth(m));
+
+    // BL Input total per month (every BL stream summed).
+    const blTotalMonths = emptyMonthly();
+    for (const months of Object.values(baseAgg))
+      for (const m of MONTHS) blTotalMonths[m] += months[m] ?? 0;
+    const forecastMonths = refAgg[REVENUE_GAIA_FORECAST_TYPE] ?? emptyMonthly();
+
+    // Detailed section — per stream, GAIA Forecast excluded.
+    const present = new Set([...Object.keys(baseAgg), ...Object.keys(refAgg)]);
+    present.delete(REVENUE_GAIA_FORECAST_TYPE);
+    const ordered = config.rowTypeOptions
+      .filter(
+        (o) => o.value !== REVENUE_GAIA_FORECAST_TYPE && present.has(o.value)
+      )
+      .map((o) => ({ type: o.value, label: o.label }));
+    const extras = [...present]
+      .filter((t) => !config.rowTypeOptions.some((o) => o.value === t))
+      .map((t) => ({ type: t, label: labelByType.get(t) ?? t }));
+    const detailRows: PanelRowData[] = [...ordered, ...extras].map(
+      ({ type, label }, i) => {
+        const currentMonths = baseAgg[type] ?? emptyMonthly();
+        const referenceMonths = refAgg[type] ?? emptyMonthly();
+        return {
+          type,
+          label,
+          color: PALETTE[i % PALETTE.length],
+          currentMonths,
+          referenceMonths,
+          current: sumOver(currentMonths, detailMonths),
+          reference: sumOver(referenceMonths, detailMonths),
+        };
+      }
+    );
+
+    return { rollupMonths, detailMonths, blTotalMonths, forecastMonths, detailRows };
+  }, [gaiaRollup, grid.referenceData, baseAgg, refAgg, config.rowTypeOptions, labelByType]);
 
   const loading = grid.referenceLoading && !grid.referenceData;
 
@@ -206,31 +281,67 @@ export default function ComparisonPanel({
       ? distributeRow.referenceMonths[targetMonth] ?? 0
       : distributeRow?.reference ?? 0;
 
+  // Human label for the reference operand. For an annual-actuals axis on the
+  // ADMIN side the submission is irrelevant (the MediaOcean figure is annual),
+  // so we name the year + source only.
+  const refLabelText = ref
+    ? config.annualActuals && ref.side === "ADMIN_INPUT"
+      ? `${ref.year} — ${config.actualsLabel} (annual)`
+      : `${ref.year} ${ref.rfq} — ${sideLabel(ref.side, config)}`
+    : null;
+
+  // Base label for the bars/donut legends (current submission's BL Input).
+  const baseLabel = `${currentYear} ${currentRfq} — BL Input`;
+
+  // What the "Default" button restores, spelled out for its tooltip: the
+  // previous submission, on the axis's natural side.
+  const defaultSideText = config.annualActuals
+    ? "BL Input"
+    : `${config.actualsLabel} (Admin Input)`;
+
   return (
     <>
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      {/* Header — clearly states what is compared with what */}
+      {/* Header — comparison controls only (the selectors say what is compared). */}
       <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/60">
         <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            <GitCompareArrows size={13} />
-            Comparison
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <GitCompareArrows size={13} />
+              Comparison
+            </span>
+            {/* Reset to the default comparison (previous submission). */}
+            <button
+              type="button"
+              onClick={onResetDefault}
+              disabled={!canResetDefault}
+              title={`Reset to the default comparison: the previous submission (the RFQ just before this one, across years), compared on its ${defaultSideText}.`}
+              className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:opacity-40"
+            >
+              <RotateCcw size={11} />
+              Default
+            </button>
           </div>
-          <ViewToggle view={view} onChange={setView} />
+          {/* The roll-up split is a numeric, month-grouped table; the bars/donut
+              encodings don't apply, so the view toggle is hidden for it. */}
+          {ref && !gaiaRollup && <ViewToggle view={view} onChange={setView} />}
         </div>
-        <div className="space-y-0.5 text-sm">
-          <p className="font-semibold text-gray-900">
-            {currentRfq} — BL Input
-          </p>
-          <p className="text-gray-400 text-xs">vs</p>
-          <p className="font-medium text-gray-600">
-            {ref.rfq} — {sideLabel(ref.side, config)}
-          </p>
-        </div>
-        <p className="mt-2 text-[11px] text-gray-400">Annual total per {config.rowTypeLabel.toLowerCase()}</p>
+
+        {/* Reference selector — now lives in the panel, not the page header. */}
+        <ReferenceSelector
+          config={config}
+          refValue={ref}
+          allRfqs={allRfqs}
+          onSelectRef={onSelectRef}
+          loading={grid.referenceLoading}
+        />
       </div>
 
-      {loading ? (
+      {!ref ? (
+        <div className="px-4 py-10 text-center text-xs text-gray-400">
+          Pick a reference above to compare against.
+        </div>
+      ) : loading ? (
         <div className="flex items-center justify-center py-12 gap-2 text-gray-400">
           <Loader2 size={16} className="animate-spin" />
           <span className="text-sm">Loading...</span>
@@ -239,6 +350,8 @@ export default function ComparisonPanel({
         <div className="px-4 py-10 text-center text-xs text-gray-400">
           Nothing to compare yet.
         </div>
+      ) : gaiaRollup && rollupData ? (
+        <GaiaRollupComparison data={rollupData} />
       ) : view === "list" ? (
         <ListView
           rows={rows}
@@ -254,15 +367,15 @@ export default function ComparisonPanel({
         <BarsView
           rows={rows}
           grand={grand}
-          currentRfq={currentRfq}
-          refLabel={`${ref.rfq} — ${sideLabel(ref.side, config)}`}
+          baseLabel={baseLabel}
+          refLabel={refLabelText!}
         />
       ) : (
         <DonutView
           rows={rows}
           grand={grand}
-          currentRfq={currentRfq}
-          refLabel={`${ref.rfq} — ${sideLabel(ref.side, config)}`}
+          baseLabel={baseLabel}
+          refLabel={refLabelText!}
         />
       )}
     </div>
@@ -279,8 +392,8 @@ export default function ComparisonPanel({
         reference={distReference}
         initialMonth={targetMonth ?? undefined}
         lockedMonths={grid.canEditClosed ? undefined : grid.closedMonths}
-        currentLabel={`${currentRfq} — BL Input`}
-        referenceLabel={`${ref.rfq} — ${sideLabel(ref.side, config)}`}
+        currentLabel={baseLabel}
+        referenceLabel={refLabelText ?? ""}
         monthProfile={baseAgg[distributeRow.type] ?? emptyMonthly()}
         projects={grid.data.buckets.map<ProjectTarget>((b) => {
           const row = b.rows.find((r) => r.rowType === distributeRow.type);
@@ -341,6 +454,163 @@ function ViewToggle({
           <Icon size={13} />
         </button>
       ))}
+    </div>
+  );
+}
+
+// ─── Reference selector (year + submission + side, in the panel) ─────────────
+// The base is always the current submission's BL Input; this picks the
+// reference: any submission of any year (cross-year) and a side. For an
+// annual-actuals axis (Media, Labs) the ADMIN side is the year's single annual
+// MediaOcean, so the submission dropdown is disabled there (year alone matters).
+// "Reset" returns to the default (previous submission) comparison in one click.
+
+function ReferenceSelector({
+  config,
+  refValue,
+  allRfqs,
+  onSelectRef,
+  loading,
+}: {
+  config: AxisConfig;
+  refValue: ComparisonRef | null;
+  allRfqs: { year: number; type: RFQType }[];
+  onSelectRef: (ref: ComparisonRef | null) => void;
+  loading: boolean;
+}) {
+  const years = useMemo(
+    () => [...new Set(allRfqs.map((r) => r.year))].sort((a, b) => b - a),
+    [allRfqs]
+  );
+  const refYear = refValue?.year ?? null;
+  const submissions = useMemo(() => {
+    if (refYear == null) return [];
+    return allRfqs
+      .filter((r) => r.year === refYear)
+      .map((r) => r.type)
+      .sort((a, b) => RFQ_TYPE_ORDER[a] - RFQ_TYPE_ORDER[b]);
+  }, [allRfqs, refYear]);
+
+  // The latest submission of a year — the sensible default when switching year.
+  function latestRfqOf(year: number): RFQType | null {
+    const types = allRfqs.filter((r) => r.year === year).map((r) => r.type);
+    if (types.length === 0) return null;
+    return types.reduce((a, b) => (RFQ_TYPE_ORDER[b] > RFQ_TYPE_ORDER[a] ? b : a));
+  }
+
+  // When starting from no reference, default the side to the axis's natural one
+  // (BL Input for Media/Labs, GAIA for Revenue), matching defaultComparisonRef.
+  const initialSide: ComparisonSide = config.annualActuals
+    ? "BL_INPUT"
+    : "ADMIN_INPUT";
+
+  // The submission dropdown is meaningless for an annual MediaOcean reference.
+  const submissionDisabled =
+    !refValue || (config.annualActuals && refValue.side === "ADMIN_INPUT");
+
+  function pickYear(value: string) {
+    if (!value) {
+      onSelectRef(null);
+      return;
+    }
+    const year = Number(value);
+    const side = refValue?.side ?? initialSide;
+    // Keep the current submission if that year has it, else its latest one.
+    const keep =
+      refValue && allRfqs.some((r) => r.year === year && r.type === refValue.rfq);
+    const rfq = keep ? refValue!.rfq : latestRfqOf(year);
+    if (!rfq) return;
+    onSelectRef({ year, rfq, side });
+  }
+
+  function pickRfq(rfq: RFQType) {
+    if (!refValue) return;
+    onSelectRef({ ...refValue, rfq });
+  }
+
+  function pickSide(side: ComparisonSide) {
+    if (!refValue) return;
+    onSelectRef({ ...refValue, side });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {/* Reference selectors — year · submission · side */}
+      <SelectControl
+        value={refValue ? String(refValue.year) : ""}
+        onChange={pickYear}
+        disabled={years.length === 0}
+        ariaLabel="Reference year"
+      >
+        <option value="">Compare with…</option>
+        {years.map((y) => (
+          <option key={y} value={y}>
+            {y}
+          </option>
+        ))}
+      </SelectControl>
+
+      <SelectControl
+        value={refValue?.rfq ?? ""}
+        onChange={(v) => pickRfq(v as RFQType)}
+        disabled={submissionDisabled}
+        ariaLabel="Reference submission"
+      >
+        {submissions.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </SelectControl>
+
+      <SelectControl
+        value={refValue?.side ?? initialSide}
+        onChange={(v) => pickSide(v as ComparisonSide)}
+        disabled={!refValue}
+        ariaLabel="Reference side"
+      >
+        <option value="BL_INPUT">BL Input</option>
+        <option value="ADMIN_INPUT">
+          {config.annualActuals
+            ? `${config.actualsLabel} (annual)`
+            : config.actualsLabel}
+        </option>
+      </SelectControl>
+
+      {loading && <Loader2 size={13} className="animate-spin text-gray-400" />}
+    </div>
+  );
+}
+
+/** Compact native <select> styled like the rest of the panel. */
+function SelectControl({
+  value,
+  onChange,
+  disabled,
+  ariaLabel,
+  children,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <select
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="appearance-none rounded-lg border border-gray-200 bg-white py-1 pl-2.5 pr-7 text-xs focus:outline-none focus:ring-2 focus:ring-yellow-400 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+      >
+        {children}
+      </select>
+      <ChevronDown
+        size={12}
+        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
+      />
     </div>
   );
 }
@@ -565,6 +835,167 @@ function MonthRow({
   );
 }
 
+// ─── GAIA roll-up comparison (Revenue × GAIA) ────────────────────────────────
+// Two month-grouped sections driven by the GAIA reference: months where the
+// GAIA Forecast roll-up is the active value (BL total vs the forecast), then
+// months that carry detail streams (BL vs GAIA streams, roll-up excluded).
+
+interface RollupData {
+  rollupMonths: number[];
+  detailMonths: number[];
+  blTotalMonths: MonthlyMap;
+  forecastMonths: MonthlyMap;
+  detailRows: PanelRowData[];
+}
+
+function GaiaRollupComparison({ data }: { data: RollupData }) {
+  const { rollupMonths, detailMonths, blTotalMonths, forecastMonths, detailRows } =
+    data;
+  const grand = {
+    current: MONTHS.reduce((acc, m) => acc + (blTotalMonths[m] ?? 0), 0),
+    reference:
+      sumOver(forecastMonths, rollupMonths) +
+      detailRows.reduce((acc, r) => acc + r.reference, 0),
+  };
+
+  return (
+    <>
+      {rollupMonths.length > 0 && (
+        <RollupSectionBlock
+          title="Roll-up active"
+          count={rollupMonths.length}
+          hint="BL total vs GAIA Forecast"
+        >
+          <ExpandableCompareRow
+            label="GAIA Forecast"
+            color="#10b981"
+            currentMonths={blTotalMonths}
+            referenceMonths={forecastMonths}
+            months={rollupMonths}
+          />
+        </RollupSectionBlock>
+      )}
+
+      {detailMonths.length > 0 && (
+        <RollupSectionBlock
+          title="Detailed"
+          count={detailMonths.length}
+          hint="BL vs GAIA streams · roll-up excluded"
+        >
+          {detailRows.map((r) => (
+            <ExpandableCompareRow
+              key={r.type}
+              label={r.label}
+              color={r.color}
+              currentMonths={r.currentMonths}
+              referenceMonths={r.referenceMonths}
+              months={detailMonths}
+            />
+          ))}
+        </RollupSectionBlock>
+      )}
+
+      <GrandTotalBar grand={grand} />
+    </>
+  );
+}
+
+/** A titled month-group block: header (title + count + hint) over its rows. */
+function RollupSectionBlock({
+  title,
+  count,
+  hint,
+  children,
+}: {
+  title: string;
+  count: number;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 border-b border-gray-100 bg-gray-50/60 px-4 py-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+          {title}
+          <span className="ml-1.5 font-normal normal-case tracking-normal text-gray-400">
+            {count} {count > 1 ? "months" : "month"}
+          </span>
+        </span>
+        <span className="text-[10px] text-gray-400">{hint}</span>
+      </div>
+      <div className="px-4">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * One comparison line scoped to a subset of months: the totals over those
+ * months on the right, the chevron expanding to the per-month breakdown.
+ */
+function ExpandableCompareRow({
+  label,
+  color,
+  currentMonths,
+  referenceMonths,
+  months,
+}: {
+  label: string;
+  color: string;
+  currentMonths: MonthlyMap;
+  referenceMonths: MonthlyMap;
+  months: number[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const current = sumOver(currentMonths, months);
+  const reference = sumOver(referenceMonths, months);
+  return (
+    <div className="border-b border-gray-100 last:border-b-0">
+      <div className="group flex items-center gap-1.5 py-2.5">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse months" : "Expand months"}
+          className="-ml-1 shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+        >
+          <ChevronRight
+            size={14}
+            className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
+        </button>
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: color }}
+            />
+            <span className="truncate text-sm text-gray-700">{label}</span>
+          </span>
+          <div className="flex shrink-0 items-center gap-2.5">
+            <span className="text-sm font-semibold tabular-nums text-gray-900">
+              {formatMoney(current)}
+            </span>
+            <VariancePill current={current} reference={reference} />
+          </div>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="pb-2 pl-6">
+          {months.map((m) => (
+            <MonthRow
+              key={m}
+              label={MONTH_LABELS[m - 1]}
+              current={currentMonths[m] ?? 0}
+              reference={referenceMonths[m] ?? 0}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Shared grand-total footer (used by all three views) ─────────────────────
 
 /** Dark footer bar: total in white with the variance as a vivid pill. */
@@ -651,7 +1082,7 @@ function PanelRow({
   );
 }
 
-/** Signed variance + relative %, as a tinted pill readable on light or dark. */
+/** Signed variance as a tinted pill (green when up, red when down). */
 function VariancePill({
   current,
   reference,
@@ -683,21 +1114,12 @@ function VariancePill({
     : up
     ? "bg-emerald-50 text-emerald-700"
     : "bg-red-50 text-red-600";
-  const Arrow = up ? ArrowUpRight : ArrowDownRight;
 
   return (
     <span
-      className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${cls}`}
+      className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${cls}`}
     >
-      <Arrow size={11} className="shrink-0" />
       {signed(v.absolute)}
-      {v.relative !== null && (
-        <span className="opacity-70">
-          {" "}
-          {v.relative > 0 ? "+" : ""}
-          {Math.round(v.relative)}%
-        </span>
-      )}
     </span>
   );
 }
@@ -743,12 +1165,12 @@ function VolumeBar({
 function BarsView({
   rows,
   grand,
-  currentRfq,
+  baseLabel,
   refLabel,
 }: {
   rows: PanelRowData[];
   grand: { current: number; reference: number };
-  currentRfq: RFQType;
+  baseLabel: string;
   refLabel: string;
 }) {
   // Bars are scaled to absolute volume across both operands, so a 1000 bar is
@@ -758,11 +1180,11 @@ function BarsView({
   return (
     <>
       <div className="px-4 py-3">
-        {/* Encoding: solid = current RFQ, faded = reference (per-type color) */}
+        {/* Encoding: solid = base submission, faded = reference (per-type color) */}
         <div className="flex items-center gap-4 mb-3 text-[11px] text-gray-500">
           <span className="flex items-center gap-1.5 min-w-0">
             <span className="inline-block h-2 w-2 rounded-sm bg-gray-500 shrink-0" />
-            <span className="truncate">{currentRfq} — BL Input</span>
+            <span className="truncate">{baseLabel}</span>
           </span>
           <span className="flex items-center gap-1.5 min-w-0">
             <span className="inline-block h-2 w-2 rounded-sm bg-gray-500/40 shrink-0" />
@@ -809,12 +1231,12 @@ function BarsView({
 function DonutView({
   rows,
   grand,
-  currentRfq,
+  baseLabel,
   refLabel,
 }: {
   rows: PanelRowData[];
   grand: { current: number; reference: number };
-  currentRfq: RFQType;
+  baseLabel: string;
   refLabel: string;
 }) {
   const SIZE = 168;
@@ -830,14 +1252,14 @@ function DonutView({
           viewBox={`0 0 ${SIZE} ${SIZE}`}
           className="-rotate-90"
         >
-          {/* Outer ring = current RFQ */}
+          {/* Outer ring = current submission */}
           <DonutRing
             cx={C}
             cy={C}
             radius={66}
             width={20}
             total={grand.current}
-            ringLabel={`${currentRfq} — BL Input (outer)`}
+            ringLabel={`${baseLabel} (outer)`}
             segments={rows.map((r) => ({
               value: r.current,
               color: r.color,
@@ -865,7 +1287,7 @@ function DonutView({
       <div className="mt-3 space-y-0.5 text-[11px] text-gray-500">
         <p className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full bg-gray-400 ring-2 ring-gray-200 shrink-0" />
-          <span className="truncate">Outer = {currentRfq} — BL Input</span>
+          <span className="truncate">Outer = {baseLabel}</span>
         </p>
         <p className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full bg-gray-300 shrink-0" />

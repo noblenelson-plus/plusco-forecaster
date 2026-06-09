@@ -2,29 +2,37 @@
 
 /**
  * Labs tab — the Labs/Media penetration story:
- *   • Penetration rate vs the 25% target (gauge)
- *   • Labs share of total media (donut)
- *   • Coverage by channel (bars, with % of planned)
- *   • Labs vs media monthly (trend)
+ *   • KPI strip (share rate, partners, channels over cap)
+ *   • Labs share % by month (area, with the 25% target line)
+ *   • Labs share by media type (bars) · Spend by partner (bars)
+ *   • Recap table by media type
  */
 
-import { FlaskConical, Percent, Users, AlertTriangle } from "lucide-react";
+import { FlaskConical, Percent, Users, AlertTriangle, CalendarRange } from "lucide-react";
 import { MONTHS } from "../../../lib/types/common.types";
 import { MEDIA_TYPE_LABELS } from "../../../lib/types/forecaster.types";
-import { MEDIA_TYPE_COLORS } from "../charts/colors";
+import { MEDIA_TYPE_COLORS, LABS_COLOR } from "../charts/colors";
 import StatCard from "../charts/stat-card";
 import ChartCard from "../charts/chart-card";
-import GaugeChart from "../charts/gauge-chart";
-import DonutChart from "../charts/donut-chart";
 import BarList from "../charts/bar-list";
 import TrendChart from "../charts/trend-chart";
+import LabsRecapTable from "../labs-recap-table";
+import LabsDataTable from "../labs-data-table";
 import { formatCompactMoney, formatPct } from "../charts/format";
 import { LoadingTab, NoContextNotice, EmptyDataNotice } from "./tab-states";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 
 const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 0);
 
-export default function LabsTab({ data }: { data: ScopeForecastData }) {
+export default function LabsTab({
+  data,
+  clientNameById,
+  fileLabel,
+}: {
+  data: ScopeForecastData;
+  clientNameById: Record<string, string>;
+  fileLabel?: string;
+}) {
   if (!data.hasContext) return <NoContextNotice />;
   if (data.loading) return <LoadingTab />;
 
@@ -42,21 +50,34 @@ export default function LabsTab({ data }: { data: ScopeForecastData }) {
   );
   const overCount = labs.byType.filter((t) => t.over).length;
 
-  // Coverage bars — Labs spend per channel, captioned with % of planned media.
-  const coverageItems = labs.byType
-    .filter((t) => t.labsAnnual > 0 || t.plannedAnnual > 0)
+  // Labs share (%) per month: monthly Labs spend over monthly planned media.
+  const labsPoints = monthsToPoints(data.labsMonthly);
+  const mediaPoints = monthsToPoints(data.media.monthly);
+  const shareByMonth = labsPoints.map((labsM, i) =>
+    mediaPoints[i] > 0 ? labsM / mediaPoints[i] : 0
+  );
+
+  // Share (coverage %) per media type — only types with planned media.
+  const shareByType = labs.byType
+    .filter((t) => t.plannedAnnual > 0 && t.coverage !== null && isFinite(t.coverage))
     .map((t) => ({
       label: MEDIA_TYPE_LABELS[t.mediaType],
-      value: t.labsAnnual,
+      value: t.coverage as number,
       color: MEDIA_TYPE_COLORS[t.mediaType],
-      hint: t.coverage !== null && isFinite(t.coverage)
-        ? `${Math.round(t.coverage * 100)}% of planned`
-        : t.labsAnnual > 0
-          ? "no media planned"
-          : undefined,
+      hint: formatCompactMoney(t.labsAnnual),
     }));
 
-  const otherMedia = Math.max(0, labs.totalPlanned - labs.totalLabs);
+  // Annual spend per partner, colored by the partner's media type, busiest first.
+  const partnerSpend = labs.byType
+    .flatMap((t) =>
+      t.partners.map((p) => ({
+        label: p.name,
+        value: p.annual,
+        color: MEDIA_TYPE_COLORS[t.mediaType],
+      }))
+    )
+    .filter((p) => p.value > 0)
+    .sort((a, b) => b.value - a.value);
 
   return (
     <div className="space-y-6">
@@ -90,68 +111,61 @@ export default function LabsTab({ data }: { data: ScopeForecastData }) {
         />
       </div>
 
+      <ChartCard
+        title="Labs share by month"
+        subtitle="Monthly Labs spend as a share of planned media"
+        icon={CalendarRange}
+      >
+        <TrendChart
+          series={[{ label: "Share", color: LABS_COLOR, points: shareByMonth }]}
+          valueFormat={(v) => formatPct(v)}
+          reference={{ value: target, label: `Target ${formatPct(target)}`, color: "#94a3b8" }}
+        />
+      </ChartCard>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ChartCard
-          title="Share rate"
-          subtitle="Labs spend as a share of planned media"
+          title="Share by media type"
+          subtitle="Labs spend as a share of planned media, per channel"
           icon={Percent}
         >
-          <GaugeChart
-            value={labs.ratio ?? 0}
-            variant={onTarget ? "success" : "warning"}
-            valueLabel={formatPct(labs.ratio)}
-            caption={`of media · target ${formatPct(target)}`}
-          />
+          {shareByType.length > 0 ? (
+            <BarList items={shareByType} valueFormat={(v) => formatPct(v)} />
+          ) : (
+            <p className="py-8 text-center text-xs text-muted-foreground">
+              No planned media to compare against.
+            </p>
+          )}
         </ChartCard>
 
         <ChartCard
-          title="Labs share of media"
-          subtitle="Labs spend vs the rest of planned media"
-          icon={FlaskConical}
+          title="Spend by partner"
+          subtitle="Annual Labs spend per partner"
+          icon={Users}
         >
-          <DonutChart
-            segments={[
-              { label: "Labs", value: labs.totalLabs, color: "#6366f1" },
-              { label: "Other media", value: otherMedia, color: "#e2e8f0" },
-            ]}
-            centerValue={formatPct(labs.ratio)}
-            centerLabel="Labs"
-            valueFormat={formatCompactMoney}
-          />
-        </ChartCard>
-
-        <ChartCard
-          title="Coverage by channel"
-          subtitle="Labs spend per channel · % of planned media"
-          icon={FlaskConical}
-          className="lg:col-span-2"
-        >
-          <BarList items={coverageItems} valueFormat={formatCompactMoney} />
-        </ChartCard>
-
-        <ChartCard
-          title="Labs vs media — monthly"
-          subtitle="Monthly Labs and total media spend"
-          icon={Percent}
-          className="lg:col-span-2"
-        >
-          <TrendChart
-            series={[
-              {
-                label: "Labs",
-                color: "#6366f1",
-                points: monthsToPoints(data.labsMonthly),
-              },
-              {
-                label: "Media",
-                color: "#cbd5e1",
-                points: monthsToPoints(data.media.monthly),
-              },
-            ]}
-            valueFormat={formatCompactMoney}
-          />
+          {partnerSpend.length > 0 ? (
+            <BarList items={partnerSpend} valueFormat={formatCompactMoney} />
+          ) : (
+            <p className="py-8 text-center text-xs text-muted-foreground">
+              No partner spend in scope.
+            </p>
+          )}
         </ChartCard>
       </div>
+
+      <ChartCard
+        title="Recap by media type"
+        subtitle="Planned media, Labs spend, share and partner count per channel"
+        icon={FlaskConical}
+      >
+        <LabsRecapTable labs={labs} />
+      </ChartCard>
+
+      <LabsDataTable
+        rows={data.labsDetail}
+        clientNameById={clientNameById}
+        fileLabel={fileLabel}
+      />
     </div>
   );
 }

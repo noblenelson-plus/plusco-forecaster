@@ -18,6 +18,7 @@ import {
   buildRFQId,
   sortRFQs,
 } from "../types/rfq.types";
+import type { AxisId } from "../types/forecaster.types";
 
 const COLLECTION = "rfqs";
 
@@ -89,6 +90,23 @@ export async function updateRFQStatus(
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTION, rfq_id), {
     status,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Sets the closed months (1–12) for one axis of an RFQ. Writes the full
+ * per-axis array so toggling a single month replaces that axis's set; the
+ * other axes are left untouched (dotted field path update).
+ */
+export async function updateRFQAxisClosedMonths(
+  rfq_id: string,
+  axisId: AxisId,
+  months: number[]
+): Promise<void> {
+  const sorted = [...new Set(months)].sort((a, b) => a - b);
+  await updateDoc(doc(db, COLLECTION, rfq_id), {
+    [`closedMonths.${axisId}`]: sorted,
     updatedAt: new Date().toISOString(),
   });
 }

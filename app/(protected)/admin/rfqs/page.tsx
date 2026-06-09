@@ -12,23 +12,47 @@ import {
   AlertCircle,
   CalendarRange,
   ChevronDown,
+  CalendarClock,
 } from "lucide-react";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import {
   RFQ,
   RFQType,
   RFQ_TYPES,
-  buildRFQId,
+  resolveClosedMonths,
 } from "../../../../lib/types/rfq.types";
+import type { AxisId } from "../../../../lib/types/forecaster.types";
 import {
   subscribeToRFQs,
   createRFQ,
   updateRFQStatus,
+  updateRFQAxisClosedMonths,
   deleteRFQ,
   getRFQYears,
   getRFQsForYear,
 } from "../../../../lib/services/rfq-service";
 import PageHeader from "../../../../components/_shared/page-header";
+
+// Three data-entry axes, each with an independently lockable set of months.
+const AXES: { id: AxisId; label: string }[] = [
+  { id: "media", label: "Media" },
+  { id: "revenue", label: "Revenue" },
+  { id: "labs", label: "Labs" },
+];
+
+const MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+/** Order-insensitive equality for two month-number arrays. */
+function sameMonths(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((m) => set.has(m));
+}
 
 export default function AdminRFQsPage() {
   const { isAdmin, loading: profileLoading } = useUserProfile();
@@ -48,6 +72,17 @@ export default function AdminRFQsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Which RFQ's closed-months panel is expanded
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Optimistic per-axis closed months, keyed `${rfq_id}:${axisId}`. A click
+  // updates this immediately and writes to Firestore; the entry is dropped once
+  // the real-time snapshot reports the same value, so rapid toggles never race
+  // on a stale base.
+  const [pendingClosed, setPendingClosed] = useState<Record<string, number[]>>(
+    {}
+  );
+
   // Guard — redirect non-admins
   useEffect(() => {
     if (!profileLoading && !isAdmin) {
@@ -62,6 +97,21 @@ export default function AdminRFQsPage() {
       (data) => {
         setRFQs(data);
         setLoading(false);
+        // Drop optimistic closed-months entries the snapshot now confirms.
+        setPendingClosed((prev) => {
+          if (Object.keys(prev).length === 0) return prev;
+          let changed = false;
+          const next = { ...prev };
+          for (const key of Object.keys(prev)) {
+            const [rfqId, axisId] = key.split(":") as [string, AxisId];
+            const rfq = data.find((r) => r.rfq_id === rfqId);
+            if (!rfq || sameMonths(resolveClosedMonths(rfq, axisId), prev[key])) {
+              delete next[key];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
       },
       (err) => {
         setError("Failed to load RFQs: " + err.message);
@@ -115,6 +165,44 @@ export default function AdminRFQsPage() {
     } finally {
       setBusyId(null);
     }
+  }
+
+  // Effective closed months for a row's axis: optimistic value if a write is
+  // in flight, otherwise the resolved (override-or-default) set.
+  function closedMonthsFor(rfq: RFQ, axisId: AxisId): number[] {
+    return pendingClosed[`${rfq.rfq_id}:${axisId}`] ?? resolveClosedMonths(rfq, axisId);
+  }
+
+  // Optimistically set an axis's closed months and persist; roll back on error.
+  async function writeClosedMonths(rfq: RFQ, axisId: AxisId, next: number[]) {
+    const key = `${rfq.rfq_id}:${axisId}`;
+    setPendingClosed((prev) => ({ ...prev, [key]: next }));
+    setError("");
+    try {
+      await updateRFQAxisClosedMonths(rfq.rfq_id, axisId, next);
+    } catch (err: any) {
+      // Roll back the optimistic value on failure.
+      setPendingClosed((prev) => {
+        const copy = { ...prev };
+        delete copy[key];
+        return copy;
+      });
+      setError("Failed to update closed months: " + (err?.message ?? "Unknown error"));
+    }
+  }
+
+  function handleToggleMonth(rfq: RFQ, axisId: AxisId, month: number) {
+    const current = closedMonthsFor(rfq, axisId);
+    const next = current.includes(month)
+      ? current.filter((m) => m !== month)
+      : [...current, month].sort((a, b) => a - b);
+    writeClosedMonths(rfq, axisId, next);
+  }
+
+  // Lock every month of an axis (all 12) when any is open; otherwise unlock all.
+  function handleToggleAllMonths(rfq: RFQ, axisId: AxisId) {
+    const allClosed = closedMonthsFor(rfq, axisId).length === 12;
+    writeClosedMonths(rfq, axisId, allClosed ? [] : ALL_MONTHS);
   }
 
   async function handleDelete(rfq_id: string) {
@@ -263,6 +351,19 @@ export default function AdminRFQsPage() {
                       rfq={rfq}
                       busy={busyId === rfq.rfq_id}
                       confirmingDelete={confirmDeleteId === rfq.rfq_id}
+                      expanded={expandedId === rfq.rfq_id}
+                      closedMonthsFor={(axisId) => closedMonthsFor(rfq, axisId)}
+                      onToggleExpand={() =>
+                        setExpandedId((id) =>
+                          id === rfq.rfq_id ? null : rfq.rfq_id
+                        )
+                      }
+                      onToggleMonth={(axisId, month) =>
+                        handleToggleMonth(rfq, axisId, month)
+                      }
+                      onToggleAllMonths={(axisId) =>
+                        handleToggleAllMonths(rfq, axisId)
+                      }
                       onToggleStatus={() => handleToggleStatus(rfq)}
                       onAskDelete={() => setConfirmDeleteId(rfq.rfq_id)}
                       onCancelDelete={() => setConfirmDeleteId(null)}
@@ -285,6 +386,11 @@ function RFQRow({
   rfq,
   busy,
   confirmingDelete,
+  expanded,
+  closedMonthsFor,
+  onToggleExpand,
+  onToggleMonth,
+  onToggleAllMonths,
   onToggleStatus,
   onAskDelete,
   onCancelDelete,
@@ -293,6 +399,11 @@ function RFQRow({
   rfq: RFQ;
   busy: boolean;
   confirmingDelete: boolean;
+  expanded: boolean;
+  closedMonthsFor: (axisId: AxisId) => number[];
+  onToggleExpand: () => void;
+  onToggleMonth: (axisId: AxisId, month: number) => void;
+  onToggleAllMonths: (axisId: AxisId) => void;
   onToggleStatus: () => void;
   onAskDelete: () => void;
   onCancelDelete: () => void;
@@ -303,6 +414,7 @@ function RFQRow({
     RFQ_TYPES.find((t) => t.value === rfq.type)?.label ?? rfq.type;
 
   return (
+    <div>
     <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
       {/* Left — type + id */}
       <div className="flex items-center gap-3 min-w-0">
@@ -325,6 +437,23 @@ function RFQRow({
 
       {/* Right — actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Closed-months panel toggle */}
+        <button
+          onClick={onToggleExpand}
+          title="Per-axis closed months"
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+            expanded
+              ? "bg-gray-900 text-white border-gray-900"
+              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+          }`}
+        >
+          <CalendarClock size={12} />
+          Months
+          <ChevronDown
+            size={12}
+            className={`transition-transform ${expanded ? "rotate-180" : ""}`}
+          />
+        </button>
         {confirmingDelete ? (
           <>
             <span className="text-xs text-red-600 mr-1">Delete?</span>
@@ -375,6 +504,71 @@ function RFQRow({
           </>
         )}
       </div>
+    </div>
+
+      {/* Expandable per-axis closed-months editor */}
+      {expanded && (
+        <div className="px-4 pb-4 pt-1 bg-gray-50/60 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-3">
+            Locked months are read-only for Business Leads (admins can always
+            edit). Toggle each month independently per axis.
+          </p>
+          <div className="space-y-2.5">
+            {AXES.map((axis) => {
+              const closed = new Set(closedMonthsFor(axis.id));
+              const allClosed = closed.size === 12;
+              return (
+                <div key={axis.id} className="flex items-center gap-3">
+                  <span className="w-16 flex-shrink-0 text-xs font-medium text-gray-600">
+                    {axis.label}
+                  </span>
+                  <button
+                    onClick={() => onToggleAllMonths(axis.id)}
+                    title={allClosed ? "Unlock all months" : "Lock all months"}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-gray-200 bg-white text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors flex-shrink-0"
+                  >
+                    {allClosed ? (
+                      <Unlock size={9} className="opacity-60" />
+                    ) : (
+                      <Lock size={9} className="opacity-60" />
+                    )}
+                    {allClosed ? "Unlock all" : "Lock all"}
+                  </button>
+                  <div className="flex flex-wrap gap-1">
+                    {MONTH_LABELS.map((label, i) => {
+                      const month = i + 1;
+                      const isClosed = closed.has(month);
+                      return (
+                        <button
+                          key={month}
+                          onClick={() => onToggleMonth(axis.id, month)}
+                          title={
+                            isClosed
+                              ? `${label} — locked (closed period)`
+                              : `${label} — open`
+                          }
+                          className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                            isClosed
+                              ? "bg-gray-200 text-gray-600 border-gray-300 hover:bg-gray-300"
+                              : "bg-white text-gray-500 border-gray-200 hover:border-yellow-400 hover:text-gray-700"
+                          }`}
+                        >
+                          {isClosed ? (
+                            <Lock size={9} />
+                          ) : (
+                            <Unlock size={9} className="opacity-50" />
+                          )}
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

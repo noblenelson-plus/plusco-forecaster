@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
-import { X, Loader2, Trash2, ChevronDown, ImagePlus, Percent, Copy, Check } from "lucide-react";
+import { X, Loader2, Trash2, ChevronDown, ImagePlus, Percent, Copy, Check, Plus, EyeOff } from "lucide-react";
 import { db } from "../../lib/firebase";
 import {
   Client,
@@ -13,6 +13,7 @@ import {
   ClientStatus,
   ClientTier,
   CommissionsConfig,
+  ForecastingType,
 } from "../../lib/types/client.types";
 import {
   CLIENT_STATUSES,
@@ -24,7 +25,14 @@ import {
   CLIENT_CURRENCIES,
   CLIENT_FEE_STRUCTURES,
 } from "../../lib/constants/client.constants";
+import { DEFAULT_FORECASTING_TYPE, isEligibleForPartner } from "../../lib/format/client";
 import { saveClient, deleteClient, uploadClientLogo } from "../../lib/services/client-service";
+import {
+  subscribeToLabsPartners,
+  getLabsPartnerYears,
+  getLabsPartnersForYear,
+} from "../../lib/services/labs-partner-service";
+import type { LabsPartner } from "../../lib/types/labs.types";
 import ClientAccessSection from "./client-access-section";
 import CommissionsDrawer from "./commissions-drawer";
 
@@ -52,7 +60,10 @@ const EMPTY_FORM: ClientFormData = {
   CL_Currency: "" as Currency,
   CL_GAIA_Number: [],
   CL_Tier: "" as ClientTier,
-  Client_Status_2026: "ACTIVE",
+  Client_Status_By_Year: { [new Date().getFullYear()]: "ACTIVE" },
+  CL_Hidden: false,
+  Forecasting_Type: { ...DEFAULT_FORECASTING_TYPE },
+  Labs_Eligibility: {},
   Client_Notes: "",
   commissionsConfig: {},
 };
@@ -91,6 +102,14 @@ export default function ClientDrawer({
   // Commissions drawer (stacked above this one)
   const [commissionsOpen, setCommissionsOpen] = useState(false);
 
+  // LABS partners (for the eligibility section) — subscribed only while open.
+  const [labsPartners, setLabsPartners] = useState<LabsPartner[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    const unsubscribe = subscribeToLabsPartners(setLabsPartners);
+    return () => unsubscribe();
+  }, [open]);
+
   // Populate form when editing
   useEffect(() => {
     if (client) {
@@ -107,7 +126,17 @@ export default function ClientDrawer({
         CL_Currency: client.CL_Currency,
         CL_GAIA_Number: client.CL_GAIA_Number ?? [],
         CL_Tier: client.CL_Tier,
-        Client_Status_2026: client.Client_Status_2026,
+        // Soft migration: seed the per-year map from the legacy 2026 scalar
+        // when the map is empty, so old docs open with their status intact.
+        Client_Status_By_Year:
+          client.Client_Status_By_Year && Object.keys(client.Client_Status_By_Year).length > 0
+            ? client.Client_Status_By_Year
+            : client.Client_Status_2026
+            ? { 2026: client.Client_Status_2026 }
+            : {},
+        CL_Hidden: client.CL_Hidden ?? false,
+        Forecasting_Type: client.Forecasting_Type ?? { ...DEFAULT_FORECASTING_TYPE },
+        Labs_Eligibility: client.Labs_Eligibility ?? {},
         Client_Notes: client.Client_Notes ?? "",
         commissionsConfig: client.commissionsConfig ?? {},
       });
@@ -124,6 +153,58 @@ export default function ClientDrawer({
 
   function set<K extends keyof ClientFormData>(key: K, value: ClientFormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  // ─── Status-by-year editor ────────────────────────────────────────────────
+
+  const statusYears = Object.keys(form.Client_Status_By_Year)
+    .map(Number)
+    .sort((a, b) => b - a);
+
+  function setStatusForYear(year: number, status: ClientStatus) {
+    set("Client_Status_By_Year", { ...form.Client_Status_By_Year, [year]: status });
+  }
+
+  function renameStatusYear(oldYear: number, newYear: number) {
+    if (oldYear === newYear) return;
+    const next = { ...form.Client_Status_By_Year };
+    // Don't clobber an existing entry for the target year.
+    if (next[newYear] !== undefined) return;
+    next[newYear] = next[oldYear];
+    delete next[oldYear];
+    set("Client_Status_By_Year", next);
+  }
+
+  function addStatusYear() {
+    // Default the new row to the year after the most recent one (or current year).
+    const base = statusYears.length ? Math.max(...statusYears) + 1 : new Date().getFullYear();
+    let year = base;
+    while (form.Client_Status_By_Year[year] !== undefined) year++;
+    set("Client_Status_By_Year", { ...form.Client_Status_By_Year, [year]: "ACTIVE" });
+  }
+
+  function removeStatusYear(year: number) {
+    const next = { ...form.Client_Status_By_Year };
+    delete next[year];
+    set("Client_Status_By_Year", next);
+  }
+
+  // ─── Forecasting type toggles ─────────────────────────────────────────────
+
+  function toggleForecasting(key: keyof ForecastingType) {
+    set("Forecasting_Type", { ...form.Forecasting_Type, [key]: !form.Forecasting_Type[key] });
+  }
+
+  // ─── LABS eligibility (sparse — only `false` is stored) ───────────────────
+
+  function toggleEligibility(partnerId: string) {
+    const next = { ...(form.Labs_Eligibility ?? {}) };
+    if (isEligibleForPartner({ Labs_Eligibility: next }, partnerId)) {
+      next[partnerId] = false; // opt out
+    } else {
+      delete next[partnerId]; // back to default (eligible)
+    }
+    set("Labs_Eligibility", next);
   }
 
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -425,20 +506,13 @@ export default function ClientDrawer({
 
           {/* Section: Classification */}
           <Section label="Classification">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Tier *">
                 <Select
                   value={form.CL_Tier}
                   onChange={(v) => set("CL_Tier", v as ClientTier)}
                   options={CLIENT_TIERS}
                   placeholder="Select tier"
-                />
-              </Field>
-              <Field label="Status">
-                <Select
-                  value={form.Client_Status_2026}
-                  onChange={(v) => set("Client_Status_2026", v as ClientStatus)}
-                  options={CLIENT_STATUSES}
                 />
               </Field>
               <Field label="Currency *">
@@ -450,7 +524,113 @@ export default function ClientDrawer({
                 />
               </Field>
             </div>
+
+            {/* Status by year */}
+            <Field label="Status by year">
+              <div className="space-y-2">
+                {statusYears.length === 0 && (
+                  <p className="text-xs text-gray-400">No status set yet.</p>
+                )}
+                {statusYears.map((year) => (
+                  <div key={year} className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={year}
+                      onChange={(e) => renameStatusYear(year, Number(e.target.value))}
+                      className="w-20 px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+                    />
+                    <div className="flex-1">
+                      <Select
+                        value={form.Client_Status_By_Year[year]}
+                        onChange={(v) => setStatusForYear(year, v as ClientStatus)}
+                        options={CLIENT_STATUSES}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeStatusYear(year)}
+                      className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                      title="Remove year"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addStatusYear}
+                  className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                >
+                  <Plus size={13} /> Add year
+                </button>
+              </div>
+            </Field>
           </Section>
+
+          {/* Section: Forecasting type */}
+          <Section label="Forecasting type">
+            <Toggle
+              label="Media Spend"
+              checked={form.Forecasting_Type.mediaSpend}
+              onChange={() => toggleForecasting("mediaSpend")}
+            />
+            <Toggle
+              label="Labs"
+              checked={form.Forecasting_Type.labs}
+              onChange={() => toggleForecasting("labs")}
+            />
+            <Toggle
+              label="Revenues"
+              checked={form.Forecasting_Type.revenues}
+              onChange={() => toggleForecasting("revenues")}
+            />
+          </Section>
+
+          {/* Section: Labs eligibility (admin, edit only) */}
+          {isAdmin && isEditing && (
+            <Section label="Labs eligibility">
+              {labsPartners.length === 0 ? (
+                <p className="text-xs text-gray-400">No labs partners configured.</p>
+              ) : (
+                <div className="space-y-4">
+                  {getLabsPartnerYears(labsPartners).map((year) => (
+                    <div key={year}>
+                      <p className="text-xs font-medium text-gray-500 mb-1.5">{year}</p>
+                      <div className="space-y-1">
+                        {getLabsPartnersForYear(labsPartners, year).map((p) => (
+                          <Toggle
+                            key={p.partnerId}
+                            label={p.name}
+                            checked={isEligibleForPartner(
+                              { Labs_Eligibility: form.Labs_Eligibility },
+                              p.partnerId
+                            )}
+                            onChange={() => toggleEligibility(p.partnerId)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-gray-400">
+                Clients are eligible by default. Toggle off to exclude.
+              </p>
+            </Section>
+          )}
+
+          {/* Section: Visibility (admin only) */}
+          {isAdmin && (
+            <Section label="Visibility">
+              <Toggle
+                label="Hide this client"
+                description="Hidden clients are removed from dashboards, forecasts and selectors. Only admins can still see them on the Clients page."
+                checked={!!form.CL_Hidden}
+                onChange={() => set("CL_Hidden", !form.CL_Hidden)}
+                icon={<EyeOff size={14} className="text-gray-400" />}
+              />
+            </Section>
+          )}
 
           {/* Section: Finance */}
           <Section label="Finance">
@@ -576,12 +756,53 @@ export default function ClientDrawer({
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+    <div className="border-t border-gray-300 pt-5 first:border-t-0 first:pt-0">
+      <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
         {label}
       </p>
       <div className="space-y-3">{children}</div>
     </div>
+  );
+}
+
+function Toggle({
+  label,
+  description,
+  checked,
+  onChange,
+  icon,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: () => void;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 cursor-pointer py-1">
+      <div className="min-w-0">
+        <span className="flex items-center gap-2 text-sm text-gray-700">
+          {icon}
+          {label}
+        </span>
+        {description && <p className="text-xs text-gray-400 mt-0.5">{description}</p>}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={onChange}
+        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
+          checked ? "bg-yellow-400" : "bg-gray-200"
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+            checked ? "translate-x-4" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </label>
   );
 }
 

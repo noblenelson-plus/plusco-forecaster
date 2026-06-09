@@ -1,9 +1,11 @@
 // components/dashboard/charts/bar-list.tsx
 
 /**
- * Horizontal bar list — one labelled track per item, filled proportionally to
- * the largest value. Built with plain divs (no SVG), which keeps the labels
- * crisp and the bars responsive to the card width.
+ * Horizontal ranked bars — one labelled track per item, filled proportionally
+ * to the largest value. Intentionally built with plain divs (the same pattern
+ * Tremor's <BarList> uses): for a ranked list the labels stay crisp, the value
+ * and its hint sit inline without SVG label-clipping, and the bars stay
+ * responsive to the card width. Colors use the shared chart palette.
  */
 
 import { ACCENT } from "./colors";
@@ -12,7 +14,7 @@ export interface BarItem {
   label: string;
   value: number;
   color?: string;
-  /** Optional caption shown under the value (e.g. "120% of planned"). */
+  /** Optional caption shown after the value (e.g. "120% of planned"). */
   hint?: string;
 }
 
@@ -27,7 +29,9 @@ export default function BarList({
 
   if (items.length === 0) {
     return (
-      <p className="py-8 text-center text-xs text-gray-400">No data to display.</p>
+      <p className="py-8 text-center text-xs text-muted-foreground">
+        No data to display.
+      </p>
     );
   }
 
@@ -36,17 +40,19 @@ export default function BarList({
       {items.map((it, i) => (
         <li key={i}>
           <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
-            <span className="truncate font-medium text-gray-600">{it.label}</span>
+            <span className="truncate font-medium text-muted-foreground">
+              {it.label}
+            </span>
             <span className="flex items-baseline gap-2">
-              <span className="tabular-nums text-gray-800">
+              <span className="tabular-nums text-foreground">
                 {valueFormat(it.value)}
               </span>
               {it.hint && (
-                <span className="tabular-nums text-gray-400">{it.hint}</span>
+                <span className="tabular-nums text-muted-foreground">{it.hint}</span>
               )}
             </span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full transition-[width]"
               style={{

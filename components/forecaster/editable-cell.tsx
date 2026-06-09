@@ -16,7 +16,7 @@
  * <TotalCell/> — read-only total (row, bucket header, grand total).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatMoney, parseMoney } from "../../lib/format/money";
 import type { EditMove, GridSelection } from "../../lib/hooks/use-grid-selection";
 
@@ -94,6 +94,10 @@ interface SpreadsheetCellProps {
   readOnly: boolean;
   /** Closed period (locked month for this user) — greyed, not editable. */
   closed?: boolean;
+  /** De-emphasized (greyed) while still editable — e.g. an excluded roll-up. */
+  muted?: boolean;
+  /** Small indicator at the cell's left edge (e.g. a match check / mismatch flag). */
+  badge?: ReactNode;
   dirty: boolean;
   sel: GridSelection;
   /** Shared drag flag owned by the grid (true while a select-drag is active). */
@@ -106,6 +110,8 @@ export function SpreadsheetCell({
   value,
   readOnly,
   closed = false,
+  muted = false,
+  badge,
   dirty,
   sel,
   draggingRef,
@@ -155,14 +161,19 @@ export function SpreadsheetCell({
             onDoubleClick={() => {
               if (!readOnly) sel.beginEdit(r, c);
             }}
-            className={`w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md
+            className={`relative w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md
               outline-none select-none transition-colors
               ${closed ? "cursor-not-allowed" : "cursor-cell"}
-              ${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
+              ${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : muted ? "bg-gray-100/60" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
               ${active ? "ring-2 ring-inset ring-yellow-400" : ""}
-              ${closed ? "text-gray-300" : dirty ? "text-gray-900 font-medium" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}
+              ${closed ? "text-gray-300" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}
             `}
           >
+            {badge && (
+              <span className="pointer-events-none absolute left-1 top-1/2 flex -translate-y-1/2 items-center">
+                {badge}
+              </span>
+            )}
             {display || "—"}
           </div>
         </div>

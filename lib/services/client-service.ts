@@ -3,6 +3,7 @@
 import {
   doc,
   setDoc,
+  updateDoc,
   deleteDoc,
   writeBatch,
   onSnapshot,
@@ -19,6 +20,10 @@ import {
   CLIENT_GM_PODS,
   CLIENT_FEE_STRUCTURES,
 } from "../constants/client.constants";
+import {
+  resolveClientStatus,
+  DEFAULT_FORECASTING_TYPE,
+} from "../format/client";
 
 // ─── Valid value sets for CSV validation ──────────────────────────────────────
 
@@ -145,6 +150,19 @@ export async function saveClient(
     ...(cl_id ? {} : { createdAt: now }),
   };
   await setDoc(docRef, payload, { merge: true });
+
+  // `merge: true` deep-merges map fields, so removing a key (a dropped status
+  // year, or an eligibility flag toggled back to the default) would NOT delete
+  // it server-side. For maps that can shrink we replace the whole field with
+  // updateDoc, which overwrites a field rather than merging it. Only on edit —
+  // a freshly created doc has no stale keys.
+  if (cl_id) {
+    await updateDoc(docRef, {
+      Client_Status_By_Year: formData.Client_Status_By_Year,
+      Labs_Eligibility: formData.Labs_Eligibility ?? {},
+    });
+  }
+
   return { cl_id: id, ...payload } as Client;
 }
 
@@ -169,13 +187,19 @@ const CSV_COLUMNS = [
   "CL_GAIA_Number",
   "CL_Tier",
   "Client_Status_2026",
+  "CL_Hidden",
   "Client_Notes",
 ] as const;
 
 export function exportClientsToCSV(clients: Client[]): void {
+  // The CSV keeps a single status column for round-trip simplicity: we export
+  // the status resolved for 2026 (the column header stays "Client_Status_2026").
+  // Nested fields (Forecasting_Type, Labs_Eligibility) are UI-only and omitted.
   const header = CSV_COLUMNS.join(",");
   const rows = clients.map((c) =>
     CSV_COLUMNS.map((col) => {
+      if (col === "Client_Status_2026") return escapeCSV(resolveClientStatus(c, 2026));
+      if (col === "CL_Hidden") return escapeCSV(c.CL_Hidden ? "true" : "false");
       const value = c[col as keyof Client];
       if (Array.isArray(value)) return escapeCSV(value.join("|"));
       return escapeCSV(value);
@@ -256,6 +280,19 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
     // Parse pipe-separated GAIA numbers
     const gaiaRaw = (row.CL_GAIA_Number as string) ?? "";
     row.CL_GAIA_Number = gaiaRaw ? gaiaRaw.split("|").map((s) => s.trim()) : [];
+
+    // Status: the CSV carries a single 2026 column → map it into the per-year
+    // map and drop the legacy key so docs don't keep a stale scalar.
+    const status2026 = row.Client_Status_2026 as string;
+    row.Client_Status_By_Year = status2026 ? { 2026: status2026 } : {};
+    delete row.Client_Status_2026;
+
+    // Hidden flag (optional column).
+    row.CL_Hidden = (row.CL_Hidden as string) === "true";
+
+    // Nested fields are UI-only — seed defaults so the doc shape is complete.
+    row.Forecasting_Type = row.Forecasting_Type ?? { ...DEFAULT_FORECASTING_TYPE };
+    row.Labs_Eligibility = row.Labs_Eligibility ?? {};
 
     // Resolve document ID
     const id = (row.cl_id as string)?.trim() || generateClientId(row.CL_Name as string);

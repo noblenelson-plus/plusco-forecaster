@@ -118,9 +118,17 @@ export default function DashboardPage() {
             fileLabel={fileLabel}
           />
         ) : tab === "revenue" ? (
-          <RevenueTab data={forecastData} />
+          <RevenueTab
+            data={forecastData}
+            clientNameById={clientNameById}
+            fileLabel={fileLabel}
+          />
         ) : (
-          <LabsTab data={forecastData} />
+          <LabsTab
+            data={forecastData}
+            clientNameById={clientNameById}
+            fileLabel={fileLabel}
+          />
         )}
       </main>
     </div>

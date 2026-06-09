@@ -11,6 +11,8 @@ import ClientFilters from "../../../components/clients/client-filters";
 import ClientDrawer from "../../../components/clients/client-drawer";
 import PageHeader from "../../../components/_shared/page-header";
 import type { ClientStatus } from "../../../lib/constants/client.constants";
+import { resolveClientStatus, isClientHidden } from "../../../lib/format/client";
+import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 
 // Firestore limite les requêtes "in" à 30 valeurs — on découpe en lots
 const IN_QUERY_LIMIT = 30;
@@ -25,6 +27,10 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 export default function ClientsPage() {
   const { profile, isAdmin } = useUserProfile();
+
+  // Status badge/filter follow the globally selected year (fallback: current year).
+  const selectedYear = useForecastSelection((s) => s.selectedYear);
+  const year = selectedYear ?? new Date().getFullYear();
 
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,13 +96,15 @@ export default function ClientsPage() {
     fetchClients();
   }, [profile, isAdmin]);
 
-  // Filtered clients
+  // Filtered clients. Hidden clients stay visible to admins (with a badge) but
+  // are removed entirely for Business Leads — even on this page.
   const filteredClients = clients.filter((c) => {
+    if (isClientHidden(c) && !isAdmin) return false;
     const matchesSearch =
       c.CL_Name.toLowerCase().includes(search.toLowerCase()) ||
       c.CL_Agency.toLowerCase().includes(search.toLowerCase());
     const matchesStatus =
-      statusFilter === "ALL" || c.Client_Status_2026 === statusFilter;
+      statusFilter === "ALL" || resolveClientStatus(c, year) === statusFilter;
     const matchesAgency =
       agencyFilter === "ALL" || c.CL_Agency === agencyFilter;
     return matchesSearch && matchesStatus && matchesAgency;

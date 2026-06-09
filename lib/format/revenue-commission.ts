@@ -48,7 +48,7 @@ export interface CommissionMediaLine {
   spend: number;
   /** Commission rate (%) for this type and month. */
   rate: number;
-  /** spend × rate / 100. */
+  /** spend × rate / 100, rounded to whole dollars. */
   amount: number;
 }
 
@@ -65,6 +65,11 @@ export interface CommissionBreakdown {
  * Computes the commission from the Media axis (BL) and a year's commission
  * rates (the `commissionsConfig[year]` slice of the client doc). A missing rate
  * or type resolves to 0, so an unconfigured client simply yields 0 commission.
+ *
+ * Each per-media-type contribution is rounded to whole dollars at the source, so
+ * the commission carries no decimals anywhere downstream (grid, comparison
+ * variances, dashboard, and the value persisted on Save). The monthly total is
+ * the sum of these rounded lines, so the hover breakdown always adds up exactly.
  */
 export function computeCommission(
   mediaData: AxisData,
@@ -81,7 +86,8 @@ export function computeCommission(
     for (const type of MEDIA_TYPES) {
       const spend = plannedByType[type]?.[m] ?? 0;
       const rate = yearRates?.[type]?.[m] ?? 0;
-      const amount = (spend * rate) / 100;
+      // Round each contribution at the source so no decimals propagate.
+      const amount = Math.round((spend * rate) / 100);
       if (amount !== 0) {
         lines.push({
           mediaType: type,

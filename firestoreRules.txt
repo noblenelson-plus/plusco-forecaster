@@ -122,14 +122,30 @@ service cloud.firestore {
       // Nobody can delete entries from the client
       allow delete: if false;
     }
+    // ─── annual_actuals ───────────────────────────────────────────────────────
+    // Document ID format: {cl_id}_{year} e.g. CL_001_2026
+    // Holds the annual ADMIN_INPUT (MediaOcean) for Media and Labs — a single
+    // value per year, shared by every submission. Actuals are admin-owned data,
+    // so only admins may write; assigned BLs (and admins) may read.
+    match /annual_actuals/{entryId} {
+      allow read: if isAuthenticated() &&
+        canAccessClient(resource.data.clientId);
+      // Create/update: admins only (BLs never edit actuals). RFQ locking does
+      // not apply — these figures are not tied to a single submission.
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
     // ─── rfqs ───────────────────────────────────────────────────────────────
 // Document ID format: {year}_{type} e.g. 2026_RFQ1
+// May carry `closedMonths.{media|revenue|labs}: number[]` — admin-set per-axis
+// closed periods (a client-side editing gate for Business Leads only; not
+// enforced here, like the global lock above which only checks `status`).
 match /rfqs/{rfqId} {
   // All authenticated users can read RFQs
   // (needed to populate the year/RFQ selectors in the sidebar)
   allow read: if isAuthenticated();
 
-  // Only admins can create, lock/unlock, or delete RFQs
+  // Only admins can create, lock/unlock, set closed months, or delete RFQs
   allow create, update, delete: if isAdmin();
 }
   }

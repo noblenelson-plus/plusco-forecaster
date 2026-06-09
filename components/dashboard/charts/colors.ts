@@ -30,3 +30,7 @@ export const ACCENT = "#f59e0b"; // yellow-500
 export const DIGITAL_COLOR = "#6366f1"; // indigo
 export const TRADITIONAL_COLOR = "#cbd5e1"; // slate-300
 export const TRACK_COLOR = "#f1f5f9"; // slate-100 (chart backgrounds)
+export const LABS_COLOR = "#6366f1"; // indigo — Labs spend
+export const NEUTRAL_FILL = "#e2e8f0"; // slate-200 — "other / remainder" segments
+export const POSITIVE_COLOR = "#10b981"; // emerald — best / favorable
+export const NEGATIVE_COLOR = "#ef4444"; // red — worst / unfavorable

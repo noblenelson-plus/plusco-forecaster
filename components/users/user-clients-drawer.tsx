@@ -24,6 +24,7 @@ import {
   STATUS_DOT_COLORS,
   type ClientStatus,
 } from "../../lib/constants/client.constants";
+import { resolveClientStatus, isClientHidden } from "../../lib/format/client";
 
 interface UserClientsDrawerProps {
   open: boolean;
@@ -123,16 +124,20 @@ export default function UserClientsDrawer({
   const filteredClients = useMemo(() => {
     const q = search.toLowerCase();
     return clients.filter((c) => {
+      // Hidden clients aren't assignable — but keep ones already assigned to
+      // this user so they remain visible (and removable) in the list.
+      if (isClientHidden(c) && !selected.has(c.cl_id)) return false;
       const matchesSearch =
         !q ||
         c.CL_Name.toLowerCase().includes(q) ||
         c.CL_Agency.toLowerCase().includes(q);
       const matchesAgency = agencyFilter === "ALL" || c.CL_Agency === agencyFilter;
       const matchesStatus =
-        statusFilter === "ALL" || c.Client_Status_2026 === statusFilter;
+        statusFilter === "ALL" ||
+        resolveClientStatus(c, new Date().getFullYear()) === statusFilter;
       return matchesSearch && matchesAgency && matchesStatus;
     });
-  }, [clients, search, agencyFilter, statusFilter]);
+  }, [clients, search, agencyFilter, statusFilter, selected]);
 
   const diff = useMemo(
     () => diffAssignments(initialAssignments, [...selected]),
@@ -396,20 +401,24 @@ export default function UserClientsDrawer({
                         </p>
                       </div>
 
-                      {/* Pastille statut */}
-                      <span className="flex items-center gap-1.5 flex-shrink-0">
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            STATUS_DOT_COLORS[c.Client_Status_2026] ?? "bg-gray-300"
-                          }`}
-                        />
-                        <span className="text-xs text-gray-400 hidden sm:inline">
-                          {c.Client_Status_2026 === "NEW_CLIENT"
-                            ? "New"
-                            : c.Client_Status_2026.charAt(0) +
-                              c.Client_Status_2026.slice(1).toLowerCase()}
-                        </span>
-                      </span>
+                      {/* Status dot */}
+                      {(() => {
+                        const status = resolveClientStatus(c, new Date().getFullYear());
+                        return (
+                          <span className="flex items-center gap-1.5 flex-shrink-0">
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                STATUS_DOT_COLORS[status] ?? "bg-gray-300"
+                              }`}
+                            />
+                            <span className="text-xs text-gray-400 hidden sm:inline">
+                              {status === "NEW_CLIENT"
+                                ? "New"
+                                : status.charAt(0) + status.slice(1).toLowerCase()}
+                            </span>
+                          </span>
+                        );
+                      })()}
                     </button>
                   </li>
                 );

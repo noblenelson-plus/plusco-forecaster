@@ -2,7 +2,18 @@
 "use client";
 
 import { Client } from "../../lib/types/client.types";
-import { Building2, DollarSign, Tag } from "lucide-react";
+import { Building2, DollarSign, Tag, EyeOff } from "lucide-react";
+import {
+  CLIENT_STATUSES,
+  STATUS_BADGE_COLORS,
+  STATUS_DOT_COLORS,
+} from "../../lib/constants/client.constants";
+import { resolveClientStatus, isClientHidden } from "../../lib/format/client";
+import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
+
+const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  CLIENT_STATUSES.map((s) => [s.value, s.label])
+);
 
 interface ClientCardProps {
   client: Client;
@@ -47,7 +58,11 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
     bgColors.length;
   const avatarBg = bgColors[colorIndex];
 
-  const isActive = client.Client_Status_2026 === "ACTIVE";
+  // Status badge follows the globally selected year (fallback: current year).
+  const selectedYear = useForecastSelection((s) => s.selectedYear);
+  const year = selectedYear ?? new Date().getFullYear();
+  const status = resolveClientStatus(client, year);
+  const hidden = isClientHidden(client);
 
   return (
     <button
@@ -71,20 +86,26 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
             <span className="text-white text-sm font-bold">{initials}</span>
           )}
         </div>
-        <span
-          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-            isActive
-              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-              : "bg-gray-100 text-gray-500 border border-gray-200"
-          }`}
-        >
+        <div className="flex items-center gap-1.5">
+          {hidden && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+              <EyeOff size={10} />
+              Hidden
+            </span>
+          )}
           <span
-            className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-              isActive ? "bg-emerald-500" : "bg-gray-400"
+            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+              STATUS_BADGE_COLORS[status] ?? "bg-gray-100 text-gray-500 border-gray-200"
             }`}
-          />
-          {isActive ? "Active" : "Inactive"}
-        </span>
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                STATUS_DOT_COLORS[status] ?? "bg-gray-400"
+              }`}
+            />
+            {STATUS_LABELS[status] ?? status}
+          </span>
+        </div>
       </div>
 
       {/* Client name */}

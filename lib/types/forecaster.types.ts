@@ -21,7 +21,8 @@
  */
 
 import type { MonthlyMap } from "./common.types";
-import type { RFQType } from "./rfq.types";
+import type { RFQ, RFQType } from "./rfq.types";
+import { RFQ_TYPE_ORDER } from "./rfq.types";
 
 // ─── Axis identifiers and categories ─────────────────────────────────────────
 
@@ -89,6 +90,32 @@ export function buildDataEntryId(
   return `${clientId}_${year}_${rfq}`;
 }
 
+// ─── Annual actuals (Media / Labs ADMIN_INPUT) ───────────────────────────────
+
+/**
+ * Firestore "annual_actuals" document — one per {client, year}.
+ *
+ * For axes with `annualActuals` (Media, Labs), the ADMIN_INPUT (actuals) is a
+ * single annual value shared by every submission of the year, rather than one
+ * copy per RFQ. Each axis's actuals rows live under axes.{axisId}, mirroring
+ * the data_entries dot-path so the same ForecastRow shape and helpers apply.
+ * Revenue is absent here — its GAIA actuals stay per-submission in data_entries.
+ */
+export interface AnnualActuals {
+  /** = document ID: {cl_id}_{year} */
+  entry_id: string;
+  clientId: string;
+  year: number;
+  axes: Partial<Record<AxisId, ForecastRow[]>>;
+  createdAt?: string;
+  updatedAt?: string;
+  lastModifiedBy?: string; // User UID
+}
+
+export function buildAnnualActualsId(clientId: string, year: number): string {
+  return `${clientId}_${year}`;
+}
+
 // ─── Axis configuration (what makes the grid reusable) ───────────────────────
 
 export interface RowTypeOption {
@@ -125,6 +152,13 @@ export interface AxisConfig {
    * option, so renaming the source per axis is config-only.
    */
   actualsLabel: string;
+  /**
+   * true → ADMIN_INPUT (actuals) is a single annual value per {client, year},
+   * stored in the "annual_actuals" collection and shared across every
+   * submission of the year (Media, Labs). false → actuals are per-submission,
+   * stored in the data_entries axis like the BL_INPUT (Revenue's GAIA).
+   */
+  annualActuals: boolean;
 }
 
 // ─── Cell coordinates + dirty tracking ───────────────────────────────────────
@@ -152,16 +186,20 @@ export type DirtyMap = Map<string, number>;
 // ─── Comparison ──────────────────────────────────────────────────────────────
 
 /**
- * A comparison always opposes a base (the current RFQ's BL_INPUT) to a
- * reference described by `(rfq, side)`. The 3 cases collapse into one:
- *   (other RFQ, BL_INPUT)      → BL vs BL
- *   (current RFQ, ADMIN_INPUT) → BL vs actuals (same RFQ)
- *   (other RFQ, ADMIN_INPUT)   → BL vs actuals (other RFQ)
+ * A comparison always opposes a base (the current submission's BL_INPUT) to a
+ * reference described by `(year, rfq, side)` — any submission of any year, on
+ * either side:
+ *   (any submission, BL_INPUT)    → BL vs BL (cross-year allowed)
+ *   (any submission, ADMIN_INPUT) → BL vs actuals
+ * For annual-actuals axes (Media, Labs) the ADMIN_INPUT side resolves to the
+ * year's single annual MediaOcean — `rfq` is then irrelevant. For Revenue the
+ * ADMIN_INPUT side is that submission's GAIA actuals.
  * It is always aggregated to the total per rowType × month (no project).
  */
 export type ComparisonSide = InputCategory;
 
 export interface ComparisonRef {
+  year: number;
   rfq: RFQType;
   side: ComparisonSide;
 }
@@ -207,6 +245,50 @@ export function computeVariance(
     absolute,
     relative: reference !== 0 ? (absolute / reference) * 100 : null,
   };
+}
+
+// ─── Default comparison reference ("previous submission") ────────────────────
+
+/** Chronological rank of a submission across years: year first, then RFQ order. */
+function rfqRank(year: number, rfq: RFQType): number {
+  return year * 10 + RFQ_TYPE_ORDER[rfq];
+}
+
+/**
+ * The submission immediately preceding `(year, rfq)` among the existing RFQs
+ * (any year), ordered by year then RFQ_TYPE_ORDER. null when none precedes it.
+ */
+export function previousRFQ(
+  allRfqs: Pick<RFQ, "year" | "type">[],
+  year: number,
+  rfq: RFQType
+): { year: number; rfq: RFQType } | null {
+  const currentRank = rfqRank(year, rfq);
+  let best: { year: number; rfq: RFQType; rank: number } | null = null;
+  for (const r of allRfqs) {
+    const rank = rfqRank(r.year, r.type);
+    if (rank >= currentRank) continue;
+    if (!best || rank > best.rank) best = { year: r.year, rfq: r.type, rank };
+  }
+  return best ? { year: best.year, rfq: best.rfq } : null;
+}
+
+/**
+ * Default comparison for a freshly selected submission: the previous submission,
+ * on the side that fits the axis — BL Input for Media/Labs, GAIA (ADMIN_INPUT)
+ * for Revenue. null when there is no earlier submission to compare against.
+ */
+export function defaultComparisonRef(
+  config: AxisConfig,
+  currentYear: number,
+  currentRfq: RFQType,
+  allRfqs: Pick<RFQ, "year" | "type">[]
+): ComparisonRef | null {
+  const prev = previousRFQ(allRfqs, currentYear, currentRfq);
+  if (!prev) return null;
+  const side: ComparisonSide =
+    config.axisId === "revenue" ? "ADMIN_INPUT" : "BL_INPUT";
+  return { year: prev.year, rfq: prev.rfq, side };
 }
 
 // ─── Factories ───────────────────────────────────────────────────────────────
@@ -279,6 +361,8 @@ export const MEDIA_AXIS_CONFIG: AxisConfig = {
   allowDuplicateRowTypes: false,
   // Media actuals come from MediaOcean. (Revenue's source will be "GAIA".)
   actualsLabel: "MediaOcean",
+  // MediaOcean is a single annual figure, shared across the year's submissions.
+  annualActuals: true,
 };
 
 // ─── Labs axis config ────────────────────────────────────────────────────────
@@ -312,6 +396,8 @@ export function buildLabsAxisConfig(partners: LabsPartner[]): AxisConfig {
     allowDuplicateRowTypes: false,
     // Labs actuals come from MediaOcean, like Media.
     actualsLabel: "MediaOcean",
+    // Like Media, MediaOcean is annual — one value per year, shared across RFQs.
+    annualActuals: true,
   };
 }
 
@@ -333,7 +419,8 @@ export type RevenueStream =
   | "projectFees"
   | "productFees"
   | "unallocated"
-  | "accrual";
+  | "accrual"
+  | "gaiaForecast";
 
 export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
   retainer: "Retainer",
@@ -342,10 +429,22 @@ export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
   productFees: "Product Fees",
   unallocated: "Unallocated",
   accrual: "Accrual",
+  gaiaForecast: "GAIA Forecast",
 };
 
 /** The Commission BL row is calculated — read-only, never hand-entered. */
 export const REVENUE_COMMISSION_TYPE: RevenueStream = "commission";
+
+/**
+ * GAIA Forecast — an ADMIN_INPUT-only, hand-entered top-line estimate. While no
+ * other GAIA stream carries a value for a month, it stands in as that month's
+ * revenue (it counts in the GAIA total — a roll-up of the lines to come). Once
+ * any other GAIA stream is filled for the month it steps aside: greyed and
+ * excluded from the total, kept only as a validation reference that shows a
+ * green check when it matches the sum of the detail lines (red flag otherwise).
+ * The per-month behavior lives in components/forecaster/revenue-grid.tsx.
+ */
+export const REVENUE_GAIA_FORECAST_TYPE: RevenueStream = "gaiaForecast";
 
 /** BL Input streams, in display order. */
 export const REVENUE_BL_STREAMS: RevenueStream[] = [
@@ -355,8 +454,13 @@ export const REVENUE_BL_STREAMS: RevenueStream[] = [
   "productFees",
 ];
 
-/** Admin Input (GAIA) streams — the BL four plus Unallocated and Accrual. */
+/**
+ * Admin Input (GAIA) streams, in display order — the GAIA Forecast roll-up on
+ * top, then the BL four plus Unallocated and Accrual. The order here also drives
+ * the seeded actuals row order (ensureRevenueShape).
+ */
 export const REVENUE_ADMIN_STREAMS: RevenueStream[] = [
+  "gaiaForecast",
   "retainer",
   "commission",
   "projectFees",
@@ -380,4 +484,6 @@ export const REVENUE_AXIS_CONFIG: AxisConfig = {
   allowDuplicateRowTypes: false,
   // Revenue actuals come from GAIA (Finance), not MediaOcean.
   actualsLabel: "GAIA",
+  // GAIA is captured per submission (the roll-up logic is submission-specific).
+  annualActuals: false,
 };

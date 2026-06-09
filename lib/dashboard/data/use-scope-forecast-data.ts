@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { fetchDataEntry } from "../../services/data-entry-service";
+import { fetchAnnualActualsEntry } from "../../services/annual-actuals-service";
 import {
   subscribeToLabsPartners,
   getLabsPartnersForYear,
@@ -34,8 +35,13 @@ import {
   computeLabsMonthly,
   computeMediaBreakdown,
   computeRevenueBreakdown,
+  labsByPartnerForClient,
   mergeAxisData,
+  resolveLabsDetail,
+  type ClientLabsRaw,
   type ClientMediaBreakdown,
+  type ClientRevenueBreakdown,
+  type LabsDetailRow,
   type MediaBreakdown,
   type RevenueBreakdown,
 } from "./aggregate";
@@ -62,6 +68,12 @@ interface RawScopeData {
   /** Per-client media (BL) spend, keyed by media type then month. Drives the
    *  per-client data table; the merged `media` axis drives the charts. */
   mediaByClient: ClientMediaBreakdown[];
+  /** Per-client Labs (BL) spend, keyed by partner id then month. Drives the
+   *  detailed Labs table once partner names/types are resolved. */
+  labsByClient: ClientLabsRaw[];
+  /** Per-client revenue (BL), keyed by stream then month. Drives the revenue
+   *  table and the per-client Revenue/Media ratios. */
+  revenueByClient: ClientRevenueBreakdown[];
   clientsWithData: number;
 }
 
@@ -70,6 +82,8 @@ const EMPTY_RAW: RawScopeData = {
   labs: emptyAxisData(),
   revenue: emptyAxisData(),
   mediaByClient: [],
+  labsByClient: [],
+  revenueByClient: [],
   clientsWithData: 0,
 };
 
@@ -84,8 +98,12 @@ export interface ScopeForecastData {
   /** One entry per in-scope client with media spend, for the data table. */
   mediaByClient: ClientMediaBreakdown[];
   revenue: RevenueBreakdown;
+  /** One entry per in-scope client with revenue, for the table and ratios. */
+  revenueByClient: ClientRevenueBreakdown[];
   labs: LabsPenetrationResult;
   labsMonthly: MonthlyMap;
+  /** One row per (client × partner) with spend, for the detailed Labs table. */
+  labsDetail: LabsDetailRow[];
 }
 
 export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
@@ -119,8 +137,15 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
       setLoading(true);
       setError(null);
       try {
-        const entries = await Promise.all(
-          clientIds.map((id) => fetchDataEntry(id, year!, rfq!.type))
+        // Per client: the submission doc (BL buckets, Revenue GAIA actuals) plus
+        // the annual_actuals doc (Media/Labs MediaOcean is annual, not per-RFQ).
+        const results = await Promise.all(
+          clientIds.map((id) =>
+            Promise.all([
+              fetchDataEntry(id, year!, rfq!.type),
+              fetchAnnualActualsEntry(id, year!),
+            ])
+          )
         );
         if (cancelled) return;
 
@@ -128,11 +153,16 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
         const labsList: AxisData[] = [];
         const revenueList: AxisData[] = [];
         const mediaByClient: ClientMediaBreakdown[] = [];
+        const labsByClient: ClientLabsRaw[] = [];
+        const revenueByClient: ClientRevenueBreakdown[] = [];
         let clientsWithData = 0;
 
-        entries.forEach((entry, i) => {
+        results.forEach(([entry, annual], i) => {
+          // Media/Labs actuals come from the annual doc, not the submission doc.
           const media = axisOf(entry, "media");
+          media.actuals = Array.isArray(annual.media) ? annual.media : [];
           const labs = axisOf(entry, "labs");
+          labs.actuals = Array.isArray(annual.labs) ? annual.labs : [];
           const revenue = axisOf(entry, "revenue");
           mediaList.push(media);
           labsList.push(labs);
@@ -142,6 +172,20 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
             mediaByClient.push({
               clientId: clientIds[i],
               byType: aggregateByType(media, "BL_INPUT"),
+            });
+          }
+          if (hasAnyInput(labs)) {
+            // Per-client BL Labs spend per partner per month, for the table.
+            labsByClient.push({
+              clientId: clientIds[i],
+              byPartner: labsByPartnerForClient(labs),
+            });
+          }
+          if (hasAnyInput(revenue)) {
+            // Per-client BL revenue per stream per month, for the table/ratios.
+            revenueByClient.push({
+              clientId: clientIds[i],
+              byStream: aggregateByType(revenue, "BL_INPUT"),
             });
           }
           if (hasAnyInput(media) || hasAnyInput(labs) || hasAnyInput(revenue)) {
@@ -154,6 +198,8 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
           labs: mergeAxisData(labsList),
           revenue: mergeAxisData(revenueList),
           mediaByClient,
+          labsByClient,
+          revenueByClient,
           clientsWithData,
         });
       } catch (err) {
@@ -199,6 +245,10 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
     () => computeLabsMonthly(effective.labs),
     [effective.labs]
   );
+  const labsDetail = useMemo(
+    () => resolveLabsDetail(effective.labsByClient, partnersForYear),
+    [effective.labsByClient, partnersForYear]
+  );
 
   return {
     loading: disabled ? false : loading,
@@ -209,7 +259,9 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
     media,
     mediaByClient: effective.mediaByClient,
     revenue,
+    revenueByClient: effective.revenueByClient,
     labs,
     labsMonthly,
+    labsDetail,
   };
 }

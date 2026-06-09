@@ -1,5 +1,7 @@
 // lib/types/rfq.types.ts
 
+import type { AxisId } from "./forecaster.types";
+
 // ─── RFQ Types ────────────────────────────────────────────────────────────────
 
 export const RFQ_TYPES = [
@@ -32,6 +34,12 @@ export interface RFQ {
   year: number;          // ex. 2026
   type: RFQType;
   status: RFQStatus;
+  /**
+   * Per-axis closed months (1–12), set by admins from the RFQ admin page.
+   * When an axis key is absent, the static RFQ_CLOSED_MONTHS[type] default
+   * applies for that axis (no migration needed for pre-existing docs).
+   */
+  closedMonths?: Partial<Record<AxisId, number[]>>;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -69,10 +77,14 @@ export function sortRFQs(rfqs: RFQ[]): RFQ[] {
 // ─── Closed periods ─────────────────────────────────────────────────────────
 
 /**
- * Months (1–12) that are "closed" for each RFQ type. A closed period is shown
- * locked (greyed + padlock) and cannot be edited by Business Leads; admins are
- * never restricted by it. RFQ0 has no closed months; each quarterly RFQ closes
- * its own quarter; FINAL closes the whole year.
+ * Default months (1–12) that are "closed" for each RFQ type. A closed period
+ * is shown locked (greyed + padlock) and cannot be edited by Business Leads;
+ * admins are never restricted by it. RFQ0 has no closed months; each quarterly
+ * RFQ closes its own quarter; FINAL closes the whole year.
+ *
+ * These are only DEFAULTS: admins can override the closed months per axis on
+ * each RFQ doc (`RFQ.closedMonths`). Use `resolveClosedMonths` to read the
+ * effective set for an axis rather than this table directly.
  */
 export const RFQ_CLOSED_MONTHS: Record<RFQType, number[]> = {
   RFQ0: [],
@@ -82,7 +94,19 @@ export const RFQ_CLOSED_MONTHS: Record<RFQType, number[]> = {
   FINAL: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
 };
 
-/** Is `month` (1–12) a closed period for the given RFQ type? */
+/** Is `month` (1–12) a closed period for the given RFQ type (default table)? */
 export function isMonthClosed(type: RFQType, month: number): boolean {
   return RFQ_CLOSED_MONTHS[type].includes(month);
+}
+
+/**
+ * Effective closed months (1–12) for one axis of an RFQ. Uses the admin-set
+ * per-axis override (`rfq.closedMonths[axisId]`) when present, otherwise falls
+ * back to the static `RFQ_CLOSED_MONTHS[type]` default.
+ */
+export function resolveClosedMonths(
+  rfq: Pick<RFQ, "type" | "closedMonths">,
+  axisId: AxisId
+): number[] {
+  return rfq.closedMonths?.[axisId] ?? RFQ_CLOSED_MONTHS[rfq.type];
 }

@@ -2,7 +2,7 @@
 
 /**
  * Media Spend tab — headline KPIs over a mix of charts:
- *   • Channel mix (donut)        • Digital share of media (gauge)
+ *   • Channel mix (donut)          • Top 10 clients by spend, by type (stacked)
  *   • Digital channel detail (bars)  • Digital vs traditional monthly (trend)
  * then a per-client / per-media-type data table with CSV export.
  */
@@ -12,14 +12,17 @@ import {
   Percent,
   Monitor,
   Building2,
+  BarChart3,
+  Users,
 } from "lucide-react";
-import { MONTHS } from "../../../lib/types/common.types";
+import { MONTHS, sumMonthlyMap } from "../../../lib/types/common.types";
 import StatCard from "../charts/stat-card";
 import ChartCard from "../charts/chart-card";
 import DonutChart from "../charts/donut-chart";
-import GaugeChart from "../charts/gauge-chart";
 import BarList from "../charts/bar-list";
 import TrendChart from "../charts/trend-chart";
+import StackedBarChart from "../charts/stacked-bar-chart";
+import HorizontalStackedBar from "../charts/horizontal-stacked-bar";
 import MediaDataTable from "../media-data-table";
 import { DIGITAL_COLOR, TRADITIONAL_COLOR } from "../charts/colors";
 import { formatCompactMoney, formatPct } from "../charts/format";
@@ -44,6 +47,27 @@ export default function MediaSpendTab({
   const { media } = data;
   const channels = media.byChannel.filter((c) => c.annual > 0);
   const digitalChannels = channels.filter((c) => c.digital);
+
+  // Top 10 spending clients, each broken down by media type for the stacked bar.
+  const clientSpendSeries = media.byChannel.map((c) => ({
+    key: c.mediaType,
+    label: c.label,
+    color: c.color,
+  }));
+  const topClients = data.mediaByClient
+    .map((cb) => {
+      const values: Record<string, number> = {};
+      let total = 0;
+      for (const c of media.byChannel) {
+        const v = cb.byType[c.mediaType] ? sumMonthlyMap(cb.byType[c.mediaType]) : 0;
+        values[c.mediaType] = v;
+        total += v;
+      }
+      return { label: clientNameById[cb.clientId] ?? cb.clientId, total, values };
+    })
+    .filter((r) => r.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
 
   return (
     <div className="space-y-8">
@@ -76,14 +100,14 @@ export default function MediaSpendTab({
         />
       </div>
 
-      {/* Asymmetric 5-col grid: donut 60% / gauge 40% on top, bars 40% /
+      {/* Asymmetric 5-col grid: donut 40% / top-clients 60% on top, bars 40% /
           trend 60% below — every chart sits at 40–60%, no full-width gaps. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <ChartCard
           title="Channel mix"
           subtitle="Annual BL spend by media channel"
           icon={TrendingUp}
-          className="lg:col-span-3"
+          className="lg:col-span-2"
         >
           <DonutChart
             segments={channels.map((c) => ({
@@ -98,17 +122,22 @@ export default function MediaSpendTab({
         </ChartCard>
 
         <ChartCard
-          title="Digital share of media"
-          subtitle="Share of total media in digital channels"
-          icon={Percent}
-          className="lg:col-span-2"
+          title="Top 10 clients by spend"
+          subtitle="Largest BL media spenders, split by media type"
+          icon={Users}
+          className="lg:col-span-3"
         >
-          <GaugeChart
-            value={media.digitalShare ?? 0}
-            variant="indigo"
-            valueLabel={formatPct(media.digitalShare)}
-            caption="of media is digital"
-          />
+          {topClients.length > 0 ? (
+            <HorizontalStackedBar
+              series={clientSpendSeries}
+              rows={topClients}
+              valueFormat={formatCompactMoney}
+            />
+          ) : (
+            <p className="py-8 text-center text-xs text-muted-foreground">
+              No client spend in scope.
+            </p>
+          )}
         </ChartCard>
 
         <ChartCard
@@ -160,6 +189,21 @@ export default function MediaSpendTab({
           />
         </ChartCard>
       </div>
+
+      <ChartCard
+        title="Monthly spend by media type"
+        subtitle="Each bar is a month's total BL spend, split by channel"
+        icon={BarChart3}
+      >
+        <StackedBarChart
+          series={media.byChannel.map((c) => ({
+            label: c.label,
+            color: c.color,
+            points: monthsToPoints(media.monthlyByType[c.mediaType]),
+          }))}
+          valueFormat={formatCompactMoney}
+        />
+      </ChartCard>
 
       <MediaDataTable
         mediaByClient={data.mediaByClient}

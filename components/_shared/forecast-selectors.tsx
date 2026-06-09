@@ -41,6 +41,7 @@ import {
 } from "../../lib/services/rfq-service";
 import type { RFQ } from "../../lib/types/rfq.types";
 import type { ClientSummary } from "../../lib/types/client.types";
+import { isClientHidden } from "../../lib/format/client";
 
 // Firestore limits "in" queries to 30 values — split into batches.
 const IN_QUERY_LIMIT = 30;
@@ -121,6 +122,8 @@ export default function ForecastSelectors({
           docs = snapshots.flatMap((s) => s.docs);
         }
         const data: ClientSummary[] = docs
+          // Hidden clients are not selectable for forecasting.
+          .filter((d) => !isClientHidden(d.data()))
           .map((d) => {
             const c = d.data();
             return {
@@ -129,7 +132,7 @@ export default function ForecastSelectors({
               CL_Logo: c.CL_Logo,
               CL_Agency: c.CL_Agency ?? "",
               CL_Business_Lead: c.CL_Business_Lead ?? "",
-              Client_Status_2026: c.Client_Status_2026,
+              Client_Status_By_Year: c.Client_Status_By_Year ?? {},
               CL_Currency: c.CL_Currency ?? "CAD",
             };
           })
@@ -149,14 +152,19 @@ export default function ForecastSelectors({
     return () => unsubscribe();
   }, []);
 
-  // Keep the selected RFQ object fresh (status may change in real-time)
+  // Keep the selected RFQ object fresh (status or closed months may change in
+  // real-time when an admin edits the RFQ).
   useEffect(() => {
     if (!selectedRFQ) return;
     const fresh = rfqs.find((r) => r.rfq_id === selectedRFQ.rfq_id);
     if (!fresh) {
       setRFQ(null); // RFQ deleted
-    } else if (fresh.status !== selectedRFQ.status) {
-      setRFQ(fresh); // status updated
+    } else if (
+      fresh.status !== selectedRFQ.status ||
+      JSON.stringify(fresh.closedMonths ?? null) !==
+        JSON.stringify(selectedRFQ.closedMonths ?? null)
+    ) {
+      setRFQ(fresh); // status or closed months updated
     }
   }, [rfqs, selectedRFQ, setRFQ]);
 

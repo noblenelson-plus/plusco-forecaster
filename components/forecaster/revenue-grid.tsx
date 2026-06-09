@@ -28,6 +28,8 @@ import {
   SplitSquareHorizontal,
   Sparkles,
   Info,
+  CheckCircle2,
+  Flag,
 } from "lucide-react";
 import type {
   ForecastRow,
@@ -36,6 +38,7 @@ import type {
 import {
   REVENUE_AXIS_CONFIG,
   REVENUE_COMMISSION_TYPE,
+  REVENUE_GAIA_FORECAST_TYPE,
   buildCellKey,
 } from "../../lib/types/forecaster.types";
 import {
@@ -48,7 +51,7 @@ import {
   useGridSelection,
   type GridRowDescriptor,
 } from "../../lib/hooks/use-grid-selection";
-import { MONTHS } from "../../lib/types/common.types";
+import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import { downloadAxisCSV } from "../../lib/format/forecast-csv";
 import type { CommissionBreakdown } from "../../lib/format/revenue-commission";
@@ -87,7 +90,39 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
   const actuals = grid.data.actuals;
 
   const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
-  const actualsTotals = useMemo(() => monthTotals(actuals), [actuals]);
+
+  // ─── GAIA Forecast roll-up ───────────────────────────────────────────────
+  // The GAIA Forecast row is a hand-entered top-line estimate. Per month it
+  // only "counts" while no other GAIA stream is filled; once detail lines carry
+  // a value it steps aside (greyed, excluded, validated against their sum).
+  const forecastRow = useMemo(
+    () => actuals.find((row) => row.rowType === REVENUE_GAIA_FORECAST_TYPE) ?? null,
+    [actuals]
+  );
+  const otherActuals = useMemo(
+    () => actuals.filter((row) => row.rowType !== REVENUE_GAIA_FORECAST_TYPE),
+    [actuals]
+  );
+  const otherActualsTotals = useMemo(() => monthTotals(otherActuals), [otherActuals]);
+  // A month "has detail" as soon as any non-forecast GAIA stream is non-zero.
+  const monthHasDetail = useMemo(() => {
+    const map: Record<number, boolean> = {};
+    for (const m of MONTHS) {
+      map[m] = otherActuals.some((row) => (row.months[m] ?? 0) !== 0);
+    }
+    return map;
+  }, [otherActuals]);
+  // GAIA total: detailed months sum their streams; months with no detail fall
+  // back to the GAIA Forecast value (its purpose as a roll-up estimate).
+  const actualsTotals = useMemo<MonthlyMap>(() => {
+    const totals: MonthlyMap = {};
+    for (const m of MONTHS) {
+      totals[m] = monthHasDetail[m]
+        ? otherActualsTotals[m]
+        : forecastRow?.months[m] ?? 0;
+    }
+    return totals;
+  }, [monthHasDetail, otherActualsTotals, forecastRow]);
 
   // Selection model — editable rows only. The computed BL Commission row is
   // excluded (read-only, never edited/copied through the selection layer).
@@ -279,29 +314,46 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                 </td>
               </tr>
 
-              {actuals.map((row) => (
-                <RevenueDataRow
-                  key={row.rowId}
-                  row={row}
-                  category="ADMIN_INPUT"
-                  bucketId={null}
-                  readOnly={!grid.canEditActuals}
-                  grid={grid}
-                  sel={sel}
-                  rowIndex={rowIndex}
-                  draggingRef={draggingRef}
-                  rowBg="bg-gray-50/40 group-hover:bg-gray-50"
-                  onSpread={() =>
-                    setSpreadRow({
-                      category: "ADMIN_INPUT",
-                      bucketId: null,
-                      rowId: row.rowId,
-                      label: row.label,
-                      months: row.months,
-                    })
-                  }
-                />
-              ))}
+              {actuals.map((row) => {
+                const onSpread = () =>
+                  setSpreadRow({
+                    category: "ADMIN_INPUT",
+                    bucketId: null,
+                    rowId: row.rowId,
+                    label: row.label,
+                    months: row.months,
+                  });
+                if (row.rowType === REVENUE_GAIA_FORECAST_TYPE) {
+                  return (
+                    <GaiaForecastRow
+                      key={row.rowId}
+                      row={row}
+                      grid={grid}
+                      sel={sel}
+                      rowIndex={rowIndex}
+                      draggingRef={draggingRef}
+                      otherActualsTotals={otherActualsTotals}
+                      monthHasDetail={monthHasDetail}
+                      onSpread={onSpread}
+                    />
+                  );
+                }
+                return (
+                  <RevenueDataRow
+                    key={row.rowId}
+                    row={row}
+                    category="ADMIN_INPUT"
+                    bucketId={null}
+                    readOnly={!grid.canEditActuals}
+                    grid={grid}
+                    sel={sel}
+                    rowIndex={rowIndex}
+                    draggingRef={draggingRef}
+                    rowBg="bg-gray-50/40 group-hover:bg-gray-50"
+                    onSpread={onSpread}
+                  />
+                );
+              })}
 
               {/* GAIA total */}
               <tr className="bg-gray-100 border-b border-gray-200">
@@ -488,6 +540,101 @@ function RevenueDataRow({
         );
       })}
       <TotalCell value={sumMonths(row.months)} emphasis="row" />
+    </tr>
+  );
+}
+
+// ─── GAIA Forecast row (hand-entered roll-up, per-month validation) ──────────
+// A top-line estimate that counts as the month's revenue while no detail stream
+// is filled. Once any other GAIA stream carries a value for a month, the cell is
+// greyed and dropped from the total — kept editable as a reference that shows a
+// green check when it matches the detail sum, a red flag when it doesn't.
+
+function GaiaForecastRow({
+  row,
+  grid,
+  sel,
+  rowIndex,
+  draggingRef,
+  otherActualsTotals,
+  monthHasDetail,
+  onSpread,
+}: {
+  row: ForecastRow;
+  grid: UseForecasterGridResult;
+  sel: ReturnType<typeof useGridSelection>;
+  rowIndex: Map<string, number>;
+  draggingRef: React.MutableRefObject<boolean>;
+  otherActualsTotals: MonthlyMap;
+  monthHasDetail: Record<number, boolean>;
+  onSpread: () => void;
+}) {
+  const r = rowIndex.get(row.rowId)!;
+  const readOnly = !grid.canEditActuals;
+  // Annual = only the months where the forecast is still the active value;
+  // detailed months are represented by their own streams, not the forecast.
+  const annual = useMemo(
+    () =>
+      MONTHS.reduce(
+        (acc, m) => acc + (monthHasDetail[m] ? 0 : row.months[m] ?? 0),
+        0
+      ),
+    [row.months, monthHasDetail]
+  );
+
+  return (
+    <tr className="group bg-emerald-50/20">
+      <td className="sticky left-0 z-10 bg-emerald-50/30 group-hover:bg-emerald-50/60 px-4 py-1.5 border-b border-gray-100">
+        <div className="flex items-center gap-1.5 pl-2">
+          <span className="text-sm text-gray-700">{row.label}</span>
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-emerald-100 text-emerald-700">
+            Roll-up
+          </span>
+          {!readOnly && (
+            <button
+              onClick={onSpread}
+              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-gray-700 transition-all"
+              title="Distribute an amount across months"
+            >
+              <SplitSquareHorizontal size={12} />
+            </button>
+          )}
+        </div>
+      </td>
+      {MONTHS.map((m, ci) => {
+        const detail = monthHasDetail[m];
+        const value = row.months[m] ?? 0;
+        const matches = value === (otherActualsTotals[m] ?? 0);
+        const coord = {
+          category: "ADMIN_INPUT" as const,
+          bucketId: null,
+          rowId: row.rowId,
+          month: m,
+        };
+        return (
+          <SpreadsheetCell
+            key={m}
+            r={r}
+            c={ci}
+            value={value}
+            readOnly={readOnly}
+            muted={detail}
+            badge={
+              detail ? (
+                matches ? (
+                  <CheckCircle2 size={12} className="text-emerald-500" />
+                ) : (
+                  <Flag size={11} className="text-red-500" />
+                )
+              ) : undefined
+            }
+            dirty={grid.dirtyMap.has(buildCellKey(coord))}
+            sel={sel}
+            draggingRef={draggingRef}
+          />
+        );
+      })}
+      <TotalCell value={annual} emphasis="row" />
     </tr>
   );
 }

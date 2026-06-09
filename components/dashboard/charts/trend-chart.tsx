@@ -2,25 +2,31 @@
 "use client";
 
 /**
- * Monthly trend chart (Recharts). A single series renders as a gradient area;
- * several series render as overlaid lines with a legend. Responsive width,
- * fixed height.
+ * Monthly trend chart — rendered inside the shared <ChartContainer>. A single
+ * series renders as a gradient area; several series render as overlaid lines
+ * with a shared legend. Responsive width, fixed height; colors/labels are
+ * driven by a ChartConfig so the tooltip and legend stay in sync.
  */
 
+import { useMemo } from "react";
 import {
-  AreaChart,
   Area,
-  LineChart,
+  AreaChart,
+  CartesianGrid,
   Line,
+  LineChart,
+  ReferenceLine,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
 } from "recharts";
-import { TRACK_COLOR } from "./colors";
-import { ChartTooltip } from "./chart-tooltip";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "../../ui/chart";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -40,99 +46,136 @@ export default function TrendChart({
   series,
   height = 220,
   valueFormat,
+  reference,
 }: {
   series: TrendSeries[];
   height?: number;
   valueFormat?: (value: number) => string;
+  /** Optional horizontal target line (e.g. a 25% goal). */
+  reference?: { value: number; label?: string; color?: string };
 }) {
-  const data = MONTH_LABELS.map((month, i) => {
-    const row: Record<string, string | number> = { month };
-    for (const s of series) row[s.label] = s.points[i] ?? 0;
-    return row;
-  });
+  // ChartConfig keyed by a slug so the dataKey, the color CSS variable and the
+  // tooltip/legend label all resolve from one place.
+  const { config, data, keys } = useMemo(() => {
+    const cfg: ChartConfig = {};
+    const ks = series.map((s) => {
+      const key = slug(s.label);
+      cfg[key] = { label: s.label, color: s.color };
+      return key;
+    });
+    const rows = MONTH_LABELS.map((month, i) => {
+      const row: Record<string, string | number> = { month };
+      series.forEach((s, si) => (row[ks[si]] = s.points[i] ?? 0));
+      return row;
+    });
+    return { config: cfg, data: rows, keys: ks };
+  }, [series]);
 
-  const tick = { fontSize: 11, fill: "#94a3b8" };
   const yFmt = (v: number | string) =>
     valueFormat ? valueFormat(Number(v)) : String(v);
+  const tickProps = { fontSize: 11 };
 
-  const grid = (
-    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={TRACK_COLOR} />
-  );
-  const xAxis = (
-    <XAxis
-      dataKey="month"
-      tickLine={false}
-      axisLine={false}
-      tick={tick}
-      interval={0}
-      minTickGap={2}
-    />
-  );
-  const yAxis = (
-    <YAxis
-      tickFormatter={yFmt}
-      tickLine={false}
-      axisLine={false}
-      width={52}
-      tick={tick}
-    />
-  );
-  const tooltip = (
-    <Tooltip
-      content={<ChartTooltip valueFormat={valueFormat} />}
-      cursor={{ stroke: "#e2e8f0" }}
-    />
+  const axes = (
+    <>
+      <CartesianGrid vertical={false} strokeDasharray="3 3" />
+      <XAxis
+        dataKey="month"
+        tickLine={false}
+        axisLine={false}
+        tickMargin={8}
+        interval={0}
+        minTickGap={2}
+        tick={tickProps}
+      />
+      <YAxis
+        tickFormatter={yFmt}
+        tickLine={false}
+        axisLine={false}
+        width={52}
+        tick={tickProps}
+      />
+      <ChartTooltip
+        cursor={{ strokeDasharray: "3 3" }}
+        content={
+          <ChartTooltipContent
+            formatter={(value, name, item) => (
+              <div className="flex w-full items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="h-2.5 w-2.5 rounded-[2px]"
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <span className="text-muted-foreground">
+                    {config[name as string]?.label ?? name}
+                  </span>
+                </span>
+                <span className="font-medium tabular-nums text-foreground">
+                  {valueFormat ? valueFormat(Number(value)) : value}
+                </span>
+              </div>
+            )}
+          />
+        }
+      />
+      {reference && (
+        <ReferenceLine
+          y={reference.value}
+          stroke={reference.color ?? "#94a3b8"}
+          strokeDasharray="4 4"
+          strokeWidth={1.5}
+          label={
+            reference.label
+              ? {
+                  value: reference.label,
+                  position: "insideTopRight",
+                  fontSize: 10,
+                  fill: reference.color ?? "#94a3b8",
+                }
+              : undefined
+          }
+        />
+      )}
+    </>
   );
 
-  if (series.length === 1) {
-    const s = series[0];
-    return (
-      <ResponsiveContainer width="100%" height={height}>
+  return (
+    <ChartContainer config={config} className="aspect-auto w-full" style={{ height }}>
+      {keys.length === 1 ? (
         <AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <defs>
-            <linearGradient id={`grad-${slug(s.label)}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={s.color} stopOpacity={0.35} />
-              <stop offset="100%" stopColor={s.color} stopOpacity={0.02} />
+            <linearGradient id={`grad-${keys[0]}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={`var(--color-${keys[0]})`} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={`var(--color-${keys[0]})`} stopOpacity={0.02} />
             </linearGradient>
           </defs>
-          {grid}
-          {xAxis}
-          {yAxis}
-          {tooltip}
+          {axes}
           <Area
             type="monotone"
-            dataKey={s.label}
-            stroke={s.color}
+            dataKey={keys[0]}
+            stroke={`var(--color-${keys[0]})`}
             strokeWidth={2.5}
-            fill={`url(#grad-${slug(s.label)})`}
+            fill={`url(#grad-${keys[0]})`}
             dot={false}
             activeDot={{ r: 4 }}
           />
         </AreaChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-        {grid}
-        {xAxis}
-        {yAxis}
-        {tooltip}
-        <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-        {series.map((s, i) => (
-          <Line
-            key={i}
-            type="monotone"
-            dataKey={s.label}
-            stroke={s.color}
-            strokeWidth={2.5}
-            dot={false}
-            activeDot={{ r: 4 }}
-          />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+      ) : (
+        <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+          {axes}
+          <ChartLegend content={<ChartLegendContent />} />
+          {keys.map((key) => (
+            <Line
+              key={key}
+              type="monotone"
+              dataKey={key}
+              stroke={`var(--color-${key})`}
+              strokeWidth={2.5}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+          ))}
+        </LineChart>
+      )}
+    </ChartContainer>
   );
 }

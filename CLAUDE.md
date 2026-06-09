@@ -63,9 +63,20 @@ Editing flow (`use-forecaster-grid.ts`) — **explicit save**, not autosave:
 
 `rfqs` collection, doc ID `{year}_{type}` (e.g. `2026_RFQ1`). Types are an ordered enum `RFQ0 → RFQ1 → RFQ2 → RFQ3 → FINAL` (`RFQ_TYPE_ORDER`, `sortRFQs`). Status is `UNLOCKED` / `LOCKED`. Admins manage RFQs in `app/(protected)/admin/rfqs`.
 
+**Closed months (per-axis, admin-controlled):** each RFQ doc may carry `closedMonths: { media?, revenue?, labs?: number[] }`. A closed month is read-only for Business Leads (admins are never restricted) — independent of the global `status` lock. `RFQ_CLOSED_MONTHS` (in `rfq.types.ts`) is only the *default* per type (RFQ1→Q1, FINAL→whole year, …); when an axis key is absent the default applies, so pre-existing docs need no migration. Always read the effective set via `resolveClosedMonths(rfq, axisId)`, never `RFQ_CLOSED_MONTHS` directly. Admins toggle each month per axis from the RFQ admin page; writes go through `updateRFQAxisClosedMonths`.
+
 ### Clients
 
 `clients` collection. Client field values (status, tier, agency, region, office, GM pod, fee structure) are constrained by sets in `lib/constants/client.constants.ts`. CSV import/export lives in `client-service.ts`: `validateCSV()` is a dry run (no writes) that validates against those sets, and `commitCSVImport()` writes confirmed rows in batches of 500. Commission rates (`commission-service.ts`) are always stored monthly: `commissionsConfig[year][mediaType] = MonthlyMap`, with helpers to collapse/detect a uniform 12-month rate.
+
+**Client status is per year.** `Client_Status_By_Year: Record<year, ClientStatus>` is canonical; the legacy scalar `Client_Status_2026` is kept only as a read-time fallback (pre-migration docs). Always resolve via `resolveClientStatus(client, year)` in `lib/format/client.ts` — never read the map directly. The status badge and the Clients-page filter follow the globally selected year (`forecast-selection.store`, fallback current year). The CSV keeps a single `Client_Status_2026` column for round-trip simplicity: import maps it into `{2026: …}`, export writes the 2026-resolved status.
+
+**Other client attributes (`lib/format/client.ts` helpers, admin-edited in `client-drawer.tsx`):**
+- `CL_Hidden?` — when true the client is filtered out everywhere (dashboard via `use-accessible-clients`, forecast selectors) **except** the admin Clients page, where admins still see it with a "Hidden" badge and can unhide it. BLs never see hidden clients. Read via `isClientHidden`.
+- `Forecasting_Type: {mediaSpend, labs, revenues}` — per-axis toggles, **stored attribute only** (no tab/dashboard gating yet). Defaults to all true (`DEFAULT_FORECASTING_TYPE`).
+- `Labs_Eligibility?: Record<partnerId, boolean>` — sparse, **stored only** (no allocation filtering yet); absent = eligible. Read via `isEligibleForPartner`. The drawer lists partners from `labs-partner-service`, grouped by year.
+
+Because `setDoc(merge:true)` deep-merges maps (a removed key would linger), `saveClient` replaces the shrinkable maps (`Client_Status_By_Year`, `Labs_Eligibility`) with a follow-up `updateDoc` on edit.
 
 ### Dashboard (analytics, read-only)
 

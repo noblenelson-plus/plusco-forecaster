@@ -16,6 +16,24 @@ export type { ClientStatus, ClientTier, FeeStructure };
 export type Currency = "CAD" | "USD";
 
 /**
+ * Per-axis forecasting toggles. Stored on the client; currently a stored
+ * attribute only (no tab/dashboard gating yet). Defaults to all `true`.
+ */
+export interface ForecastingType {
+  mediaSpend: boolean;
+  labs: boolean;
+  revenues: boolean;
+}
+
+/**
+ * LABS eligibility per partner. Partners are defined per year; a client is
+ * eligible by default, so this map is sparse — only `false` entries are
+ * stored. Read it through `isEligibleForPartner` (lib/format/client.ts),
+ * never directly, so the "absent = eligible" rule stays in one place.
+ */
+export type LabsEligibility = Record<string, boolean>;
+
+/**
  * Taux de commission (%) par type de média, par année, avec granularité
  * mensuelle.
  *
@@ -54,7 +72,16 @@ export interface Client {
   CL_Currency: Currency;
   CL_GAIA_Number: string[];
   CL_Tier: ClientTier;
-  Client_Status_2026: ClientStatus;
+  /** Per-year status map (canonical). Resolve via `resolveClientStatus`. */
+  Client_Status_By_Year: Record<number, ClientStatus>;
+  /** Legacy single-year status — kept for read-time fallback only. */
+  Client_Status_2026?: ClientStatus;
+  /** Admin-only. When true, the client is hidden everywhere except the admin Clients page. */
+  CL_Hidden?: boolean;
+  /** Per-axis forecasting toggles (stored attribute, defaults to all true). */
+  Forecasting_Type: ForecastingType;
+  /** Sparse LABS eligibility map by partnerId (absent = eligible). */
+  Labs_Eligibility?: LabsEligibility;
   Client_Notes?: string;
   commissionsConfig: CommissionsConfig;
   createdAt?: string;
@@ -74,7 +101,10 @@ export interface ClientFormData {
   CL_Currency: Currency;
   CL_GAIA_Number: string[];
   CL_Tier: ClientTier;
-  Client_Status_2026: ClientStatus;
+  Client_Status_By_Year: Record<number, ClientStatus>;
+  CL_Hidden?: boolean;
+  Forecasting_Type: ForecastingType;
+  Labs_Eligibility?: LabsEligibility;
   Client_Notes?: string;
   commissionsConfig: CommissionsConfig;
 }
@@ -85,6 +115,6 @@ export interface ClientSummary {
   CL_Logo?: string;
   CL_Agency: string;
   CL_Business_Lead: string;
-  Client_Status_2026: ClientStatus;
+  Client_Status_By_Year: Record<number, ClientStatus>;
   CL_Currency: Currency;
 }

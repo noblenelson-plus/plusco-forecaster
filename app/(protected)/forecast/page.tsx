@@ -16,15 +16,12 @@
  * active grid.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   TrendingUp,
   DollarSign,
   FlaskConical,
   MousePointerClick,
-  GitCompareArrows,
-  ChevronDown,
-  Loader2,
   AlertTriangle,
   Percent,
   BookOpen,
@@ -53,22 +50,23 @@ import {
   REVENUE_AXIS_CONFIG,
   REVENUE_COMMISSION_TYPE,
   buildLabsAxisConfig,
+  defaultComparisonRef,
   emptyMonthly,
 } from "../../../lib/types/forecaster.types";
-import type { ComparisonSide, CellCoord } from "../../../lib/types/forecaster.types";
+import type { ComparisonRef, CellCoord } from "../../../lib/types/forecaster.types";
 import { MONTHS, type MonthlyMap } from "../../../lib/types/common.types";
 import { distribute } from "../../../lib/format/distribute";
 import {
   computeLabsPenetration,
   type LabsPenetrationResult,
 } from "../../../lib/format/labs-penetration";
-import { subscribeToRFQs, getRFQsForYear } from "../../../lib/services/rfq-service";
+import { subscribeToRFQs } from "../../../lib/services/rfq-service";
 import {
   subscribeToLabsPartners,
   getLabsPartnersForYear,
 } from "../../../lib/services/labs-partner-service";
 import type { LabsPartner } from "../../../lib/types/labs.types";
-import type { RFQ, RFQType } from "../../../lib/types/rfq.types";
+import type { RFQ } from "../../../lib/types/rfq.types";
 
 type Tab = "media" | "revenue" | "labs" | "howto";
 
@@ -163,7 +161,6 @@ export default function ForecastPage() {
   const revenueNoRates = !yearRates || Object.keys(yearRates).length === 0;
 
   // Active axis — all three are implemented; comparison is available on each.
-  const compareActive = true;
   const activeGrid =
     tab === "labs" ? labsGrid : tab === "revenue" ? revenueGrid : mediaGrid;
   const activeConfig =
@@ -324,58 +321,73 @@ export default function ForecastPage() {
   const showPenetration =
     tab === "labs" && penetrationOpen && labsGrid.selectionReady;
 
-  // RFQs of the year — to feed the reference-RFQ selector (includes current).
+  // All RFQs across every year — feeds the reference year/submission dropdowns
+  // (comparison can now target any submission of any year, not just this year).
   const [rfqs, setRFQs] = useState<RFQ[]>([]);
   useEffect(() => {
     const unsubscribe = subscribeToRFQs(setRFQs);
     return () => unsubscribe();
   }, []);
 
-  const rfqOptions = useMemo(() => {
-    if (!selectedYear || !selectedRFQ) return [];
-    return getRFQsForYear(rfqs, selectedYear).map((r) => ({
-      value: r.type,
-      label: r.type === selectedRFQ.type ? `${r.type} (current)` : r.type,
-    }));
-  }, [rfqs, selectedYear, selectedRFQ]);
+  const allRfqs = useMemo(
+    () => rfqs.map((r) => ({ year: r.year, type: r.type })),
+    [rfqs]
+  );
 
-  // Picking a reference RFQ opens the live comparison panel beside the grid;
-  // clearing closes it. The chosen side defaults to BL Input.
-  function selectRefRfq(rfq: RFQType | null) {
-    if (!rfq) {
-      activeGrid.setCompareRef(null);
+  // Default comparison = the previous submission (BL for Media/Labs, GAIA for
+  // Revenue). Applied to every axis whenever the selection context changes —
+  // not on every rfqs snapshot, so a user's manual choice survives lock/unlock
+  // updates. A ref tracks the last context the default was applied for.
+  const appliedContextRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedClient || !selectedYear || !selectedRFQ) {
+      appliedContextRef.current = null;
       return;
     }
-    activeGrid.setCompareRef({ rfq, side: activeGrid.compareRef?.side ?? "BL_INPUT" });
-  }
+    const key = `${selectedClient.cl_id}_${selectedYear}_${selectedRFQ.type}`;
+    if (appliedContextRef.current === key) return; // context unchanged
+    if (allRfqs.length === 0) return; // wait until RFQs are loaded
+    appliedContextRef.current = key;
+    mediaGrid.setCompareRef(
+      defaultComparisonRef(MEDIA_AXIS_CONFIG, selectedYear, selectedRFQ.type, allRfqs)
+    );
+    labsGrid.setCompareRef(
+      defaultComparisonRef(labsConfig, selectedYear, selectedRFQ.type, allRfqs)
+    );
+    revenueGrid.setCompareRef(
+      defaultComparisonRef(REVENUE_AXIS_CONFIG, selectedYear, selectedRFQ.type, allRfqs)
+    );
+  }, [
+    selectedClient?.cl_id,
+    selectedYear,
+    selectedRFQ?.type,
+    allRfqs,
+    labsConfig,
+    mediaGrid.setCompareRef,
+    labsGrid.setCompareRef,
+    revenueGrid.setCompareRef,
+  ]);
 
-  function selectRefSide(side: ComparisonSide) {
-    if (!activeGrid.compareRef) return;
-    activeGrid.setCompareRef({ rfq: activeGrid.compareRef.rfq, side });
-  }
-
-  const hasComparison = compareActive && !!activeGrid.compareRef;
+  // Default reference for the active axis — drives the panel's "Default" button.
+  const activeDefaultRef: ComparisonRef | null = useMemo(
+    () =>
+      selectedYear && selectedRFQ
+        ? defaultComparisonRef(activeConfig, selectedYear, selectedRFQ.type, allRfqs)
+        : null,
+    [activeConfig, selectedYear, selectedRFQ?.type, allRfqs]
+  );
+  const resetActiveDefault = useCallback(() => {
+    activeGrid.setCompareRef(activeDefaultRef);
+  }, [activeGrid, activeDefaultRef]);
 
   return (
     <div>
-      {/* ─── Context bar — selectors + comparison ─── */}
+      {/* ─── Context bar — selectors ─── */}
+      {/* The comparison controls now live inside the comparison panel beside the
+          grid, not here in the header. */}
       <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="flex flex-wrap items-center gap-3 px-6 py-3">
           <ForecastSelectors orientation="horizontal" theme="light" />
-
-          {/* Comparison is a grid concern — hidden on the How-to tab. */}
-          {tab !== "howto" && (
-            <ComparisonSelector
-              rfqOptions={rfqOptions}
-              refRfq={compareActive ? activeGrid.compareRef?.rfq ?? null : null}
-              refSide={activeGrid.compareRef?.side ?? "BL_INPUT"}
-              onSelectRfq={selectRefRfq}
-              onSelectSide={selectRefSide}
-              actualsLabel={activeConfig.actualsLabel}
-              loading={compareActive && activeGrid.referenceLoading}
-              disabled={!compareActive}
-            />
-          )}
 
           {/* Labs penetration panel toggle (Labs tab only). */}
           {tab === "labs" && (
@@ -455,30 +467,32 @@ export default function ForecastPage() {
               )}
             </div>
 
-            {/* Right column — penetration (Labs) and/or comparison panels. */}
-            {(showPenetration || hasComparison) && (
-              <div className="w-[360px] flex-shrink-0 self-start sticky top-32 space-y-4">
-                {showPenetration && (
-                  <LabsPenetrationPanel
-                    result={penetration}
-                    canEdit={canEditPenetration}
-                    onSetCoverage={setPartnerCoverage}
-                  />
-                )}
-                {hasComparison && (
-                  <ComparisonPanel
-                    config={activeConfig}
-                    grid={activeGrid}
-                    currentRfq={selectedRFQ!.type}
-                    disableDistributeFor={
-                      tab === "revenue"
-                        ? new Set([REVENUE_COMMISSION_TYPE])
-                        : undefined
-                    }
-                  />
-                )}
-              </div>
-            )}
+            {/* Right column — penetration (Labs) + the always-visible comparison
+                panel (its reference selector lives inside it). */}
+            <div className="w-[360px] flex-shrink-0 self-start sticky top-32 space-y-4">
+              {showPenetration && (
+                <LabsPenetrationPanel
+                  result={penetration}
+                  canEdit={canEditPenetration}
+                  onSetCoverage={setPartnerCoverage}
+                />
+              )}
+              <ComparisonPanel
+                config={activeConfig}
+                grid={activeGrid}
+                currentYear={selectedYear!}
+                currentRfq={selectedRFQ!.type}
+                allRfqs={allRfqs}
+                onSelectRef={activeGrid.setCompareRef}
+                onResetDefault={resetActiveDefault}
+                canResetDefault={!!activeDefaultRef}
+                disableDistributeFor={
+                  tab === "revenue"
+                    ? new Set([REVENUE_COMMISSION_TYPE])
+                    : undefined
+                }
+              />
+            </div>
           </div>
         )}
       </div>
@@ -495,88 +509,6 @@ export default function ForecastPage() {
           onClose={() => setCoverageSplit(null)}
         />
       )}
-    </div>
-  );
-}
-
-// ─── Comparison selector — reference RFQ + side ──────────────────────────────
-// The base is always "this RFQ — BL Input"; the user picks what to compare it
-// against: any RFQ of the year (including the current one) and a side. The
-// actuals side label is axis-driven (MediaOcean for Media, GAIA for Revenue).
-
-function ComparisonSelector({
-  rfqOptions,
-  refRfq,
-  refSide,
-  onSelectRfq,
-  onSelectSide,
-  actualsLabel,
-  loading,
-  disabled,
-}: {
-  rfqOptions: { value: RFQType; label: string }[];
-  refRfq: RFQType | null;
-  refSide: ComparisonSide;
-  onSelectRfq: (rfq: RFQType | null) => void;
-  onSelectSide: (side: ComparisonSide) => void;
-  actualsLabel: string;
-  loading: boolean;
-  disabled: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      {/* Vertical divider — sets the comparison group apart from the
-          Client/Year/RFQ selectors so the two dropdowns aren't mistaken for
-          part of the active selection. */}
-      <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
-
-      {/* Comparison group — labelled box wrapping the two reference dropdowns. */}
-      <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50/70 pl-2.5 pr-2 py-1.5">
-        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 select-none">
-          <GitCompareArrows size={13} />
-          Comparison
-        </span>
-
-        {/* Reference RFQ */}
-        <div className="relative">
-          <select
-            value={refRfq ?? ""}
-            onChange={(e) => onSelectRfq((e.target.value || null) as RFQType | null)}
-            disabled={disabled || rfqOptions.length === 0}
-            className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer disabled:opacity-50"
-          >
-            <option value="">Compare with...</option>
-            {rfqOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={13}
-            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-        </div>
-
-        {/* Reference side */}
-        <div className="relative">
-          <select
-            value={refSide}
-            onChange={(e) => onSelectSide(e.target.value as ComparisonSide)}
-            disabled={disabled || !refRfq}
-            className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer disabled:opacity-50"
-          >
-            <option value="BL_INPUT">BL Input</option>
-            <option value="ADMIN_INPUT">{actualsLabel}</option>
-          </select>
-          <ChevronDown
-            size={13}
-            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-        </div>
-
-        {loading && <Loader2 size={14} className="animate-spin text-gray-400" />}
-      </div>
     </div>
   );
 }
