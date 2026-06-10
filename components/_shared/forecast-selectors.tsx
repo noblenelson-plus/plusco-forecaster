@@ -9,7 +9,10 @@
  *  — RFQ    : dropdown of the year's RFQs, with a lock/unlock icon
  *
  * The selection is written to the Zustand store useForecastSelection,
- * shared across every page.
+ * shared across every page. Pass `override` to bind the Year/RFQ pair to a
+ * different store instead (used by the dashboard's comparison scope) — the
+ * Client selector always uses the primary store since comparison shares the
+ * dashboard's filtered client scope.
  *
  * The component is themeable / orientable so it can live either in the dark
  * sidebar (vertical) or at the top of the forecast page (horizontal, light).
@@ -60,6 +63,19 @@ type SelectorField = "client" | "year" | "rfq";
 
 const ALL_FIELDS: SelectorField[] = ["client", "year", "rfq"];
 
+/**
+ * Optional binding override for the Year + RFQ pair. When provided, those two
+ * dropdowns read and write through this object instead of useForecastSelection.
+ * Used by the dashboard to render a second "comparison" pair backed by
+ * useComparisonSelection. The Client selector is unaffected.
+ */
+export interface ForecastSelectorsOverride {
+  year: number | null;
+  rfq: RFQ | null;
+  setYear: (year: number | null) => void;
+  setRFQ: (rfq: RFQ | null) => void;
+}
+
 interface ForecastSelectorsProps {
   /** "vertical" → sidebar stack · "horizontal" → top-of-page row. */
   orientation?: Orientation;
@@ -70,23 +86,38 @@ interface ForecastSelectorsProps {
    * uses ["year", "rfq"] — its client scope is a separate multi-select filter.
    */
   fields?: SelectorField[];
+  /**
+   * Optional Year/RFQ binding. Omit to use the primary forecast store
+   * (default behavior, unchanged for every existing call site). Provide it
+   * to bind the Year + RFQ pair to a different source — e.g. the dashboard
+   * comparison store.
+   */
+  override?: ForecastSelectorsOverride;
 }
 
 export default function ForecastSelectors({
   orientation = "vertical",
   theme = "dark",
   fields = ALL_FIELDS,
+  override,
 }: ForecastSelectorsProps = {}) {
   const { profile, isAdmin } = useUserProfile();
 
   const {
     selectedClient,
-    selectedYear,
-    selectedRFQ,
+    selectedYear: primaryYear,
+    selectedRFQ: primaryRFQ,
     setClient,
-    setYear,
-    setRFQ,
+    setYear: setPrimaryYear,
+    setRFQ: setPrimaryRFQ,
   } = useForecastSelection();
+
+  // Year/RFQ bindings resolve to the override when provided, primary store
+  // otherwise. The Client selector always uses the primary store regardless.
+  const selectedYear = override ? override.year : primaryYear;
+  const selectedRFQ = override ? override.rfq : primaryRFQ;
+  const setYear = override ? override.setYear : setPrimaryYear;
+  const setRFQ = override ? override.setRFQ : setPrimaryRFQ;
 
   // ─── Data ───────────────────────────────────────────────────────────────
   const [clients, setClients] = useState<ClientSummary[]>([]);
@@ -153,7 +184,8 @@ export default function ForecastSelectors({
   }, []);
 
   // Keep the selected RFQ object fresh (status or closed months may change in
-  // real-time when an admin edits the RFQ).
+  // real-time when an admin edits the RFQ). Follows whichever binding is
+  // active, so both primary and comparison pairs stay current.
   useEffect(() => {
     if (!selectedRFQ) return;
     const fresh = rfqs.find((r) => r.rfq_id === selectedRFQ.rfq_id);
