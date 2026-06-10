@@ -6,8 +6,14 @@
  * breakdowns the tabs render. One Firestore read per client (the entry doc
  * carries all three axes), run in parallel.
  *
- * Re-runs when the client set or the Year/RFQ context changes. A stale request
- * (filters changed mid-flight) is discarded via a cancellation flag.
+ * Every client's amounts are normalized to CAD before aggregation: a client
+ * forecasting in USD has its figures multiplied by the year's USD→CAD rate
+ * (Admin → Currency). The dashboard therefore always reports in CAD.
+ *
+ * Re-runs the fetch when the client set or the Year/RFQ context changes. A stale
+ * request (filters changed mid-flight) is discarded via a cancellation flag.
+ * Currency normalization is a separate, pure recompute so changing the rate (or
+ * a client's currency) re-aggregates without re-reading Firestore.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -22,13 +28,13 @@ import {
   type LabsPenetrationResult,
 } from "../../format/labs-penetration";
 import {
-  emptyAxisData,
   type AxisData,
   type AxisId,
   type DataEntry,
 } from "../../types/forecaster.types";
 import type { MonthlyMap } from "../../types/common.types";
 import type { LabsPartner } from "../../types/labs.types";
+import type { Currency } from "../../types/client.types";
 import type { DashboardScope } from "../widgets/widget.types";
 import { aggregateByType } from "../../types/forecaster.types";
 import {
@@ -38,6 +44,7 @@ import {
   labsByPartnerForClient,
   mergeAxisData,
   resolveLabsDetail,
+  scaleAxisData,
   type ClientLabsRaw,
   type ClientMediaBreakdown,
   type ClientRevenueBreakdown,
@@ -61,31 +68,13 @@ function hasAnyInput(data: AxisData): boolean {
   );
 }
 
-interface RawScopeData {
+/** One in-scope client's three axes, as fetched (before currency normalization). */
+interface RawClientAxes {
+  clientId: string;
   media: AxisData;
   labs: AxisData;
   revenue: AxisData;
-  /** Per-client media (BL) spend, keyed by media type then month. Drives the
-   *  per-client data table; the merged `media` axis drives the charts. */
-  mediaByClient: ClientMediaBreakdown[];
-  /** Per-client Labs (BL) spend, keyed by partner id then month. Drives the
-   *  detailed Labs table once partner names/types are resolved. */
-  labsByClient: ClientLabsRaw[];
-  /** Per-client revenue (BL), keyed by stream then month. Drives the revenue
-   *  table and the per-client Revenue/Media ratios. */
-  revenueByClient: ClientRevenueBreakdown[];
-  clientsWithData: number;
 }
-
-const EMPTY_RAW: RawScopeData = {
-  media: emptyAxisData(),
-  labs: emptyAxisData(),
-  revenue: emptyAxisData(),
-  mediaByClient: [],
-  labsByClient: [],
-  revenueByClient: [],
-  clientsWithData: 0,
-};
 
 export interface ScopeForecastData {
   loading: boolean;
@@ -104,15 +93,26 @@ export interface ScopeForecastData {
   labsMonthly: MonthlyMap;
   /** One row per (client × partner) with spend, for the detailed Labs table. */
   labsDetail: LabsDetailRow[];
+  /** In-scope clients that forecast in USD (their amounts were converted to CAD). */
+  usdClientCount: number;
+  /** True when an in-scope USD client has no USD→CAD rate set for the year, so
+   *  its figures could not be converted and are shown as-is. */
+  missingRate: boolean;
 }
 
-export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
+export function useScopeForecastData(
+  scope: DashboardScope,
+  /** Currency per client id; a client absent from the map is treated as CAD. */
+  currencyByClient?: Record<string, Currency>,
+  /** USD→CAD rate for the selected year; undefined when none is configured. */
+  usdToCad?: number
+): ScopeForecastData {
   const { clientIds, year, rfq } = scope;
   const hasContext = year !== null && rfq !== null;
   // Nothing to fetch without a Year + RFQ and at least one client in scope.
   const disabled = !hasContext || clientIds.length === 0;
 
-  const [raw, setRaw] = useState<RawScopeData>(EMPTY_RAW);
+  const [rawClients, setRawClients] = useState<RawClientAxes[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,65 +149,22 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
         );
         if (cancelled) return;
 
-        const mediaList: AxisData[] = [];
-        const labsList: AxisData[] = [];
-        const revenueList: AxisData[] = [];
-        const mediaByClient: ClientMediaBreakdown[] = [];
-        const labsByClient: ClientLabsRaw[] = [];
-        const revenueByClient: ClientRevenueBreakdown[] = [];
-        let clientsWithData = 0;
-
-        results.forEach(([entry, annual], i) => {
+        const next: RawClientAxes[] = results.map(([entry, annual], i) => {
           // Media/Labs actuals come from the annual doc, not the submission doc.
           const media = axisOf(entry, "media");
           media.actuals = Array.isArray(annual.media) ? annual.media : [];
           const labs = axisOf(entry, "labs");
           labs.actuals = Array.isArray(annual.labs) ? annual.labs : [];
           const revenue = axisOf(entry, "revenue");
-          mediaList.push(media);
-          labsList.push(labs);
-          revenueList.push(revenue);
-          if (hasAnyInput(media)) {
-            // Per-client BL media spend per type per month, for the table.
-            mediaByClient.push({
-              clientId: clientIds[i],
-              byType: aggregateByType(media, "BL_INPUT"),
-            });
-          }
-          if (hasAnyInput(labs)) {
-            // Per-client BL Labs spend per partner per month, for the table.
-            labsByClient.push({
-              clientId: clientIds[i],
-              byPartner: labsByPartnerForClient(labs),
-            });
-          }
-          if (hasAnyInput(revenue)) {
-            // Per-client BL revenue per stream per month, for the table/ratios.
-            revenueByClient.push({
-              clientId: clientIds[i],
-              byStream: aggregateByType(revenue, "BL_INPUT"),
-            });
-          }
-          if (hasAnyInput(media) || hasAnyInput(labs) || hasAnyInput(revenue)) {
-            clientsWithData += 1;
-          }
+          return { clientId: clientIds[i], media, labs, revenue };
         });
-
-        setRaw({
-          media: mergeAxisData(mediaList),
-          labs: mergeAxisData(labsList),
-          revenue: mergeAxisData(revenueList),
-          mediaByClient,
-          labsByClient,
-          revenueByClient,
-          clientsWithData,
-        });
+        setRawClients(next);
       } catch (err) {
         if (!cancelled) {
           setError(
             err instanceof Error ? err.message : "Failed to load forecast data."
           );
-          setRaw(EMPTY_RAW);
+          setRawClients([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -220,34 +177,102 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientKey, year, rfqType, disabled]);
 
-  // When disabled (no context / empty scope) present an empty, idle result
-  // without writing state from the effect — `raw` may hold stale fetched data.
-  const effective = disabled ? EMPTY_RAW : raw;
-
   const partnersForYear = useMemo(
     () => (year ? getLabsPartnersForYear(partners, year) : []),
     [partners, year]
   );
 
+  // Normalize each client to CAD, then merge + reshape into scope aggregates.
+  // When disabled the scope is empty so this collapses to empty breakdowns
+  // without writing state from an effect (`rawClients` may hold stale data).
+  const processed = useMemo(() => {
+    const list = disabled ? [] : rawClients;
+
+    const mediaList: AxisData[] = [];
+    const labsList: AxisData[] = [];
+    const revenueList: AxisData[] = [];
+    const mediaByClient: ClientMediaBreakdown[] = [];
+    const labsByClient: ClientLabsRaw[] = [];
+    const revenueByClient: ClientRevenueBreakdown[] = [];
+    let clientsWithData = 0;
+    let usdClientCount = 0;
+    let missingRate = false;
+
+    for (const rc of list) {
+      const currency = currencyByClient?.[rc.clientId] ?? "CAD";
+      let factor = 1;
+      if (currency === "USD") {
+        usdClientCount += 1;
+        if (usdToCad != null) factor = usdToCad;
+        else missingRate = true; // no rate → left unconverted, surfaced in the UI
+      }
+
+      const media = scaleAxisData(rc.media, factor);
+      const labs = scaleAxisData(rc.labs, factor);
+      const revenue = scaleAxisData(rc.revenue, factor);
+
+      mediaList.push(media);
+      labsList.push(labs);
+      revenueList.push(revenue);
+
+      if (hasAnyInput(media)) {
+        // Per-client BL media spend per type per month, for the table.
+        mediaByClient.push({
+          clientId: rc.clientId,
+          byType: aggregateByType(media, "BL_INPUT"),
+        });
+      }
+      if (hasAnyInput(labs)) {
+        // Per-client BL Labs spend per partner per month, for the table.
+        labsByClient.push({
+          clientId: rc.clientId,
+          byPartner: labsByPartnerForClient(labs),
+        });
+      }
+      if (hasAnyInput(revenue)) {
+        // Per-client BL revenue per stream per month, for the table/ratios.
+        revenueByClient.push({
+          clientId: rc.clientId,
+          byStream: aggregateByType(revenue, "BL_INPUT"),
+        });
+      }
+      if (hasAnyInput(media) || hasAnyInput(labs) || hasAnyInput(revenue)) {
+        clientsWithData += 1;
+      }
+    }
+
+    return {
+      media: mergeAxisData(mediaList),
+      labs: mergeAxisData(labsList),
+      revenue: mergeAxisData(revenueList),
+      mediaByClient,
+      labsByClient,
+      revenueByClient,
+      clientsWithData,
+      usdClientCount,
+      missingRate,
+    };
+  }, [disabled, rawClients, currencyByClient, usdToCad]);
+
   const media = useMemo(
-    () => computeMediaBreakdown(effective.media),
-    [effective.media]
+    () => computeMediaBreakdown(processed.media),
+    [processed.media]
   );
   const revenue = useMemo(
-    () => computeRevenueBreakdown(effective.revenue),
-    [effective.revenue]
+    () => computeRevenueBreakdown(processed.revenue),
+    [processed.revenue]
   );
   const labs = useMemo(
-    () => computeLabsPenetration(effective.labs, effective.media, partnersForYear),
-    [effective.labs, effective.media, partnersForYear]
+    () => computeLabsPenetration(processed.labs, processed.media, partnersForYear),
+    [processed.labs, processed.media, partnersForYear]
   );
   const labsMonthly = useMemo(
-    () => computeLabsMonthly(effective.labs),
-    [effective.labs]
+    () => computeLabsMonthly(processed.labs),
+    [processed.labs]
   );
   const labsDetail = useMemo(
-    () => resolveLabsDetail(effective.labsByClient, partnersForYear),
-    [effective.labsByClient, partnersForYear]
+    () => resolveLabsDetail(processed.labsByClient, partnersForYear),
+    [processed.labsByClient, partnersForYear]
   );
 
   return {
@@ -255,13 +280,15 @@ export function useScopeForecastData(scope: DashboardScope): ScopeForecastData {
     error: disabled ? null : error,
     hasContext,
     clientCount: clientIds.length,
-    clientsWithData: effective.clientsWithData,
+    clientsWithData: processed.clientsWithData,
     media,
-    mediaByClient: effective.mediaByClient,
+    mediaByClient: processed.mediaByClient,
     revenue,
-    revenueByClient: effective.revenueByClient,
+    revenueByClient: processed.revenueByClient,
     labs,
     labsMonthly,
     labsDetail,
+    usdClientCount: processed.usdClientCount,
+    missingRate: processed.missingRate,
   };
 }

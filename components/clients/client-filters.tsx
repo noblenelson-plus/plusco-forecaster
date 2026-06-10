@@ -4,12 +4,13 @@
 import { useRef, useState } from "react";
 import { Search, Plus, Upload, Download } from "lucide-react";
 import { Client } from "../../lib/types/client.types";
-import { ClientStatus, CLIENT_AGENCIES } from "../../lib/constants/client.constants";
+import { ClientStatus, ClientTier, CLIENT_AGENCIES, CLIENT_TIERS } from "../../lib/constants/client.constants";
 import { exportClientsToCSV, validateCSV, CSVValidationResult } from "../../lib/services/client-service";
 import ImportModal from "./import-modal";
 
 type StatusFilter = "ALL" | ClientStatus;
 type AgencyFilter = "ALL" | string;
+type TierFilter = "ALL" | ClientTier;
 
 interface ClientFiltersProps {
   search: string;
@@ -18,6 +19,8 @@ interface ClientFiltersProps {
   onStatusFilterChange: (value: StatusFilter) => void;
   agencyFilter: AgencyFilter;
   onAgencyFilterChange: (value: AgencyFilter) => void;
+  tierFilter: TierFilter;
+  onTierFilterChange: (value: TierFilter) => void;
   clients: Client[];
   filteredClients: Client[];
   isAdmin: boolean;
@@ -37,6 +40,11 @@ const AGENCY_OPTIONS: { value: AgencyFilter; label: string }[] = [
   ...CLIENT_AGENCIES.map((a) => ({ value: a.value, label: a.label })),
 ];
 
+const TIER_OPTIONS: { value: TierFilter; label: string }[] = [
+  { value: "ALL", label: "All tiers" },
+  ...CLIENT_TIERS.map((t) => ({ value: t.value, label: t.label })),
+];
+
 export default function ClientFilters({
   search,
   onSearchChange,
@@ -44,6 +52,8 @@ export default function ClientFilters({
   onStatusFilterChange,
   agencyFilter,
   onAgencyFilterChange,
+  tierFilter,
+  onTierFilterChange,
   clients,
   filteredClients,
   isAdmin,
@@ -177,8 +187,8 @@ export default function ClientFilters({
         )}
       </div>
 
-      {/* Row 2 — agency filter tabs */}
-      <div className="flex items-center gap-2 mb-6">
+      {/* Row 2 — agency + tier filter tabs */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5 flex-wrap">
           {AGENCY_OPTIONS.map((opt) => (
             <button
@@ -186,6 +196,23 @@ export default function ClientFilters({
               onClick={() => onAgencyFilterChange(opt.value)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 agencyFilter === opt.value
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tier filter tabs */}
+        <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5 flex-wrap">
+          {TIER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onTierFilterChange(opt.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                tierFilter === opt.value
                   ? "bg-white text-gray-900 shadow-sm"
                   : "text-gray-500 hover:text-gray-700"
               }`}

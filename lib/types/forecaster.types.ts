@@ -45,6 +45,8 @@ export interface ForecastRow {
   /** Displayed label — derived from the type or entered (e.g. partner name). */
   label: string;
   months: MonthlyMap;
+  /** Optional free-text note attached to the line. Absent when empty. */
+  note?: string;
 }
 
 // ─── Level 2 — Bucket ────────────────────────────────────────────────────────
@@ -70,6 +72,17 @@ export interface AxisData {
 
 // ─── Firestore "data_entries" document ───────────────────────────────────────
 
+/**
+ * Per-side "last updated" stamps for an axis. BL_INPUT (buckets) and ADMIN_INPUT
+ * (actuals) are tracked independently so each can show its own last-save time.
+ * Stored under `axisMeta.{axisId}` on the doc that owns each side (data_entries
+ * for BL and Revenue's actuals; annual_actuals for Media/Labs actuals).
+ */
+export interface AxisMeta {
+  blUpdatedAt?: string;
+  actualsUpdatedAt?: string;
+}
+
 export interface DataEntry {
   /** = document ID: {cl_id}_{year}_{rfqType} */
   entry_id: string;
@@ -77,6 +90,9 @@ export interface DataEntry {
   year: number;
   rfq: RFQType;
   axes: Partial<Record<AxisId, AxisData>>;
+  /** Per-axis, per-side last-save timestamps (BL for every axis; actuals for
+   *  per-submission axes like Revenue). */
+  axisMeta?: Partial<Record<AxisId, AxisMeta>>;
   createdAt?: string;
   updatedAt?: string;
   lastModifiedBy?: string; // User UID
@@ -107,6 +123,8 @@ export interface AnnualActuals {
   clientId: string;
   year: number;
   axes: Partial<Record<AxisId, ForecastRow[]>>;
+  /** Per-axis last-save timestamp for the annual actuals (only actualsUpdatedAt). */
+  axisMeta?: Partial<Record<AxisId, AxisMeta>>;
   createdAt?: string;
   updatedAt?: string;
   lastModifiedBy?: string; // User UID
@@ -429,20 +447,23 @@ export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
   productFees: "Product Fees",
   unallocated: "Unallocated",
   accrual: "Accrual",
-  gaiaForecast: "GAIA Forecast",
+  gaiaForecast: "GAIA Revenue",
 };
 
 /** The Commission BL row is calculated — read-only, never hand-entered. */
 export const REVENUE_COMMISSION_TYPE: RevenueStream = "commission";
 
 /**
- * GAIA Forecast — an ADMIN_INPUT-only, hand-entered top-line estimate. While no
- * other GAIA stream carries a value for a month, it stands in as that month's
- * revenue (it counts in the GAIA total — a roll-up of the lines to come). Once
- * any other GAIA stream is filled for the month it steps aside: greyed and
- * excluded from the total, kept only as a validation reference that shows a
- * green check when it matches the sum of the detail lines (red flag otherwise).
- * The per-month behavior lives in components/forecaster/revenue-grid.tsx.
+ * GAIA Revenue (stored as `gaiaForecast`) — the top of the per-month
+ * source-of-truth order. Each month, the official revenue comes from the
+ * first level that carries a value:
+ *   1. GAIA Revenue (this row) — when filled it overrides everything below
+ *   2. the other ADMIN_INPUT (GAIA) detail streams, summed
+ *   3. BL_INPUT, summed
+ * Values from the levels that are not the source of truth for a given month are
+ * struck through and excluded from the official total. The per-month behavior
+ * lives in components/forecaster/revenue-grid.tsx. The key stays `gaiaForecast`
+ * for data compatibility — only the display label changed to "GAIA Revenue".
  */
 export const REVENUE_GAIA_FORECAST_TYPE: RevenueStream = "gaiaForecast";
 
@@ -455,9 +476,20 @@ export const REVENUE_BL_STREAMS: RevenueStream[] = [
 ];
 
 /**
- * Admin Input (GAIA) streams, in display order — the GAIA Forecast roll-up on
- * top, then the BL four plus Unallocated and Accrual. The order here also drives
- * the seeded actuals row order (ensureRevenueShape).
+ * BL Input streams the user may add extra lines of. Commission is excluded
+ * (it is the single computed row); the four base streams are always seeded by
+ * `ensureRevenueShape`, but these three can have multiple lines.
+ */
+export const REVENUE_BL_ADDABLE_STREAMS: RevenueStream[] = [
+  "retainer",
+  "projectFees",
+  "productFees",
+];
+
+/**
+ * Admin Input (GAIA) streams, in display order — the GAIA Revenue source-of-
+ * truth line on top, then the BL four plus Unallocated and Accrual. The order
+ * here also drives the seeded actuals row order (ensureRevenueShape).
  */
 export const REVENUE_ADMIN_STREAMS: RevenueStream[] = [
   "gaiaForecast",
@@ -481,7 +513,9 @@ export const REVENUE_AXIS_CONFIG: AxisConfig = {
     label: REVENUE_STREAM_LABELS[s],
   })),
   allowMultipleBuckets: false,
-  allowDuplicateRowTypes: false,
+  // BL Input may hold several lines of the addable streams (Retainer, Project
+  // Fees, Product Fees); the grid limits which types can actually be added.
+  allowDuplicateRowTypes: true,
   // Revenue actuals come from GAIA (Finance), not MediaOcean.
   actualsLabel: "GAIA",
   // GAIA is captured per submission (the roll-up logic is submission-specific).

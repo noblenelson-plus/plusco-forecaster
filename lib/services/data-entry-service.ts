@@ -27,6 +27,7 @@ import type { MediaType, MonthlyMap } from "../types/common.types";
 import {
   type AxisData,
   type AxisId,
+  type AxisMeta,
   type DataEntry,
   buildDataEntryId,
   emptyAxisData,
@@ -88,6 +89,25 @@ function normalizeAxisData(raw: Partial<AxisData> | undefined): AxisData {
   };
 }
 
+/**
+ * Axis data + its per-side "last updated" stamps for a triplet, in a single
+ * read. Used by the grid, which displays when BL_INPUT and ADMIN_INPUT were
+ * last saved. For axes whose actuals live in the annual doc (Media, Labs), only
+ * the BL stamp here is meaningful — the actuals stamp comes from that doc.
+ */
+export async function fetchAxisDataWithMeta(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  axisId: AxisId
+): Promise<{ data: AxisData; meta: AxisMeta }> {
+  const entry = await fetchDataEntry(clientId, year, rfq);
+  return {
+    data: normalizeAxisData(entry?.axes?.[axisId]),
+    meta: entry?.axisMeta?.[axisId] ?? {},
+  };
+}
+
 // ─── Écriture ─────────────────────────────────────────────────────────────────
 
 /**
@@ -104,10 +124,23 @@ export async function saveAxisData(
   rfq: RFQType,
   axisId: AxisId,
   data: AxisData,
-  userUid?: string
+  userUid?: string,
+  /**
+   * Which sides this write touched, for the per-side "last updated" stamps.
+   * Defaults to BL only (the common path); callers that also write actuals in
+   * the same doc (Revenue's GAIA) pass touchedActuals explicitly. A side left
+   * out keeps its previous stamp (deep merge).
+   */
+  opts?: { touchedBL?: boolean; touchedActuals?: boolean }
 ): Promise<void> {
   const entryId = buildDataEntryId(clientId, year, rfq);
   const now = new Date().toISOString();
+
+  const touchedBL = opts?.touchedBL ?? true;
+  const touchedActuals = opts?.touchedActuals ?? false;
+  const meta: AxisMeta = {};
+  if (touchedBL) meta.blUpdatedAt = now;
+  if (touchedActuals) meta.actualsUpdatedAt = now;
 
   await setDoc(
     doc(db, COLLECTION, entryId),
@@ -117,17 +150,14 @@ export async function saveAxisData(
       rfq,
       axes: { [axisId]: data },
       updatedAt: now,
-      // createdAt n'est posé qu'à la création — merge ne l'écrase pas
-      // s'il existe, mais pour éviter de le réécrire à chaque Save on
-      // l'ajoute seulement via mergeFields implicite : ici on accepte
-      // qu'il soit mis à jour au premier Save uniquement si absent.
+      ...(Object.keys(meta).length ? { axisMeta: { [axisId]: meta } } : {}),
       ...(userUid ? { lastModifiedBy: userUid } : {}),
     },
     { merge: true }
   );
 
-  // createdAt : posé une seule fois, après coup, seulement s'il manque.
-  // Lecture légère (le doc vient d'être écrit, il est en cache local).
+  // createdAt: set once, after the fact, only if missing. The doc was just
+  // written so this read hits the local cache.
   const snapshot = await getDoc(doc(db, COLLECTION, entryId));
   if (snapshot.exists() && !snapshot.data().createdAt) {
     await updateDoc(doc(db, COLLECTION, entryId), { createdAt: now });
@@ -202,6 +232,7 @@ export async function saveAxisActuals(
   userUid?: string
 ): Promise<void> {
   const entryId = buildDataEntryId(clientId, year, rfq);
+  const now = new Date().toISOString();
   await setDoc(
     doc(db, COLLECTION, entryId),
     {
@@ -209,7 +240,8 @@ export async function saveAxisActuals(
       year,
       rfq,
       axes: { [axisId]: { actuals } },
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
+      axisMeta: { [axisId]: { actualsUpdatedAt: now } },
       ...(userUid ? { lastModifiedBy: userUid } : {}),
     },
     { merge: true }

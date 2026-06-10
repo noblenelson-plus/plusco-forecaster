@@ -26,8 +26,11 @@ import { useAccessibleClients } from "../../lib/hooks/use-accessible-clients";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
+import { useCurrencyRates } from "../../lib/hooks/use-currency-rates";
+import { getCurrencyRateForYear } from "../../lib/services/currency-service";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import type { DashboardScope } from "../../lib/dashboard/widgets/widget.types";
+import type { Currency } from "../../lib/types/client.types";
 
 export default function DashboardPage() {
   const { clients, loading, error } = useAccessibleClients();
@@ -47,10 +50,25 @@ export default function DashboardPage() {
     [filteredClientIds, selectedYear, selectedRFQ]
   );
 
+  // Currency normalization — every client's amounts are reported in CAD. USD
+  // clients are converted with the selected year's admin-managed rate.
+  const rates = useCurrencyRates();
+  const usdToCad = useMemo(
+    () => (selectedYear ? getCurrencyRateForYear(rates, selectedYear) : undefined),
+    [rates, selectedYear]
+  );
+  const currencyByClient = useMemo(
+    () =>
+      Object.fromEntries(
+        clients.map((c) => [c.cl_id, c.CL_Currency ?? "CAD"])
+      ) as Record<string, Currency>,
+    [clients]
+  );
+
   // Active analysis tab + the forecast data for the current scope. The data is
   // fetched once here (not per tab) so switching tabs doesn't refetch.
   const [tab, setTab] = useState<DashboardTab>("media");
-  const forecastData = useScopeForecastData(scope);
+  const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad);
 
   const clientNameById = useMemo(
     () => Object.fromEntries(clients.map((c) => [c.cl_id, c.CL_Name])),
@@ -62,7 +80,11 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-screen flex-col bg-muted">
       <header className="sticky top-0 z-20 flex flex-col bg-white">
-        <DashboardContextBar />
+        <DashboardContextBar
+          usdToCad={usdToCad}
+          usdClientCount={forecastData.usdClientCount}
+          missingRate={forecastData.missingRate}
+        />
         <DashboardFilterBar
           facetViews={facetViews}
           filteredCount={filteredClientIds.length}

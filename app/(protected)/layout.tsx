@@ -73,7 +73,29 @@ const { user, loading: authLoading } = useAuth();
 const { profile, isAdmin, loading: profileLoading } = useUserProfile();
 const router = useRouter();
 const [sidebarOpen, setSidebarOpen] = useState(false);
+const [collapsed, setCollapsed] = useState(false);
+const [isDesktop, setIsDesktop] = useState(false);
 const loading = authLoading || profileLoading;
+// Restore the desktop collapse preference from localStorage.
+useEffect(() => {
+  setCollapsed(localStorage.getItem("sidebar-collapsed") === "true");
+}, []);
+// Collapse is a desktop-only affordance; track the lg breakpoint (1024px)
+// so the mobile drawer always renders full-width.
+useEffect(() => {
+  const mq = window.matchMedia("(min-width: 1024px)");
+  const update = () => setIsDesktop(mq.matches);
+  update();
+  mq.addEventListener("change", update);
+  return () => mq.removeEventListener("change", update);
+}, []);
+const toggleCollapsed = () => {
+  setCollapsed((prev) => {
+    const next = !prev;
+    localStorage.setItem("sidebar-collapsed", String(next));
+    return next;
+  });
+};
 useEffect(() => {
 if (!authLoading && !user) {
 router.replace("/auth/login");
@@ -120,7 +142,11 @@ return (
       lg:transform-none lg:transition-none
     `}
   >
-    <Sidebar onClose={() => setSidebarOpen(false)} />
+    <Sidebar
+      onClose={() => setSidebarOpen(false)}
+      collapsed={collapsed && isDesktop}
+      onToggleCollapse={toggleCollapsed}
+    />
   </div>
 
   {/* Main content */}

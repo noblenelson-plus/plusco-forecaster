@@ -10,7 +10,7 @@ import ClientGrid from "../../../components/clients/client-grid";
 import ClientFilters from "../../../components/clients/client-filters";
 import ClientDrawer from "../../../components/clients/client-drawer";
 import PageHeader from "../../../components/_shared/page-header";
-import type { ClientStatus } from "../../../lib/constants/client.constants";
+import type { ClientStatus, ClientTier } from "../../../lib/constants/client.constants";
 import { resolveClientStatus, isClientHidden } from "../../../lib/format/client";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 
@@ -40,6 +40,7 @@ export default function ClientsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | ClientStatus>("ALL");
   const [agencyFilter, setAgencyFilter] = useState<"ALL" | string>("ALL");
+  const [tierFilter, setTierFilter] = useState<"ALL" | ClientTier>("ALL");
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -107,7 +108,9 @@ export default function ClientsPage() {
       statusFilter === "ALL" || resolveClientStatus(c, year) === statusFilter;
     const matchesAgency =
       agencyFilter === "ALL" || c.CL_Agency === agencyFilter;
-    return matchesSearch && matchesStatus && matchesAgency;
+    const matchesTier =
+      tierFilter === "ALL" || c.CL_Tier === tierFilter;
+    return matchesSearch && matchesStatus && matchesAgency && matchesTier;
   });
 
   // Handlers
@@ -163,6 +166,8 @@ export default function ClientsPage() {
           onStatusFilterChange={setStatusFilter}
           agencyFilter={agencyFilter}
           onAgencyFilterChange={setAgencyFilter}
+          tierFilter={tierFilter}
+          onTierFilterChange={setTierFilter}
           clients={clients}
           filteredClients={filteredClients}
           isAdmin={isAdmin}

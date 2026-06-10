@@ -36,6 +36,8 @@ import {
   SplitSquareHorizontal,
   Download,
   Info,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import type {
   AxisConfig,
@@ -60,6 +62,9 @@ import { useForecastSelection } from "../../lib/stores/forecast-selection.store"
 import { downloadAxisCSV } from "../../lib/format/forecast-csv";
 import { SpreadsheetCell, TotalCell } from "./editable-cell";
 import SpreadDialog from "./spread-dialog";
+import NoteDialog from "./note-dialog";
+import SaveStatusIndicator from "./save-status";
+import GridLastUpdated from "./grid-last-updated";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -111,6 +116,21 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
       else next.add(bucketId);
       return next;
     });
+
+  // Notes column visibility — persisted so the choice sticks across reloads.
+  const [showNotes, setShowNotes] = useState(true);
+  useEffect(() => {
+    const saved = localStorage.getItem("forecast-show-notes");
+    if (saved !== null) setShowNotes(saved === "true");
+  }, []);
+  const toggleNotes = () =>
+    setShowNotes((prev) => {
+      const next = !prev;
+      localStorage.setItem("forecast-show-notes", String(next));
+      return next;
+    });
+  // Label + 12 months + Total (+ Notes when shown) — used for full-width rows.
+  const colCount = showNotes ? 15 : 14;
 
   // ─── Selection model — flat ordered list of editable rows × 12 months ───
   const orderedRows = useMemo<OrderedRow[]>(() => {
@@ -180,7 +200,12 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
 
   return (
     <div className="space-y-4">
-      <GridToolbar config={config} grid={grid} />
+      <GridToolbar
+        config={config}
+        grid={grid}
+        showNotes={showNotes}
+        onToggleNotes={toggleNotes}
+      />
 
       {grid.error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
@@ -206,6 +231,21 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                 <th className="sticky left-0 z-10 bg-gray-50 text-left px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs w-52">
                   {config.bucketLabel} / {config.rowTypeLabel}
                 </th>
+                {showNotes && (
+                  <th className="px-3 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs text-left min-w-[200px]">
+                    <span className="inline-flex items-center gap-1.5">
+                      Notes
+                      <button
+                        onClick={toggleNotes}
+                        title="Hide notes column"
+                        aria-label="Hide notes column"
+                        className="text-gray-400 hover:text-gray-700 transition-colors"
+                      >
+                        <EyeOff size={12} />
+                      </button>
+                    </span>
+                  </th>
+                )}
                 {MONTH_LABELS.map((m, ci) => {
                   const closed = grid.closedMonths.has(ci + 1);
                   return (
@@ -232,7 +272,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
             <tbody>
               {grid.data.buckets.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-4 py-16 text-center text-gray-400">
+                  <td colSpan={colCount} className="px-4 py-16 text-center text-gray-400">
                     <p className="text-sm font-medium text-gray-500 mb-1">
                       No {config.bucketLabel.toLowerCase()} yet
                     </p>
@@ -257,6 +297,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                     draggingRef={draggingRef}
                     collapsed={collapsed.has(bucket.bucketId)}
                     onToggleCollapse={() => toggleCollapse(bucket.bucketId)}
+                    showNotes={showNotes}
                   />
                 ))
               )}
@@ -267,6 +308,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                   <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider">
                     Total
                   </td>
+                  {showNotes && <td className="bg-gray-900" />}
                   {MONTHS.map((m) => (
                     <td key={m} className="px-2.5 py-2 text-right align-middle">
                       <p className="text-sm font-bold text-white tabular-nums">
@@ -292,6 +334,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                 sel={sel}
                 rowIndex={rowIndex}
                 draggingRef={draggingRef}
+                showNotes={showNotes}
               />
             </tbody>
           </table>
@@ -306,9 +349,13 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
 function GridToolbar({
   config,
   grid,
+  showNotes,
+  onToggleNotes,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
+  showNotes: boolean;
+  onToggleNotes: () => void;
 }) {
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const [addingBucket, setAddingBucket] = useState(false);
@@ -336,18 +383,25 @@ function GridToolbar({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      {/* Left — lock badge */}
-      <div className="flex items-center gap-2">
+      {/* Left — lock badge + last-updated stamps */}
+      <div className="flex items-center gap-3">
         {grid.locked && (
           <span className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 border border-gray-200">
             <Lock size={12} />
             RFQ locked — read only
           </span>
         )}
+        <GridLastUpdated
+          blUpdatedAt={grid.lastUpdated.bl}
+          actualsUpdatedAt={grid.lastUpdated.actuals}
+          actualsLabel={config.actualsLabel}
+        />
       </div>
 
-      {/* Right — add bucket + discard/save */}
+      {/* Right — autosave status + add bucket + discard/save */}
       <div className="flex items-center gap-2">
+        {!grid.locked && <SaveStatusIndicator status={grid.saveStatus} />}
+
         {!grid.locked &&
           config.allowMultipleBuckets &&
           (addingBucket ? (
@@ -380,6 +434,19 @@ function GridToolbar({
               Add {config.bucketLabel.toLowerCase()}
             </button>
           ))}
+
+        <button
+          onClick={onToggleNotes}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border rounded-lg transition-colors ${
+            showNotes
+              ? "bg-gray-900 text-white border-gray-900 hover:bg-gray-800"
+              : "text-gray-600 border-gray-200 bg-white hover:bg-gray-50 hover:text-gray-900"
+          }`}
+          title={showNotes ? "Hide the notes column" : "Show the notes column"}
+        >
+          {showNotes ? <Eye size={14} /> : <EyeOff size={14} />}
+          Notes
+        </button>
 
         <button
           onClick={downloadCSV}
@@ -516,6 +583,7 @@ function DataRow({
   retired,
   meta,
   onSpread,
+  showNotes,
 }: {
   row: ForecastRow;
   category: InputCategory;
@@ -533,6 +601,7 @@ function DataRow({
   /** Presentation extras (badge/tooltip/warning) for this row. */
   meta?: RowMeta;
   onSpread: () => void;
+  showNotes: boolean;
 }) {
   const r = rowIndex.get(row.rowId)!;
   // Closed periods only lock BL_INPUT cells, and only for users who can't edit
@@ -541,6 +610,8 @@ function DataRow({
     category === "BL_INPUT" && !grid.canEditClosed
       ? grid.closedMonths
       : EMPTY_MONTHS;
+
+  const [noteOpen, setNoteOpen] = useState(false);
 
   return (
     <tr className="group">
@@ -590,7 +661,23 @@ function DataRow({
             </>
           )}
         </div>
+        {noteOpen && (
+          <NoteDialog
+            rowLabel={row.label}
+            note={row.note ?? ""}
+            readOnly={readOnly}
+            onSave={(note) => grid.setRowNote(category, bucketId, row.rowId, note)}
+            onClose={() => setNoteOpen(false)}
+          />
+        )}
       </td>
+      {showNotes && (
+        <NoteCell
+          note={row.note}
+          readOnly={readOnly}
+          onClick={() => setNoteOpen(true)}
+        />
+      )}
       {MONTHS.map((m, ci) => {
         const coord = { category, bucketId, rowId: row.rowId, month: m };
         const closed = closedHere.has(m);
@@ -613,6 +700,43 @@ function DataRow({
   );
 }
 
+// ─── Note cell — the note rendered as its own grid column ───────────────────
+
+/**
+ * A row's note shown in the dedicated Notes column: the full text (clamped to
+ * two lines, full text on hover via `title`), click to view/edit through the
+ * NoteDialog. Empty + editable shows a faint "Add a note" affordance.
+ */
+export function NoteCell({
+  note,
+  readOnly,
+  onClick,
+}: {
+  note?: string;
+  readOnly: boolean;
+  onClick: () => void;
+}) {
+  const hasNote = !!note;
+  return (
+    <td className="px-2 py-1.5 border-b border-gray-100 align-middle">
+      <button
+        onClick={onClick}
+        disabled={readOnly && !hasNote}
+        title={hasNote ? note : undefined}
+        className={`w-full text-left text-xs leading-snug line-clamp-2 break-words rounded px-1.5 py-1 transition-colors ${
+          hasNote
+            ? "text-gray-600 hover:bg-gray-100"
+            : readOnly
+              ? "cursor-default"
+              : "italic text-gray-300 hover:text-gray-500 hover:bg-gray-100"
+        }`}
+      >
+        {hasNote ? note : readOnly ? "" : "Add a note…"}
+      </button>
+    </td>
+  );
+}
+
 // ─── Bucket section (header with inline subtotal + rows) ─────────────────────
 
 function BucketSection({
@@ -626,6 +750,7 @@ function BucketSection({
   draggingRef,
   collapsed,
   onToggleCollapse,
+  showNotes,
 }: {
   bucket: ForecastBucket;
   config: AxisConfig;
@@ -637,6 +762,7 @@ function BucketSection({
   draggingRef: React.MutableRefObject<boolean>;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  showNotes: boolean;
 }) {
   const bucketTotals = useMemo(() => monthTotals(bucket.rows), [bucket.rows]);
   const types = availableTypes(config, bucket.rows);
@@ -683,6 +809,7 @@ function BucketSection({
             )}
           </div>
         </td>
+        {showNotes && <td className="bg-gray-50/80 border-b border-gray-100" />}
         {MONTHS.map((m) => (
           <TotalCell key={m} value={bucketTotals[m] ?? 0} emphasis="bucket" />
         ))}
@@ -693,7 +820,7 @@ function BucketSection({
       {!collapsed &&
         (bucket.rows.length === 0 ? (
           <tr>
-            <td colSpan={14} className="px-8 py-2.5 text-xs text-gray-400 border-b border-gray-100">
+            <td colSpan={showNotes ? 15 : 14} className="px-8 py-2.5 text-xs text-gray-400 border-b border-gray-100">
               No {config.rowTypeLabel.toLowerCase()} yet — add one above.
             </td>
           </tr>
@@ -714,6 +841,7 @@ function BucketSection({
               retired={isRetiredType(config, row.rowType)}
               meta={rowMeta?.(row.rowType)}
               onSpread={() => setSpreadRow(row)}
+              showNotes={showNotes}
             />
           ))
         ))}
@@ -752,6 +880,7 @@ function ActualsSection({
   sel,
   rowIndex,
   draggingRef,
+  showNotes,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
@@ -759,6 +888,7 @@ function ActualsSection({
   sel: ReturnType<typeof useGridSelection>;
   rowIndex: Map<string, number>;
   draggingRef: React.MutableRefObject<boolean>;
+  showNotes: boolean;
 }) {
   const actuals = grid.data.actuals;
   const readOnly = !grid.canEditActuals;
@@ -770,7 +900,7 @@ function ActualsSection({
     <>
       {/* Section header */}
       <tr className="bg-gray-50 border-t-2 border-gray-200">
-        <td colSpan={14} className="px-4 py-2">
+        <td colSpan={showNotes ? 15 : 14} className="px-4 py-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
               {config.actualsLabel}
@@ -790,7 +920,7 @@ function ActualsSection({
       {/* Actuals rows */}
       {actuals.length === 0 ? (
         <tr>
-          <td colSpan={14} className="px-8 py-2.5 text-xs text-gray-400 bg-gray-50/40 border-b border-gray-100">
+          <td colSpan={showNotes ? 15 : 14} className="px-8 py-2.5 text-xs text-gray-400 bg-gray-50/40 border-b border-gray-100">
             {readOnly
               ? "No actuals recorded."
               : `No actuals yet — add a ${config.rowTypeLabel.toLowerCase()} above.`}
@@ -813,6 +943,7 @@ function ActualsSection({
             retired={isRetiredType(config, row.rowType)}
             meta={rowMeta?.(row.rowType)}
             onSpread={() => setSpreadRow(row)}
+            showNotes={showNotes}
           />
         ))
       )}
@@ -823,6 +954,7 @@ function ActualsSection({
           <td className="sticky left-0 z-10 bg-gray-100 px-4 py-1.5 pl-6 text-xs font-semibold text-gray-600 uppercase tracking-wider">
             {config.actualsLabel} total
           </td>
+          {showNotes && <td className="bg-gray-100 border-b border-gray-200" />}
           {MONTHS.map((m) => (
             <TotalCell key={m} value={totals[m] ?? 0} emphasis="bucket" />
           ))}

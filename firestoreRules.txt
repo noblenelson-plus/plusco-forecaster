@@ -88,6 +88,16 @@ service cloud.firestore {
       // Only admins can manage the global partner registry
       allow create, update, delete: if isAdmin();
     }
+    // ─── currency_rates ───────────────────────────────────────────────────────
+    // Document ID format: the year as a string, e.g. "2026".
+    // Holds the yearly USD → CAD conversion rate.
+    match /currency_rates/{year} {
+      // All authenticated users can read rates (needed wherever amounts are
+      // converted between currencies)
+      allow read: if isAuthenticated();
+      // Only admins can set or remove conversion rates
+      allow create, update, delete: if isAdmin();
+    }
     // ─── data_entries ────────────────────────────────────────────────────────
     // Document ID format: {cl_id}_{year}_{rfq} e.g. CL_001_2026_RFQ0
     // We extract the clientId from the document's clientId field

@@ -21,6 +21,7 @@ import {
   emptyMonthly,
   MEDIA_TYPE_LABELS,
   type AxisData,
+  type ForecastRow,
 } from "../../types/forecaster.types";
 import {
   MEDIA_TYPE_COLORS,
@@ -55,6 +56,25 @@ export function mergeAxisData(list: AxisData[]): AxisData {
   return {
     buckets: list.flatMap((d) => d.buckets),
     actuals: list.flatMap((d) => d.actuals),
+  };
+}
+
+/**
+ * Multiply every monthly amount in an axis by `factor` — used to normalize a
+ * USD client's figures to CAD before they are merged into the scope totals.
+ * A factor of 1 returns the input unchanged (CAD clients, or no rate set). Both
+ * BL rows and admin actuals are scaled.
+ */
+export function scaleAxisData(data: AxisData, factor: number): AxisData {
+  if (factor === 1) return data;
+  const scaleRow = (r: ForecastRow): ForecastRow => {
+    const months = emptyMonthly();
+    for (const m of MONTHS) months[m] = (r.months[m] ?? 0) * factor;
+    return { ...r, months };
+  };
+  return {
+    buckets: data.buckets.map((b) => ({ ...b, rows: b.rows.map(scaleRow) })),
+    actuals: data.actuals.map(scaleRow),
   };
 }
 

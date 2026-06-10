@@ -5,13 +5,25 @@
  * Revenue grid — a flat, fixed-row variant of the forecast grid.
  *
  * Unlike Media/Labs there is no project notion: a single implicit bucket holds
- * one BL row per revenue stream (Retainer, Commission, Project Fees, Product
- * Fees), and the GAIA (admin) section adds Unallocated and Accrual. Rows are
- * seeded by `ensureRevenueShape`, so there is no add/remove UI.
+ * the BL revenue streams (Retainer, Commission, Project Fees, Product Fees), and
+ * the GAIA (admin) section adds Unallocated and Accrual. The four BL streams are
+ * always seeded by `ensureRevenueShape`; the user may add extra lines of
+ * Retainer, Project Fees or Product Fees (rename/remove them), but not
+ * Commission (the single computed row). The GAIA section has no add/remove UI.
  *
  * The BL Commission row is calculated (media spend × commission rate, same
  * submission) — read-only, with a per-month hover breakdown. The GAIA
  * Commission row is a normal manual entry.
+ *
+ * Source of truth (per month): the official revenue figure comes from the
+ * first level that carries a value, in this order —
+ *   1. GAIA Revenue (the top GAIA line)
+ *   2. the other GAIA detail lines, summed
+ *   3. BL Input, summed
+ * Cells from the winning level are highlighted green (official); values at the
+ * lower levels are struck through and excluded. The "Official Revenue" total
+ * row picks each month from its winning level. A legend above the table spells
+ * this out.
  *
  * Reuses the shared cell primitives (SpreadsheetCell, TotalCell, the
  * useGridSelection clipboard/keyboard layer) and the useForecasterGrid result
@@ -27,9 +39,12 @@ import {
   Download,
   SplitSquareHorizontal,
   Sparkles,
-  Info,
-  CheckCircle2,
   Flag,
+  Eye,
+  EyeOff,
+  Plus,
+  Trash2,
+  ChevronDown,
 } from "lucide-react";
 import type {
   ForecastRow,
@@ -39,6 +54,8 @@ import {
   REVENUE_AXIS_CONFIG,
   REVENUE_COMMISSION_TYPE,
   REVENUE_GAIA_FORECAST_TYPE,
+  REVENUE_BL_ADDABLE_STREAMS,
+  REVENUE_STREAM_LABELS,
   buildCellKey,
 } from "../../lib/types/forecaster.types";
 import {
@@ -55,8 +72,13 @@ import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import { downloadAxisCSV } from "../../lib/format/forecast-csv";
 import type { CommissionBreakdown } from "../../lib/format/revenue-commission";
+import { officialRevenueByMonth } from "../../lib/format/revenue-commission";
 import { SpreadsheetCell, TotalCell, formatMoney } from "./editable-cell";
 import SpreadDialog from "./spread-dialog";
+import NoteDialog from "./note-dialog";
+import SaveStatusIndicator from "./save-status";
+import GridLastUpdated from "./grid-last-updated";
+import { NoteCell } from "./forecast-grid";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -65,6 +87,27 @@ const MONTH_LABELS = [
 
 /** Shared empty set for rows with no closed months (avoids re-allocating). */
 const EMPTY_MONTHS: Set<number> = new Set();
+
+/**
+ * Per-month source-of-truth level. The official revenue for a month comes from
+ * the first level (lowest number) that carries a value; 0 = no data.
+ */
+type SourceLevel = 0 | 1 | 2 | 3;
+const LEVEL_NONE: SourceLevel = 0;
+const LEVEL_GAIA: SourceLevel = 1; // GAIA Revenue line — overrides everything below
+const LEVEL_DETAIL: SourceLevel = 2; // the other GAIA detail lines, summed
+const LEVEL_BL: SourceLevel = 3; // BL Input, summed
+
+/** Visual state for a cell sitting at `level`, given its month's winning level. */
+function sourceCellState(
+  level: SourceLevel,
+  winning: SourceLevel,
+  value: number
+): { official: boolean; overridden: boolean } {
+  if (value === 0) return { official: false, overridden: false };
+  if (winning === level) return { official: true, overridden: false };
+  return { official: false, overridden: true };
+}
 
 interface RevenueGridProps {
   grid: UseForecasterGridResult;
@@ -85,16 +128,32 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
   const config = REVENUE_AXIS_CONFIG;
   const blReadOnly = grid.locked;
 
+  // Notes column visibility — shares the key with the other axes so the choice
+  // is unified across Media/Revenue/Labs and persists across reloads.
+  const [showNotes, setShowNotes] = useState(true);
+  useEffect(() => {
+    const saved = localStorage.getItem("forecast-show-notes");
+    if (saved !== null) setShowNotes(saved === "true");
+  }, []);
+  const toggleNotes = () =>
+    setShowNotes((prev) => {
+      const next = !prev;
+      localStorage.setItem("forecast-show-notes", String(next));
+      return next;
+    });
+
   const bucket = grid.data.buckets[0];
   const blRows = useMemo(() => bucket?.rows ?? [], [bucket]);
   const actuals = grid.data.actuals;
 
-  const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
+  // BL Input total per month (includes the computed Commission row, overlaid
+  // into grid.data) — the level-3 candidate for the source of truth.
+  const blTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
 
-  // ─── GAIA Forecast roll-up ───────────────────────────────────────────────
-  // The GAIA Forecast row is a hand-entered top-line estimate. Per month it
-  // only "counts" while no other GAIA stream is filled; once detail lines carry
-  // a value it steps aside (greyed, excluded, validated against their sum).
+  // ─── Source of truth (per month) ─────────────────────────────────────────
+  // Order: GAIA Revenue line > the other GAIA detail lines > BL Input. The
+  // first level that carries a value for a month is that month's official
+  // figure; the lower levels are struck through and excluded from the total.
   const forecastRow = useMemo(
     () => actuals.find((row) => row.rowType === REVENUE_GAIA_FORECAST_TYPE) ?? null,
     [actuals]
@@ -104,25 +163,44 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
     [actuals]
   );
   const otherActualsTotals = useMemo(() => monthTotals(otherActuals), [otherActuals]);
-  // A month "has detail" as soon as any non-forecast GAIA stream is non-zero.
-  const monthHasDetail = useMemo(() => {
-    const map: Record<number, boolean> = {};
+
+  // Which level wins each month (0 when no level carries a value).
+  const sourceLevel = useMemo<Record<number, SourceLevel>>(() => {
+    const map: Record<number, SourceLevel> = {};
     for (const m of MONTHS) {
-      map[m] = otherActuals.some((row) => (row.months[m] ?? 0) !== 0);
+      if ((forecastRow?.months[m] ?? 0) !== 0) map[m] = LEVEL_GAIA;
+      else if (otherActuals.some((row) => (row.months[m] ?? 0) !== 0))
+        map[m] = LEVEL_DETAIL;
+      else if (blTotals[m] !== 0) map[m] = LEVEL_BL;
+      else map[m] = LEVEL_NONE;
     }
     return map;
-  }, [otherActuals]);
-  // GAIA total: detailed months sum their streams; months with no detail fall
-  // back to the GAIA Forecast value (its purpose as a roll-up estimate).
-  const actualsTotals = useMemo<MonthlyMap>(() => {
+  }, [forecastRow, otherActuals, blTotals]);
+
+  // The official revenue per month — drawn from the winning level.
+  const officialTotals = useMemo(
+    () => officialRevenueByMonth(grid.data),
+    [grid.data]
+  );
+
+  // Previous RFQ's official revenue — same source-of-truth rule applied to the
+  // comparison reference (defaults to the previous submission), plus the
+  // month-by-month variance against the current official figure. Null until a
+  // reference is loaded (e.g. no earlier RFQ exists).
+  const prevOfficialTotals = useMemo<MonthlyMap | null>(
+    () => (grid.referenceData ? officialRevenueByMonth(grid.referenceData) : null),
+    [grid.referenceData]
+  );
+  const varianceTotals = useMemo<MonthlyMap>(() => {
     const totals: MonthlyMap = {};
     for (const m of MONTHS) {
-      totals[m] = monthHasDetail[m]
-        ? otherActualsTotals[m]
-        : forecastRow?.months[m] ?? 0;
+      totals[m] = officialTotals[m] - (prevOfficialTotals?.[m] ?? 0);
     }
     return totals;
-  }, [monthHasDetail, otherActualsTotals, forecastRow]);
+  }, [officialTotals, prevOfficialTotals]);
+  const prevRefLabel = grid.compareRef
+    ? `${grid.compareRef.rfq} · ${grid.compareRef.year}`
+    : null;
 
   // Selection model — editable rows only. The computed BL Commission row is
   // excluded (read-only, never edited/copied through the selection layer).
@@ -189,7 +267,7 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
 
   return (
     <div className="space-y-4">
-      <RevenueToolbar grid={grid} />
+      <RevenueToolbar grid={grid} showNotes={showNotes} onToggleNotes={toggleNotes} />
 
       {grid.error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
@@ -197,16 +275,7 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
         </div>
       )}
 
-      {noRates && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <Info size={16} className="mt-0.5 flex-shrink-0 text-amber-500" />
-          <p>
-            No commission rates are configured for this client this year, so the
-            Commission row is 0. Set rates in{" "}
-            <span className="font-semibold">Clients → commissions</span>.
-          </p>
-        </div>
-      )}
+      {!grid.loading && <SourceOfTruthLegend />}
 
       {grid.loading ? (
         <div className="flex items-center justify-center py-24 gap-2 text-gray-400 bg-white border border-gray-200 rounded-xl">
@@ -226,6 +295,21 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                 <th className="sticky left-0 z-10 bg-gray-50 text-left px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs w-52">
                   {config.rowTypeLabel}
                 </th>
+                {showNotes && (
+                  <th className="px-3 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs text-left min-w-[200px]">
+                    <span className="inline-flex items-center gap-1.5">
+                      Notes
+                      <button
+                        onClick={toggleNotes}
+                        title="Hide notes column"
+                        aria-label="Hide notes column"
+                        className="text-gray-400 hover:text-gray-700 transition-colors"
+                      >
+                        <EyeOff size={12} />
+                      </button>
+                    </span>
+                  </th>
+                )}
                 {MONTH_LABELS.map((m, ci) => {
                   const closed = grid.closedMonths.has(ci + 1);
                   return (
@@ -251,23 +335,45 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
 
             <tbody>
               {/* ─── BL Input ─── */}
-              <SectionHeader label="BL Input" />
+              <BlSectionHeader
+                showNotes={showNotes}
+                canAdd={!blReadOnly}
+                onAdd={(rowType) =>
+                  bucket && grid.addRow(bucket.bucketId, rowType)
+                }
+              />
               {blRows.map((row) => {
                 if (row.rowType === REVENUE_COMMISSION_TYPE) {
-                  return <CommissionRow key={row.rowId} commission={commission} />;
+                  return (
+                    <CommissionRow
+                      key={row.rowId}
+                      row={row}
+                      bucketId={bucket?.bucketId ?? null}
+                      readOnly={blReadOnly}
+                      grid={grid}
+                      commission={commission}
+                      sourceLevel={sourceLevel}
+                      noRates={noRates}
+                      showNotes={showNotes}
+                    />
+                  );
                 }
                 return (
                   <RevenueDataRow
                     key={row.rowId}
                     row={row}
                     category="BL_INPUT"
+                    level={LEVEL_BL}
+                    sourceLevel={sourceLevel}
                     bucketId={bucket?.bucketId ?? null}
                     readOnly={blReadOnly}
+                    removable
                     grid={grid}
                     sel={sel}
                     rowIndex={rowIndex}
                     draggingRef={draggingRef}
                     rowBg="bg-white group-hover:bg-gray-50"
+                    showNotes={showNotes}
                     onSpread={() =>
                       setSpreadRow({
                         category: "BL_INPUT",
@@ -281,30 +387,16 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                 );
               })}
 
-              {/* BL grand total */}
-              <tr className="bg-gray-900">
-                <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider">
-                  Total
-                </td>
-                {MONTHS.map((m) => (
-                  <td key={m} className="px-2.5 py-2 text-right align-middle">
-                    <p className="text-sm font-bold text-white tabular-nums">
-                      {grandTotals[m]
-                        ? Math.round(grandTotals[m]).toLocaleString("en-CA")
-                        : "—"}
-                    </p>
-                  </td>
-                ))}
-                <td className="px-2.5 py-2 text-right align-middle bg-gray-800">
-                  <p className="text-sm font-bold text-yellow-400 tabular-nums">
-                    {Math.round(sumMonths(grandTotals)).toLocaleString("en-CA")}
-                  </p>
-                </td>
-              </tr>
+              {/* BL Input subtotal (informational — see the official total below) */}
+              <SubtotalRow
+                label="BL Input total"
+                totals={blTotals}
+                showNotes={showNotes}
+              />
 
               {/* ─── GAIA (ADMIN_INPUT) ─── */}
               <tr className="bg-gray-50 border-t-2 border-gray-200">
-                <td colSpan={14} className="px-4 py-2">
+                <td colSpan={showNotes ? 15 : 14} className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       {config.actualsLabel}
@@ -325,15 +417,15 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                   });
                 if (row.rowType === REVENUE_GAIA_FORECAST_TYPE) {
                   return (
-                    <GaiaForecastRow
+                    <GaiaRevenueRow
                       key={row.rowId}
                       row={row}
                       grid={grid}
                       sel={sel}
                       rowIndex={rowIndex}
                       draggingRef={draggingRef}
-                      otherActualsTotals={otherActualsTotals}
-                      monthHasDetail={monthHasDetail}
+                      sourceLevel={sourceLevel}
+                      showNotes={showNotes}
                       onSpread={onSpread}
                     />
                   );
@@ -343,6 +435,8 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                     key={row.rowId}
                     row={row}
                     category="ADMIN_INPUT"
+                    level={LEVEL_DETAIL}
+                    sourceLevel={sourceLevel}
                     bucketId={null}
                     readOnly={!grid.canEditActuals}
                     grid={grid}
@@ -350,21 +444,54 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                     rowIndex={rowIndex}
                     draggingRef={draggingRef}
                     rowBg="bg-gray-50/40 group-hover:bg-gray-50"
+                    showNotes={showNotes}
                     onSpread={onSpread}
                   />
                 );
               })}
 
-              {/* GAIA total */}
-              <tr className="bg-gray-100 border-b border-gray-200">
-                <td className="sticky left-0 z-10 bg-gray-100 px-4 py-1.5 pl-6 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  {config.actualsLabel} total
+              {/* GAIA detail subtotal (the level-2 detail lines, informational) */}
+              <SubtotalRow
+                label={`${config.actualsLabel} detail total`}
+                totals={otherActualsTotals}
+                showNotes={showNotes}
+              />
+
+              {/* ─── Official revenue (source of truth, per month) ─── */}
+              <tr className="bg-emerald-600 border-t-2 border-emerald-700">
+                <td className="sticky left-0 z-10 bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white uppercase tracking-wider">
+                  Official Revenue
                 </td>
+                {showNotes && <td className="bg-emerald-600" />}
                 {MONTHS.map((m) => (
-                  <TotalCell key={m} value={actualsTotals[m] ?? 0} emphasis="bucket" />
+                  <td key={m} className="px-2.5 py-2.5 text-right align-middle">
+                    <p className="text-sm font-bold text-white tabular-nums">
+                      {officialTotals[m]
+                        ? Math.round(officialTotals[m]).toLocaleString("en-CA")
+                        : "—"}
+                    </p>
+                  </td>
                 ))}
-                <TotalCell value={sumMonths(actualsTotals)} emphasis="bucket" />
+                <td className="px-2.5 py-2.5 text-right align-middle bg-emerald-700">
+                  <p className="text-sm font-bold text-white tabular-nums">
+                    {Math.round(sumMonths(officialTotals)).toLocaleString("en-CA")}
+                  </p>
+                </td>
               </tr>
+
+              {/* Official revenue of the comparison reference (previous RFQ by
+                  default) + the per-month variance against the current one. */}
+              <PrevOfficialRow
+                label={
+                  prevRefLabel
+                    ? `Official Revenue · ${prevRefLabel}`
+                    : "Official Revenue · previous RFQ"
+                }
+                totals={prevOfficialTotals}
+                loading={grid.referenceLoading}
+                showNotes={showNotes}
+              />
+              <VarianceRow totals={varianceTotals} showNotes={showNotes} />
             </tbody>
           </table>
         </div>
@@ -401,7 +528,15 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
 
 // ─── Toolbar (lock badge + CSV + discard/save) ───────────────────────────────
 
-function RevenueToolbar({ grid }: { grid: UseForecasterGridResult }) {
+function RevenueToolbar({
+  grid,
+  showNotes,
+  onToggleNotes,
+}: {
+  grid: UseForecasterGridResult;
+  showNotes: boolean;
+  onToggleNotes: () => void;
+}) {
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
 
   function downloadCSV() {
@@ -414,16 +549,36 @@ function RevenueToolbar({ grid }: { grid: UseForecasterGridResult }) {
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {grid.locked && (
           <span className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 border border-gray-200">
             <Lock size={12} />
             RFQ locked — read only
           </span>
         )}
+        <GridLastUpdated
+          blUpdatedAt={grid.lastUpdated.bl}
+          actualsUpdatedAt={grid.lastUpdated.actuals}
+          actualsLabel={REVENUE_AXIS_CONFIG.actualsLabel}
+        />
       </div>
 
       <div className="flex items-center gap-2">
+        {!grid.locked && <SaveStatusIndicator status={grid.saveStatus} />}
+
+        <button
+          onClick={onToggleNotes}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border rounded-lg transition-colors ${
+            showNotes
+              ? "bg-gray-900 text-white border-gray-900 hover:bg-gray-800"
+              : "text-gray-600 border-gray-200 bg-white hover:bg-gray-50 hover:text-gray-900"
+          }`}
+          title={showNotes ? "Hide the notes column" : "Show the notes column"}
+        >
+          {showNotes ? <Eye size={14} /> : <EyeOff size={14} />}
+          Notes
+        </button>
+
         <button
           onClick={downloadCSV}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
@@ -462,15 +617,201 @@ function RevenueToolbar({ grid }: { grid: UseForecasterGridResult }) {
   );
 }
 
-// ─── Section header ──────────────────────────────────────────────────────────
+// ─── BL Input section header (label + add-line control) ──────────────────────
 
-function SectionHeader({ label }: { label: string }) {
+function BlSectionHeader({
+  showNotes,
+  canAdd,
+  onAdd,
+}: {
+  showNotes: boolean;
+  canAdd: boolean;
+  onAdd: (rowType: string) => void;
+}) {
   return (
     <tr className="bg-gray-50/80 border-t border-gray-200">
-      <td colSpan={14} className="px-4 py-2 border-b border-gray-100">
-        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
-          {label}
-        </span>
+      <td colSpan={showNotes ? 15 : 14} className="px-4 py-2 border-b border-gray-100">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+            BL Input
+          </span>
+          {canAdd && <AddLineControl onPick={onAdd} />}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/** Reveals a small select of the addable BL streams; calls onPick with the type. */
+function AddLineControl({ onPick }: { onPick: (rowType: string) => void }) {
+  const [adding, setAdding] = useState(false);
+
+  if (adding) {
+    return (
+      <div className="relative">
+        <select
+          autoFocus
+          defaultValue=""
+          onChange={(e) => {
+            if (e.target.value) onPick(e.target.value);
+            setAdding(false);
+          }}
+          onBlur={() => setAdding(false)}
+          className="appearance-none pl-3 pr-8 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
+        >
+          <option value="" disabled>
+            Add line...
+          </option>
+          {REVENUE_BL_ADDABLE_STREAMS.map((s) => (
+            <option key={s} value={s}>
+              {REVENUE_STREAM_LABELS[s]}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={12}
+          className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setAdding(true)}
+      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+      title="Add a Retainer, Project Fees or Product Fees line"
+    >
+      <Plus size={12} />
+      Add line
+    </button>
+  );
+}
+
+// ─── Source-of-truth legend ──────────────────────────────────────────────────
+
+function SourceOfTruthLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-gray-200 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-600">
+      <span className="inline-flex items-center gap-1.5 font-semibold text-gray-700">
+        Source of truth
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block h-3 w-4 rounded-sm bg-emerald-100 ring-1 ring-inset ring-emerald-300" />
+        Official value (counted in the total)
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-gray-400 line-through decoration-gray-400">12 500</span>
+        Overridden (not counted)
+      </span>
+    </div>
+  );
+}
+
+// ─── Subtotal row (informational — not the official total) ───────────────────
+
+function SubtotalRow({
+  label,
+  totals,
+  showNotes,
+}: {
+  label: string;
+  totals: MonthlyMap;
+  showNotes: boolean;
+}) {
+  return (
+    <tr className="bg-gray-100 border-b border-gray-200">
+      <td className="sticky left-0 z-10 bg-gray-100 px-4 py-1.5 pl-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        {label}
+      </td>
+      {showNotes && <td className="bg-gray-100 border-b border-gray-200" />}
+      {MONTHS.map((m) => (
+        <TotalCell key={m} value={totals[m] ?? 0} emphasis="bucket" />
+      ))}
+      <TotalCell value={sumMonths(totals)} emphasis="bucket" />
+    </tr>
+  );
+}
+
+/** Format a rounded amount; em dash for an empty (null) or zero value. */
+function fmtAmount(value: number | null | undefined): string {
+  if (value === null || value === undefined || value === 0) return "—";
+  return Math.round(value).toLocaleString("en-CA");
+}
+
+// ─── Previous-RFQ official revenue (comparison reference) ────────────────────
+
+function PrevOfficialRow({
+  label,
+  totals,
+  loading,
+  showNotes,
+}: {
+  label: string;
+  totals: MonthlyMap | null;
+  loading: boolean;
+  showNotes: boolean;
+}) {
+  const annual = totals ? sumMonths(totals) : null;
+  return (
+    <tr className="bg-emerald-50/70 border-b border-emerald-100">
+      <td className="sticky left-0 z-10 bg-emerald-50/70 px-4 py-2 pl-6 text-xs font-semibold text-emerald-800/80 uppercase tracking-wider">
+        {label}
+      </td>
+      {showNotes && <td className="bg-emerald-50/70 border-b border-emerald-100" />}
+      {MONTHS.map((m) => (
+        <td key={m} className="px-2.5 py-2 text-right align-middle">
+          <p className="text-sm font-medium text-emerald-900/70 tabular-nums">
+            {loading && !totals ? "…" : fmtAmount(totals?.[m])}
+          </p>
+        </td>
+      ))}
+      <td className="px-2.5 py-2 text-right align-middle bg-emerald-100/50">
+        <p className="text-sm font-semibold text-emerald-900/80 tabular-nums">
+          {loading && !totals ? "…" : fmtAmount(annual)}
+        </p>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Variance (current official − previous official) ─────────────────────────
+
+function VarianceRow({
+  totals,
+  showNotes,
+}: {
+  totals: MonthlyMap;
+  showNotes: boolean;
+}) {
+  // Signed amount, coloured by direction (gain green, drop red, flat grey).
+  const cell = (value: number) => {
+    const cls =
+      value > 0
+        ? "text-emerald-700"
+        : value < 0
+        ? "text-red-600"
+        : "text-gray-300";
+    const text =
+      value === 0
+        ? "—"
+        : `${value > 0 ? "+" : ""}${Math.round(value).toLocaleString("en-CA")}`;
+    return <p className={`text-sm font-medium tabular-nums ${cls}`}>{text}</p>;
+  };
+  const annual = sumMonths(totals);
+  return (
+    <tr className="bg-white border-b border-gray-200">
+      <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        Variance
+      </td>
+      {showNotes && <td className="bg-white border-b border-gray-200" />}
+      {MONTHS.map((m) => (
+        <td key={m} className="px-2.5 py-2 text-right align-middle">
+          {cell(totals[m] ?? 0)}
+        </td>
+      ))}
+      <td className="px-2.5 py-2 text-right align-middle bg-gray-50">
+        {cell(annual)}
       </td>
     </tr>
   );
@@ -481,24 +822,35 @@ function SectionHeader({ label }: { label: string }) {
 function RevenueDataRow({
   row,
   category,
+  level,
+  sourceLevel,
   bucketId,
   readOnly,
+  removable = false,
   grid,
   sel,
   rowIndex,
   draggingRef,
   rowBg,
+  showNotes,
   onSpread,
 }: {
   row: ForecastRow;
   category: InputCategory;
+  /** This row's source-of-truth level (LEVEL_DETAIL for GAIA details, LEVEL_BL for BL). */
+  level: SourceLevel;
+  /** The winning level per month, shared by the grid. */
+  sourceLevel: Record<number, SourceLevel>;
   bucketId: string | null;
   readOnly: boolean;
+  /** Shows a delete button (set on BL data rows; the GAIA section is fixed). */
+  removable?: boolean;
   grid: UseForecasterGridResult;
   sel: ReturnType<typeof useGridSelection>;
   rowIndex: Map<string, number>;
   draggingRef: React.MutableRefObject<boolean>;
   rowBg: string;
+  showNotes: boolean;
   onSpread: () => void;
 }) {
   const r = rowIndex.get(row.rowId)!;
@@ -506,33 +858,62 @@ function RevenueDataRow({
   const closedHere =
     category === "BL_INPUT" && !grid.canEditClosed ? grid.closedMonths : EMPTY_MONTHS;
 
+  const [noteOpen, setNoteOpen] = useState(false);
+
   return (
     <tr className="group">
       <td className={`sticky left-0 z-10 ${rowBg} px-4 py-1.5 border-b border-gray-100`}>
         <div className="flex items-center gap-1.5 pl-2">
           <span className="text-sm text-gray-700">{row.label}</span>
           {!readOnly && (
-            <button
-              onClick={onSpread}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-gray-700 transition-all"
-              title="Distribute an amount across months"
-            >
-              <SplitSquareHorizontal size={12} />
-            </button>
+            <>
+              <button
+                onClick={onSpread}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-gray-700 transition-all"
+                title="Distribute an amount across months"
+              >
+                <SplitSquareHorizontal size={12} />
+              </button>
+              {removable && (
+                <button
+                  onClick={() => grid.removeRow(bucketId!, row.rowId)}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-red-500 transition-all"
+                  title="Remove this line (until saved)"
+                >
+                  <Trash2 size={11} />
+                </button>
+              )}
+            </>
           )}
         </div>
+        {noteOpen && (
+          <NoteDialog
+            rowLabel={row.label}
+            note={row.note ?? ""}
+            readOnly={readOnly}
+            onSave={(note) => grid.setRowNote(category, bucketId, row.rowId, note)}
+            onClose={() => setNoteOpen(false)}
+          />
+        )}
       </td>
+      {showNotes && (
+        <NoteCell note={row.note} readOnly={readOnly} onClick={() => setNoteOpen(true)} />
+      )}
       {MONTHS.map((m, ci) => {
         const coord = { category, bucketId, rowId: row.rowId, month: m };
         const closed = closedHere.has(m);
+        const value = row.months[m] ?? 0;
+        const { official, overridden } = sourceCellState(level, sourceLevel[m], value);
         return (
           <SpreadsheetCell
             key={m}
             r={r}
             c={ci}
-            value={row.months[m] ?? 0}
+            value={value}
             readOnly={readOnly || closed}
             closed={closed}
+            official={official}
+            overridden={overridden}
             dirty={grid.dirtyMap.has(buildCellKey(coord))}
             sel={sel}
             draggingRef={draggingRef}
@@ -544,20 +925,19 @@ function RevenueDataRow({
   );
 }
 
-// ─── GAIA Forecast row (hand-entered roll-up, per-month validation) ──────────
-// A top-line estimate that counts as the month's revenue while no detail stream
-// is filled. Once any other GAIA stream carries a value for a month, the cell is
-// greyed and dropped from the total — kept editable as a reference that shows a
-// green check when it matches the detail sum, a red flag when it doesn't.
+// ─── GAIA Revenue row (top of the source-of-truth order) ─────────────────────
+// The hand-entered top-line figure. Whenever it carries a value for a month it
+// is that month's source of truth (highlighted green) and overrides the detail
+// lines and BL below it. Empty months simply defer to the lower levels.
 
-function GaiaForecastRow({
+function GaiaRevenueRow({
   row,
   grid,
   sel,
   rowIndex,
   draggingRef,
-  otherActualsTotals,
-  monthHasDetail,
+  sourceLevel,
+  showNotes,
   onSpread,
 }: {
   row: ForecastRow;
@@ -565,31 +945,19 @@ function GaiaForecastRow({
   sel: ReturnType<typeof useGridSelection>;
   rowIndex: Map<string, number>;
   draggingRef: React.MutableRefObject<boolean>;
-  otherActualsTotals: MonthlyMap;
-  monthHasDetail: Record<number, boolean>;
+  sourceLevel: Record<number, SourceLevel>;
+  showNotes: boolean;
   onSpread: () => void;
 }) {
   const r = rowIndex.get(row.rowId)!;
   const readOnly = !grid.canEditActuals;
-  // Annual = only the months where the forecast is still the active value;
-  // detailed months are represented by their own streams, not the forecast.
-  const annual = useMemo(
-    () =>
-      MONTHS.reduce(
-        (acc, m) => acc + (monthHasDetail[m] ? 0 : row.months[m] ?? 0),
-        0
-      ),
-    [row.months, monthHasDetail]
-  );
+  const [noteOpen, setNoteOpen] = useState(false);
 
   return (
     <tr className="group bg-emerald-50/20">
       <td className="sticky left-0 z-10 bg-emerald-50/30 group-hover:bg-emerald-50/60 px-4 py-1.5 border-b border-gray-100">
         <div className="flex items-center gap-1.5 pl-2">
-          <span className="text-sm text-gray-700">{row.label}</span>
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-emerald-100 text-emerald-700">
-            Roll-up
-          </span>
+          <span className="text-sm font-medium text-gray-800">{row.label}</span>
           {!readOnly && (
             <button
               onClick={onSpread}
@@ -600,11 +968,26 @@ function GaiaForecastRow({
             </button>
           )}
         </div>
+        {noteOpen && (
+          <NoteDialog
+            rowLabel={row.label}
+            note={row.note ?? ""}
+            readOnly={readOnly}
+            onSave={(note) => grid.setRowNote("ADMIN_INPUT", null, row.rowId, note)}
+            onClose={() => setNoteOpen(false)}
+          />
+        )}
       </td>
+      {showNotes && (
+        <NoteCell note={row.note} readOnly={readOnly} onClick={() => setNoteOpen(true)} />
+      )}
       {MONTHS.map((m, ci) => {
-        const detail = monthHasDetail[m];
         const value = row.months[m] ?? 0;
-        const matches = value === (otherActualsTotals[m] ?? 0);
+        const { official, overridden } = sourceCellState(
+          LEVEL_GAIA,
+          sourceLevel[m],
+          value
+        );
         const coord = {
           category: "ADMIN_INPUT" as const,
           bucketId: null,
@@ -618,30 +1001,43 @@ function GaiaForecastRow({
             c={ci}
             value={value}
             readOnly={readOnly}
-            muted={detail}
-            badge={
-              detail ? (
-                matches ? (
-                  <CheckCircle2 size={12} className="text-emerald-500" />
-                ) : (
-                  <Flag size={11} className="text-red-500" />
-                )
-              ) : undefined
-            }
+            official={official}
+            overridden={overridden}
             dirty={grid.dirtyMap.has(buildCellKey(coord))}
             sel={sel}
             draggingRef={draggingRef}
           />
         );
       })}
-      <TotalCell value={annual} emphasis="row" />
+      <TotalCell value={sumMonths(row.months)} emphasis="row" />
     </tr>
   );
 }
 
 // ─── Commission row (calculated, read-only, per-month hover breakdown) ───────
 
-function CommissionRow({ commission }: { commission: CommissionBreakdown }) {
+function CommissionRow({
+  row,
+  bucketId,
+  readOnly,
+  grid,
+  commission,
+  sourceLevel,
+  noRates,
+  showNotes,
+}: {
+  row: ForecastRow;
+  bucketId: string | null;
+  readOnly: boolean;
+  grid: UseForecasterGridResult;
+  commission: CommissionBreakdown;
+  /** The winning level per month — Commission is a BL (level-3) row. */
+  sourceLevel: Record<number, SourceLevel>;
+  /** No commission rates set for the year — flags the row (Commission stays 0). */
+  noRates?: boolean;
+  showNotes: boolean;
+}) {
+  const [noteOpen, setNoteOpen] = useState(false);
   return (
     <tr className="group bg-indigo-50/30">
       <td className="sticky left-0 z-10 bg-indigo-50/40 group-hover:bg-indigo-50/70 px-4 py-1.5 border-b border-gray-100">
@@ -651,16 +1047,42 @@ function CommissionRow({ commission }: { commission: CommissionBreakdown }) {
             <Sparkles size={10} />
             Calculated
           </span>
+          {noRates && (
+            <span
+              className="text-amber-500 cursor-help"
+              title="No commission rates are configured for this client this year, so the Commission row is 0. Set rates in Clients → commissions."
+            >
+              <Flag size={12} />
+            </span>
+          )}
         </div>
+        {noteOpen && (
+          <NoteDialog
+            rowLabel={row.label}
+            note={row.note ?? ""}
+            readOnly={readOnly}
+            onSave={(note) => grid.setRowNote("BL_INPUT", bucketId, row.rowId, note)}
+            onClose={() => setNoteOpen(false)}
+          />
+        )}
       </td>
-      {MONTHS.map((m) => (
-        <CommissionCell
-          key={m}
-          month={m}
-          value={commission.months[m] ?? 0}
-          lines={commission.byMonth[m] ?? []}
-        />
-      ))}
+      {showNotes && (
+        <NoteCell note={row.note} readOnly={readOnly} onClick={() => setNoteOpen(true)} />
+      )}
+      {MONTHS.map((m) => {
+        const value = commission.months[m] ?? 0;
+        const { official, overridden } = sourceCellState(LEVEL_BL, sourceLevel[m], value);
+        return (
+          <CommissionCell
+            key={m}
+            month={m}
+            value={value}
+            lines={commission.byMonth[m] ?? []}
+            official={official}
+            overridden={overridden}
+          />
+        );
+      })}
       <TotalCell value={commission.annual} emphasis="row" />
     </tr>
   );
@@ -670,15 +1092,36 @@ function CommissionCell({
   month,
   value,
   lines,
+  official,
+  overridden,
 }: {
   month: number;
   value: number;
   lines: CommissionBreakdown["byMonth"][number];
+  /** Source of truth for its month — highlighted green. */
+  official: boolean;
+  /** Overridden by a higher source — struck through. */
+  overridden: boolean;
 }) {
   // Anchor rect captured on hover — the tooltip renders through a portal in
   // fixed position so it escapes the table's overflow-x clipping.
   const ref = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
+
+  // Source-of-truth styling takes precedence over the default indigo look.
+  const bg = anchor
+    ? "ring-1 ring-inset ring-indigo-300 bg-indigo-50/60"
+    : official
+    ? "bg-emerald-100"
+    : "";
+  const text =
+    value === 0
+      ? "text-gray-300"
+      : overridden
+      ? "text-gray-400 line-through decoration-gray-400"
+      : official
+      ? "text-emerald-900 font-semibold"
+      : "text-indigo-900/80";
 
   return (
     <td className="px-0 py-0 border-b border-r border-gray-100 align-middle">
@@ -687,9 +1130,7 @@ function CommissionCell({
           ref={ref}
           onMouseEnter={() => setAnchor(ref.current?.getBoundingClientRect() ?? null)}
           onMouseLeave={() => setAnchor(null)}
-          className={`w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md select-none cursor-help ${
-            anchor ? "ring-1 ring-inset ring-indigo-300 bg-indigo-50/60" : ""
-          } ${value === 0 ? "text-gray-300" : "text-indigo-900/80"}`}
+          className={`w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md select-none cursor-help ${bg} ${text}`}
         >
           {value === 0 ? "—" : formatMoney(value)}
         </div>

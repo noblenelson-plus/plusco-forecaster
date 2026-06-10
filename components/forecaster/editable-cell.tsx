@@ -96,6 +96,10 @@ interface SpreadsheetCellProps {
   closed?: boolean;
   /** De-emphasized (greyed) while still editable — e.g. an excluded roll-up. */
   muted?: boolean;
+  /** Source-of-truth value for its month — highlighted green (the official figure). */
+  official?: boolean;
+  /** A non-source value its month overrides — struck through, excluded from totals. */
+  overridden?: boolean;
   /** Small indicator at the cell's left edge (e.g. a match check / mismatch flag). */
   badge?: ReactNode;
   dirty: boolean;
@@ -111,6 +115,8 @@ export function SpreadsheetCell({
   readOnly,
   closed = false,
   muted = false,
+  official = false,
+  overridden = false,
   badge,
   dirty,
   sel,
@@ -164,9 +170,9 @@ export function SpreadsheetCell({
             className={`relative w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md
               outline-none select-none transition-colors
               ${closed ? "cursor-not-allowed" : "cursor-cell"}
-              ${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : muted ? "bg-gray-100/60" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
+              ${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : official ? "bg-emerald-100 hover:bg-emerald-100" : muted ? "bg-gray-100/60" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
               ${active ? "ring-2 ring-inset ring-yellow-400" : ""}
-              ${closed ? "text-gray-300" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}
+              ${closed ? "text-gray-300" : overridden ? "text-gray-400 line-through decoration-gray-400" : official ? "text-emerald-900 font-semibold" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}
             `}
           >
             {badge && (

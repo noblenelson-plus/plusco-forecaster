@@ -39,6 +39,27 @@ export async function fetchAnnualActuals(
 }
 
 /**
+ * An axis's annual actuals rows + its last-save timestamp, in one read. Used by
+ * the grid to show when the ADMIN_INPUT (actuals) of an annual axis was last
+ * saved. Returns empty rows / undefined when the doc or axis doesn't exist.
+ */
+export async function fetchAnnualActualsWithMeta(
+  clientId: string,
+  year: number,
+  axisId: AxisId
+): Promise<{ rows: ForecastRow[]; updatedAt?: string }> {
+  const entryId = buildAnnualActualsId(clientId, year);
+  const snapshot = await getDoc(doc(db, COLLECTION, entryId));
+  if (!snapshot.exists()) return { rows: [] };
+  const data = snapshot.data();
+  const rows = data?.axes?.[axisId];
+  return {
+    rows: Array.isArray(rows) ? (rows as ForecastRow[]) : [],
+    updatedAt: data?.axisMeta?.[axisId]?.actualsUpdatedAt,
+  };
+}
+
+/**
  * All axes' annual actuals for a {client, year} in a single read — used by the
  * dashboard, which needs both Media and Labs and would otherwise read the doc
  * twice. Returns {} when the document doesn't exist.
@@ -78,6 +99,8 @@ export async function saveAnnualActuals(
       year,
       axes: { [axisId]: actuals },
       updatedAt: now,
+      // Per-axis last-save stamp for these annual actuals (ADMIN_INPUT).
+      axisMeta: { [axisId]: { actualsUpdatedAt: now } },
       ...(userUid ? { lastModifiedBy: userUid } : {}),
     },
     { merge: true }

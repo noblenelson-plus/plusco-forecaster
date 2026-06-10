@@ -7,3 +7,4 @@ export * from "./media.types";
 export * from "./revenue.types";
 export * from "./labs.types";
 export * from "./data-entry.types";
+export * from "./currency.types";

@@ -32,6 +32,8 @@ import {
   REVENUE_BL_STREAMS,
   REVENUE_ADMIN_STREAMS,
   REVENUE_STREAM_LABELS,
+  REVENUE_COMMISSION_TYPE,
+  REVENUE_GAIA_FORECAST_TYPE,
   type AxisData,
   type ForecastRow,
   type ForecastBucket,
@@ -117,42 +119,104 @@ export function computeCommission(
  * the grid hook's `normalizeLoaded` so the seeded rows are part of the clean
  * snapshot and never count as unsaved changes.
  */
+/**
+ * Official revenue per month — the source of truth used by the Revenue grid's
+ * total (and now its comparison panel). Each month picks the first level that
+ * carries a value, in order: GAIA Revenue line > the other GAIA detail lines,
+ * summed > BL Input, summed (Commission included, as stored). Shared so the grid
+ * and the comparison panel always agree.
+ */
+export function officialRevenueByMonth(data: AxisData): MonthlyMap {
+  const forecast = data.actuals.find(
+    (r) => r.rowType === REVENUE_GAIA_FORECAST_TYPE
+  );
+  const others = data.actuals.filter(
+    (r) => r.rowType !== REVENUE_GAIA_FORECAST_TYPE
+  );
+  const out: MonthlyMap = emptyMonthly();
+  for (const m of MONTHS) {
+    const gaia = forecast?.months[m] ?? 0;
+    if (gaia !== 0) {
+      out[m] = gaia;
+      continue;
+    }
+    let detail = 0;
+    let hasDetail = false;
+    for (const r of others) {
+      const v = r.months[m] ?? 0;
+      if (v !== 0) hasDetail = true;
+      detail += v;
+    }
+    if (hasDetail) {
+      out[m] = detail;
+      continue;
+    }
+    let bl = 0;
+    for (const b of data.buckets) for (const r of b.rows) bl += r.months[m] ?? 0;
+    out[m] = bl;
+  }
+  return out;
+}
+
 export function ensureRevenueShape(data: AxisData): AxisData {
-  const blByType = new Map<string, ForecastRow>();
-  for (const bucket of data.buckets) {
-    for (const row of bucket.rows) {
-      if (!blByType.has(row.rowType)) blByType.set(row.rowType, row);
+  // Fill all 12 months; the label is always the stream's canonical type label
+  // (rows are real revenue types, never renamed). The note is preserved.
+  const normalize = (row: ForecastRow): ForecastRow => ({
+    rowId: row.rowId,
+    rowType: row.rowType,
+    label: REVENUE_STREAM_LABELS[row.rowType as RevenueStream] ?? row.rowType,
+    months: { ...emptyMonthly(), ...row.months },
+    ...(row.note ? { note: row.note } : {}),
+  });
+
+  // BL Input — on a brand-new (empty) doc, seed the four base streams in order.
+  // On an existing doc, preserve EXACTLY what is stored (in order, including
+  // several lines of the same stream and minus any the user deleted), only
+  // ensuring the computed Commission row is present — it is required and is
+  // never added or removed by hand.
+  const existingBl = data.buckets.flatMap((b) => b.rows).map(normalize);
+  let blRows: ForecastRow[];
+  if (existingBl.length === 0) {
+    blRows = REVENUE_BL_STREAMS.map((s) => newRow(s, REVENUE_STREAM_LABELS[s]));
+  } else {
+    blRows = existingBl;
+    if (!blRows.some((r) => r.rowType === REVENUE_COMMISSION_TYPE)) {
+      blRows = [
+        ...blRows,
+        newRow(
+          REVENUE_COMMISSION_TYPE,
+          REVENUE_STREAM_LABELS[REVENUE_COMMISSION_TYPE]
+        ),
+      ];
     }
   }
+
+  // GAIA (ADMIN_INPUT) — exactly one row per stream, in the fixed order.
   const actualsByType = new Map<string, ForecastRow>();
   for (const row of data.actuals) {
     if (!actualsByType.has(row.rowType)) actualsByType.set(row.rowType, row);
   }
-
-  const ensure = (
-    existing: Map<string, ForecastRow>,
-    stream: RevenueStream
-  ): ForecastRow => {
-    const prev = existing.get(stream);
+  const ensureActual = (stream: RevenueStream): ForecastRow => {
+    const prev = actualsByType.get(stream);
     if (prev) {
       return {
         rowId: prev.rowId,
         rowType: stream,
         label: REVENUE_STREAM_LABELS[stream],
         months: { ...emptyMonthly(), ...prev.months },
+        ...(prev.note ? { note: prev.note } : {}),
       };
     }
     return newRow(stream, REVENUE_STREAM_LABELS[stream]);
   };
+  const actuals = REVENUE_ADMIN_STREAMS.map(ensureActual);
 
   const base = data.buckets[0];
   const bucket: ForecastBucket = {
     bucketId: base?.bucketId ?? newBucket("Revenue").bucketId,
     name: base?.name ?? "Revenue",
-    rows: REVENUE_BL_STREAMS.map((s) => ensure(blByType, s)),
+    rows: blRows,
   };
-
-  const actuals = REVENUE_ADMIN_STREAMS.map((s) => ensure(actualsByType, s));
 
   return { buckets: [bucket], actuals };
 }

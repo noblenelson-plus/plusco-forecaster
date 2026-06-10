@@ -39,7 +39,7 @@ import { useForecasterGrid } from "../../../lib/hooks/use-forecaster-grid";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { subscribeToClient } from "../../../lib/services/client-service";
 import { syncRevenueCommission } from "../../../lib/services/data-entry-service";
-import type { CommissionsConfig } from "../../../lib/types/client.types";
+import type { CommissionsConfig, Currency } from "../../../lib/types/client.types";
 import {
   computeCommission,
   ensureRevenueShape,
@@ -389,6 +389,12 @@ export default function ForecastPage() {
         <div className="flex flex-wrap items-center gap-3 px-6 py-3">
           <ForecastSelectors orientation="horizontal" theme="light" />
 
+          {/* Currency this client forecasts in — amounts entered are in this
+              currency (the dashboard converts everything to CAD). */}
+          {selectedClient && (
+            <ForecastCurrencyBadge currency={selectedClient.CL_Currency ?? "CAD"} />
+          )}
+
           {/* Labs penetration panel toggle (Labs tab only). */}
           {tab === "labs" && (
             <button
@@ -510,6 +516,27 @@ export default function ForecastPage() {
         />
       )}
     </div>
+  );
+}
+
+// ─── Currency indicator ──────────────────────────────────────────────────────
+// Shows which currency the selected client forecasts in. USD is highlighted
+// since CAD is the default; the dashboard converts everything to CAD.
+
+function ForecastCurrencyBadge({ currency }: { currency: Currency }) {
+  const isUsd = currency === "USD";
+  return (
+    <span
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-lg border ${
+        isUsd
+          ? "border-blue-200 bg-blue-50 text-blue-700"
+          : "border-gray-200 bg-gray-50 text-gray-600"
+      }`}
+      title={`This client forecasts in ${currency}.`}
+    >
+      <DollarSign size={14} />
+      Forecasting in {currency}
+    </span>
   );
 }
 

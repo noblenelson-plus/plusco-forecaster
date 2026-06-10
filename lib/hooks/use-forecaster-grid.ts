@@ -25,13 +25,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth-context";
 import { useUserProfile } from "./use-user-profile";
 import { useForecastSelection } from "../stores/forecast-selection.store";
-import { fetchAxisData, saveAxisData } from "../services/data-entry-service";
+import {
+  fetchAxisData,
+  fetchAxisDataWithMeta,
+  saveAxisData,
+} from "../services/data-entry-service";
 import {
   fetchAnnualActuals,
+  fetchAnnualActualsWithMeta,
   saveAnnualActuals,
 } from "../services/annual-actuals-service";
 import { MONTHS, type MonthlyMap } from "../types/common.types";
-import { resolveClosedMonths } from "../types/rfq.types";
+import { resolveClosedMonths, type RFQType } from "../types/rfq.types";
+import { useAutosave, type SaveStatus } from "./use-autosave";
 import {
   type AxisConfig,
   type AxisData,
@@ -39,6 +45,7 @@ import {
   type ComparisonRef,
   type DirtyMap,
   type ForecastRow,
+  type InputCategory,
   buildCellKey,
   emptyAxisData,
   newBucket,
@@ -74,6 +81,18 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** Which sides (BL buckets / ADMIN actuals) differ between two snapshots. Drives
+ *  the per-side "last updated" stamps so a save only times the side it changed. */
+function diffSides(
+  snapshot: AxisData,
+  base: AxisData
+): { bl: boolean; actuals: boolean } {
+  return {
+    bl: JSON.stringify(snapshot.buckets) !== JSON.stringify(base.buckets),
+    actuals: JSON.stringify(snapshot.actuals) !== JSON.stringify(base.actuals),
+  };
+}
+
 /** Lit la valeur d'une coordonnée dans un AxisData (0 si absente). */
 function getValueIn(data: AxisData, coord: CellCoord): number {
   if (coord.category === "ADMIN_INPUT") {
@@ -94,6 +113,10 @@ export interface UseForecasterGridResult {
   loading: boolean;
   saving: boolean;
   error: string;
+  /** Autosave state for the toolbar indicator (debounced save runs on edit). */
+  saveStatus: SaveStatus;
+  /** Per-side last-save timestamps (ISO): BL_INPUT and ADMIN_INPUT (actuals). */
+  lastUpdated: { bl?: string; actuals?: string };
 
   /** RFQ verrouillé → aucune édition, pour personne. */
   locked: boolean;
@@ -135,6 +158,17 @@ export interface UseForecasterGridResult {
   removeBucket: (bucketId: string) => void;
   addRow: (bucketId: string, rowType: string) => void;
   removeRow: (bucketId: string, rowId: string) => void;
+  /**
+   * Set (or clear, when empty) the free-text note on a row. Targets a BL row by
+   * (bucketId, rowId) or an actuals row by rowId with bucketId null. Persisted
+   * with the grid's explicit Save like any structure change.
+   */
+  setRowNote: (
+    category: InputCategory,
+    bucketId: string | null,
+    rowId: string,
+    note: string
+  ) => void;
   /** Actuals (ADMIN_INPUT) — lignes typées, sans bucket. */
   addActualsRow: (rowType: string) => void;
   removeActualsRow: (rowId: string) => void;
@@ -212,9 +246,24 @@ export function useForecasterGrid(
   const [dirtyMap, setDirtyMap] = useState<DirtyMap>(new Map());
   const [structureDirty, setStructureDirty] = useState(false);
 
+  // The context the loaded snapshot belongs to. Saves write here — not to the
+  // current selection — so an autosave (or a flush triggered by switching
+  // client/year/RFQ) always lands on the right doc even if the selection has
+  // already moved on while the new data is still loading.
+  const loadedCtxRef = useRef<{
+    cl_id: string;
+    year: number;
+    rfqType: RFQType;
+  } | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Per-side last-save timestamps for the loaded context (display only).
+  const [lastUpdated, setLastUpdated] = useState<{
+    bl?: string;
+    actuals?: string;
+  }>({});
 
   // Comparaison — base fixe (BL du RFQ courant) vs référence (rfq, side)
   const [compareRef, setCompareRef] = useState<ComparisonRef | null>(null);
@@ -241,22 +290,26 @@ export function useForecasterGrid(
     // source is annual (Media, Labs) — shared across the year's submissions —
     // and from the submission doc otherwise (Revenue's GAIA).
     Promise.all([
-      fetchAxisData(
+      fetchAxisDataWithMeta(
         selectedClient!.cl_id,
         selectedYear!,
         selectedRFQ!.type,
         config.axisId
       ),
       config.annualActuals
-        ? fetchAnnualActuals(selectedClient!.cl_id, selectedYear!, config.axisId)
+        ? fetchAnnualActualsWithMeta(
+            selectedClient!.cl_id,
+            selectedYear!,
+            config.axisId
+          )
         : Promise.resolve(null),
     ])
-      .then(([axisData, annualActuals]) => {
+      .then(([axisRes, annualRes]) => {
         if (cancelled) return;
         const merged =
-          annualActuals !== null
-            ? { ...axisData, actuals: annualActuals }
-            : axisData;
+          annualRes !== null
+            ? { ...axisRes.data, actuals: annualRes.rows }
+            : axisRes.data;
         // Revenue seeds its fixed rows here so they belong to the clean
         // snapshot and never read as unsaved changes.
         const normalized = normalizeLoaded ? normalizeLoaded(merged) : merged;
@@ -264,6 +317,21 @@ export function useForecasterGrid(
         setData(clone(normalized));
         setDirtyMap(new Map());
         setStructureDirty(false);
+        // Per-side last-save stamps. Annual axes (Media, Labs) read the actuals
+        // stamp from the shared annual doc; others (Revenue) from the submission
+        // doc, alongside the BL stamp.
+        setLastUpdated({
+          bl: axisRes.meta.blUpdatedAt,
+          actuals:
+            annualRes !== null
+              ? annualRes.updatedAt
+              : axisRes.meta.actualsUpdatedAt,
+        });
+        loadedCtxRef.current = {
+          cl_id: selectedClient!.cl_id,
+          year: selectedYear!,
+          rfqType: selectedRFQ!.type,
+        };
       })
       .catch((err) => {
         if (!cancelled) {
@@ -276,6 +344,10 @@ export function useForecasterGrid(
 
     return () => {
       cancelled = true;
+      // Switching context (or unmounting) while edits are pending: persist them
+      // to the doc they belong to before the new data overwrites the working
+      // copy. Fire-and-forget — no state updates, since this view is moving on.
+      flushOnSwitchRef.current();
     };
     // selectedRFQ.rfq_id suffit — le statut (lock) est géré à part
   }, [
@@ -643,6 +715,34 @@ export function useForecasterGrid(
     });
   }, []);
 
+  // Note d'une ligne — stockée sur la row, persistée au Save comme une
+  // modification de structure. Une note vide retire le champ (le bouton se
+  // décolore et rien d'inutile n'est écrit dans Firestore).
+  const setRowNote = useCallback(
+    (
+      category: InputCategory,
+      bucketId: string | null,
+      rowId: string,
+      note: string
+    ) => {
+      const trimmed = note.trim();
+      setData((prev) => {
+        const next = clone(prev);
+        const rows =
+          category === "ADMIN_INPUT"
+            ? next.actuals
+            : next.buckets.find((b) => b.bucketId === bucketId)?.rows;
+        const row = rows?.find((r) => r.rowId === rowId);
+        if (!row) return prev;
+        if (trimmed) row.note = trimmed;
+        else delete row.note;
+        return next;
+      });
+      setStructureDirty(true);
+    },
+    []
+  );
+
   // ─── Actuals (ADMIN_INPUT) — lignes typées, sans bucket ─────────────────
 
   const addActualsRow = useCallback(
@@ -682,11 +782,15 @@ export function useForecasterGrid(
 
   const hasChanges = dirtyMap.size > 0 || structureDirty;
 
-  const save = useCallback(async () => {
-    if (!selectionReady || locked || !hasChanges) return;
-    setSaving(true);
-    setError("");
-    try {
+  // Pure write — persists a snapshot to a given context with no React state
+  // changes. Shared by the stateful save() and the fire-and-forget flush that
+  // runs when the view switches context or unmounts mid-edit.
+  const persist = useCallback(
+    async (
+      ctx: { cl_id: string; year: number; rfqType: RFQType },
+      snapshot: AxisData,
+      changes: { bl: boolean; actuals: boolean }
+    ) => {
       if (config.annualActuals) {
         // Annual-actuals axis: BL buckets persist on the submission doc (actuals
         // cleared there to purge any legacy per-submission copy); the actuals go
@@ -694,57 +798,87 @@ export function useForecasterGrid(
         // actually changed — a BL never edits them (admin-only) and so never
         // triggers a write the security rules would reject.
         await saveAxisData(
-          selectedClient!.cl_id,
-          selectedYear!,
-          selectedRFQ!.type,
+          ctx.cl_id,
+          ctx.year,
+          ctx.rfqType,
           config.axisId,
-          { buckets: effectiveData.buckets, actuals: [] },
-          user?.uid
+          { buckets: snapshot.buckets, actuals: [] },
+          user?.uid,
+          { touchedBL: changes.bl, touchedActuals: false }
         );
-        const actualsChanged =
-          JSON.stringify(effectiveData.actuals) !==
-          JSON.stringify(original.actuals);
-        if (actualsChanged) {
+        if (changes.actuals) {
           await saveAnnualActuals(
-            selectedClient!.cl_id,
-            selectedYear!,
+            ctx.cl_id,
+            ctx.year,
             config.axisId,
-            effectiveData.actuals,
+            snapshot.actuals,
             user?.uid
           );
         }
       } else {
+        // One doc holds BL + actuals (Revenue's GAIA); stamp each side that
+        // changed so the two "last updated" times track independently.
         await saveAxisData(
-          selectedClient!.cl_id,
-          selectedYear!,
-          selectedRFQ!.type,
+          ctx.cl_id,
+          ctx.year,
+          ctx.rfqType,
           config.axisId,
-          effectiveData,
-          user?.uid
+          snapshot,
+          user?.uid,
+          { touchedBL: changes.bl, touchedActuals: changes.actuals }
         );
       }
+    },
+    [config.axisId, config.annualActuals, user?.uid]
+  );
+
+  const save = useCallback(async () => {
+    const ctx = loadedCtxRef.current;
+    if (!ctx || locked || !hasChanges) return;
+    setSaving(true);
+    setError("");
+    const changes = diffSides(effectiveData, original);
+    try {
+      await persist(ctx, effectiveData, changes);
       setOriginal(clone(effectiveData));
       setDirtyMap(new Map());
       setStructureDirty(false);
+      // Reflect the new save times locally so the indicator updates without a
+      // refetch — only for the side(s) actually written.
+      const now = new Date().toISOString();
+      setLastUpdated((prev) => ({
+        bl: changes.bl ? now : prev.bl,
+        actuals: changes.actuals ? now : prev.actuals,
+      }));
       onSavedRef.current?.(effectiveData);
     } catch (err: any) {
       setError("Failed to save: " + (err?.message ?? "Unknown error"));
     } finally {
       setSaving(false);
     }
-  }, [
-    selectionReady,
-    locked,
+  }, [locked, hasChanges, persist, effectiveData, original]);
+
+  // Latest fire-and-forget flush — refreshed every render so the load effect's
+  // cleanup (context switch / unmount) persists the most recent edits to the
+  // doc they belong to, without touching state on a view that's going away.
+  const flushOnSwitchRef = useRef<() => void>(() => {});
+  flushOnSwitchRef.current = () => {
+    const ctx = loadedCtxRef.current;
+    if (!ctx || !hasChanges) return;
+    void persist(ctx, effectiveData, diffSides(effectiveData, original)).catch(
+      () => {}
+    );
+  };
+
+  // Debounced autosave + leave-guards (tab hide, page unload). Disabled on a
+  // locked RFQ, where nothing can become dirty anyway.
+  const { status: saveStatus } = useAutosave({
     hasChanges,
-    selectedClient,
-    selectedYear,
-    selectedRFQ,
-    config.axisId,
-    config.annualActuals,
-    effectiveData,
-    original,
-    user?.uid,
-  ]);
+    saving,
+    error: !!error,
+    save,
+    disabled: locked,
+  });
 
   const discard = useCallback(() => {
     setData(clone(original));
@@ -758,6 +892,8 @@ export function useForecasterGrid(
     loading,
     saving,
     error,
+    saveStatus,
+    lastUpdated,
     locked,
     canEditActuals: isAdmin && !locked,
     closedMonths,
@@ -775,6 +911,7 @@ export function useForecasterGrid(
     removeBucket,
     addRow,
     removeRow,
+    setRowNote,
     addActualsRow,
     removeActualsRow,
     compareRef,
