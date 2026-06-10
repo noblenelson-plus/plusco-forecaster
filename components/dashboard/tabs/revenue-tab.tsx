@@ -1,10 +1,12 @@
-// components/dashboard/tabs/revenue-tab.tsx
+//# filepath: components/dashboard/tabs/revenue-tab.tsx
+"use client";
 
 /**
  * Revenue tab — KPIs (total revenue, total media, revenue/media ratio), a
  * stream mix (donut), per-stream comparison (bars), a monthly stacked bar by
  * stream, the best/worst clients by revenue-to-media ratio, and a downloadable
  * per-client × stream detail table.
+ * * Updated to accept `comparisonData` and calculate variance for the StatCards.
  */
 
 import {
@@ -16,7 +18,8 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { MONTHS, sumMonthlyMap } from "../../../lib/types/common.types";
-import StatCard from "../charts/stat-card";
+import { computeVariance } from "../../../lib/types/forecaster.types";
+import StatCard, { type StatVariance } from "../charts/stat-card";
 import ChartCard from "../charts/chart-card";
 import DonutChart from "../charts/donut-chart";
 import BarList from "../charts/bar-list";
@@ -32,12 +35,45 @@ const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 
 const sumAll = (byKey: Record<string, Record<number, number>>) =>
   Object.values(byKey).reduce((acc, m) => acc + sumMonthlyMap(m), 0);
 
+/**
+ * Helper to compute and format the variance for the StatCards.
+ */
+function getVariance(
+  current: number,
+  reference: number | null | undefined,
+  favorableUp: boolean = true,
+  formatType: "money" | "pct" | "raw" = "money"
+): StatVariance | null {
+  if (reference == null || reference === 0) return null;
+  
+  const v = computeVariance(current, reference);
+  if (v.absolute === 0) return { pillLabel: "0%", isFavorable: true, absoluteLabel: "0" };
+
+  const up = v.absolute > 0;
+  const isFavorable = up === favorableUp;
+  const rel = v.relative !== null ? Math.round(v.relative) : 0;
+  const pillLabel = rel > 0 ? `+${rel}%` : `${rel}%`;
+
+  const absFormatted = 
+    formatType === "pct" 
+      ? formatPct(v.absolute) 
+      : formatType === "raw" 
+        ? String(v.absolute) 
+        : formatCompactMoney(v.absolute);
+        
+  const absoluteLabel = up ? `+${absFormatted}` : absFormatted.replace("-", "−");
+
+  return { pillLabel, isFavorable, absoluteLabel };
+}
+
 export default function RevenueTab({
   data,
+  comparisonData,
   clientNameById,
   fileLabel,
 }: {
   data: ScopeForecastData;
+  comparisonData: ScopeForecastData;
   clientNameById: Record<string, string>;
   fileLabel?: string;
 }) {
@@ -52,6 +88,13 @@ export default function RevenueTab({
   const { revenue, media } = data;
   const streams = revenue.byStream.filter((s) => s.annual > 0);
   const ratio = media.totalAnnual > 0 ? revenue.totalAnnual / media.totalAnnual : null;
+
+  // Comparison data
+  const compRevenue = comparisonData.hasContext ? comparisonData.revenue : null;
+  const compMedia = comparisonData.hasContext ? comparisonData.media : null;
+  const compRatio = compMedia && compMedia.totalAnnual > 0 && compRevenue 
+    ? compRevenue.totalAnnual / compMedia.totalAnnual 
+    : null;
 
   // Per-client Revenue / Media ratios, for the best/worst lists. Only clients
   // with media spend (a non-zero denominator) qualify.
@@ -92,12 +135,14 @@ export default function RevenueTab({
           label="Total revenue"
           value={formatCompactMoney(revenue.totalAnnual)}
           sub={`${data.clientsWithData} of ${data.clientCount} clients with data`}
+          variance={getVariance(revenue.totalAnnual, compRevenue?.totalAnnual)}
         />
         <StatCard
           icon={BarChart3}
           label="Total media spend"
           value={formatCompactMoney(media.totalAnnual)}
           accent="text-indigo-500"
+          variance={getVariance(media.totalAnnual, compMedia?.totalAnnual)}
         />
         <StatCard
           icon={Percent}
@@ -105,6 +150,7 @@ export default function RevenueTab({
           value={ratio !== null ? formatPct(ratio) : "—"}
           sub="revenue per $ of media spend"
           accent="text-emerald-500"
+          variance={getVariance(ratio ?? 0, compRatio ?? 0, true, "pct")}
         />
       </div>
 

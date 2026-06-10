@@ -2,16 +2,21 @@
 "use client";
 
 /**
- * Dashboard time/context bar — Year + RFQ only. The client scope lives in the
- * separate multi-select filter bar, so the single-client selector is hidden
- * here via ForecastSelectors' `fields` prop.
+ * Dashboard time/context bar — primary Year + RFQ on the left, a "vs" divider,
+ * and a second comparison Year + RFQ on the right. The comparison pair is
+ * written to useComparisonSelection and drives the variance below each
+ * scorecard.
  *
- * It also carries the currency indicator: the dashboard always aggregates and
- * displays amounts in CAD, converting USD clients with the year's rate.
+ * The single-client selector lives in the separate multi-select filter bar, so
+ * both pairs hide the client field via ForecastSelectors' `fields` prop.
+ *
+ * The bar also carries the currency indicator: the dashboard always aggregates
+ * and displays amounts in CAD, converting USD clients with the year's rate.
  */
 
 import { DollarSign, AlertTriangle } from "lucide-react";
 import ForecastSelectors from "../_shared/forecast-selectors";
+import { useComparisonSelection } from "../../lib/stores/comparison-selection.store";
 
 interface DashboardContextBarProps {
   /** USD→CAD rate applied for the selected year (undefined when none is set). */
@@ -27,13 +32,41 @@ export default function DashboardContextBar({
   usdClientCount = 0,
   missingRate = false,
 }: DashboardContextBarProps = {}) {
+  const {
+    comparisonYear,
+    comparisonRFQ,
+    setComparisonYear,
+    setComparisonRFQ,
+  } = useComparisonSelection();
+
   return (
     <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50/30">
       <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 select-none mr-2">
         Time &amp; Context
       </span>
       <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
+
+      {/* Primary scope — drives every chart and table on the dashboard. */}
       <ForecastSelectors orientation="horizontal" theme="light" fields={["year", "rfq"]} />
+
+      {/* "vs" divider — same label styling as "Time & Context" so the two
+          groups read as parallel halves. */}
+      <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 select-none mx-1">
+        vs
+      </span>
+
+      {/* Comparison scope — drives the variance below each scorecard. */}
+      <ForecastSelectors
+        orientation="horizontal"
+        theme="light"
+        fields={["year", "rfq"]}
+        override={{
+          year: comparisonYear,
+          rfq: comparisonRFQ,
+          setYear: setComparisonYear,
+          setRFQ: setComparisonRFQ,
+        }}
+      />
 
       {/* Currency indicator — the dashboard always reports in CAD. */}
       <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
