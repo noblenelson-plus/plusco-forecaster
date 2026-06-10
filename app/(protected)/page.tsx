@@ -1,4 +1,4 @@
-// app/(protected)/page.tsx
+// filepath: app/(protected)/page.tsx
 "use client";
 
 /**
@@ -6,9 +6,9 @@
  * filtered client scope for the globally-selected Year + RFQ.
  *
  * Composition:
- *   [Context bar]  Year · RFQ (global submission context)
- *   [Filter bar]   dynamic, cascading multi-select facets → client scope
- *   [Grid]         widgets from the registry, rendered against that scope
+ * [Context bar]  Year · RFQ (global submission context)
+ * [Filter bar]   dynamic, cascading multi-select facets → client scope
+ * [Grid]         widgets from the registry, rendered against that scope
  */
 
 import { useMemo, useState } from "react";
@@ -27,12 +27,18 @@ import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
+import { useComparisonSelection } from "../../lib/stores/comparison-selection.store";
 import type { DashboardScope } from "../../lib/dashboard/widgets/widget.types";
 
 export default function DashboardPage() {
   const { clients, loading, error } = useAccessibleClients();
   const usersMap = useUsersMap();
+  
+  // Primary Context
   const { selectedYear, selectedRFQ } = useForecastSelection();
+  
+  // Comparison Context
+  const { comparisonYear, comparisonRFQ } = useComparisonSelection();
 
   const {
     facetViews,
@@ -42,20 +48,30 @@ export default function DashboardPage() {
     reset,
   } = useDashboardFilters(clients, usersMap);
 
+  // Primary Scope
   const scope = useMemo<DashboardScope>(
     () => ({ clientIds: filteredClientIds, year: selectedYear, rfq: selectedRFQ }),
     [filteredClientIds, selectedYear, selectedRFQ]
   );
 
-  // Active analysis tab + the forecast data for the current scope. The data is
+  // Comparison Scope
+  const comparisonScope = useMemo<DashboardScope>(
+    () => ({ clientIds: filteredClientIds, year: comparisonYear, rfq: comparisonRFQ }),
+    [filteredClientIds, comparisonYear, comparisonRFQ]
+  );
+
+  // Active analysis tab + the forecast data for both scopes. The data is
   // fetched once here (not per tab) so switching tabs doesn't refetch.
   const [tab, setTab] = useState<DashboardTab>("media");
+  
   const forecastData = useScopeForecastData(scope);
+  const comparisonData = useScopeForecastData(comparisonScope);
 
   const clientNameById = useMemo(
     () => Object.fromEntries(clients.map((c) => [c.cl_id, c.CL_Name])),
     [clients]
   );
+  
   const fileLabel =
     selectedYear && selectedRFQ ? `${selectedYear}-${selectedRFQ.type}` : undefined;
 
@@ -114,18 +130,21 @@ export default function DashboardPage() {
         ) : tab === "media" ? (
           <MediaSpendTab
             data={forecastData}
+            comparisonData={comparisonData}
             clientNameById={clientNameById}
             fileLabel={fileLabel}
           />
         ) : tab === "revenue" ? (
           <RevenueTab
             data={forecastData}
+            comparisonData={comparisonData}
             clientNameById={clientNameById}
             fileLabel={fileLabel}
           />
         ) : (
           <LabsTab
             data={forecastData}
+            comparisonData={comparisonData}
             clientNameById={clientNameById}
             fileLabel={fileLabel}
           />

@@ -1,18 +1,21 @@
-// components/dashboard/tabs/labs-tab.tsx
+//# filepath: components/dashboard/tabs/labs-tab.tsx
+"use client";
 
 /**
  * Labs tab — the Labs/Media penetration story:
- *   • KPI strip (share rate, partners, channels over cap)
- *   • Labs share % by month (area, with the 25% target line)
- *   • Labs share by media type (bars) · Spend by partner (bars)
- *   • Recap table by media type
+ * • KPI strip (share rate, partners, channels over cap)
+ * • Labs share % by month (area, with the 25% target line)
+ * • Labs share by media type (bars) · Spend by partner (bars)
+ * • Recap table by media type
+ * * Updated to accept `comparisonData` and calculate variance for the StatCards.
  */
 
 import { FlaskConical, Percent, Users, AlertTriangle, CalendarRange } from "lucide-react";
 import { MONTHS } from "../../../lib/types/common.types";
+import { computeVariance } from "../../../lib/types/forecaster.types";
 import { MEDIA_TYPE_LABELS } from "../../../lib/types/forecaster.types";
 import { MEDIA_TYPE_COLORS, LABS_COLOR } from "../charts/colors";
-import StatCard from "../charts/stat-card";
+import StatCard, { type StatVariance } from "../charts/stat-card";
 import ChartCard from "../charts/chart-card";
 import BarList from "../charts/bar-list";
 import TrendChart from "../charts/trend-chart";
@@ -24,12 +27,45 @@ import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-fo
 
 const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 0);
 
+/**
+ * Helper to compute and format the variance for the StatCards.
+ */
+function getVariance(
+  current: number,
+  reference: number | null | undefined,
+  favorableUp: boolean = true,
+  formatType: "money" | "pct" | "raw" = "money"
+): StatVariance | null {
+  if (reference == null || reference === 0) return null;
+  
+  const v = computeVariance(current, reference);
+  if (v.absolute === 0) return { pillLabel: "0%", isFavorable: true, absoluteLabel: "0" };
+
+  const up = v.absolute > 0;
+  const isFavorable = up === favorableUp;
+  const rel = v.relative !== null ? Math.round(v.relative) : 0;
+  const pillLabel = rel > 0 ? `+${rel}%` : `${rel}%`;
+
+  const absFormatted = 
+    formatType === "pct" 
+      ? formatPct(v.absolute) 
+      : formatType === "raw" 
+        ? String(v.absolute) 
+        : formatCompactMoney(v.absolute);
+        
+  const absoluteLabel = up ? `+${absFormatted}` : absFormatted.replace("-", "−");
+
+  return { pillLabel, isFavorable, absoluteLabel };
+}
+
 export default function LabsTab({
   data,
+  comparisonData,
   clientNameById,
   fileLabel,
 }: {
   data: ScopeForecastData;
+  comparisonData: ScopeForecastData;
   clientNameById: Record<string, string>;
   fileLabel?: string;
 }) {
@@ -41,6 +77,8 @@ export default function LabsTab({
     return <EmptyDataNotice message="No Labs or media spend has been entered for this scope yet." />;
   }
 
+  const compLabs = comparisonData.hasContext ? comparisonData.labs : null;
+
   const target = labs.targetRatio;
   const onTarget = labs.ratio !== null && labs.ratio >= target;
 
@@ -48,7 +86,14 @@ export default function LabsTab({
     (acc, t) => acc + t.partners.filter((p) => p.annual > 0).length,
     0
   );
+  
+  const compPartnersWithSpend = compLabs?.byType.reduce(
+    (acc, t) => acc + t.partners.filter((p) => p.annual > 0).length,
+    0
+  );
+
   const overCount = labs.byType.filter((t) => t.over).length;
+  const compOverCount = compLabs?.byType.filter((t) => t.over).length;
 
   // Labs share (%) per month: monthly Labs spend over monthly planned media.
   const labsPoints = monthsToPoints(data.labsMonthly);
@@ -87,6 +132,7 @@ export default function LabsTab({
           label="Total Labs spend"
           value={formatCompactMoney(labs.totalLabs)}
           sub={`${data.clientsWithData} of ${data.clientCount} clients with data`}
+          variance={getVariance(labs.totalLabs, compLabs?.totalLabs)}
         />
         <StatCard
           icon={Percent}
@@ -94,6 +140,7 @@ export default function LabsTab({
           value={formatPct(labs.ratio)}
           sub={`Target ${formatPct(target)}`}
           accent={onTarget ? "text-emerald-500" : "text-yellow-500"}
+          variance={getVariance(labs.ratio ?? 0, compLabs?.ratio ?? 0, true, "pct")}
         />
         <StatCard
           icon={Users}
@@ -101,6 +148,7 @@ export default function LabsTab({
           value={String(partnersWithSpend)}
           sub="with spend in scope"
           accent="text-indigo-500"
+          variance={getVariance(partnersWithSpend, compPartnersWithSpend, true, "raw")}
         />
         <StatCard
           icon={AlertTriangle}
@@ -108,6 +156,7 @@ export default function LabsTab({
           value={String(overCount)}
           sub="Labs above planned media"
           accent={overCount > 0 ? "text-red-500" : "text-gray-400"}
+          variance={getVariance(overCount, compOverCount, false, "raw")}
         />
       </div>
 

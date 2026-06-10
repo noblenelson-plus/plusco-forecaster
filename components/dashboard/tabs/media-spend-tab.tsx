@@ -1,10 +1,12 @@
-// components/dashboard/tabs/media-spend-tab.tsx
+//# filepath: components/dashboard/tabs/media-spend-tab.tsx
+"use client";
 
 /**
  * Media Spend tab — headline KPIs over a mix of charts:
- *   • Channel mix (donut)          • Top 10 clients by spend, by type (stacked)
- *   • Digital channel detail (bars)  • Digital vs traditional monthly (trend)
+ * • Channel mix (donut)          • Top 10 clients by spend, by type (stacked)
+ * • Digital channel detail (bars)  • Digital vs traditional monthly (trend)
  * then a per-client / per-media-type data table with CSV export.
+ * * Updated to accept `comparisonData` and calculate variance for the StatCards.
  */
 
 import {
@@ -16,7 +18,8 @@ import {
   Users,
 } from "lucide-react";
 import { MONTHS, sumMonthlyMap } from "../../../lib/types/common.types";
-import StatCard from "../charts/stat-card";
+import { computeVariance } from "../../../lib/types/forecaster.types";
+import StatCard, { type StatVariance } from "../charts/stat-card";
 import ChartCard from "../charts/chart-card";
 import DonutChart from "../charts/donut-chart";
 import BarList from "../charts/bar-list";
@@ -31,12 +34,39 @@ import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-fo
 
 const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 0);
 
+/**
+ * Helper to compute and format the variance for the StatCards.
+ */
+function getVariance(
+  current: number,
+  reference: number | null | undefined,
+  favorableUp: boolean = true,
+  isPct: boolean = false
+): StatVariance | null {
+  if (reference == null || reference === 0) return null;
+  
+  const v = computeVariance(current, reference);
+  if (v.absolute === 0) return { pillLabel: "0%", isFavorable: true, absoluteLabel: "0" };
+
+  const up = v.absolute > 0;
+  const isFavorable = up === favorableUp;
+  const rel = v.relative !== null ? Math.round(v.relative) : 0;
+  const pillLabel = rel > 0 ? `+${rel}%` : `${rel}%`;
+
+  const absFormatted = isPct ? formatPct(v.absolute) : formatCompactMoney(v.absolute);
+  const absoluteLabel = up ? `+${absFormatted}` : absFormatted.replace("-", "−");
+
+  return { pillLabel, isFavorable, absoluteLabel };
+}
+
 export default function MediaSpendTab({
   data,
+  comparisonData,
   clientNameById,
   fileLabel,
 }: {
   data: ScopeForecastData;
+  comparisonData: ScopeForecastData;
   clientNameById: Record<string, string>;
   fileLabel?: string;
 }) {
@@ -45,6 +75,8 @@ export default function MediaSpendTab({
   if (data.media.totalAnnual === 0) return <EmptyDataNotice />;
 
   const { media } = data;
+  const compMedia = comparisonData.hasContext ? comparisonData.media : null;
+
   const channels = media.byChannel.filter((c) => c.annual > 0);
   const digitalChannels = channels.filter((c) => c.digital);
 
@@ -77,6 +109,7 @@ export default function MediaSpendTab({
           label="Total media spend"
           value={formatCompactMoney(media.totalAnnual)}
           sub={`${data.clientsWithData} of ${data.clientCount} clients with data`}
+          variance={getVariance(media.totalAnnual, compMedia?.totalAnnual)}
         />
         <StatCard
           icon={Percent}
@@ -84,12 +117,14 @@ export default function MediaSpendTab({
           value={formatPct(media.digitalShare)}
           sub="SEM · Social · Prog · Direct"
           accent="text-indigo-500"
+          variance={getVariance(media.digitalShare ?? 0, compMedia?.digitalShare ?? 0, true, true)}
         />
         <StatCard
           icon={Monitor}
           label="Digital spend"
           value={formatCompactMoney(media.digitalAnnual)}
           accent="text-indigo-500"
+          variance={getVariance(media.digitalAnnual, compMedia?.digitalAnnual)}
         />
         <StatCard
           icon={Building2}
@@ -97,6 +132,7 @@ export default function MediaSpendTab({
           value={formatCompactMoney(media.traditionalAnnual)}
           sub="OOH · Print · TV · Radio"
           accent="text-gray-400"
+          variance={getVariance(media.traditionalAnnual, compMedia?.traditionalAnnual)}
         />
       </div>
 
