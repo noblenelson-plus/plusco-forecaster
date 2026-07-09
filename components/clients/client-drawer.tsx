@@ -64,6 +64,7 @@ const EMPTY_FORM: ClientFormData = {
   CL_Hidden: false,
   Forecasting_Type: { ...DEFAULT_FORECASTING_TYPE },
   Labs_Eligibility: {},
+  CL_MediaBox_IDs: [],
   Client_Notes: "",
   commissionsConfig: {},
 };
@@ -91,6 +92,7 @@ export default function ClientDrawer({
 
   const [form, setForm] = useState<ClientFormData>(EMPTY_FORM);
   const [gaiaInput, setGaiaInput] = useState("");
+  const [mediaboxInput, setMediaboxInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -137,13 +139,16 @@ export default function ClientDrawer({
         CL_Hidden: client.CL_Hidden ?? false,
         Forecasting_Type: client.Forecasting_Type ?? { ...DEFAULT_FORECASTING_TYPE },
         Labs_Eligibility: client.Labs_Eligibility ?? {},
+        CL_MediaBox_IDs: client.CL_MediaBox_IDs ?? [],
         Client_Notes: client.Client_Notes ?? "",
         commissionsConfig: client.commissionsConfig ?? {},
       });
       setGaiaInput((client.CL_GAIA_Number ?? []).join(", "));
+      setMediaboxInput((client.CL_MediaBox_IDs ?? []).join(", "));
     } else {
       setForm(EMPTY_FORM);
       setGaiaInput("");
+      setMediaboxInput("");
     }
     setError("");
     setConfirmDelete(false);
@@ -255,6 +260,11 @@ export default function ClientDrawer({
       .map((s) => s.trim())
       .filter(Boolean);
 
+    const mediaboxIds = mediaboxInput
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     setSaving(true);
     setError("");
 
@@ -270,7 +280,7 @@ export default function ClientDrawer({
       }
 
       const saved = await saveClient(
-        { ...form, CL_GAIA_Number: gaiaNumbers },
+        { ...form, CL_GAIA_Number: gaiaNumbers, CL_MediaBox_IDs: mediaboxIds },
         client?.cl_id ?? null
       );
       onSaved(saved);
@@ -642,6 +652,18 @@ export default function ClientDrawer({
               />
               <p className="text-xs text-gray-400 mt-1">
                 Separate multiple GAIA numbers with commas.
+              </p>
+            </Field>
+
+            <Field label="MediaBox client ID(s)">
+              <Input
+                value={mediaboxInput}
+                onChange={setMediaboxInput}
+                placeholder="e.g. abc123, def456"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                MediaBox client document IDs this client maps to (their actuals
+                are summed). Separate multiple IDs with commas.
               </p>
             </Field>
 

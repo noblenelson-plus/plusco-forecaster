@@ -236,13 +236,24 @@ function PartnerRow({
 
   return (
     <div className="group flex items-center gap-2 py-1.5">
-      {/* Name — takes the slack, truncates */}
-      <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span
-          className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-          style={{ backgroundColor: color }}
-        />
-        <span className="truncate text-sm text-gray-700">{partner.name}</span>
+      {/* Name (+ description) — takes the slack, truncates */}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+            style={{ backgroundColor: color }}
+          />
+          <span className="truncate text-sm text-gray-700">{partner.name}</span>
+        </span>
+        {/* Disambiguates two partners sharing a name and media type. */}
+        {partner.description && (
+          <span
+            title={partner.description}
+            className="truncate pl-[18px] text-[11px] italic text-gray-400"
+          >
+            {partner.description}
+          </span>
+        )}
       </span>
 
       {/* Amount — fixed width, right-aligned */}

@@ -14,6 +14,7 @@ import { db } from "../firebase";
 import {
   RFQ,
   RFQFormData,
+  RFQPeriod,
   RFQStatus,
   buildRFQId,
   sortRFQs,
@@ -107,6 +108,21 @@ export async function updateRFQAxisClosedMonths(
   const sorted = [...new Set(months)].sort((a, b) => a - b);
   await updateDoc(doc(db, COLLECTION, rfq_id), {
     [`closedMonths.${axisId}`]: sorted,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Replaces the full set of timeline periods (échéancier) for an RFQ. The whole
+ * array is written so removals and reorders persist cleanly (a merge would let
+ * deleted entries linger).
+ */
+export async function updateRFQPeriods(
+  rfq_id: string,
+  periods: RFQPeriod[]
+): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, rfq_id), {
+    periods,
     updatedAt: new Date().toISOString(),
   });
 }

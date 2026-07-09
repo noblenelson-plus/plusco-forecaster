@@ -17,7 +17,7 @@
  *
  * Revenue is the exception: it mirrors the grid's source-of-truth logic instead
  * of a per-stream table — one "Official Revenue" line comparing the current
- * submission's per-month source of truth (GAIA Revenue > GAIA detail > BL) to
+ * submission's per-month source of truth (Official Revenue > GAIA detail > BL) to
  * the reference's, with the variance. The side picker and view toggle are hidden
  * for it.
  *
@@ -91,6 +91,8 @@ interface PanelRowData {
   /** rowType value — used to target this media type when distributing. */
   type: string;
   label: string;
+  /** Secondary description — disambiguates rows that share a label (Labs). */
+  description?: string;
   current: number;
   reference: number;
   /** Per-month profile of the base (BL Input) — drives the expandable detail. */
@@ -160,8 +162,8 @@ export default function ComparisonPanel({
   );
   const refAgg = useMemo(() => {
     if (revenueDetail) {
-      // GAIA detail of the same submission — the roll-up "GAIA Revenue" line is
-      // not a detail type, so it is excluded.
+      // GAIA detail of the same submission — the Official Revenue roll-up line
+      // is not a detail type, so it is excluded.
       const admin = aggregateByType(grid.data, "ADMIN_INPUT");
       delete admin[REVENUE_GAIA_FORECAST_TYPE];
       return admin;
@@ -191,16 +193,17 @@ export default function ComparisonPanel({
     const present = new Set([...Object.keys(baseAgg), ...Object.keys(refAgg)]);
     const ordered = config.rowTypeOptions
       .filter((o) => present.has(o.value))
-      .map((o) => ({ type: o.value, label: o.label }));
+      .map((o) => ({ type: o.value, label: o.label, description: o.description }));
     const extras = [...present]
       .filter((t) => !config.rowTypeOptions.some((o) => o.value === t))
-      .map((t) => ({ type: t, label: labelByType.get(t) ?? t }));
-    return [...ordered, ...extras].map(({ type, label }, i) => {
+      .map((t) => ({ type: t, label: labelByType.get(t) ?? t, description: undefined }));
+    return [...ordered, ...extras].map(({ type, label, description }, i) => {
       const currentMonths = baseAgg[type] ?? emptyMonthly();
       const referenceMonths = refAgg[type] ?? emptyMonthly();
       return {
         type,
         label,
+        description,
         current: sumMonths(currentMonths),
         reference: sumMonths(referenceMonths),
         currentMonths,
@@ -724,17 +727,27 @@ function ListTypeRow({
               : ""
           }`}
         >
-          <span className="flex min-w-0 items-center gap-2">
-            <span
-              className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: row.color }}
-            />
-            <span className="truncate text-sm text-gray-700">{row.label}</span>
-            {clickable && (
-              <SplitSquareHorizontal
-                size={12}
-                className="shrink-0 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100"
+          <span className="flex min-w-0 flex-col">
+            <span className="flex min-w-0 items-center gap-2">
+              <span
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                style={{ backgroundColor: row.color }}
               />
+              <span className="truncate text-sm text-gray-700">{row.label}</span>
+              {clickable && (
+                <SplitSquareHorizontal
+                  size={12}
+                  className="shrink-0 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100"
+                />
+              )}
+            </span>
+            {row.description && (
+              <span
+                title={row.description}
+                className="truncate pl-[18px] text-[11px] italic text-gray-400"
+              >
+                {row.description}
+              </span>
             )}
           </span>
 
@@ -858,6 +871,7 @@ function GrandTotalBar({
 
 function PanelRow({
   label,
+  description,
   current,
   reference,
   color,
@@ -886,17 +900,27 @@ function PanelRow({
           : ""
       }`}
     >
-      <span className="flex items-center gap-2 min-w-0">
-        <span
-          className="inline-block h-2.5 w-2.5 rounded-sm shrink-0"
-          style={{ backgroundColor: color }}
-        />
-        <span className="text-sm text-gray-700 truncate">{label}</span>
-        {clickable && (
-          <SplitSquareHorizontal
-            size={12}
-            className="shrink-0 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+      <span className="flex min-w-0 flex-col">
+        <span className="flex items-center gap-2 min-w-0">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-sm shrink-0"
+            style={{ backgroundColor: color }}
           />
+          <span className="text-sm text-gray-700 truncate">{label}</span>
+          {clickable && (
+            <SplitSquareHorizontal
+              size={12}
+              className="shrink-0 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+          )}
+        </span>
+        {description && (
+          <span
+            title={description}
+            className="truncate pl-[18px] text-[11px] italic text-gray-400"
+          >
+            {description}
+          </span>
         )}
       </span>
 
@@ -1022,16 +1046,26 @@ function BarsView({
 
         <div className="space-y-3">
           {rows.map((r) => (
-            <div key={r.label}>
+            <div key={r.type}>
               <div className="flex items-center justify-between gap-3 mb-1">
-                <span className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-sm shrink-0"
-                    style={{ backgroundColor: r.color }}
-                  />
-                  <span className="text-sm text-gray-700 truncate">
-                    {r.label}
+                <span className="flex min-w-0 flex-col">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-sm shrink-0"
+                      style={{ backgroundColor: r.color }}
+                    />
+                    <span className="text-sm text-gray-700 truncate">
+                      {r.label}
+                    </span>
                   </span>
+                  {r.description && (
+                    <span
+                      title={r.description}
+                      className="truncate pl-[18px] text-[11px] italic text-gray-400"
+                    >
+                      {r.description}
+                    </span>
+                  )}
                 </span>
                 <VariancePill current={r.current} reference={r.reference} />
               </div>

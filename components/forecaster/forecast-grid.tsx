@@ -23,7 +23,7 @@
  * Deletions (row/bucket) are local until Save — recoverable via Discard.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -35,18 +35,23 @@ import {
   FolderPlus,
   SplitSquareHorizontal,
   Download,
-  Info,
   Eye,
   EyeOff,
+  StickyNote,
 } from "lucide-react";
 import type {
   AxisConfig,
   ForecastBucket,
   ForecastRow,
   InputCategory,
+  RowDetail,
   RowTypeOption,
 } from "../../lib/types/forecaster.types";
-import { buildCellKey } from "../../lib/types/forecaster.types";
+import {
+  buildCellKey,
+  DETAIL_LEVEL_COUNT,
+  GENERAL_PROJECT_NAME,
+} from "../../lib/types/forecaster.types";
 import {
   type UseForecasterGridResult,
   sumMonths,
@@ -60,11 +65,15 @@ import {
 import { MONTHS } from "../../lib/types/common.types";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import { downloadAxisCSV } from "../../lib/format/forecast-csv";
+import { actualsTheme } from "../../lib/format/actuals-theme";
 import { SpreadsheetCell, TotalCell } from "./editable-cell";
 import SpreadDialog from "./spread-dialog";
 import NoteDialog from "./note-dialog";
+import RowActionsMenu from "./row-actions-menu";
+import SelectionTotal from "./selection-total";
 import SaveStatusIndicator from "./save-status";
 import GridLastUpdated from "./grid-last-updated";
+import MediaboxActualsSection from "./mediabox-actuals-section";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -83,8 +92,12 @@ const EMPTY_MONTHS: Set<number> = new Set();
 export interface RowMeta {
   /** Small chip shown after the label — e.g. the partner's media type. */
   badge?: string;
-  /** Hover tooltip on an info icon — e.g. the partner's description. */
-  tooltip?: string;
+  /**
+   * Secondary description shown inline, muted, after the label — e.g. the
+   * partner's description. Disambiguates rows that share a label (two Labs
+   * partners with the same name and media type).
+   */
+  description?: string;
 }
 
 interface ForecastGridProps {
@@ -94,15 +107,27 @@ interface ForecastGridProps {
   rowMeta?: (rowType: string) => RowMeta | undefined;
 }
 
-/** A single editable row in display order — BL rows first, then actuals. */
+/**
+ * A single editable row in display order — BL rows first, then actuals (each
+ * optionally followed by its expanded detail lines). `key` is unique per row
+ * (rowId, or detailId for a detail line) and indexes the selection model.
+ */
 interface OrderedRow {
+  key: string;
   rowId: string;
   category: InputCategory;
   bucketId: string | null;
+  detailId?: string | null;
+  /** Parent actuals row carrying detail lines — its months are derived
+   *  (row = Σ details) and read-only. */
+  hasDetails?: boolean;
 }
 
 export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProps) {
   const blReadOnly = grid.locked;
+
+  // Client/year drive the read-only MediaBox actuals section under MediaOcean.
+  const { selectedClient, selectedYear } = useForecastSelection();
 
   const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
 
@@ -114,6 +139,17 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
       const next = new Set(prev);
       if (next.has(bucketId)) next.delete(bucketId);
       else next.add(bucketId);
+      return next;
+    });
+
+  // Expanded actuals rows — their detail lines are shown (and, like collapsed
+  // buckets, only the visible detail cells join the selection model below).
+  const [expandedActuals, setExpandedActuals] = useState<Set<string>>(new Set());
+  const toggleActualsExpand = (rowId: string) =>
+    setExpandedActuals((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
       return next;
     });
 
@@ -139,6 +175,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
       if (collapsed.has(bucket.bucketId)) continue;
       for (const row of bucket.rows) {
         list.push({
+          key: row.rowId,
           rowId: row.rowId,
           category: "BL_INPUT",
           bucketId: bucket.bucketId,
@@ -147,27 +184,44 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
     }
     for (const row of grid.data.actuals) {
       list.push({
+        key: row.rowId,
         rowId: row.rowId,
         category: "ADMIN_INPUT",
         bucketId: null,
+        hasDetails: (row.details?.length ?? 0) > 0,
       });
+      // Detail-line budget cells join the grid only while the row is expanded.
+      if (expandedActuals.has(row.rowId)) {
+        for (const detail of row.details ?? []) {
+          list.push({
+            key: detail.detailId,
+            rowId: row.rowId,
+            category: "ADMIN_INPUT",
+            bucketId: null,
+            detailId: detail.detailId,
+          });
+        }
+      }
     }
     return list;
-  }, [grid.data, collapsed]);
+  }, [grid.data, collapsed, expandedActuals]);
 
   const rowIndex = useMemo(
-    () => new Map(orderedRows.map((r, i) => [r.rowId, i])),
+    () => new Map(orderedRows.map((r, i) => [r.key, i])),
     [orderedRows]
   );
 
   const descriptors = useMemo<GridRowDescriptor[]>(
     () =>
       orderedRows.map((r) => ({
-        key: r.rowId,
-        // Per-cell: actuals follow the admin flag; BL rows are locked when the
-        // RFQ is locked or — for a BL — when the month is a closed period.
+        key: r.key,
+        // Per-cell: actuals (and their details) follow the admin flag — except
+        // a parent with detail lines, whose months are derived (row = Σ
+        // details); BL rows are locked when the RFQ is locked or — for a BL —
+        // on a closed month.
         cellReadOnly: (col: number) => {
-          if (r.category === "ADMIN_INPUT") return !grid.canEditActuals;
+          if (r.category === "ADMIN_INPUT")
+            return !grid.canEditActuals || !!r.hasDetails;
           if (blReadOnly) return true;
           return !grid.canEditClosed && grid.closedMonths.has(MONTHS[col]);
         },
@@ -175,6 +229,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
           category: r.category,
           bucketId: r.bucketId,
           rowId: r.rowId,
+          detailId: r.detailId ?? null,
           month,
         }),
       })),
@@ -198,6 +253,18 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
     return () => window.removeEventListener("mouseup", up);
   }, []);
 
+  // A lone project is always named "General" (its name field is locked below).
+  // Load-time seeding/naming is handled by the grid's normalizeLoaded; this
+  // keeps it correct after the user deletes back down to a single project
+  // mid-session. No-op once a second project exists (names are then editable).
+  useEffect(() => {
+    if (blReadOnly || !config.allowMultipleBuckets) return;
+    const buckets = grid.data.buckets;
+    if (buckets.length === 1 && buckets[0].name !== GENERAL_PROJECT_NAME) {
+      grid.renameBucket(buckets[0].bucketId, GENERAL_PROJECT_NAME);
+    }
+  }, [grid.data.buckets, blReadOnly, config.allowMultipleBuckets, grid.renameBucket]);
+
   return (
     <div className="space-y-4">
       <GridToolbar
@@ -220,19 +287,23 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
         </div>
       ) : (
         <div
-          className="bg-white border border-gray-200 rounded-xl overflow-x-auto"
+          // Bounded height makes this the vertical scroller too (it is already
+          // the horizontal one via overflow), so the sticky header row below can
+          // pin to the top — Excel-style frozen header + frozen first column.
+          className="bg-white border border-gray-200 rounded-xl overflow-auto max-h-[calc(100vh-14rem)]"
           onKeyDown={sel.onKeyDown}
           onCopy={sel.onCopy}
           onPaste={sel.onPaste}
         >
           <table className="w-full text-sm border-collapse min-w-[1100px]">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="sticky left-0 z-10 bg-gray-50 text-left px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs w-52">
+              <tr className="bg-gray-50">
+                {/* Corner cell — frozen on both axes, above every other sticky cell. */}
+                <th className="sticky left-0 top-0 z-30 bg-gray-50 text-left px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs w-52 border-b border-gray-200">
                   {config.bucketLabel} / {config.rowTypeLabel}
                 </th>
                 {showNotes && (
-                  <th className="px-3 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs text-left min-w-[200px]">
+                  <th className="sticky top-0 z-20 bg-gray-50 px-3 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs text-left min-w-[200px] border-b border-gray-200">
                     <span className="inline-flex items-center gap-1.5">
                       Notes
                       <button
@@ -252,8 +323,8 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                     <th
                       key={m}
                       title={closed ? "Closed period" : undefined}
-                      className={`px-1.5 py-2.5 font-semibold uppercase tracking-wider text-xs text-right min-w-[72px] ${
-                        closed ? "text-gray-400 bg-gray-100/70" : "text-gray-500"
+                      className={`sticky top-0 z-20 px-1.5 py-2.5 font-semibold uppercase tracking-wider text-xs text-right min-w-[72px] border-b border-gray-200 ${
+                        closed ? "text-gray-400 bg-gray-100" : "text-gray-500 bg-gray-50"
                       }`}
                     >
                       <span className="inline-flex w-full items-center justify-end gap-1">
@@ -263,7 +334,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                     </th>
                   );
                 })}
-                <th className="px-2.5 py-2.5 font-semibold text-gray-700 uppercase tracking-wider text-xs text-right min-w-[88px] bg-gray-100/60">
+                <th className="sticky top-0 z-20 px-2.5 py-2.5 font-semibold text-gray-700 uppercase tracking-wider text-xs text-right min-w-[88px] bg-gray-100 border-b border-gray-200">
                   Total
                 </th>
               </tr>
@@ -298,6 +369,10 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                     collapsed={collapsed.has(bucket.bucketId)}
                     onToggleCollapse={() => toggleCollapse(bucket.bucketId)}
                     showNotes={showNotes}
+                    lockName={
+                      config.allowMultipleBuckets &&
+                      grid.data.buckets.length === 1
+                    }
                   />
                 ))
               )}
@@ -335,11 +410,26 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                 rowIndex={rowIndex}
                 draggingRef={draggingRef}
                 showNotes={showNotes}
+                expandedActuals={expandedActuals}
+                onToggleExpand={toggleActualsExpand}
+              />
+
+              {/* ─── MediaBox actuals (read-only, synced) — under MediaOcean ─── */}
+              <MediaboxActualsSection
+                axisId={config.axisId}
+                clientId={selectedClient?.cl_id}
+                year={selectedYear}
+                showNotes={showNotes}
               />
             </tbody>
           </table>
         </div>
       )}
+
+      <SelectionTotal
+        count={sel.selectionStats.count}
+        sum={sel.selectionStats.sum}
+      />
     </div>
   );
 }
@@ -518,7 +608,7 @@ function AddRowTypeSelect({
           </option>
           {options.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.hint ? `${o.label} · ${o.hint}` : o.label}
+              {[o.label, o.hint, o.description].filter(Boolean).join(" · ")}
             </option>
           ))}
         </select>
@@ -574,6 +664,7 @@ function DataRow({
   category,
   bucketId,
   readOnly,
+  monthsDerived = false,
   grid,
   sel,
   rowIndex,
@@ -584,11 +675,15 @@ function DataRow({
   meta,
   onSpread,
   showNotes,
+  expand,
 }: {
   row: ForecastRow;
   category: InputCategory;
   bucketId: string | null;
   readOnly: boolean;
+  /** The months are derived from the detail lines (row = Σ details) — cells
+   *  read-only, Distribute hidden. */
+  monthsDerived?: boolean;
   grid: UseForecasterGridResult;
   sel: ReturnType<typeof useGridSelection>;
   rowIndex: Map<string, number>;
@@ -602,6 +697,8 @@ function DataRow({
   meta?: RowMeta;
   onSpread: () => void;
   showNotes: boolean;
+  /** Expand/collapse control for rows that carry detail lines (actuals only). */
+  expand?: { expanded: boolean; onToggle: () => void; count: number };
 }) {
   const r = rowIndex.get(row.rowId)!;
   // Closed periods only lock BL_INPUT cells, and only for users who can't edit
@@ -616,18 +713,47 @@ function DataRow({
   return (
     <tr className="group">
       <td className={`sticky left-0 z-10 ${rowBg} px-4 py-1.5 border-b border-gray-100`}>
-        <div className="flex items-center gap-1.5 pl-2">
+        <div className={`flex items-center gap-1.5 ${expand ? "" : "pl-2"}`}>
+          {expand && (
+            <button
+              onClick={expand.onToggle}
+              className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200/70 transition-colors flex-shrink-0"
+              title={expand.expanded ? "Hide detail" : "Show detail"}
+            >
+              {expand.expanded ? (
+                <ChevronDown size={14} />
+              ) : (
+                <ChevronRight size={14} />
+              )}
+            </button>
+          )}
           <span className={`text-sm ${labelClass}`}>{row.label}</span>
+          {expand && expand.count > 0 && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-gray-200/70 text-gray-500">
+              {expand.count}
+            </span>
+          )}
+          {monthsDerived && (
+            <span
+              title="Monthly values are the sum of the detail lines — edit the details."
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-indigo-100 text-indigo-600"
+            >
+              Σ details
+            </span>
+          )}
           {/* Media-type chip (Labs). */}
           {meta?.badge && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-gray-100 text-gray-500">
               {meta.badge}
             </span>
           )}
-          {/* Description tooltip (Labs). */}
-          {meta?.tooltip && (
-            <span title={meta.tooltip} className="text-gray-300 hover:text-gray-500 cursor-help">
-              <Info size={12} />
+          {/* Description (Labs) — inline, muted; disambiguates same-named partners. */}
+          {meta?.description && (
+            <span
+              title={meta.description}
+              className="min-w-0 truncate text-xs italic text-gray-400"
+            >
+              {meta.description}
             </span>
           )}
           {retired && (
@@ -639,26 +765,36 @@ function DataRow({
             </span>
           )}
           {!readOnly && (
-            <>
-              <button
-                onClick={onSpread}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-gray-700 transition-all"
-                title="Distribute an amount across months"
-              >
-                <SplitSquareHorizontal size={12} />
-              </button>
-              <button
-                onClick={() =>
-                  category === "ADMIN_INPUT"
-                    ? grid.removeActualsRow(row.rowId)
-                    : grid.removeRow(bucketId!, row.rowId)
-                }
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-red-500 transition-all"
-                title="Remove row (until saved)"
-              >
-                <Trash2 size={11} />
-              </button>
-            </>
+            <RowActionsMenu
+              ariaLabel={`Actions for ${row.label}`}
+              actions={[
+                // Distribute writes the parent's months — meaningless when they
+                // are derived from the detail lines.
+                ...(monthsDerived
+                  ? []
+                  : [
+                      {
+                        label: "Distribute…",
+                        icon: <SplitSquareHorizontal size={14} />,
+                        onClick: onSpread,
+                      },
+                    ]),
+                {
+                  label: row.note ? "Edit note" : "Add note",
+                  icon: <StickyNote size={14} />,
+                  onClick: () => setNoteOpen(true),
+                },
+                {
+                  label: "Remove",
+                  icon: <Trash2 size={14} />,
+                  danger: true,
+                  onClick: () =>
+                    category === "ADMIN_INPUT"
+                      ? grid.removeActualsRow(row.rowId)
+                      : grid.removeRow(bucketId!, row.rowId),
+                },
+              ]}
+            />
           )}
         </div>
         {noteOpen && (
@@ -687,7 +823,7 @@ function DataRow({
             r={r}
             c={ci}
             value={row.months[m] ?? 0}
-            readOnly={readOnly || closed}
+            readOnly={readOnly || closed || monthsDerived}
             closed={closed}
             dirty={grid.dirtyMap.has(buildCellKey(coord))}
             sel={sel}
@@ -711,24 +847,35 @@ export function NoteCell({
   note,
   readOnly,
   onClick,
+  inverse = false,
 }: {
   note?: string;
   readOnly: boolean;
   onClick: () => void;
+  /** Rendered on a dark row (e.g. the Official Revenue row) — light text. */
+  inverse?: boolean;
 }) {
   const hasNote = !!note;
   return (
-    <td className="px-2 py-1.5 border-b border-gray-100 align-middle">
+    <td
+      className={`px-2 py-1.5 border-b align-middle ${
+        inverse ? "border-white/15" : "border-gray-100"
+      }`}
+    >
       <button
         onClick={onClick}
         disabled={readOnly && !hasNote}
         title={hasNote ? note : undefined}
         className={`w-full text-left text-xs leading-snug line-clamp-2 break-words rounded px-1.5 py-1 transition-colors ${
           hasNote
-            ? "text-gray-600 hover:bg-gray-100"
+            ? inverse
+              ? "text-white/90 hover:bg-white/10"
+              : "text-gray-600 hover:bg-gray-100"
             : readOnly
               ? "cursor-default"
-              : "italic text-gray-300 hover:text-gray-500 hover:bg-gray-100"
+              : inverse
+                ? "italic text-white/40 hover:text-white/70 hover:bg-white/10"
+                : "italic text-gray-300 hover:text-gray-500 hover:bg-gray-100"
         }`}
       >
         {hasNote ? note : readOnly ? "" : "Add a note…"}
@@ -751,6 +898,7 @@ function BucketSection({
   collapsed,
   onToggleCollapse,
   showNotes,
+  lockName,
 }: {
   bucket: ForecastBucket;
   config: AxisConfig;
@@ -763,6 +911,9 @@ function BucketSection({
   collapsed: boolean;
   onToggleCollapse: () => void;
   showNotes: boolean;
+  /** Lone project — its name is auto-managed ("General") and not editable, and
+   *  it can't be removed. Lifted once a second project exists. */
+  lockName: boolean;
 }) {
   const bucketTotals = useMemo(() => monthTotals(bucket.rows), [bucket.rows]);
   const types = availableTypes(config, bucket.rows);
@@ -771,7 +922,7 @@ function BucketSection({
   return (
     <>
       {/* Bucket header — name + controls on the left, subtotal across the row */}
-      <tr className="bg-gray-50/80 border-t border-gray-200">
+      <tr className="bg-gray-50 border-t border-gray-200">
         <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 border-b border-gray-100">
           <div className="flex items-center gap-1">
             <button
@@ -784,8 +935,13 @@ function BucketSection({
             <input
               type="text"
               value={bucket.name}
-              disabled={readOnly}
+              disabled={readOnly || lockName}
               onChange={(e) => grid.renameBucket(bucket.bucketId, e.target.value)}
+              title={
+                lockName
+                  ? `The single ${config.bucketLabel.toLowerCase()} is always named "${GENERAL_PROJECT_NAME}" — add another ${config.bucketLabel.toLowerCase()} to enable renaming.`
+                  : undefined
+              }
               className="font-semibold text-gray-900 text-sm bg-transparent border border-transparent rounded-md px-1.5 py-0.5 min-w-0 flex-1
                 hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white
                 disabled:hover:border-transparent"
@@ -798,18 +954,22 @@ function BucketSection({
                   options={types}
                   onPick={(rowType) => grid.addRow(bucket.bucketId, rowType)}
                 />
-                <button
-                  onClick={() => grid.removeBucket(bucket.bucketId)}
-                  className="p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                  title={`Remove ${config.bucketLabel.toLowerCase()} (until saved)`}
-                >
-                  <Trash2 size={13} />
-                </button>
+                {/* The lone "General" project can't be removed — adding a second
+                    project is what unlocks naming and removal. */}
+                {!lockName && (
+                  <button
+                    onClick={() => grid.removeBucket(bucket.bucketId)}
+                    className="p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    title={`Remove ${config.bucketLabel.toLowerCase()} (until saved)`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </>
             )}
           </div>
         </td>
-        {showNotes && <td className="bg-gray-50/80 border-b border-gray-100" />}
+        {showNotes && <td className="bg-gray-50 border-b border-gray-100" />}
         {MONTHS.map((m) => (
           <TotalCell key={m} value={bucketTotals[m] ?? 0} emphasis="bucket" />
         ))}
@@ -871,6 +1031,108 @@ function BucketSection({
   );
 }
 
+// ─── Detail line — a breakdown row under an actuals row ──────────────────────
+
+/**
+ * One breakdown line of an actuals row: DETAIL_LEVEL_COUNT header-less free-text
+ * info slots (project name, admin number… — meaning is up to the user) followed
+ * by its own 12-month budget. The budget cells join the spreadsheet selection
+ * (paste/fill/keyboard) like any other; the budget is an annotation and never
+ * rolls into the parent row's total.
+ *
+ * Exported so the Revenue grid (a separate component) reuses the exact same
+ * detail row under its GAIA/ADMIN_INPUT lines.
+ */
+export function DetailRow({
+  parentRowId,
+  detail,
+  readOnly,
+  grid,
+  sel,
+  rowIndex,
+  draggingRef,
+  showNotes,
+}: {
+  parentRowId: string;
+  detail: RowDetail;
+  readOnly: boolean;
+  grid: UseForecasterGridResult;
+  sel: ReturnType<typeof useGridSelection>;
+  rowIndex: Map<string, number>;
+  draggingRef: React.MutableRefObject<boolean>;
+  showNotes: boolean;
+}) {
+  const r = rowIndex.get(detail.detailId)!;
+  return (
+    <tr className="group bg-white">
+      {/* Detail lines stay quiet — plain white, deeper indent, muted text — so
+          they read as secondary breakdowns under their parent actuals row. The
+          sticky cell is OPAQUE so it covers scrolled content during horizontal
+          scroll. */}
+      <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-4 py-1 border-b border-gray-100">
+        <div className="flex items-center gap-1.5 pl-8">
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: DETAIL_LEVEL_COUNT }, (_, i) => (
+              <input
+                key={i}
+                type="text"
+                value={detail.levels[i] ?? ""}
+                disabled={readOnly}
+                onChange={(e) =>
+                  grid.setActualsDetailLevel(
+                    parentRowId,
+                    detail.detailId,
+                    i,
+                    e.target.value
+                  )
+                }
+                className="w-36 px-2 py-1 text-xs text-gray-700 bg-white border border-gray-200 rounded
+                  hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent
+                  disabled:bg-transparent disabled:border-transparent"
+              />
+            ))}
+          </div>
+          {!readOnly && (
+            <button
+              onClick={() =>
+                grid.removeActualsDetail(parentRowId, detail.detailId)
+              }
+              className="p-0.5 rounded text-gray-300 hover:text-red-500 hover:bg-gray-100 transition-colors flex-shrink-0"
+              title="Remove detail line (until saved)"
+            >
+              <Trash2 size={11} />
+            </button>
+          )}
+        </div>
+      </td>
+      {showNotes && <td className="bg-white border-b border-gray-100" />}
+      {MONTHS.map((m, ci) => {
+        const coord = {
+          category: "ADMIN_INPUT" as const,
+          bucketId: null,
+          rowId: parentRowId,
+          detailId: detail.detailId,
+          month: m,
+        };
+        return (
+          <SpreadsheetCell
+            key={m}
+            r={r}
+            c={ci}
+            value={detail.months[m] ?? 0}
+            readOnly={readOnly}
+            closed={false}
+            dirty={grid.dirtyMap.has(buildCellKey(coord))}
+            sel={sel}
+            draggingRef={draggingRef}
+          />
+        );
+      })}
+      <TotalCell value={sumMonths(detail.months)} emphasis="row" />
+    </tr>
+  );
+}
+
 // ─── Actuals section (ADMIN_INPUT — typed rows, no bucket) ───────────────────
 
 function ActualsSection({
@@ -881,6 +1143,8 @@ function ActualsSection({
   rowIndex,
   draggingRef,
   showNotes,
+  expandedActuals,
+  onToggleExpand,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
@@ -889,23 +1153,29 @@ function ActualsSection({
   rowIndex: Map<string, number>;
   draggingRef: React.MutableRefObject<boolean>;
   showNotes: boolean;
+  expandedActuals: Set<string>;
+  onToggleExpand: (rowId: string) => void;
 }) {
   const actuals = grid.data.actuals;
   const readOnly = !grid.canEditActuals;
   const totals = useMemo(() => monthTotals(actuals), [actuals]);
   const types = availableTypes(config, actuals);
   const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
+  const colCount = showNotes ? 15 : 14;
+  // Per-source colour: MediaOcean → orange, GAIA → purple, others → grey.
+  const theme = actualsTheme(config.actualsLabel);
 
   return (
     <>
-      {/* Section header */}
-      <tr className="bg-gray-50 border-t-2 border-gray-200">
-        <td colSpan={showNotes ? 15 : 14} className="px-4 py-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+      {/* Section header — opaque fill; the label is pinned left so it stays
+          visible while scrolling the months horizontally. */}
+      <tr className={theme.headerRow}>
+        <td colSpan={showNotes ? 15 : 14} className="p-0">
+          <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
+            <span className={`text-xs font-semibold uppercase tracking-wider ${theme.headerText}`}>
               {config.actualsLabel}
             </span>
-            {readOnly && <Lock size={10} className="text-gray-400" />}
+            {readOnly && <Lock size={10} className={theme.lockIcon} />}
             {!readOnly && (
               <AddRowTypeSelect
                 label={config.rowTypeLabel}
@@ -920,45 +1190,102 @@ function ActualsSection({
       {/* Actuals rows */}
       {actuals.length === 0 ? (
         <tr>
-          <td colSpan={showNotes ? 15 : 14} className="px-8 py-2.5 text-xs text-gray-400 bg-gray-50/40 border-b border-gray-100">
+          <td colSpan={showNotes ? 15 : 14} className={`px-8 py-2.5 text-xs ${theme.labelClass} ${theme.emptyRow}`}>
             {readOnly
               ? "No actuals recorded."
               : `No actuals yet — add a ${config.rowTypeLabel.toLowerCase()} above.`}
           </td>
         </tr>
       ) : (
-        actuals.map((row) => (
-          <DataRow
-            key={row.rowId}
-            row={row}
-            category="ADMIN_INPUT"
-            bucketId={null}
-            readOnly={readOnly}
-            grid={grid}
-            sel={sel}
-            rowIndex={rowIndex}
-            draggingRef={draggingRef}
-            rowBg="bg-gray-50/40 group-hover:bg-gray-50"
-            labelClass="text-gray-700"
-            retired={isRetiredType(config, row.rowType)}
-            meta={rowMeta?.(row.rowType)}
-            onSpread={() => setSpreadRow(row)}
-            showNotes={showNotes}
-          />
-        ))
+        actuals.map((row) => {
+          const details = row.details ?? [];
+          const expanded = expandedActuals.has(row.rowId);
+          // Nothing to expand for a read-only viewer with no details yet.
+          const canExpand = !readOnly || details.length > 0;
+          return (
+            <Fragment key={row.rowId}>
+              <DataRow
+                row={row}
+                category="ADMIN_INPUT"
+                bucketId={null}
+                readOnly={readOnly}
+                monthsDerived={details.length > 0}
+                grid={grid}
+                sel={sel}
+                rowIndex={rowIndex}
+                draggingRef={draggingRef}
+                rowBg={theme.rowBg}
+                labelClass={theme.labelClass}
+                retired={isRetiredType(config, row.rowType)}
+                meta={rowMeta?.(row.rowType)}
+                onSpread={() => setSpreadRow(row)}
+                showNotes={showNotes}
+                expand={
+                  canExpand
+                    ? {
+                        expanded,
+                        onToggle: () => onToggleExpand(row.rowId),
+                        count: details.length,
+                      }
+                    : undefined
+                }
+              />
+              {expanded &&
+                details.map((detail) => (
+                  <DetailRow
+                    key={detail.detailId}
+                    parentRowId={row.rowId}
+                    detail={detail}
+                    readOnly={readOnly}
+                    grid={grid}
+                    sel={sel}
+                    rowIndex={rowIndex}
+                    draggingRef={draggingRef}
+                    showNotes={showNotes}
+                  />
+                ))}
+              {expanded && !readOnly && (
+                <tr>
+                  <td
+                    colSpan={colCount}
+                    className="px-4 py-1.5 border-b border-gray-100 bg-white"
+                  >
+                    <button
+                      onClick={() => grid.addActualsDetail(row.rowId)}
+                      className="flex items-center gap-1 ml-10 px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <Plus size={12} />
+                      Detail
+                    </button>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })
       )}
 
       {/* Actuals total */}
       {actuals.length > 0 && (
-        <tr className="bg-gray-100 border-b border-gray-200">
-          <td className="sticky left-0 z-10 bg-gray-100 px-4 py-1.5 pl-6 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+        <tr className="bg-gray-900">
+          <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider">
             {config.actualsLabel} total
           </td>
-          {showNotes && <td className="bg-gray-100 border-b border-gray-200" />}
+          {showNotes && <td className="bg-gray-900" />}
           {MONTHS.map((m) => (
-            <TotalCell key={m} value={totals[m] ?? 0} emphasis="bucket" />
+            <td key={m} className="px-2.5 py-2 text-right align-middle">
+              <p className="text-sm font-bold text-white tabular-nums">
+                {totals[m]
+                  ? Math.round(totals[m]).toLocaleString("en-CA")
+                  : "—"}
+              </p>
+            </td>
           ))}
-          <TotalCell value={sumMonths(totals)} emphasis="bucket" />
+          <td className="px-2.5 py-2 text-right align-middle bg-gray-800">
+            <p className="text-sm font-bold text-yellow-400 tabular-nums">
+              {Math.round(sumMonths(totals)).toLocaleString("en-CA")}
+            </p>
+          </td>
         </tr>
       )}
 

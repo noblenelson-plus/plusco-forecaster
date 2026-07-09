@@ -64,6 +64,8 @@ export interface GridSelection {
   isSelected: (r: number, c: number) => boolean;
   isActive: (r: number, c: number) => boolean;
   hasRangeSelection: boolean;
+  /** Live count + sum of the cells in the current selection rectangle. */
+  selectionStats: { count: number; sum: number };
 
   /** Mouse: plain click, Shift+click (extend), or drag start. */
   selectCell: (r: number, c: number, extend?: boolean) => void;
@@ -122,6 +124,20 @@ export function useGridSelection({
     (r: number, c: number) => !!focus && focus.r === r && focus.c === c,
     [focus]
   );
+
+  // Live count + sum over the selection rectangle, for the floating total widget.
+  const selectionStats = useMemo(() => {
+    if (!rect) return { count: 0, sum: 0 };
+    let sum = 0;
+    let count = 0;
+    for (let r = rect.minR; r <= rect.maxR; r++) {
+      for (let c = rect.minC; c <= rect.maxC; c++) {
+        sum += getValue(rows[r].coordFor(monthOf(c)));
+        count++;
+      }
+    }
+    return { count, sum };
+  }, [rect, getValue, rows]);
 
   const clear = useCallback(() => {
     setAnchor(null);
@@ -393,6 +409,7 @@ export function useGridSelection({
     isActive,
     hasRangeSelection:
       !!rect && (rect.minR !== rect.maxR || rect.minC !== rect.maxC),
+    selectionStats,
     selectCell,
     startDrag,
     dragOver,

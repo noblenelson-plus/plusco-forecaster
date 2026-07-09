@@ -102,9 +102,15 @@ service cloud.firestore {
     // Document ID format: {cl_id}_{year}_{rfq} e.g. CL_001_2026_RFQ0
     // We extract the clientId from the document's clientId field
     match /data_entries/{entryId} {
-      // Read: admin sees all, BL only sees their assigned clients
+      // Read: admin sees all, BL only sees their assigned clients.
+      // A non-existent doc (resource == null) is a normal empty case — the
+      // dashboard reads one entry per in-scope client and many have no
+      // submission yet. Allow it; reading absent data leaks nothing. Without
+      // this, the rule evaluates canAccessClient(null) and denies, surfacing
+      // as "Missing or insufficient permissions" for BLs (admins short-circuit
+      // on isAdmin()).
       allow read: if isAuthenticated() &&
-        canAccessClient(resource.data.clientId);
+        (resource == null || canAccessClient(resource.data.clientId));
 
       // Create: the document is created client-side on the first Save
       // (saveAxisData → setDoc with merge), so a BL assigned to the client may
@@ -114,6 +120,17 @@ service cloud.firestore {
           isBusinessLead() &&
           isAssignedToClient(request.resource.data.clientId) &&
           rfqUnlocked(request.resource.data.year, request.resource.data.rfq)
+        ) ||
+        // Submission annotations (shared note + ready-month flags) — the first
+        // write may annotate a submission that has no grid data yet. Allowed for
+        // an assigned BL even when the RFQ is locked (annotation-only create:
+        // nothing but these metadata keys is written).
+        (
+          isBusinessLead() &&
+          isAssignedToClient(request.resource.data.clientId) &&
+          request.resource.data.keys()
+            .hasOnly(['clientId', 'year', 'rfq', 'submissionNote',
+                      'readyMonths', 'readyMonthsMeta', 'updatedAt'])
         );
 
       // Update: admin always — BL only for an assigned client while the RFQ is
@@ -124,6 +141,17 @@ service cloud.firestore {
           isAssignedToClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           rfqUnlocked(resource.data.year, resource.data.rfq)
+        ) ||
+        // Submission annotations (shared note + ready-month flags) — an assigned
+        // BL may add/edit these even when the RFQ is locked. The write only
+        // touches annotation keys (+ updatedAt); every forecast field keeps its
+        // value, so this can never alter locked data.
+        (
+          isBusinessLead() &&
+          isAssignedToClient(resource.data.clientId) &&
+          request.resource.data.clientId == resource.data.clientId &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['submissionNote', 'readyMonths', 'readyMonthsMeta', 'updatedAt'])
         );
 
       // BLs cannot update actuals or gaiaAdjustment fields
@@ -138,12 +166,29 @@ service cloud.firestore {
     // value per year, shared by every submission. Actuals are admin-owned data,
     // so only admins may write; assigned BLs (and admins) may read.
     match /annual_actuals/{entryId} {
+      // A non-existent doc (resource == null) is the common case here — annual
+      // actuals are admin-entered and rarely populated, yet the dashboard reads
+      // one per in-scope client. Allow it (absent data leaks nothing); otherwise
+      // canAccessClient(null) denies and BLs get "Missing or insufficient
+      // permissions" (admins short-circuit on isAdmin()).
       allow read: if isAuthenticated() &&
-        canAccessClient(resource.data.clientId);
+        (resource == null || canAccessClient(resource.data.clientId));
       // Create/update: admins only (BLs never edit actuals). RFQ locking does
       // not apply — these figures are not tied to a single submission.
       allow create, update: if isAdmin();
       allow delete: if false;
+    }
+    // ─── mediabox_totals ──────────────────────────────────────────────────────
+    // Document ID format: {cl_id}_{year} e.g. CL_001_2026
+    // Read-only MediaBox actuals, synced from the MediaBox project by its Cloud
+    // Function (via the Admin SDK, which bypasses these rules). The grid reads
+    // one per selected client under MediaOcean, so an absent doc is the normal
+    // pre-sync case — allow it like annual_actuals (absent data leaks nothing).
+    match /mediabox_totals/{entryId} {
+      allow read: if isAuthenticated() &&
+        (resource == null || canAccessClient(resource.data.clientId));
+      // Never writable from a client — only the MediaBox Admin SDK writes here.
+      allow write: if false;
     }
     // ─── rfqs ───────────────────────────────────────────────────────────────
 // Document ID format: {year}_{type} e.g. 2026_RFQ1
@@ -155,7 +200,8 @@ match /rfqs/{rfqId} {
   // (needed to populate the year/RFQ selectors in the sidebar)
   allow read: if isAuthenticated();
 
-  // Only admins can create, lock/unlock, set closed months, or delete RFQs
+  // Only admins can create, lock/unlock, set closed months, edit timeline
+  // periods (échéancier), or delete RFQs
   allow create, update, delete: if isAdmin();
 }
   }

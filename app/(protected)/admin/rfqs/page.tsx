@@ -13,13 +13,21 @@ import {
   CalendarRange,
   ChevronDown,
   CalendarClock,
+  ListChecks,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import {
   RFQ,
   RFQType,
+  RFQPeriod,
   RFQ_TYPES,
   resolveClosedMonths,
+  resolvePeriodStatus,
+  sortPeriods,
+  todayISODate,
 } from "../../../../lib/types/rfq.types";
 import type { AxisId } from "../../../../lib/types/forecaster.types";
 import {
@@ -27,6 +35,7 @@ import {
   createRFQ,
   updateRFQStatus,
   updateRFQAxisClosedMonths,
+  updateRFQPeriods,
   deleteRFQ,
   getRFQYears,
   getRFQsForYear,
@@ -74,6 +83,9 @@ export default function AdminRFQsPage() {
 
   // Which RFQ's closed-months panel is expanded
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Which RFQ's timeline (periods) panel is expanded
+  const [periodsExpandedId, setPeriodsExpandedId] = useState<string | null>(null);
 
   // Optimistic per-axis closed months, keyed `${rfq_id}:${axisId}`. A click
   // updates this immediately and writes to Firestore; the entry is dropped once
@@ -203,6 +215,18 @@ export default function AdminRFQsPage() {
   function handleToggleAllMonths(rfq: RFQ, axisId: AxisId) {
     const allClosed = closedMonthsFor(rfq, axisId).length === 12;
     writeClosedMonths(rfq, axisId, allClosed ? [] : ALL_MONTHS);
+  }
+
+  // Persist the full periods array for one RFQ. The real-time subscription
+  // refreshes the panel once Firestore confirms the write.
+  async function handleSavePeriods(rfq_id: string, periods: RFQPeriod[]) {
+    setError("");
+    try {
+      await updateRFQPeriods(rfq_id, periods);
+    } catch (err: any) {
+      setError("Failed to update timeline: " + (err?.message ?? "Unknown error"));
+      throw err;
+    }
   }
 
   async function handleDelete(rfq_id: string) {
@@ -352,11 +376,20 @@ export default function AdminRFQsPage() {
                       busy={busyId === rfq.rfq_id}
                       confirmingDelete={confirmDeleteId === rfq.rfq_id}
                       expanded={expandedId === rfq.rfq_id}
+                      periodsExpanded={periodsExpandedId === rfq.rfq_id}
                       closedMonthsFor={(axisId) => closedMonthsFor(rfq, axisId)}
                       onToggleExpand={() =>
                         setExpandedId((id) =>
                           id === rfq.rfq_id ? null : rfq.rfq_id
                         )
+                      }
+                      onTogglePeriods={() =>
+                        setPeriodsExpandedId((id) =>
+                          id === rfq.rfq_id ? null : rfq.rfq_id
+                        )
+                      }
+                      onSavePeriods={(periods) =>
+                        handleSavePeriods(rfq.rfq_id, periods)
                       }
                       onToggleMonth={(axisId, month) =>
                         handleToggleMonth(rfq, axisId, month)
@@ -387,8 +420,11 @@ function RFQRow({
   busy,
   confirmingDelete,
   expanded,
+  periodsExpanded,
   closedMonthsFor,
   onToggleExpand,
+  onTogglePeriods,
+  onSavePeriods,
   onToggleMonth,
   onToggleAllMonths,
   onToggleStatus,
@@ -400,8 +436,11 @@ function RFQRow({
   busy: boolean;
   confirmingDelete: boolean;
   expanded: boolean;
+  periodsExpanded: boolean;
   closedMonthsFor: (axisId: AxisId) => number[];
   onToggleExpand: () => void;
+  onTogglePeriods: () => void;
+  onSavePeriods: (periods: RFQPeriod[]) => Promise<void> | void;
   onToggleMonth: (axisId: AxisId, month: number) => void;
   onToggleAllMonths: (axisId: AxisId) => void;
   onToggleStatus: () => void;
@@ -437,6 +476,35 @@ function RFQRow({
 
       {/* Right — actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Timeline (periods) panel toggle */}
+        <button
+          onClick={onTogglePeriods}
+          title="Timeline periods (échéancier)"
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+            periodsExpanded
+              ? "bg-gray-900 text-white border-gray-900"
+              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+          }`}
+        >
+          <ListChecks size={12} />
+          Timeline
+          {rfq.periods && rfq.periods.length > 0 && (
+            <span
+              className={`ml-0.5 rounded-full px-1.5 text-[10px] font-semibold ${
+                periodsExpanded
+                  ? "bg-white/20 text-white"
+                  : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {rfq.periods.length}
+            </span>
+          )}
+          <ChevronDown
+            size={12}
+            className={`transition-transform ${periodsExpanded ? "rotate-180" : ""}`}
+          />
+        </button>
+
         {/* Closed-months panel toggle */}
         <button
           onClick={onToggleExpand}
@@ -569,6 +637,245 @@ function RFQRow({
           </div>
         </div>
       )}
+
+      {/* Expandable timeline (periods) editor */}
+      {periodsExpanded && (
+        <RFQPeriodsPanel
+          periods={rfq.periods ?? []}
+          onSave={onSavePeriods}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Timeline (periods) editor ────────────────────────────────────────────────
+
+const EMPTY_PERIOD_DRAFT = {
+  name: "",
+  description: "",
+  startDate: "",
+  endDate: "",
+};
+
+const PERIOD_STATUS_BADGE: Record<
+  ReturnType<typeof resolvePeriodStatus>,
+  { label: string; className: string }
+> = {
+  completed: { label: "Completed", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  active: { label: "Active", className: "bg-yellow-50 text-yellow-700 border-yellow-300" },
+  future: { label: "Upcoming", className: "bg-gray-50 text-gray-500 border-gray-200" },
+};
+
+function RFQPeriodsPanel({
+  periods,
+  onSave,
+}: {
+  periods: RFQPeriod[];
+  onSave: (periods: RFQPeriod[]) => Promise<void> | void;
+}) {
+  const today = todayISODate();
+  const sorted = useMemo(() => sortPeriods(periods), [periods]);
+
+  // Draft for the add/edit form. `editingId === null` means we're adding a new
+  // period; otherwise we're editing the period with that id.
+  const [draft, setDraft] = useState(EMPTY_PERIOD_DRAFT);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const resetForm = () => {
+    setDraft(EMPTY_PERIOD_DRAFT);
+    setEditingId(null);
+    setFormError("");
+  };
+
+  function startEdit(period: RFQPeriod) {
+    setEditingId(period.id);
+    setDraft({
+      name: period.name,
+      description: period.description ?? "",
+      startDate: period.startDate,
+      endDate: period.endDate,
+    });
+    setFormError("");
+  }
+
+  async function commit(next: RFQPeriod[]) {
+    setSaving(true);
+    try {
+      await onSave(next);
+      resetForm();
+    } catch {
+      // Page-level error is already surfaced by the parent handler.
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSubmit() {
+    const name = draft.name.trim();
+    if (!name) return setFormError("Name is required.");
+    if (!draft.startDate || !draft.endDate)
+      return setFormError("Start and end dates are required.");
+    if (draft.endDate < draft.startDate)
+      return setFormError("End date cannot be before the start date.");
+
+    const payload = {
+      name,
+      description: draft.description.trim(),
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+    };
+
+    if (editingId) {
+      await commit(
+        periods.map((p) => (p.id === editingId ? { ...p, ...payload } : p))
+      );
+    } else {
+      await commit([...periods, { id: crypto.randomUUID(), ...payload }]);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    await commit(periods.filter((p) => p.id !== id));
+  }
+
+  return (
+    <div className="px-4 pb-4 pt-1 bg-gray-50/60 border-t border-gray-100">
+      <p className="text-xs text-gray-500 mb-3">
+        Timeline periods (échéancier) appear as a step bar at the bottom of the
+        Forecast page, highlighting which milestone is currently active.
+      </p>
+
+      {/* Existing periods */}
+      {sorted.length > 0 ? (
+        <div className="space-y-1.5 mb-3">
+          {sorted.map((period) => {
+            const status = resolvePeriodStatus(period, today);
+            const badge = PERIOD_STATUS_BADGE[status];
+            return (
+              <div
+                key={period.id}
+                className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2"
+              >
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${badge.className}`}
+                >
+                  {badge.label}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {period.name}
+                  </p>
+                  <p className="text-xs text-gray-400 truncate">
+                    {period.startDate} → {period.endDate}
+                    {period.description ? ` · ${period.description}` : ""}
+                  </p>
+                </div>
+                <button
+                  onClick={() => startEdit(period)}
+                  disabled={saving}
+                  title="Edit period"
+                  className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={() => handleDelete(period.id)}
+                  disabled={saving}
+                  title="Delete period"
+                  className="p-1.5 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400 mb-3">No periods yet.</p>
+      )}
+
+      {/* Add / edit form */}
+      <div className="bg-white border border-gray-200 rounded-lg p-3">
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          {editingId ? "Edit period" : "New period"}
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Name
+            </label>
+            <input
+              type="text"
+              value={draft.name}
+              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              placeholder="e.g. Submission window"
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Start
+            </label>
+            <input
+              type="date"
+              value={draft.startDate}
+              onChange={(e) => setDraft((d) => ({ ...d, startDate: e.target.value }))}
+              className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              End
+            </label>
+            <input
+              type="date"
+              value={draft.endDate}
+              onChange={(e) => setDraft((d) => ({ ...d, endDate: e.target.value }))}
+              className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+            />
+          </div>
+        </div>
+        <div className="mt-2">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Description <span className="text-gray-400">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={draft.description}
+            onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+            placeholder="Short note shown on hover"
+            className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+          />
+        </div>
+
+        {formError && (
+          <p className="text-xs text-red-600 mt-2">{formError}</p>
+        )}
+
+        <div className="flex items-center gap-2 mt-3">
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-900 bg-yellow-400 rounded-lg hover:bg-yellow-500 disabled:opacity-50 transition-colors"
+          >
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+            {editingId ? "Save changes" : "Add period"}
+          </button>
+          {editingId && (
+            <button
+              onClick={resetForm}
+              disabled={saving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              <X size={12} />
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

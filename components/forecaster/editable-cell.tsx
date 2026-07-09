@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatMoney, parseMoney } from "../../lib/format/money";
+import { copyCellValue } from "../../lib/format/copy-cell";
 import type { EditMove, GridSelection } from "../../lib/hooks/use-grid-selection";
 
 // Re-exported for modules that still import it from here (comparison-panel).
@@ -62,6 +63,9 @@ function EditingInput({
       ref={ref}
       type="text"
       inputMode="decimal"
+      // size=1 keeps the input's intrinsic width tiny so it never widens the
+      // column in the auto-layout table; w-full then fills the existing cell.
+      size={1}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => commit("none")}
@@ -78,7 +82,7 @@ function EditingInput({
           onCancel();
         }
       }}
-      className="w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md
+      className="w-full min-w-0 px-1.5 py-1 text-right text-sm tabular-nums rounded-md
         border border-yellow-300 bg-white text-gray-900 font-medium
         focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
     />
@@ -98,8 +102,13 @@ interface SpreadsheetCellProps {
   muted?: boolean;
   /** Source-of-truth value for its month — highlighted green (the official figure). */
   official?: boolean;
+  /** Counted in BL Submission for its month — highlighted mauve (violet). */
+  counted?: boolean;
   /** A non-source value its month overrides — struck through, excluded from totals. */
   overridden?: boolean;
+  /** Rendered on a dark row (e.g. the Official Revenue row) — light text on the
+   *  row's own background. Mutually exclusive with the light-row state props. */
+  inverse?: boolean;
   /** Small indicator at the cell's left edge (e.g. a match check / mismatch flag). */
   badge?: ReactNode;
   dirty: boolean;
@@ -116,7 +125,9 @@ export function SpreadsheetCell({
   closed = false,
   muted = false,
   official = false,
+  counted = false,
   overridden = false,
+  inverse = false,
   badge,
   dirty,
   sel,
@@ -134,9 +145,35 @@ export function SpreadsheetCell({
   }, [active, editing]);
 
   const display = value === 0 ? "" : formatMoney(value);
+  // A value the user can't edit (locked / closed / actuals) → click copies it.
+  const copyable = readOnly || closed;
+
+  // Dark-row (inverse) rest state: light text on the row's own background; the
+  // selection/active/editing states keep the shared yellow so they read the
+  // same across the whole grid.
+  const stateClasses = inverse
+    ? `${
+        selected
+          ? "bg-yellow-200/70 text-gray-900 font-semibold"
+          : `hover:bg-white/10 font-bold ${
+              value < 0
+                ? "text-red-200"
+                : value === 0
+                ? "text-white/50"
+                : dirty
+                ? "text-yellow-200"
+                : "text-white"
+            }`
+      }`
+    : `${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : official ? "bg-emerald-100 hover:bg-emerald-100" : counted ? "bg-violet-100 hover:bg-violet-100" : muted ? "bg-gray-100/60" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
+       ${closed ? "text-gray-300" : overridden ? "text-gray-400 line-through decoration-gray-400" : official ? "text-emerald-900 font-semibold" : counted ? "text-violet-900 font-semibold" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}`;
 
   return (
-    <td className="px-0 py-0 border-b border-r border-gray-100 align-middle">
+    <td
+      className={`px-0 py-0 border-b border-r align-middle ${
+        inverse ? "border-white/15" : "border-gray-100"
+      }`}
+    >
       {editing ? (
         <div className="px-1 py-1">
           <EditingInput
@@ -167,12 +204,17 @@ export function SpreadsheetCell({
             onDoubleClick={() => {
               if (!readOnly) sel.beginEdit(r, c);
             }}
+            onClick={() => {
+              // Read-only / closed cells aren't editable, so a click copies
+              // the value to the clipboard instead.
+              if (copyable && value !== 0) copyCellValue(value);
+            }}
+            title={copyable ? "Click to copy" : undefined}
             className={`relative w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md
               outline-none select-none transition-colors
-              ${closed ? "cursor-not-allowed" : "cursor-cell"}
-              ${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : official ? "bg-emerald-100 hover:bg-emerald-100" : muted ? "bg-gray-100/60" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
+              ${copyable ? "cursor-copy" : "cursor-cell"}
               ${active ? "ring-2 ring-inset ring-yellow-400" : ""}
-              ${closed ? "text-gray-300" : overridden ? "text-gray-400 line-through decoration-gray-400" : official ? "text-emerald-900 font-semibold" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}
+              ${stateClasses}
             `}
           >
             {badge && (
@@ -205,9 +247,13 @@ export function TotalCell({ value, emphasis = "row" }: TotalCellProps) {
 
   return (
     <td
+      onClick={() => {
+        if (value !== 0) copyCellValue(value);
+      }}
+      title={value !== 0 ? "Click to copy" : undefined}
       className={`px-2.5 py-1.5 border-b border-gray-100 text-right align-middle ${
-        value < 0 ? "bg-red-100/70" : ""
-      }`}
+        value !== 0 ? "cursor-copy" : ""
+      } ${value < 0 ? "bg-red-100/70" : ""}`}
     >
       <p
         className={`tabular-nums ${styles} ${

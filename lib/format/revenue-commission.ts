@@ -33,6 +33,7 @@ import {
   REVENUE_ADMIN_STREAMS,
   REVENUE_STREAM_LABELS,
   REVENUE_COMMISSION_TYPE,
+  REVENUE_ACCRUAL_TYPE,
   REVENUE_GAIA_FORECAST_TYPE,
   type AxisData,
   type ForecastRow,
@@ -109,37 +110,36 @@ export function computeCommission(
   return { months, byMonth, annual };
 }
 
-// ─── Fixed-structure seeding ────────────────────────────────────────────────
+// ─── Official revenue & BL Submission ───────────────────────────────────────
 
 /**
- * Ensures the revenue axis carries its fixed structure: a single implicit BL
- * bucket with one row per BL stream, and one GAIA actuals row per admin stream,
- * in canonical order. Existing months (and row/bucket ids) are preserved by
- * matching `rowType`; this is idempotent and safe to run on every load. Run via
- * the grid hook's `normalizeLoaded` so the seeded rows are part of the clean
- * snapshot and never count as unsaved changes.
- */
-/**
- * Official revenue per month — the source of truth used by the Revenue grid's
- * total (and now its comparison panel). Each month picks the first level that
- * carries a value, in order: GAIA Revenue line > the other GAIA detail lines,
- * summed > BL Input, summed (Commission included, as stored). Shared so the grid
- * and the comparison panel always agree.
+ * Official revenue per month — simply the Official Revenue line (stored as
+ * `gaiaForecast`), with no prioritization. Shared so the grid's Official
+ * Revenue row and its comparison reference (the previous RFQ's official
+ * revenue) always agree.
  */
 export function officialRevenueByMonth(data: AxisData): MonthlyMap {
   const forecast = data.actuals.find(
     (r) => r.rowType === REVENUE_GAIA_FORECAST_TYPE
   );
+  const out: MonthlyMap = emptyMonthly();
+  for (const m of MONTHS) out[m] = forecast?.months[m] ?? 0;
+  return out;
+}
+
+/**
+ * BL Submission per month — a two-level priority between the GAIA detail lines
+ * and the BL Input. For each month the GAIA detail lines win when any of them
+ * carries a value (summed); otherwise the BL Input is used (summed, Commission
+ * included as stored). This is the figure compared against the previous RFQ's
+ * official revenue in the grid's variance row.
+ */
+export function blSubmissionByMonth(data: AxisData): MonthlyMap {
   const others = data.actuals.filter(
     (r) => r.rowType !== REVENUE_GAIA_FORECAST_TYPE
   );
   const out: MonthlyMap = emptyMonthly();
   for (const m of MONTHS) {
-    const gaia = forecast?.months[m] ?? 0;
-    if (gaia !== 0) {
-      out[m] = gaia;
-      continue;
-    }
     let detail = 0;
     let hasDetail = false;
     for (const r of others) {
@@ -158,6 +158,16 @@ export function officialRevenueByMonth(data: AxisData): MonthlyMap {
   return out;
 }
 
+// ─── Fixed-structure seeding ────────────────────────────────────────────────
+
+/**
+ * Ensures the revenue axis carries its fixed structure: a single implicit BL
+ * bucket with one row per BL stream, and one GAIA actuals row per admin stream,
+ * in canonical order. Existing months (and row/bucket ids) are preserved by
+ * matching `rowType`; this is idempotent and safe to run on every load. Run via
+ * the grid hook's `normalizeLoaded` so the seeded rows are part of the clean
+ * snapshot and never count as unsaved changes.
+ */
 export function ensureRevenueShape(data: AxisData): AxisData {
   // Fill all 12 months; the label is always the stream's canonical type label
   // (rows are real revenue types, never renamed). The note is preserved.
@@ -180,14 +190,13 @@ export function ensureRevenueShape(data: AxisData): AxisData {
     blRows = REVENUE_BL_STREAMS.map((s) => newRow(s, REVENUE_STREAM_LABELS[s]));
   } else {
     blRows = existingBl;
-    if (!blRows.some((r) => r.rowType === REVENUE_COMMISSION_TYPE)) {
-      blRows = [
-        ...blRows,
-        newRow(
-          REVENUE_COMMISSION_TYPE,
-          REVENUE_STREAM_LABELS[REVENUE_COMMISSION_TYPE]
-        ),
-      ];
+    // The Commission (computed) and Accrual (fixed) rows are required and are
+    // never added or removed by hand — append them to pre-existing docs that
+    // predate them.
+    for (const required of [REVENUE_COMMISSION_TYPE, REVENUE_ACCRUAL_TYPE]) {
+      if (!blRows.some((r) => r.rowType === required)) {
+        blRows = [...blRows, newRow(required, REVENUE_STREAM_LABELS[required])];
+      }
     }
   }
 
@@ -205,6 +214,9 @@ export function ensureRevenueShape(data: AxisData): AxisData {
         label: REVENUE_STREAM_LABELS[stream],
         months: { ...emptyMonthly(), ...prev.months },
         ...(prev.note ? { note: prev.note } : {}),
+        // Detail lines ride along — the grid hook derives the parent's months
+        // from them (row = Σ details) after this normalization.
+        ...(prev.details?.length ? { details: prev.details } : {}),
       };
     }
     return newRow(stream, REVENUE_STREAM_LABELS[stream]);

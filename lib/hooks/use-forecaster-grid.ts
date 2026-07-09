@@ -47,9 +47,12 @@ import {
   type ForecastRow,
   type InputCategory,
   buildCellKey,
+  detailMonthTotals,
   emptyAxisData,
   newBucket,
+  newDetail,
   newRow,
+  rollUpActuals,
 } from "../types/forecaster.types";
 
 // ─── Helpers de calcul purs (exportés — le grid les applique aussi
@@ -97,6 +100,10 @@ function diffSides(
 function getValueIn(data: AxisData, coord: CellCoord): number {
   if (coord.category === "ADMIN_INPUT") {
     const row = data.actuals.find((r) => r.rowId === coord.rowId);
+    if (coord.detailId) {
+      const detail = row?.details?.find((d) => d.detailId === coord.detailId);
+      return detail?.months[coord.month] ?? 0;
+    }
     return row?.months[coord.month] ?? 0;
   }
   const bucket = data.buckets.find((b) => b.bucketId === coord.bucketId);
@@ -172,6 +179,15 @@ export interface UseForecasterGridResult {
   /** Actuals (ADMIN_INPUT) — lignes typées, sans bucket. */
   addActualsRow: (rowType: string) => void;
   removeActualsRow: (rowId: string) => void;
+  /** Detail lines (breakdown) on an actuals row — admin-only, like the row. */
+  addActualsDetail: (rowId: string) => void;
+  removeActualsDetail: (rowId: string, detailId: string) => void;
+  setActualsDetailLevel: (
+    rowId: string,
+    detailId: string,
+    index: number,
+    value: string
+  ) => void;
 
   // Comparaison — base fixe = BL du RFQ courant
   compareRef: ComparisonRef | null;
@@ -313,8 +329,15 @@ export function useForecasterGrid(
         // Revenue seeds its fixed rows here so they belong to the clean
         // snapshot and never read as unsaved changes.
         const normalized = normalizeLoaded ? normalizeLoaded(merged) : merged;
-        setOriginal(normalized);
-        setData(clone(normalized));
+        // ADMIN_INPUT roll-up: a row with detail lines derives its months from
+        // them (row = Σ details). Applied before the clean snapshot so a doc
+        // whose stored parent drifted from its details never reads as dirty.
+        const rolled = {
+          ...normalized,
+          actuals: rollUpActuals(normalized.actuals),
+        };
+        setOriginal(rolled);
+        setData(clone(rolled));
         setDirtyMap(new Map());
         setStructureDirty(false);
         // Per-side last-save stamps. Annual axes (Media, Labs) read the actuals
@@ -409,7 +432,13 @@ export function useForecasterGrid(
 
     promise
       .then((axisData) => {
-        if (!cancelled) setFetchedReference(axisData);
+        // Same ADMIN_INPUT roll-up as the working copy, so comparisons read the
+        // derived parent values even on docs saved before the roll-up existed.
+        if (!cancelled)
+          setFetchedReference({
+            ...axisData,
+            actuals: rollUpActuals(axisData.actuals),
+          });
       })
       .catch(() => {
         // An unavailable reference is not a blocking error — just disable it.
@@ -497,11 +526,20 @@ export function useForecasterGrid(
     (coord: CellCoord) => {
       if (locked) return false;
       if (isComputedCoord(coord)) return false;
-      if (coord.category === "ADMIN_INPUT") return isAdmin;
+      if (coord.category === "ADMIN_INPUT") {
+        if (!isAdmin) return false;
+        // A parent row carrying detail lines is derived (row = Σ details) —
+        // only its detail cells are editable.
+        if (!coord.detailId) {
+          const row = data.actuals.find((r) => r.rowId === coord.rowId);
+          if (row?.details?.length) return false;
+        }
+        return true;
+      }
       if (!canEditClosed && closedMonths.has(coord.month)) return false;
       return true;
     },
-    [locked, isAdmin, canEditClosed, closedMonths, isComputedCoord]
+    [locked, isAdmin, canEditClosed, closedMonths, isComputedCoord, data]
   );
 
   const setCellValue = useCallback(
@@ -512,7 +550,15 @@ export function useForecasterGrid(
         if (coord.category === "ADMIN_INPUT") {
           const row = next.actuals.find((r) => r.rowId === coord.rowId);
           if (!row) return prev;
-          row.months[coord.month] = value;
+          if (coord.detailId) {
+            const detail = row.details?.find((d) => d.detailId === coord.detailId);
+            if (!detail) return prev;
+            detail.months[coord.month] = value;
+            // Keep the derived parent in sync (row = Σ details).
+            row.months = detailMonthTotals(row.details!);
+          } else {
+            row.months[coord.month] = value;
+          }
         } else {
           const bucket = next.buckets.find((b) => b.bucketId === coord.bucketId);
           const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
@@ -547,7 +593,19 @@ export function useForecasterGrid(
         for (const { coord, value } of updates) {
           if (coord.category === "ADMIN_INPUT") {
             const row = next.actuals.find((r) => r.rowId === coord.rowId);
-            if (row) row.months[coord.month] = value;
+            if (!row) continue;
+            if (coord.detailId) {
+              const detail = row.details?.find(
+                (d) => d.detailId === coord.detailId
+              );
+              if (detail) {
+                detail.months[coord.month] = value;
+                // Keep the derived parent in sync (row = Σ details).
+                row.months = detailMonthTotals(row.details!);
+              }
+            } else {
+              row.months[coord.month] = value;
+            }
           } else {
             const bucket = next.buckets.find(
               (b) => b.bucketId === coord.bucketId
@@ -778,6 +836,80 @@ export function useForecasterGrid(
     });
   }, []);
 
+  // ─── Actuals detail lines (breakdown of an ADMIN_INPUT row) ─────────────
+  // Each detail carries free-text "levels" + its own 12-month budget. A parent
+  // row with details derives its months from them (row = Σ details): its own
+  // cells are read-only until the last detail is removed.
+
+  const addActualsDetail = useCallback((rowId: string) => {
+    setData((prev) => ({
+      ...prev,
+      actuals: prev.actuals.map((r) => {
+        if (r.rowId !== rowId) return r;
+        const details = r.details ?? [];
+        // The first detail seeds with the row's current months, so the roll-up
+        // taking over leaves the displayed total unchanged.
+        const detail =
+          details.length === 0
+            ? { ...newDetail(), months: { ...r.months } }
+            : newDetail();
+        return { ...r, details: [...details, detail] };
+      }),
+    }));
+    setStructureDirty(true);
+  }, []);
+
+  const removeActualsDetail = useCallback(
+    (rowId: string, detailId: string) => {
+      setData((prev) => ({
+        ...prev,
+        actuals: prev.actuals.map((r) => {
+          if (r.rowId !== rowId) return r;
+          const details = (r.details ?? []).filter(
+            (d) => d.detailId !== detailId
+          );
+          const next = { ...r };
+          // Drop the field entirely when the last detail goes — keeps the doc
+          // clean and mirrors how an empty note is removed. The last roll-up
+          // stays as the row's months, which become hand-editable again.
+          if (details.length === 0) delete next.details;
+          else {
+            next.details = details;
+            // Re-derive the parent from the remaining details.
+            next.months = detailMonthTotals(details);
+          }
+          return next;
+        }),
+      }));
+      setStructureDirty(true);
+      setDirtyMap((prev) => {
+        const next = new Map(prev);
+        [...next.keys()].forEach((k) => {
+          if (k.includes(`:${detailId}:`)) next.delete(k);
+        });
+        return next;
+      });
+    },
+    []
+  );
+
+  // Set one info field ("level") of a detail line. Persisted at Save like any
+  // structure change.
+  const setActualsDetailLevel = useCallback(
+    (rowId: string, detailId: string, index: number, value: string) => {
+      setData((prev) => {
+        const next = clone(prev);
+        const row = next.actuals.find((r) => r.rowId === rowId);
+        const detail = row?.details?.find((d) => d.detailId === detailId);
+        if (!detail) return prev;
+        detail.levels[index] = value;
+        return next;
+      });
+      setStructureDirty(true);
+    },
+    []
+  );
+
   // ─── Persistance ────────────────────────────────────────────────────────
 
   const hasChanges = dirtyMap.size > 0 || structureDirty;
@@ -914,6 +1046,9 @@ export function useForecasterGrid(
     setRowNote,
     addActualsRow,
     removeActualsRow,
+    addActualsDetail,
+    removeActualsDetail,
+    setActualsDetailLevel,
     compareRef,
     setCompareRef,
     referenceData,

@@ -82,6 +82,12 @@ export interface Client {
   Forecasting_Type: ForecastingType;
   /** Sparse LABS eligibility map by partnerId (absent = eligible). */
   Labs_Eligibility?: LabsEligibility;
+  /**
+   * MediaBox client document IDs this forecaster client maps to. One
+   * forecaster client may span several MediaBox clients, so their actuals are
+   * summed together. Empty/absent → no MediaBox actuals for this client.
+   */
+  CL_MediaBox_IDs?: string[];
   Client_Notes?: string;
   commissionsConfig: CommissionsConfig;
   createdAt?: string;
@@ -105,6 +111,7 @@ export interface ClientFormData {
   CL_Hidden?: boolean;
   Forecasting_Type: ForecastingType;
   Labs_Eligibility?: LabsEligibility;
+  CL_MediaBox_IDs?: string[];
   Client_Notes?: string;
   commissionsConfig: CommissionsConfig;
 }

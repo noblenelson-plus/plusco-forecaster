@@ -33,6 +33,26 @@ export type InputCategory = "BL_INPUT" | "ADMIN_INPUT";
 
 // ─── Level 3 — Row ───────────────────────────────────────────────────────────
 
+/** Number of free-text info fields ("levels") on a detail line. */
+export const DETAIL_LEVEL_COUNT = 3;
+
+/**
+ * A breakdown line under an ADMIN_INPUT (actuals) row. Purely an annotation:
+ * its budget is NOT rolled up into the parent row's total — the parent keeps its
+ * own monthly values, entered independently.
+ *
+ * `levels` are generic, header-less info slots (always DETAIL_LEVEL_COUNT of
+ * them, padded with ""). Each parent row uses them for whatever fits — a project
+ * name on one row, an admin number on another — so they carry no fixed meaning.
+ */
+export interface RowDetail {
+  detailId: string;
+  /** Free-text info fields, always DETAIL_LEVEL_COUNT entries (empty = unused). */
+  levels: string[];
+  /** 12-month budget of this detail line (independent of the parent total). */
+  months: MonthlyMap;
+}
+
 /**
  * Generic data-entry row.
  * `rowType` is intentionally a free string: MediaType for Media, stream for
@@ -47,6 +67,11 @@ export interface ForecastRow {
   months: MonthlyMap;
   /** Optional free-text note attached to the line. Absent when empty. */
   note?: string;
+  /**
+   * Optional breakdown lines (ADMIN_INPUT rows only). Shown when the row is
+   * expanded in the grid. Absent when none have been added.
+   */
+  details?: RowDetail[];
 }
 
 // ─── Level 2 — Bucket ────────────────────────────────────────────────────────
@@ -142,6 +167,12 @@ export interface RowTypeOption {
   label: string;
   /** Optional secondary text shown only in the add dropdown (e.g. media type). */
   hint?: string;
+  /**
+   * Optional description — disambiguates options that share a label (e.g. two
+   * Labs partners with the same name and media type). Shown in the add dropdown
+   * and the comparison panel.
+   */
+  description?: string;
 }
 
 /**
@@ -185,17 +216,20 @@ export interface AxisConfig {
  * Coordinate of an editable cell.
  * BL_INPUT  → bucketId + rowId set.
  * ADMIN_INPUT (actuals) → bucketId null, rowId = id of the actuals row.
+ * A detail-line budget cell sets `detailId` on top of an ADMIN_INPUT coord.
  */
 export interface CellCoord {
   category: InputCategory;
   bucketId: string | null;
   rowId: string | null;
+  /** Set only for a detail-line cell — the parent stays in `rowId`. */
+  detailId?: string | null;
   month: number;
 }
 
 /** Serialized key for the dirty map — stable and debug-readable. */
 export function buildCellKey(coord: CellCoord): string {
-  return `${coord.category}:${coord.bucketId ?? "-"}:${coord.rowId ?? "-"}:${coord.month}`;
+  return `${coord.category}:${coord.bucketId ?? "-"}:${coord.rowId ?? "-"}:${coord.detailId ?? "-"}:${coord.month}`;
 }
 
 /** Map cell → new value, pending Save. */
@@ -332,8 +366,71 @@ export function newBucket(name: string): ForecastBucket {
   return { bucketId: localId("bk"), name, rows: [] };
 }
 
+/** Name of the auto-managed lone project (Media/Labs). */
+export const GENERAL_PROJECT_NAME = "General";
+
+/**
+ * Media/Labs normalizer: a single project is always present and named "General".
+ * With no buckets it seeds one; with exactly one it forces the "General" name
+ * (the lone project's name is auto-managed and locked in the UI). Two or more
+ * buckets are left untouched — names become user-controlled again. Used as the
+ * grid's `normalizeLoaded`, so the result is part of the clean snapshot and the
+ * seeded/renamed project never reads as an unsaved change. The bucket name is a
+ * display-only label (comparison aggregates by rowType, ignoring projects), so
+ * forcing it is safe.
+ */
+export function ensureSingleProjectGeneral(data: AxisData): AxisData {
+  if (data.buckets.length === 0) {
+    return { ...data, buckets: [newBucket(GENERAL_PROJECT_NAME)] };
+  }
+  if (
+    data.buckets.length === 1 &&
+    data.buckets[0].name !== GENERAL_PROJECT_NAME
+  ) {
+    return {
+      ...data,
+      buckets: [{ ...data.buckets[0], name: GENERAL_PROJECT_NAME }],
+    };
+  }
+  return data;
+}
+
 export function newRow(rowType: string, label: string): ForecastRow {
   return { rowId: localId("rw"), rowType, label, months: emptyMonthly() };
+}
+
+export function newDetail(): RowDetail {
+  return {
+    detailId: localId("dt"),
+    levels: Array.from({ length: DETAIL_LEVEL_COUNT }, () => ""),
+    months: emptyMonthly(),
+  };
+}
+
+// ─── ADMIN_INPUT detail roll-up ──────────────────────────────────────────────
+
+/** Sum of a detail set's 12-month budgets. */
+export function detailMonthTotals(details: RowDetail[]): MonthlyMap {
+  const totals = emptyMonthly();
+  for (const d of details)
+    for (const m of MONTHS) totals[m] += d.months[m] ?? 0;
+  return totals;
+}
+
+/**
+ * An ADMIN_INPUT row carrying detail lines derives its months from them
+ * (row = sum of its details); its cells are read-only in the grid. A row
+ * without details keeps its hand-entered months. Returns the same reference
+ * when there is nothing to derive.
+ */
+export function rollUpDetailMonths(row: ForecastRow): ForecastRow {
+  if (!row.details || row.details.length === 0) return row;
+  return { ...row, months: detailMonthTotals(row.details) };
+}
+
+/** Applies the detail roll-up to a whole actuals set. */
+export function rollUpActuals(rows: ForecastRow[]): ForecastRow[] {
+  return rows.map(rollUpDetailMonths);
 }
 
 export function newDataEntry(
@@ -397,6 +494,10 @@ import type { LabsPartner } from "./labs.types";
  * matches by bucket name + rowType); the label is the partner name, captured on
  * the row at add-time, so a row keeps its name even if the partner is later
  * removed from the year's config (it then shows as "not configured" in the grid).
+ *
+ * Two partners may share a name and media type (distinguished only by their
+ * description), so the description rides along on each option to tell them apart
+ * in the add dropdown and the comparison panel.
  */
 export function buildLabsAxisConfig(partners: LabsPartner[]): AxisConfig {
   return {
@@ -408,6 +509,7 @@ export function buildLabsAxisConfig(partners: LabsPartner[]): AxisConfig {
       value: p.partnerId,
       label: p.name,
       hint: MEDIA_TYPE_LABELS[p.mediaType],
+      description: p.description,
     })),
     allowMultipleBuckets: true,
     // The same partner twice in one project makes no sense — forbidden.
@@ -447,23 +549,27 @@ export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
   productFees: "Product Fees",
   unallocated: "Unallocated",
   accrual: "Accrual",
-  gaiaForecast: "GAIA Revenue",
+  gaiaForecast: "Official Revenue",
 };
 
 /** The Commission BL row is calculated — read-only, never hand-entered. */
 export const REVENUE_COMMISSION_TYPE: RevenueStream = "commission";
 
 /**
- * GAIA Revenue (stored as `gaiaForecast`) — the top of the per-month
- * source-of-truth order. Each month, the official revenue comes from the
- * first level that carries a value:
- *   1. GAIA Revenue (this row) — when filled it overrides everything below
- *   2. the other ADMIN_INPUT (GAIA) detail streams, summed
- *   3. BL_INPUT, summed
- * Values from the levels that are not the source of truth for a given month are
- * struck through and excluded from the official total. The per-month behavior
- * lives in components/forecaster/revenue-grid.tsx. The key stays `gaiaForecast`
- * for data compatibility — only the display label changed to "GAIA Revenue".
+ * The Accrual BL row is a fixed line used to report revenue — such as
+ * commission — that was not captured in GAIA during locked (closed) months.
+ * Like Commission it is always present (seeded by `ensureRevenueShape`) and
+ * cannot be removed, but unlike Commission its values are hand-entered.
+ */
+export const REVENUE_ACCRUAL_TYPE: RevenueStream = "accrual";
+
+/**
+ * Official Revenue (stored as `gaiaForecast`) — the hand-entered official
+ * figure, admin-only like the other ADMIN_INPUT streams. It IS the Official
+ * Revenue directly (no prioritization); the grid renders it as the single
+ * editable emerald row at the bottom of the table, separate from the GAIA
+ * detail streams. The key stays `gaiaForecast` for data compatibility — only
+ * the display label changed to "Official Revenue".
  */
 export const REVENUE_GAIA_FORECAST_TYPE: RevenueStream = "gaiaForecast";
 
@@ -473,6 +579,7 @@ export const REVENUE_BL_STREAMS: RevenueStream[] = [
   "commission",
   "projectFees",
   "productFees",
+  "accrual",
 ];
 
 /**
@@ -487,9 +594,10 @@ export const REVENUE_BL_ADDABLE_STREAMS: RevenueStream[] = [
 ];
 
 /**
- * Admin Input (GAIA) streams, in display order — the GAIA Revenue source-of-
- * truth line on top, then the BL four plus Unallocated and Accrual. The order
- * here also drives the seeded actuals row order (ensureRevenueShape).
+ * Admin Input (GAIA) streams — the Official Revenue source-of-truth line
+ * (`gaiaForecast`, rendered separately at the bottom of the grid), then the BL
+ * four plus Unallocated and Accrual. The order here also drives the seeded
+ * actuals row order (ensureRevenueShape).
  */
 export const REVENUE_ADMIN_STREAMS: RevenueStream[] = [
   "gaiaForecast",

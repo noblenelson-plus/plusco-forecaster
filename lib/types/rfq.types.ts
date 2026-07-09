@@ -23,6 +23,25 @@ export const RFQ_STATUSES = [
 
 export type RFQStatus = (typeof RFQ_STATUSES)[number]["value"];
 
+// ─── RFQ Timeline period (échéancier) ─────────────────────────────────────────
+
+/**
+ * A scheduling milestone within an RFQ's timeline (échéancier). Admins define
+ * an ordered set of these per RFQ; the forecast page renders them as a sticky
+ * step bar that highlights which one is currently active. Dates are stored as
+ * local calendar strings ("YYYY-MM-DD"), so a plain lexicographic comparison
+ * against today's date yields the status.
+ */
+export interface RFQPeriod {
+  id: string;            // stable id (random) — survives reordering/edits
+  name: string;
+  description?: string;
+  startDate: string;     // "YYYY-MM-DD"
+  endDate: string;       // "YYYY-MM-DD"
+}
+
+export type PeriodStatus = "completed" | "active" | "future";
+
 // ─── RFQ Document ─────────────────────────────────────────────────────────────
 
 /**
@@ -40,6 +59,12 @@ export interface RFQ {
    * applies for that axis (no migration needed for pre-existing docs).
    */
   closedMonths?: Partial<Record<AxisId, number[]>>;
+  /**
+   * Timeline periods (échéancier) for this RFQ, admin-edited. Absent on
+   * pre-existing docs — treat as an empty list. Render order comes from
+   * `sortPeriods` (by start date), not the stored array order.
+   */
+  periods?: RFQPeriod[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -109,4 +134,38 @@ export function resolveClosedMonths(
   axisId: AxisId
 ): number[] {
   return rfq.closedMonths?.[axisId] ?? RFQ_CLOSED_MONTHS[rfq.type];
+}
+
+// ─── Timeline periods ─────────────────────────────────────────────────────────
+
+/** Periods sorted for display: by start date, then end date (ascending). */
+export function sortPeriods(periods: RFQPeriod[]): RFQPeriod[] {
+  return [...periods].sort(
+    (a, b) =>
+      a.startDate.localeCompare(b.startDate) ||
+      a.endDate.localeCompare(b.endDate)
+  );
+}
+
+/**
+ * Status of a period relative to `today` (a "YYYY-MM-DD" string). The range is
+ * inclusive on both ends, so a period whose start and end are today is active.
+ * String comparison is valid because ISO calendar dates sort lexicographically.
+ */
+export function resolvePeriodStatus(
+  period: Pick<RFQPeriod, "startDate" | "endDate">,
+  today: string
+): PeriodStatus {
+  if (today < period.startDate) return "future";
+  if (today > period.endDate) return "completed";
+  return "active";
+}
+
+/** Today's local calendar date as "YYYY-MM-DD" (not UTC — matches the inputs). */
+export function todayISODate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }

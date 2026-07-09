@@ -24,14 +24,19 @@ import {
   MousePointerClick,
   AlertTriangle,
   Percent,
+  GitCompare,
   BookOpen,
+  StickyNote,
 } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
+import SubmissionNote from "../../../components/forecaster/submission-note";
 import HowToGuide from "../../../components/forecaster/how-to-guide";
 import ForecastGrid, { type RowMeta } from "../../../components/forecaster/forecast-grid";
+import CopyToast from "../../../components/forecaster/copy-toast";
 import RevenueGrid from "../../../components/forecaster/revenue-grid";
 import ComparisonPanel from "../../../components/forecaster/comparison-panel";
 import LabsPenetrationPanel from "../../../components/forecaster/labs-penetration-panel";
+import RFQTimelineBar from "../../../components/forecaster/rfq-timeline-bar";
 import LabsCoverageSplitDialog, {
   type ProjectShareTarget,
 } from "../../../components/forecaster/labs-coverage-split-dialog";
@@ -52,6 +57,7 @@ import {
   buildLabsAxisConfig,
   defaultComparisonRef,
   emptyMonthly,
+  ensureSingleProjectGeneral,
 } from "../../../lib/types/forecaster.types";
 import type { ComparisonRef, CellCoord } from "../../../lib/types/forecaster.types";
 import { MONTHS, type MonthlyMap } from "../../../lib/types/common.types";
@@ -82,6 +88,10 @@ export default function ForecastPage() {
   const [tab, setTab] = useState<Tab>("media");
   // Labs penetration panel — open by default on the Labs tab, toggleable.
   const [penetrationOpen, setPenetrationOpen] = useState(true);
+  // Comparison panel (Media & Labs) — open by default, toggleable.
+  const [compareOpen, setCompareOpen] = useState(true);
+  // Submission notes card — shared per submission, open by default, toggleable.
+  const [notesOpen, setNotesOpen] = useState(true);
 
   // Lab partners (global, all years) — drive the Labs grid's row types. The
   // grid for the Labs axis lists the partners configured for the selected year
@@ -130,6 +140,7 @@ export default function ForecastPage() {
   // One grid engine per axis; only the active tab's grid is rendered. Saving
   // Media re-syncs the derived Revenue commission for the same submission.
   const mediaGrid = useForecasterGrid(MEDIA_AXIS_CONFIG, {
+    normalizeLoaded: ensureSingleProjectGeneral,
     onSaved: () => {
       if (!selectedClient || !selectedYear || !selectedRFQ) return;
       syncRevenueCommission(
@@ -142,7 +153,9 @@ export default function ForecastPage() {
       );
     },
   });
-  const labsGrid = useForecasterGrid(labsConfig);
+  const labsGrid = useForecasterGrid(labsConfig, {
+    normalizeLoaded: ensureSingleProjectGeneral,
+  });
 
   const commission = useMemo(
     () => computeCommission(mediaGrid.data, yearRates),
@@ -185,7 +198,8 @@ export default function ForecastPage() {
     [labsGrid.data, mediaGrid.data, partnersForYear]
   );
 
-  // Per-row extras for the Labs grid: media type chip + description tooltip.
+  // Per-row extras for the Labs grid: media type chip + inline description.
+  // The description disambiguates two partners that share a name and media type.
   // (Over-cap flagging lives in the penetration panel, not on the rows, since a
   // media type may hold several partners.)
   const labsRowMeta = useCallback(
@@ -194,7 +208,7 @@ export default function ForecastPage() {
       if (!partner) return undefined;
       return {
         badge: MEDIA_TYPE_LABELS[partner.mediaType],
-        tooltip: partner.description,
+        description: partner.description,
       };
     },
     [partnerById]
@@ -334,6 +348,14 @@ export default function ForecastPage() {
     [rfqs]
   );
 
+  // Timeline periods of the selected RFQ — resolved from the live `rfqs`
+  // subscription (not the store's snapshot) so admin edits reflect instantly.
+  const timelinePeriods = useMemo(() => {
+    if (!selectedRFQ) return [];
+    const live = rfqs.find((r) => r.rfq_id === selectedRFQ.rfq_id);
+    return (live ?? selectedRFQ).periods ?? [];
+  }, [rfqs, selectedRFQ]);
+
   // Default comparison = the previous submission (BL for Media/Labs, GAIA for
   // Revenue). Applied to every axis whenever the selection context changes —
   // not on every rfqs snapshot, so a user's manual choice survives lock/unlock
@@ -381,11 +403,21 @@ export default function ForecastPage() {
   }, [activeGrid, activeDefaultRef]);
 
   return (
-    <div>
+    // Full-height flex column so the timeline bar can stick to the bottom of
+    // the viewport even when the grid is short: the content area grows
+    // (flex-1) and pushes the sticky bar down.
+    <div className="flex flex-col min-h-screen">
+      {/* Global toast for click-to-copy on read-only cells. */}
+      <CopyToast />
       {/* ─── Context bar — selectors ─── */}
       {/* The comparison controls now live inside the comparison panel beside the
           grid, not here in the header. */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
+      {/* z-40 keeps this bar (and its open dropdowns) above the grid's sticky
+          cells: row headers (z-10), column headers (z-20) and the frozen corner
+          cell (z-30). The dropdown panels live in this bar's stacking context,
+          so an equal z-index would let the later-in-DOM corner header ("Stream")
+          paint over the open dropdowns. */}
+      <div className="sticky top-0 z-40 bg-white border-b border-gray-200">
         <div className="flex flex-wrap items-center gap-3 px-6 py-3">
           <ForecastSelectors orientation="horizontal" theme="light" />
 
@@ -401,6 +433,7 @@ export default function ForecastPage() {
               type="button"
               onClick={() => setPenetrationOpen((v) => !v)}
               aria-pressed={penetrationOpen}
+              title={penetrationOpen ? "Hide the % share panel" : "Show the % share panel"}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
                 penetrationOpen
                   ? "border-yellow-300 bg-yellow-50 text-gray-900"
@@ -409,6 +442,42 @@ export default function ForecastPage() {
             >
               <Percent size={14} />
               Share
+            </button>
+          )}
+
+          {/* Submission notes toggle (all axis tabs — the note is shared). */}
+          {tab !== "howto" && (
+            <button
+              type="button"
+              onClick={() => setNotesOpen((v) => !v)}
+              aria-pressed={notesOpen}
+              title={notesOpen ? "Hide the submission notes" : "Show the submission notes"}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                notesOpen
+                  ? "border-amber-300 bg-amber-50 text-gray-900"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <StickyNote size={14} />
+              Notes
+            </button>
+          )}
+
+          {/* Comparison panel toggle (Media & Labs tabs). */}
+          {tab !== "revenue" && tab !== "howto" && (
+            <button
+              type="button"
+              onClick={() => setCompareOpen((v) => !v)}
+              aria-pressed={compareOpen}
+              title={compareOpen ? "Hide the comparison panel" : "Show the comparison panel"}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                compareOpen
+                  ? "border-yellow-300 bg-yellow-50 text-gray-900"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <GitCompare size={14} />
+              Compare
             </button>
           )}
         </div>
@@ -437,14 +506,20 @@ export default function ForecastPage() {
       </div>
 
       {/* ─── Content ─── */}
-      <div className="p-6 max-w-[1700px] mx-auto">
+      {/* flex-1 lets this area fill the remaining height so the timeline bar
+          below stays pinned to the bottom of the screen. */}
+      <div className="flex-1 w-full p-6 max-w-[1700px] mx-auto">
         {tab === "howto" ? (
           // Standalone guide — no submission required, jumps to the axis tabs.
           <HowToGuide onJump={setTab} />
         ) : !activeGrid.selectionReady ? (
           <SelectionPrompt />
         ) : (
-          <div className="flex items-start gap-4">
+          <div className="space-y-4">
+            {/* Submission-wide notes — same card on every axis tab. */}
+            {notesOpen && <SubmissionNote />}
+
+            <div className="flex items-start gap-4">
             {/* Editing grid — always editable, even while comparing */}
             <div className="flex-1 min-w-0 space-y-4">
               {/* Labs with no partner configured for the year — the partner
@@ -473,35 +548,44 @@ export default function ForecastPage() {
               )}
             </div>
 
-            {/* Right column — penetration (Labs) + the always-visible comparison
-                panel (its reference selector lives inside it). */}
-            <div className="w-[360px] flex-shrink-0 self-start sticky top-32 space-y-4">
-              {showPenetration && (
-                <LabsPenetrationPanel
-                  result={penetration}
-                  canEdit={canEditPenetration}
-                  onSetCoverage={setPartnerCoverage}
-                />
-              )}
-              <ComparisonPanel
-                config={activeConfig}
-                grid={activeGrid}
-                currentYear={selectedYear!}
-                currentRfq={selectedRFQ!.type}
-                allRfqs={allRfqs}
-                onSelectRef={activeGrid.setCompareRef}
-                onResetDefault={resetActiveDefault}
-                canResetDefault={!!activeDefaultRef}
-                disableDistributeFor={
-                  tab === "revenue"
-                    ? new Set([REVENUE_COMMISSION_TYPE])
-                    : undefined
-                }
-              />
+            {/* Right column — penetration (Labs) + the comparison panel (its
+                reference selector lives inside it). Hidden on the Revenue tab,
+                and collapsed entirely when both panels are toggled off so the
+                grid takes the full width. */}
+            {tab !== "revenue" && (showPenetration || compareOpen) && (
+              <div className="w-[360px] flex-shrink-0 self-start sticky top-32 space-y-4">
+                {showPenetration && (
+                  <LabsPenetrationPanel
+                    result={penetration}
+                    canEdit={canEditPenetration}
+                    onSetCoverage={setPartnerCoverage}
+                  />
+                )}
+                {compareOpen && (
+                  <ComparisonPanel
+                    config={activeConfig}
+                    grid={activeGrid}
+                    currentYear={selectedYear!}
+                    currentRfq={selectedRFQ!.type}
+                    allRfqs={allRfqs}
+                    onSelectRef={activeGrid.setCompareRef}
+                    onResetDefault={resetActiveDefault}
+                    canResetDefault={!!activeDefaultRef}
+                  />
+                )}
+              </div>
+            )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Sticky timeline (échéancier) — shown only with a full context selected
+          and never on the standalone How-to tab. Renders nothing when the RFQ
+          has no periods. */}
+      {tab !== "howto" && activeGrid.selectionReady && (
+        <RFQTimelineBar periods={timelinePeriods} />
+      )}
 
       {/* Coverage split — partner present in several projects */}
       {coverageSplit && (

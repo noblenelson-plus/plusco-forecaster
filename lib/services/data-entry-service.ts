@@ -17,8 +17,10 @@
 import {
   doc,
   getDoc,
+  onSnapshot,
   setDoc,
   updateDoc,
+  type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import type { RFQType } from "../types/rfq.types";
@@ -216,6 +218,140 @@ export async function propagateCommissionForYear(
     if (rfqSnap.exists() && rfqSnap.data().status === "LOCKED") continue;
     await syncRevenueCommission(clientId, year, type, yearRates, userUid);
   }
+}
+
+// ─── Submission note (free-text comment, shared across the 3 axes) ───────────
+
+/**
+ * Free-text note attached to a whole submission ({client, year, rfq}), stored
+ * top-level on the data_entries doc so it is shared by the Media, Revenue and
+ * Labs tabs — independent of any axis. Editable even when the RFQ is locked
+ * (the security rules carve out a note-only write for assigned BLs).
+ */
+export interface SubmissionNote {
+  text: string;
+  updatedAt?: string;
+  updatedBy?: string; // User UID
+}
+
+/**
+ * Subscribes in real time to a submission's note. Calls back with `null` when
+ * the doc (or the note) does not exist yet — a normal empty case. Returns the
+ * Firestore unsubscribe function.
+ */
+export function subscribeToSubmissionNote(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  callback: (note: SubmissionNote | null) => void
+): Unsubscribe {
+  const entryId = buildDataEntryId(clientId, year, rfq);
+  return onSnapshot(
+    doc(db, COLLECTION, entryId),
+    (snapshot) => {
+      const note = snapshot.data()?.submissionNote as SubmissionNote | undefined;
+      callback(note ?? null);
+    },
+    (err) => {
+      console.error("Submission note subscription failed:", err);
+      callback(null);
+    }
+  );
+}
+
+/**
+ * Writes the submission note — creates the data_entries doc on first write
+ * (setDoc + merge). The note replaces the whole `submissionNote` object so no
+ * stale sub-key lingers. Touches only `submissionNote` and `updatedAt` on an
+ * existing doc, which the security rules allow regardless of the RFQ lock.
+ */
+export async function saveSubmissionNote(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  text: string,
+  userUid?: string
+): Promise<void> {
+  const entryId = buildDataEntryId(clientId, year, rfq);
+  const now = new Date().toISOString();
+  await setDoc(
+    doc(db, COLLECTION, entryId),
+    {
+      clientId,
+      year,
+      rfq,
+      submissionNote: {
+        text,
+        updatedAt: now,
+        ...(userUid ? { updatedBy: userUid } : {}),
+      },
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+}
+
+// ─── Ready months (data-readiness flags, shared across the 3 axes) ───────────
+
+/**
+ * Subscribes in real time to a submission's "ready months" — the set of months
+ * (1–12) a user has flagged as complete/ready, stored top-level on the
+ * data_entries doc so it is shared by the Media, Revenue and Labs tabs. Calls
+ * back with a sorted, de-duplicated array (empty when none/absent).
+ */
+export function subscribeToReadyMonths(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  callback: (months: number[]) => void
+): Unsubscribe {
+  const entryId = buildDataEntryId(clientId, year, rfq);
+  return onSnapshot(
+    doc(db, COLLECTION, entryId),
+    (snapshot) => {
+      const raw = snapshot.data()?.readyMonths;
+      const months = Array.isArray(raw)
+        ? [...new Set(raw.filter((m) => typeof m === "number" && m >= 1 && m <= 12))].sort(
+            (a, b) => a - b
+          )
+        : [];
+      callback(months);
+    },
+    (err) => {
+      console.error("Ready months subscription failed:", err);
+      callback([]);
+    }
+  );
+}
+
+/**
+ * Writes the submission's "ready months" — creates the data_entries doc on first
+ * write (setDoc + merge). The array is stored sorted; on an existing doc the
+ * write touches only `readyMonths` and `updatedAt`, which the security rules
+ * allow regardless of the RFQ lock (these flags are an annotation, not data).
+ */
+export async function saveReadyMonths(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  months: number[],
+  userUid?: string
+): Promise<void> {
+  const entryId = buildDataEntryId(clientId, year, rfq);
+  const now = new Date().toISOString();
+  const sorted = [...new Set(months)].sort((a, b) => a - b);
+  await setDoc(
+    doc(db, COLLECTION, entryId),
+    {
+      clientId,
+      year,
+      rfq,
+      readyMonths: sorted,
+      readyMonthsMeta: { updatedAt: now, ...(userUid ? { updatedBy: userUid } : {}) },
+      updatedAt: now,
+    },
+    { merge: true }
+  );
 }
 
 /**

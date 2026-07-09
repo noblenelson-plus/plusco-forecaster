@@ -14,6 +14,13 @@ export interface LabsPartner {
   description?: string;
   year: number;
   mediaType: MediaType;
+  /**
+   * MediaBox publisher shortcode IDs that fall under this LABS partner. A
+   * MediaBox tactique counts as LABS spend when its `TC_Publisher` is in this
+   * list. Consumed by the MediaBox totals aggregation; absent/empty → the
+   * partner contributes no MediaBox-sourced LABS spend.
+   */
+  mediaboxPublisherIds?: string[];
 }
 
 // A single LABS allocation row inside a client's DataEntry

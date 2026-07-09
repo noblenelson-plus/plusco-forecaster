@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Plus,
   Trash2,
+  Pencil,
   Loader2,
   AlertCircle,
   FlaskConical,
@@ -20,8 +21,11 @@ import {
   subscribeToLabsPartners,
   createLabsPartner,
   deleteLabsPartner,
+  updateLabsPartner,
+  updateLabsPartnerPublishers,
   getLabsPartnerYears,
   getLabsPartnersForYear,
+  type UpdateLabsPartnerInput,
 } from "../../../../lib/services/labs-partner-service";
 import PageHeader from "../../../../components/_shared/page-header";
 
@@ -106,6 +110,21 @@ export default function AdminLabsPage() {
     }
   }
 
+  async function handleUpdate(
+    partnerId: string,
+    year: number,
+    input: UpdateLabsPartnerInput
+  ): Promise<boolean> {
+    setError("");
+    try {
+      await updateLabsPartner(partnerId, year, input);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update partner.");
+      return false;
+    }
+  }
+
   async function handleDelete(partnerId: string) {
     setBusyId(partnerId);
     setError("");
@@ -116,6 +135,18 @@ export default function AdminLabsPage() {
       setError(err instanceof Error ? err.message : "Failed to delete partner.");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleSavePublishers(partnerId: string, ids: string[]) {
+    setError("");
+    try {
+      await updateLabsPartnerPublishers(partnerId, ids);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save publishers."
+      );
+      throw err;
     }
   }
 
@@ -226,9 +257,11 @@ export default function AdminLabsPage() {
                 busyId={busyId}
                 confirmDeleteId={confirmDeleteId}
                 onCreate={(draft) => handleCreate(year, draft)}
+                onUpdate={handleUpdate}
                 onAskDelete={(id) => setConfirmDeleteId(id)}
                 onCancelDelete={() => setConfirmDeleteId(null)}
                 onConfirmDelete={(id) => handleDelete(id)}
+                onSavePublishers={handleSavePublishers}
               />
             ))}
           </div>
@@ -246,18 +279,26 @@ function YearSection({
   busyId,
   confirmDeleteId,
   onCreate,
+  onUpdate,
   onAskDelete,
   onCancelDelete,
   onConfirmDelete,
+  onSavePublishers,
 }: {
   year: number;
   partners: LabsPartner[];
   busyId: string | null;
   confirmDeleteId: string | null;
   onCreate: (draft: NewPartnerDraft) => Promise<boolean>;
+  onUpdate: (
+    partnerId: string,
+    year: number,
+    input: UpdateLabsPartnerInput
+  ) => Promise<boolean>;
   onAskDelete: (id: string) => void;
   onCancelDelete: () => void;
   onConfirmDelete: (id: string) => void;
+  onSavePublishers: (partnerId: string, ids: string[]) => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [mediaType, setMediaType] = useState<MediaType>(MEDIA_TYPES[0]);
@@ -295,9 +336,11 @@ function YearSection({
               partner={p}
               busy={busyId === p.partnerId}
               confirmingDelete={confirmDeleteId === p.partnerId}
+              onUpdate={onUpdate}
               onAskDelete={() => onAskDelete(p.partnerId)}
               onCancelDelete={onCancelDelete}
               onConfirmDelete={() => onConfirmDelete(p.partnerId)}
+              onSavePublishers={onSavePublishers}
             />
           ))
         )}
@@ -361,70 +404,227 @@ function PartnerRow({
   partner,
   busy,
   confirmingDelete,
+  onUpdate,
   onAskDelete,
   onCancelDelete,
   onConfirmDelete,
+  onSavePublishers,
 }: {
   partner: LabsPartner;
   busy: boolean;
   confirmingDelete: boolean;
+  onUpdate: (
+    partnerId: string,
+    year: number,
+    input: UpdateLabsPartnerInput
+  ) => Promise<boolean>;
   onAskDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
+  onSavePublishers: (partnerId: string, ids: string[]) => Promise<void>;
 }) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-8 h-8 rounded-lg bg-yellow-100 flex items-center justify-center flex-shrink-0">
-          <FlaskConical size={14} className="text-yellow-600" />
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-gray-900 truncate">
-              {partner.name}
-            </p>
-            {partner.mediaType && (
-              <span className="flex-shrink-0 px-2 py-0.5 text-[11px] font-medium text-yellow-700 bg-yellow-100 rounded-full">
-                {MEDIA_TYPE_LABELS[partner.mediaType]}
-              </span>
-            )}
-          </div>
-          {partner.description && (
-            <p className="text-xs text-gray-400 truncate">
-              {partner.description}
-            </p>
-          )}
-        </div>
-      </div>
+  // Inline edit of name / media type / description. Seeded from the partner
+  // when the form opens; closed on a successful save.
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(partner.name);
+  const [editMediaType, setEditMediaType] = useState<MediaType>(partner.mediaType);
+  const [editDescription, setEditDescription] = useState(partner.description ?? "");
+  const [savingEdit, setSavingEdit] = useState(false);
 
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {confirmingDelete ? (
-          <>
-            <span className="text-xs text-red-600 mr-1">Remove?</span>
-            <button
-              onClick={onConfirmDelete}
-              disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+  function startEdit() {
+    setEditName(partner.name);
+    setEditMediaType(partner.mediaType);
+    setEditDescription(partner.description ?? "");
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    if (!editName.trim() || savingEdit) return;
+    setSavingEdit(true);
+    const ok = await onUpdate(partner.partnerId, partner.year, {
+      name: editName,
+      mediaType: editMediaType,
+      description: editDescription,
+    });
+    setSavingEdit(false);
+    if (ok) setEditing(false);
+  }
+  // Comma-separated MediaBox publisher IDs, edited inline. Seeded from the
+  // partner and re-seeded whenever the persisted value changes underneath us
+  // (e.g. after a save) — using the render-time state-reset pattern so we don't
+  // need an effect.
+  const persisted = useMemo(
+    () => (partner.mediaboxPublisherIds ?? []).join(", "),
+    [partner.mediaboxPublisherIds]
+  );
+  const [publishersInput, setPublishersInput] = useState(persisted);
+  const [seededFrom, setSeededFrom] = useState(persisted);
+  const [savingPublishers, setSavingPublishers] = useState(false);
+  if (persisted !== seededFrom) {
+    setSeededFrom(persisted);
+    setPublishersInput(persisted);
+  }
+
+  const parsedIds = publishersInput
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const publishersDirty = parsedIds.join("|") !== (partner.mediaboxPublisherIds ?? []).join("|");
+
+  async function savePublishers() {
+    if (savingPublishers) return;
+    setSavingPublishers(true);
+    try {
+      await onSavePublishers(partner.partnerId, parsedIds);
+    } catch {
+      // Error is surfaced by the page-level handler; keep the input as-is.
+    } finally {
+      setSavingPublishers(false);
+    }
+  }
+
+  return (
+    <div className="px-4 py-3 hover:bg-gray-50 transition-colors space-y-2">
+      {editing ? (
+        // Inline edit form — name + media type on one line, description below.
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveEdit();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              placeholder="Partner name…"
+              className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+            />
+            <select
+              value={editMediaType}
+              onChange={(e) => setEditMediaType(e.target.value as MediaType)}
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
             >
-              {busy && <Loader2 size={12} className="animate-spin" />}
-              Yes, remove
+              {MEDIA_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {MEDIA_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={saveEdit}
+              disabled={savingEdit || !editName.trim()}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-lg hover:bg-yellow-500 disabled:opacity-50 transition-colors flex-shrink-0"
+            >
+              {savingEdit && <Loader2 size={14} className="animate-spin" />}
+              Save
             </button>
             <button
-              onClick={onCancelDelete}
-              className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              onClick={() => setEditing(false)}
+              className="px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex-shrink-0"
             >
               Cancel
             </button>
-          </>
-        ) : (
-          <button
-            onClick={onAskDelete}
-            className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-            title="Remove partner"
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
+          </div>
+          <input
+            type="text"
+            value={editDescription}
+            onChange={(e) => setEditDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveEdit();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            placeholder="Description (optional)"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+          />
+        </div>
+      ) : (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-yellow-100 flex items-center justify-center flex-shrink-0">
+              <FlaskConical size={14} className="text-yellow-600" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {partner.name}
+                </p>
+                {partner.mediaType && (
+                  <span className="flex-shrink-0 px-2 py-0.5 text-[11px] font-medium text-yellow-700 bg-yellow-100 rounded-full">
+                    {MEDIA_TYPE_LABELS[partner.mediaType]}
+                  </span>
+                )}
+              </div>
+              {partner.description && (
+                <p className="text-xs text-gray-400 truncate">
+                  {partner.description}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {confirmingDelete ? (
+              <>
+                <span className="text-xs text-red-600 mr-1">Remove?</span>
+                <button
+                  onClick={onConfirmDelete}
+                  disabled={busy}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {busy && <Loader2 size={12} className="animate-spin" />}
+                  Yes, remove
+                </button>
+                <button
+                  onClick={onCancelDelete}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={startEdit}
+                  className="p-1.5 rounded-lg text-gray-300 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  title="Edit partner"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  onClick={onAskDelete}
+                  className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  title="Remove partner"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MediaBox publisher IDs — TC_Publisher values that count as this partner */}
+      <div className="flex items-center gap-2 pl-11">
+        <input
+          type="text"
+          value={publishersInput}
+          onChange={(e) => setPublishersInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && publishersDirty) savePublishers();
+          }}
+          placeholder="MediaBox publisher IDs (comma-separated)"
+          className="flex-1 min-w-0 px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
+        />
+        <button
+          onClick={savePublishers}
+          disabled={!publishersDirty || savingPublishers}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-900 bg-yellow-400 rounded-lg hover:bg-yellow-500 disabled:opacity-40 disabled:hover:bg-yellow-400 transition-colors flex-shrink-0"
+        >
+          {savingPublishers && <Loader2 size={12} className="animate-spin" />}
+          Save
+        </button>
       </div>
     </div>
   );
