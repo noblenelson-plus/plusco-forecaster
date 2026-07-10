@@ -309,7 +309,7 @@ function ResultView({ result }: { result: CommitResult }) {
           <AlertTriangle size={32} className="text-amber-500 mb-3" />
         )}
         <p className="text-sm font-medium text-gray-900">
-          {result.blWrites} BL writes · {result.actualsWrites} actuals writes ·{" "}
+          {result.blWrites} BL writes · {result.actualsWrites} admin writes ·{" "}
           {result.commissionsRecalculated} commission re-syncs
         </p>
         {ok ? (

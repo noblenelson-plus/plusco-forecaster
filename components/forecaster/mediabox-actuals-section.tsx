@@ -211,7 +211,7 @@ export default function MediaboxActualsSection({
             className="px-8 py-2.5 text-xs text-blue-400 bg-blue-50/40 border-b border-blue-100"
           >
             {loading || triggering
-              ? "Loading MediaBox actuals…"
+              ? "Loading MediaBox data…"
               : "No MediaBox spend for this client/year."}
           </td>
         </tr>

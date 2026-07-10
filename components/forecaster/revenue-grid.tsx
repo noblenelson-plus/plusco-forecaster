@@ -1156,14 +1156,6 @@ function RevenueDataRow({
               {expand.count}
             </span>
           )}
-          {monthsDerived && (
-            <span
-              title="Monthly values are the sum of the detail lines — edit the details."
-              className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-indigo-100 text-indigo-600"
-            >
-              Σ details
-            </span>
-          )}
           {!readOnly &&
             (() => {
               const actions: RowAction[] = [
@@ -1279,14 +1271,6 @@ function OfficialRevenueRow({
           {expand && expand.count > 0 && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-white/20 text-white">
               {expand.count}
-            </span>
-          )}
-          {monthsDerived && (
-            <span
-              title="Monthly values are the sum of the detail lines — edit the details."
-              className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-white/20 text-white"
-            >
-              Σ details
             </span>
           )}
           {!readOnly && (

@@ -185,6 +185,7 @@ const CSV_COLUMNS = [
   "GM_Pod",
   "CL_Currency",
   "CL_GAIA_Number",
+  "CL_MediaBox_IDs",
   "CL_Tier",
   "Client_Status_2026",
   "CL_Hidden",
@@ -280,6 +281,15 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
     // Parse pipe-separated GAIA numbers
     const gaiaRaw = (row.CL_GAIA_Number as string) ?? "";
     row.CL_GAIA_Number = gaiaRaw ? gaiaRaw.split("|").map((s) => s.trim()) : [];
+
+    // Pipe-separated MediaBox IDs — only touched when the CSV carries the
+    // column, so older files without it don't wipe existing mappings.
+    if ("CL_MediaBox_IDs" in row) {
+      const mediaboxRaw = (row.CL_MediaBox_IDs as string) ?? "";
+      row.CL_MediaBox_IDs = mediaboxRaw
+        ? mediaboxRaw.split("|").map((s) => s.trim())
+        : [];
+    }
 
     // Status: the CSV carries a single 2026 column → map it into the per-year
     // map and drop the legacy key so docs don't keep a stale scalar.

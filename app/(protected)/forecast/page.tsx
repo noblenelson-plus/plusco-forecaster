@@ -40,7 +40,11 @@ import RFQTimelineBar from "../../../components/forecaster/rfq-timeline-bar";
 import LabsCoverageSplitDialog, {
   type ProjectShareTarget,
 } from "../../../components/forecaster/labs-coverage-split-dialog";
-import { useForecasterGrid } from "../../../lib/hooks/use-forecaster-grid";
+import {
+  useForecasterGrid,
+  monthTotals,
+  grandMonthTotals,
+} from "../../../lib/hooks/use-forecaster-grid";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { subscribeToClient } from "../../../lib/services/client-service";
 import { syncRevenueCommission } from "../../../lib/services/data-entry-service";
@@ -59,7 +63,11 @@ import {
   emptyMonthly,
   ensureSingleProjectGeneral,
 } from "../../../lib/types/forecaster.types";
-import type { ComparisonRef, CellCoord } from "../../../lib/types/forecaster.types";
+import type {
+  AxisData,
+  ComparisonRef,
+  CellCoord,
+} from "../../../lib/types/forecaster.types";
 import { MONTHS, type MonthlyMap } from "../../../lib/types/common.types";
 import { distribute } from "../../../lib/format/distribute";
 import {
@@ -196,6 +204,17 @@ export default function ForecastPage() {
   const penetration = useMemo(
     () => computeLabsPenetration(labsGrid.data, mediaGrid.data, partnersForYear),
     [labsGrid.data, mediaGrid.data, partnersForYear]
+  );
+
+  // MediaOcean vs BL — months where the booked actuals total exceeds the BL
+  // Input total, flagged with a banner on the Media and Labs tabs.
+  const mediaOverBooked = useMemo(
+    () => actualsOverBLMonths(mediaGrid.data),
+    [mediaGrid.data]
+  );
+  const labsOverBooked = useMemo(
+    () => actualsOverBLMonths(labsGrid.data),
+    [labsGrid.data]
   );
 
   // Per-row extras for the Labs grid: media type chip + inline description.
@@ -533,6 +552,20 @@ export default function ForecastPage() {
                 <LabsOverCapBanner result={penetration} />
               )}
 
+              {/* MediaOcean booked total exceeds the BL forecast in ≥1 month. */}
+              {tab === "media" && mediaOverBooked.length > 0 && (
+                <ActualsOverBLBanner
+                  months={mediaOverBooked}
+                  actualsLabel={MEDIA_AXIS_CONFIG.actualsLabel}
+                />
+              )}
+              {tab === "labs" && labsOverBooked.length > 0 && (
+                <ActualsOverBLBanner
+                  months={labsOverBooked}
+                  actualsLabel={labsConfig.actualsLabel}
+                />
+              )}
+
               {tab === "revenue" ? (
                 <RevenueGrid
                   grid={revenueGrid}
@@ -679,6 +712,65 @@ function NoPartnersBanner({ year }: { year: number | null }) {
         <span className="font-semibold">Admin → Labs</span> to populate the partner
         list before forecasting.
       </p>
+    </div>
+  );
+}
+
+// ─── MediaOcean booked total > BL forecast ───────────────────────────────────
+// Per-month check on the Media and Labs axes: any month whose MediaOcean
+// (admin) total exceeds the BL Input total means the booked spend has outgrown
+// the forecast — surfaced as a top-of-grid banner, like the Labs over-cap one.
+
+const MONTH_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+interface OverBookedMonth {
+  month: number;
+  booked: number;
+  planned: number;
+}
+
+/** Months (1-12) where the actuals total exceeds the BL Input total. */
+function actualsOverBLMonths(data: AxisData): OverBookedMonth[] {
+  const planned = grandMonthTotals(data);
+  const booked = monthTotals(data.actuals);
+  const out: OverBookedMonth[] = [];
+  for (const m of MONTHS) {
+    const b = Math.round(booked[m] ?? 0);
+    const p = Math.round(planned[m] ?? 0);
+    if (b > 0 && b > p) out.push({ month: m, booked: b, planned: p });
+  }
+  return out;
+}
+
+function ActualsOverBLBanner({
+  months,
+  actualsLabel,
+}: {
+  months: OverBookedMonth[];
+  actualsLabel: string;
+}) {
+  const fmt = (n: number) => Math.round(n).toLocaleString("en-CA");
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      <div className="flex items-center gap-2 font-semibold">
+        <AlertTriangle size={16} className="flex-shrink-0 text-amber-500" />
+        {actualsLabel} booked spend exceeds the BL Input forecast
+      </div>
+      <ul className="mt-1.5 space-y-0.5 pl-7 text-[13px]">
+        {months.map((m) => (
+          <li key={m.month}>
+            <span className="font-semibold">{MONTH_SHORT[m.month - 1]}</span>
+            {" — "}
+            <span className="font-semibold tabular-nums">{fmt(m.booked)}</span>
+            {" booked vs "}
+            <span className="tabular-nums">{fmt(m.planned)}</span>
+            {" planned"}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

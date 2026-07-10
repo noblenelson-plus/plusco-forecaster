@@ -733,14 +733,6 @@ function DataRow({
               {expand.count}
             </span>
           )}
-          {monthsDerived && (
-            <span
-              title="Monthly values are the sum of the detail lines — edit the details."
-              className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-indigo-100 text-indigo-600"
-            >
-              Σ details
-            </span>
-          )}
           {/* Media-type chip (Labs). */}
           {meta?.badge && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-gray-100 text-gray-500">
@@ -1063,6 +1055,22 @@ export function DetailRow({
   showNotes: boolean;
 }) {
   const r = rowIndex.get(detail.detailId)!;
+
+  // Read-only viewers (BLs) see only the filled levels: with levels 2/3 empty,
+  // level 1 stretches across the whole line instead of truncating at its fixed
+  // editing width. Editors always get the 3 fixed slots.
+  let visibleLevels = DETAIL_LEVEL_COUNT;
+  if (readOnly) {
+    visibleLevels = 1;
+    for (let i = DETAIL_LEVEL_COUNT - 1; i >= 1; i--) {
+      if ((detail.levels[i] ?? "").trim() !== "") {
+        visibleLevels = i + 1;
+        break;
+      }
+    }
+  }
+  const stretch = readOnly && visibleLevels < DETAIL_LEVEL_COUNT;
+
   return (
     <tr className="group bg-white">
       {/* Detail lines stay quiet — plain white, deeper indent, muted text — so
@@ -1071,13 +1079,17 @@ export function DetailRow({
           scroll. */}
       <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-4 py-1 border-b border-gray-100">
         <div className="flex items-center gap-1.5 pl-8">
-          <div className="flex items-center gap-1.5">
-            {Array.from({ length: DETAIL_LEVEL_COUNT }, (_, i) => (
+          {/* In stretch mode the container keeps the editing layout's width
+              (3 × w-36 + gaps) as a minimum, so the label column doesn't
+              shrink and level 1 stays fully readable. */}
+          <div className={`flex items-center gap-1.5 ${stretch ? "flex-1 min-w-[28rem]" : ""}`}>
+            {Array.from({ length: visibleLevels }, (_, i) => (
               <input
                 key={i}
                 type="text"
                 value={detail.levels[i] ?? ""}
                 disabled={readOnly}
+                title={readOnly ? detail.levels[i] ?? "" : undefined}
                 onChange={(e) =>
                   grid.setActualsDetailLevel(
                     parentRowId,
@@ -1086,9 +1098,9 @@ export function DetailRow({
                     e.target.value
                   )
                 }
-                className="w-36 px-2 py-1 text-xs text-gray-700 bg-white border border-gray-200 rounded
+                className={`${stretch ? "flex-1 min-w-0" : "w-36"} px-2 py-1 text-xs text-gray-700 bg-white border border-gray-200 rounded
                   hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent
-                  disabled:bg-transparent disabled:border-transparent"
+                  disabled:bg-transparent disabled:border-transparent`}
               />
             ))}
           </div>
@@ -1192,8 +1204,8 @@ function ActualsSection({
         <tr>
           <td colSpan={showNotes ? 15 : 14} className={`px-8 py-2.5 text-xs ${theme.labelClass} ${theme.emptyRow}`}>
             {readOnly
-              ? "No actuals recorded."
-              : `No actuals yet — add a ${config.rowTypeLabel.toLowerCase()} above.`}
+              ? "No admin input recorded."
+              : `No admin input yet — add a ${config.rowTypeLabel.toLowerCase()} above.`}
           </td>
         </tr>
       ) : (

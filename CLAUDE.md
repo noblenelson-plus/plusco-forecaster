@@ -63,7 +63,7 @@ Editing flow (`use-forecaster-grid.ts`) — **explicit save**, not autosave:
 
 `rfqs` collection, doc ID `{year}_{type}` (e.g. `2026_RFQ1`). Types are an ordered enum `RFQ0 → RFQ1 → RFQ2 → RFQ3 → FINAL` (`RFQ_TYPE_ORDER`, `sortRFQs`). Status is `UNLOCKED` / `LOCKED`. Admins manage RFQs in `app/(protected)/admin/rfqs`.
 
-**Closed months (per-axis, admin-controlled):** each RFQ doc may carry `closedMonths: { media?, revenue?, labs?: number[] }`. A closed month is read-only for Business Leads (admins are never restricted) — independent of the global `status` lock. `RFQ_CLOSED_MONTHS` (in `rfq.types.ts`) is only the *default* per type (RFQ1→Q1, FINAL→whole year, …); when an axis key is absent the default applies, so pre-existing docs need no migration. Always read the effective set via `resolveClosedMonths(rfq, axisId)`, never `RFQ_CLOSED_MONTHS` directly. Admins toggle each month per axis from the RFQ admin page; writes go through `updateRFQAxisClosedMonths`.
+**Closed months (per-axis, admin-controlled):** each RFQ doc may carry `closedMonths: { media?, revenue?, labs?: number[] }`. A closed month is read-only for Business Leads (admins are never restricted) — independent of the global `status` lock. Months are **never closed automatically**: an absent axis key means nothing is closed (the old per-RFQ-type default table — RFQ1→Q1, FINAL→whole year — was removed on request). Always read the effective set via `resolveClosedMonths(rfq, axisId)`. Admins toggle each month per axis from the RFQ admin page; writes go through `updateRFQAxisClosedMonths`.
 
 ### Clients
 

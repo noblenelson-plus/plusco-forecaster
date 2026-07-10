@@ -193,7 +193,7 @@ const GROUPS: ChapterGroup[] = [
                 month and for the year.
               </Step>
               <Step n={4}>
-                <strong>Actuals</strong> (<em>MediaOcean</em> for Media,{" "}
+                <strong>Admin Input</strong> (<em>MediaOcean</em> for Media,{" "}
                 <em>GAIA</em> for Revenue) — booked numbers, <strong>admin-only
                 </strong>, used as a comparison reference.
               </Step>
@@ -421,8 +421,8 @@ const GROUPS: ChapterGroup[] = [
               </Step>
             </Steps>
             <Note>
-              The <strong>GAIA</strong> section below holds booked actuals and is
-              admin-only.
+              The <strong>GAIA</strong> section below holds booked admin figures
+              and is admin-only.
             </Note>
             {onJump && (
               <PrimaryAction onClick={() => onJump("revenue")}>
@@ -541,8 +541,8 @@ const GROUPS: ChapterGroup[] = [
           <>
             <Lead>
               To see how this forecast moved versus a previous round (or the
-              actuals), use the <strong>Comparison</strong> group at the top of
-              the page.
+              admin input), use the <strong>Comparison</strong> group at the top
+              of the page.
             </Lead>
             <Steps>
               <Step n={1}>
@@ -550,8 +550,8 @@ const GROUPS: ChapterGroup[] = [
                 reference RFQ.
               </Step>
               <Step n={2}>
-                Pick the side: <Chip>BL Input</Chip> (a forecast) or the actuals (
-                <em>MediaOcean</em> / <em>GAIA</em>).
+                Pick the side: <Chip>BL Input</Chip> (a forecast) or the admin
+                input (<em>MediaOcean</em> / <em>GAIA</em>).
               </Step>
               <Step n={3}>
                 A panel opens beside the grid. Toggle its three views —{" "}
@@ -659,7 +659,7 @@ const GROUPS: ChapterGroup[] = [
               One of: the RFQ is <strong>locked</strong> (red lock), the month is
               a <strong>closed period</strong> (lock in its header), the client
               isn&apos;t assigned to you, or you&apos;re in the{" "}
-              <strong>Actuals</strong> section (admin-only).
+              <strong>Admin Input</strong> section (admin-only).
             </Faq>
             <Faq q="My numbers disappeared / didn't save.">
               Changes are local until you press <SaveChip />. Switching RFQ or
@@ -711,7 +711,7 @@ const TOPICS: Topic[] = [
   { label: "Add a project", chapterId: "media", keywords: "bucket new campaign" },
   { label: "Add a media type row", chapterId: "media", keywords: "row line type" },
   { label: "Lock / closed period / read-only", chapterId: "grid", keywords: "frozen cannot edit" },
-  { label: "Actuals (MediaOcean / GAIA)", chapterId: "grid", keywords: "booked admin reference" },
+  { label: "Admin Input (MediaOcean / GAIA)", chapterId: "grid", keywords: "booked admin actuals reference" },
   { label: "Commission is zero / set rates", chapterId: "revenue", keywords: "no rates rate calculated" },
   { label: "Why commission can't be edited", chapterId: "revenue", keywords: "calculated derived media" },
   { label: "Labs partner list is empty", chapterId: "labs", keywords: "admin configure year" },
@@ -720,7 +720,7 @@ const TOPICS: Topic[] = [
   { label: "Split coverage across projects", chapterId: "labs-share", keywords: "even split percent" },
   { label: "Over 100% warning", chapterId: "labs-share", keywords: "exceeds budget cap" },
   { label: "Compare with another RFQ", chapterId: "compare", keywords: "reference round versus" },
-  { label: "Compare against actuals", chapterId: "compare", keywords: "mediaocean gaia booked" },
+  { label: "Compare against admin input", chapterId: "compare", keywords: "mediaocean gaia booked actuals" },
   { label: "Variance bars / donut views", chapterId: "compare", keywords: "chart pills" },
   { label: "Reallocate budget / distribute the difference", chapterId: "reallocate", keywords: "gap close push align" },
   { label: "Single vs Split % destination", chapterId: "reallocate", keywords: "project percent one many" },

@@ -1,5 +1,13 @@
 {
   "firestore": {
     "rules": "firestoreRules.txt"
+  },
+  "hosting": {
+    "source": ".",
+    "site": "pluscoops",
+    "frameworksBackend": {
+      "region": "us-central1"
+    },
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
   }
 }

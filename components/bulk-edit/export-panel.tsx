@@ -167,7 +167,7 @@ export default function ExportPanel({
               BL Input
             </Chip>
             <Chip active={includeActuals} onClick={() => setIncludeActuals((v) => !v)}>
-              Actuals
+              Admin Input
             </Chip>
           </div>
         </div>

@@ -438,10 +438,10 @@ function guideMatrix(): string[][] {
     ["Columns"],
     ["ClientId", "Join key — DO NOT change. ClientName is for reading only."],
     ["Year / RFQ", "Identify the submission. Use a real, unlocked RFQ."],
-    ["Section", `"${SECTION_BL}" = BL input, "${SECTION_ACTUALS}" = actuals, "${SECTION_DETAIL}" = a breakdown line under an actuals row.`],
-    ["Project", "Project name (Media/Labs tabs only). Leave blank for actuals."],
+    ["Section", `"${SECTION_BL}" = BL input, "${SECTION_ACTUALS}" = admin input. An ${SECTION_ACTUALS} row with any Level filled is a breakdown line of its type.`],
+    ["Project", `Project name (Media/Labs tabs only). Leave blank for ${SECTION_ACTUALS} rows.`],
     ["Media Type / Stream / Partner", "The line's type — pick from the dropdown."],
-    ["Level 1 / 2 / 3", `Free-text breakdown info — used only on "${SECTION_DETAIL}" rows. The type column names the parent actuals row.`],
+    ["Level 1 / 2 / 3", `Free-text breakdown info. Filling any level turns an "${SECTION_ACTUALS}" row into a breakdown line under its type's parent row.`],
     ["Jan..Dec", "Monthly dollar values."],
     [""],
     ["Add vs Replace"],
@@ -449,10 +449,10 @@ function guideMatrix(): string[][] {
     ["Replace", "The submission's axis/section is overwritten by these rows."],
     [""],
     ["Notes"],
-    ["MediaOcean actuals (Media/Labs) are annual:", `set RFQ to "${ANNUAL_RFQ_SENTINEL}" or leave blank.`],
-    ["Revenue Commission is computed from Media in BL only", "— BL Commission is ignored on import; the GAIA (Actuals) Commission is imported normally."],
+    [`MediaOcean ${SECTION_ACTUALS} rows (Media/Labs) are annual:`, `set RFQ to "${ANNUAL_RFQ_SENTINEL}" or leave blank.`],
+    ["Revenue Commission is computed from Media in BL only", `— BL Commission is ignored on import; the GAIA (${SECTION_ACTUALS}) Commission is imported normally.`],
     ["Locked RFQs are rejected.", "Duplicate rows for the same type: last one wins."],
-    [`An actuals row with "${SECTION_DETAIL}" lines is their sum`, `— its own monthly values are derived from the details. Importing only "${SECTION_DETAIL}" rows fills the parent's totals.`],
+    [`An ${SECTION_ACTUALS} row with breakdown lines is their sum`, `— its own monthly values are derived from them. Importing only breakdown lines fills the parent's totals.`],
   ];
 }
 

@@ -32,9 +32,21 @@ const MONTH_LABELS = [
 
 /** Section values as written in the sheet. */
 export const SECTION_BL = "BL";
-export const SECTION_ACTUALS = "Actuals";
-/** A breakdown line under an actuals row (carries the 3 levels). */
+export const SECTION_ACTUALS = "Admin";
+/** A breakdown line under an Admin row (carries the 3 levels). */
 export const SECTION_DETAIL = "Detail";
+
+/**
+ * Legacy/alias spellings accepted for the Admin section on import (upper-cased):
+ * sheets exported before the "Actuals" → "Admin" rename, plus common variants.
+ */
+const ADMIN_SECTION_ALIASES = new Set([
+  "ADMIN",
+  "ADMIN INPUT",
+  "ADMIN-INPUT",
+  "ADMIN_INPUT",
+  "ACTUALS",
+]);
 
 /** Number of free-text detail "levels" (mirrors DETAIL_LEVEL_COUNT). */
 export const DETAIL_LEVELS = 3;
@@ -100,9 +112,16 @@ export function columnIndexOf(columns: BulkColumn[], field: BulkField): number {
 
 // ─── Export: records → sheet matrix ──────────────────────────────────────────
 
-function sectionLabel(section: BulkSection): string {
-  if (section === "BL") return SECTION_BL;
-  if (section === "DETAIL") return SECTION_DETAIL;
+function sectionLabel(rec: BulkRecord): string {
+  if (rec.section === "BL") return SECTION_BL;
+  if (rec.section === "DETAIL") {
+    // A detail line exports as "Admin" — its filled Levels re-detect it on
+    // import. Only a detail with no level text keeps the explicit "Detail"
+    // marker; exported as "Admin" it would round-trip as a parent row.
+    return rec.levels.some((l) => (l ?? "").trim() !== "")
+      ? SECTION_ACTUALS
+      : SECTION_DETAIL;
+  }
   return SECTION_ACTUALS;
 }
 
@@ -116,7 +135,7 @@ function cellForField(rec: BulkRecord, field: BulkField): string | number {
       return rec.section !== "BL" && rec.rfq === null
         ? ANNUAL_RFQ_SENTINEL
         : rec.rfq ?? "";
-    case "section": return sectionLabel(rec.section);
+    case "section": return sectionLabel(rec);
     case "bucket": return rec.bucket;
     case "rowType": return rec.rowType;
     case "label": return rec.label;
@@ -218,12 +237,19 @@ export function parseMatrix(matrix: unknown[][], columns: BulkColumn[]): ParseRe
       months[m] = label in headerIndex ? coerceMoney(row[headerIndex[label]]) : 0;
     });
 
+    const levels = [read(row, "level1"), read(row, "level2"), read(row, "level3")];
+
+    // Section resolution. An Admin row carrying text in any Level column is a
+    // breakdown (Detail) line — no need to write "Detail" in the sheet; the
+    // explicit "Detail" value is still accepted (exports and older sheets).
     const sectionU = read(row, "section").toUpperCase();
     const section: BulkSection =
       sectionU === SECTION_DETAIL.toUpperCase()
         ? "DETAIL"
-        : sectionU === SECTION_ACTUALS.toUpperCase()
-        ? "ACTUALS"
+        : ADMIN_SECTION_ALIASES.has(sectionU)
+        ? levels.some((l) => l !== "")
+          ? "DETAIL"
+          : "ACTUALS"
         : "BL";
 
     const rfqRaw = read(row, "rfq");
@@ -245,7 +271,7 @@ export function parseMatrix(matrix: unknown[][], columns: BulkColumn[]): ParseRe
         rowType: read(row, "rowType"),
         label: read(row, "label"),
         note: read(row, "note"),
-        levels: [read(row, "level1"), read(row, "level2"), read(row, "level3")],
+        levels,
         months,
       },
     });
