@@ -398,25 +398,25 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
 
               {/* ─── BL_INPUT grand total ─── */}
               {grid.data.buckets.length > 0 && (
-                <tr className="bg-gray-900">
-                  <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap">
+                <tr className="bg-gray-200 border-y border-gray-300">
+                  <td className="sticky left-0 z-10 bg-gray-200 px-4 py-2 text-xs font-bold text-gray-900 uppercase tracking-wider whitespace-nowrap">
                     BL Submission
-                    <span className="ml-1.5 font-medium normal-case tracking-normal text-gray-300">
+                    <span className="ml-1.5 font-medium normal-case tracking-normal text-gray-500">
                       · current submission
                     </span>
                   </td>
-                  {showNotes && <td className="bg-gray-900" />}
+                  {showNotes && <td className="bg-gray-200" />}
                   {MONTHS.map((m) => (
                     <td key={m} className="px-2.5 py-2 text-right align-middle">
-                      <p className="text-sm font-bold text-white tabular-nums">
+                      <p className="text-sm font-bold text-gray-900 tabular-nums">
                         {grandTotals[m]
                           ? Math.round(grandTotals[m]).toLocaleString("en-CA")
                           : "—"}
                       </p>
                     </td>
                   ))}
-                  <td className="px-2.5 py-2 text-right align-middle bg-gray-800">
-                    <p className="text-sm font-bold text-yellow-400 tabular-nums">
+                  <td className="px-2.5 py-2 text-right align-middle bg-gray-300">
+                    <p className="text-sm font-bold text-gray-900 tabular-nums">
                       {Math.round(sumMonths(grandTotals)).toLocaleString("en-CA")}
                     </p>
                   </td>
@@ -480,12 +480,12 @@ function SectionBand({
     <tr>
       <td
         colSpan={colSpan}
-        className={`p-0 bg-gray-200 border-y border-gray-300 ${
+        className={`p-0 bg-gray-900 border-y border-gray-900 ${
           gap ? "border-t-8 border-t-gray-100" : ""
         }`}
       >
         <div className="sticky left-0 z-10 flex w-fit items-center px-4 py-2">
-          <span className="text-[11px] font-bold uppercase tracking-widest text-gray-700">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-white">
             {label}
           </span>
         </div>
@@ -1356,22 +1356,22 @@ function ActualsSection({
 
       {/* Actuals total */}
       {actuals.length > 0 && (
-        <tr className="bg-gray-900">
-          <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider">
+        <tr className="bg-gray-200 border-y border-gray-300">
+          <td className="sticky left-0 z-10 bg-gray-200 px-4 py-2 text-xs font-bold text-gray-900 uppercase tracking-wider">
             {config.actualsLabel} total
           </td>
-          {showNotes && <td className="bg-gray-900" />}
+          {showNotes && <td className="bg-gray-200" />}
           {MONTHS.map((m) => (
             <td key={m} className="px-2.5 py-2 text-right align-middle">
-              <p className="text-sm font-bold text-white tabular-nums">
+              <p className="text-sm font-bold text-gray-900 tabular-nums">
                 {totals[m]
                   ? Math.round(totals[m]).toLocaleString("en-CA")
                   : "—"}
               </p>
             </td>
           ))}
-          <td className="px-2.5 py-2 text-right align-middle bg-gray-800">
-            <p className="text-sm font-bold text-yellow-400 tabular-nums">
+          <td className="px-2.5 py-2 text-right align-middle bg-gray-300">
+            <p className="text-sm font-bold text-gray-900 tabular-nums">
               {Math.round(sumMonths(totals)).toLocaleString("en-CA")}
             </p>
           </td>

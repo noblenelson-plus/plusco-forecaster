@@ -177,6 +177,19 @@ export default function ForecastSelectors({
     fetchClients();
   }, [profile, isAdmin, showClient]);
 
+  // Validate the (possibly localStorage-restored) selected client against the
+  // freshly loaded accessible list: refresh its summary if it changed, clear
+  // it if it is gone (unassigned, hidden or deleted since the last session).
+  useEffect(() => {
+    if (!showClient || !selectedClient || clients.length === 0) return;
+    const fresh = clients.find((c) => c.cl_id === selectedClient.cl_id);
+    if (!fresh) {
+      setClient(null);
+    } else if (JSON.stringify(fresh) !== JSON.stringify(selectedClient)) {
+      setClient(fresh);
+    }
+  }, [clients, selectedClient, setClient, showClient]);
+
   // Subscribe to RFQs (real-time lock status)
   useEffect(() => {
     const unsubscribe = subscribeToRFQs(setRFQs);

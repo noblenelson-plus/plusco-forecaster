@@ -601,19 +601,25 @@ function ForecastPageContent() {
                 <LabsOverCapBanner result={penetration} />
               )}
 
-              {/* MediaOcean booked total exceeds the BL forecast in ≥1 month. */}
-              {tab === "media" && mediaOverBooked.length > 0 && (
-                <ActualsOverBLBanner
-                  months={mediaOverBooked}
-                  actualsLabel={MEDIA_AXIS_CONFIG.actualsLabel}
-                />
-              )}
-              {tab === "labs" && labsOverBooked.length > 0 && (
-                <ActualsOverBLBanner
-                  months={labsOverBooked}
-                  actualsLabel={labsConfig.actualsLabel}
-                />
-              )}
+              {/* MediaOcean booked total exceeds the BL forecast in ≥1 month.
+                  Hidden when the RFQ is locked: the submission is frozen, so
+                  there is nothing left to act on. */}
+              {tab === "media" &&
+                selectedRFQ?.status !== "LOCKED" &&
+                mediaOverBooked.length > 0 && (
+                  <ActualsOverBLBanner
+                    months={mediaOverBooked}
+                    actualsLabel={MEDIA_AXIS_CONFIG.actualsLabel}
+                  />
+                )}
+              {tab === "labs" &&
+                selectedRFQ?.status !== "LOCKED" &&
+                labsOverBooked.length > 0 && (
+                  <ActualsOverBLBanner
+                    months={labsOverBooked}
+                    actualsLabel={labsConfig.actualsLabel}
+                  />
+                )}
 
               {tab === "revenue" ? (
                 <RevenueGrid
