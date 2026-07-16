@@ -121,9 +121,10 @@ function MoneyRow({
 }) {
   const labelText = bold ? "font-medium" : "";
   return (
-    <tr className="bg-blue-200 border-b border-blue-300">
+    // Same system as the MediaOcean rows: neutral surface, source-colored label.
+    <tr className="group bg-gray-50 hover:bg-gray-100 border-b border-gray-100">
       <td
-        className={`sticky left-0 z-10 bg-blue-200 py-2 text-xs text-gray-900 ${
+        className={`sticky left-0 z-10 bg-gray-50 group-hover:bg-gray-100 py-2 text-xs text-blue-700 ${
           indent ? "pl-10 pr-4" : "px-4"
         } ${labelText}`}
       >
@@ -144,7 +145,7 @@ function MoneyRow({
           <span className="truncate">{label}</span>
         )}
       </td>
-      {showNotes && <td className="bg-blue-200" />}
+      {showNotes && <td className="bg-gray-50 group-hover:bg-gray-100" />}
       {MONTHS.map((m) => {
         const v = byMonth[m] ?? 0;
         return (
@@ -156,7 +157,7 @@ function MoneyRow({
           >
             <p
               className={`text-sm tabular-nums ${
-                bold ? "font-medium text-gray-900" : "text-gray-900"
+                bold ? "font-medium text-gray-900" : "text-gray-700"
               }`}
             >
               {money(v)}
@@ -167,7 +168,7 @@ function MoneyRow({
       <td
         onClick={() => total && copyCellValue(total)}
         title={total ? "Click to copy" : undefined}
-        className={`px-2.5 py-2 text-right align-middle bg-blue-300 ${
+        className={`px-2.5 py-2 text-right align-middle bg-gray-100 group-hover:bg-gray-200 ${
           total ? "cursor-copy" : ""
         }`}
       >
@@ -232,15 +233,16 @@ export default function MediaboxActualsSection({
 
   return (
     <>
-      {/* Section header — matches the ADMIN_INPUT header styling. */}
-      <tr className="bg-blue-200 border-y border-blue-300">
+      {/* Section header — same system as the MediaOcean band: flat source
+          color (Plus Blue) with black type. */}
+      <tr className="bg-blue-400 border-y border-blue-400">
         <td colSpan={colSpan} className="p-0">
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
             <Database size={11} className="text-gray-900" />
             <span className="text-xs font-semibold text-gray-900 uppercase tracking-wider">
               MediaBox
             </span>
-            <Lock size={10} className="text-gray-700" />
+            <Lock size={10} className="text-blue-800" />
             <span className="text-[11px] text-gray-800 normal-case">
               actual as of {formatSyncedAt(totals?.syncedAt)}
             </span>
@@ -274,7 +276,7 @@ export default function MediaboxActualsSection({
         <tr>
           <td
             colSpan={colSpan}
-            className="px-8 py-2.5 text-xs text-gray-800 bg-blue-200 border-b border-blue-300"
+            className="px-8 py-2.5 text-xs text-blue-700 bg-gray-50 border-b border-gray-100"
           >
             {loading || triggering
               ? "Loading MediaBox data…"
@@ -315,10 +317,10 @@ export default function MediaboxActualsSection({
           })}
 
           {/* Summary: total per media type / partner. */}
-          <tr className="bg-blue-200 border-y border-blue-300">
+          <tr className="bg-gray-100 border-y border-gray-200">
             <td
               colSpan={colSpan}
-              className="sticky left-0 z-10 px-4 py-1.5 text-[11px] font-semibold text-gray-900 uppercase tracking-wider"
+              className="sticky left-0 z-10 px-4 py-1.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wider"
             >
               Summary — total per {typeNoun}
             </td>
@@ -334,13 +336,13 @@ export default function MediaboxActualsSection({
             />
           ))}
 
-          {/* Grand total — mirrors the dark total rows of the other sections,
-              in the MediaBox blue so the source stays recognizable. */}
-          <tr className="bg-blue-700 border-t-2 border-blue-800">
-            <td className="sticky left-0 z-10 bg-blue-700 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider">
+          {/* Grand total — same light-gray convention as the other sections'
+              total rows. */}
+          <tr className="bg-gray-200 border-y border-gray-300">
+            <td className="sticky left-0 z-10 bg-gray-200 px-4 py-2 text-xs font-bold text-gray-900 uppercase tracking-wider">
               MediaBox total
             </td>
-            {showNotes && <td className="bg-blue-700" />}
+            {showNotes && <td className="bg-gray-200" />}
             {MONTHS.map((m) => {
               const v = grandByMonth[m] ?? 0;
               return (
@@ -350,7 +352,7 @@ export default function MediaboxActualsSection({
                   title={v ? "Click to copy" : undefined}
                   className={`px-2.5 py-2 text-right align-middle ${v ? "cursor-copy" : ""}`}
                 >
-                  <p className="text-sm font-bold text-white tabular-nums">
+                  <p className="text-sm font-bold text-gray-900 tabular-nums">
                     {money(v)}
                   </p>
                 </td>
@@ -359,11 +361,11 @@ export default function MediaboxActualsSection({
             <td
               onClick={() => grandTotal && copyCellValue(grandTotal)}
               title={grandTotal ? "Click to copy" : undefined}
-              className={`px-2.5 py-2 text-right align-middle bg-blue-800 ${
+              className={`px-2.5 py-2 text-right align-middle bg-gray-300 ${
                 grandTotal ? "cursor-copy" : ""
               }`}
             >
-              <p className="text-sm font-bold text-white tabular-nums">
+              <p className="text-sm font-bold text-gray-900 tabular-nums">
                 {money(grandTotal)}
               </p>
             </td>
@@ -375,7 +377,7 @@ export default function MediaboxActualsSection({
         <tr>
           <td
             colSpan={colSpan}
-            className="px-8 py-1.5 text-[11px] text-red-700 bg-blue-200 border-b border-blue-300"
+            className="px-8 py-1.5 text-[11px] text-red-700 bg-gray-50 border-b border-gray-100"
           >
             {error}
           </td>
