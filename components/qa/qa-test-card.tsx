@@ -78,15 +78,15 @@ export default function QaTestCard({
         </div>
         <CardAction>
           {status === "pass" ? (
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+            <span className="bg-green-500 px-2.5 py-1 text-xs font-medium text-white">
               Passed
             </span>
           ) : status === "fail" ? (
-            <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+            <span className="bg-red-500 px-2.5 py-1 text-xs font-medium text-white">
               {violations.length} issue{violations.length > 1 ? "s" : ""}
             </span>
           ) : (
-            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">
+            <span className="bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">
               No data
             </span>
           )}

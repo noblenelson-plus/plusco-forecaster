@@ -52,9 +52,9 @@ export default function BarList({
               )}
             </span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-muted">
+          <div className="h-2 overflow-hidden bg-muted">
             <div
-              className="h-full rounded-full transition-[width]"
+              className="h-full transition-[width]"
               style={{
                 width: `${Math.max(it.value > 0 ? 2 : 0, (it.value / max) * 100)}%`,
                 backgroundColor: it.color ?? ACCENT,

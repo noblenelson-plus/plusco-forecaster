@@ -32,7 +32,7 @@ return (
 
       {/* Avatar + name */}
       <div className="flex items-center justify-center gap-3 mb-6">
-        <div className="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center text-gray-900 text-xs font-bold flex-shrink-0">
+        <div className="w-8 h-8 bg-yellow-400 flex items-center justify-center text-gray-900 text-xs font-bold flex-shrink-0">
           {initials}
         </div>
         <div className="text-left">

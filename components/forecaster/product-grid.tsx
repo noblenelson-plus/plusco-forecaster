@@ -37,19 +37,19 @@ import NoteDialog from "./note-dialog";
 // Per-status colors — selected chip + its dot (idle chips share a gray style).
 const STATUS_THEME: Record<ProductStatus, { selected: string; dot: string }> = {
   IDENTIFIED_PROSPECT: {
-    selected: "border-blue-300 bg-blue-50 text-blue-700",
+    selected: "border-blue-300 bg-blue-200 text-gray-900",
     dot: "bg-blue-500",
   },
   PITCHED_TO_CLIENT: {
-    selected: "border-amber-300 bg-amber-50 text-amber-700",
+    selected: "border-yellow-400 bg-yellow-400 text-gray-900",
     dot: "bg-amber-500",
   },
   APPROVED: {
-    selected: "border-emerald-300 bg-emerald-50 text-emerald-700",
+    selected: "border-green-500 bg-green-500 text-white",
     dot: "bg-emerald-500",
   },
   REJECTED: {
-    selected: "border-red-300 bg-red-50 text-red-700",
+    selected: "border-red-500 bg-red-500 text-white",
     dot: "bg-red-500",
   },
 };
@@ -259,7 +259,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
       </div>
 
       {(loadError || saveError) && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
           {loadError ?? saveError}
         </div>
       )}
@@ -302,7 +302,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
                 return (
                   <tr
                     key={product.productId}
-                    className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50"
+                    className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
                   >
                     <td className="px-4 py-2.5 font-medium text-gray-800 whitespace-nowrap">
                       {product.name}
@@ -321,7 +321,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
                                 ? `Clear ${PRODUCT_STATUS_LABELS[status]}`
                                 : `Set ${PRODUCT_STATUS_LABELS[status]}`
                             }
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border transition-colors ${
                               selected
                                 ? theme.selected
                                 : "border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
@@ -330,7 +330,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
                             {selected ? (
                               <Check size={12} />
                             ) : (
-                              <span className="w-2 h-2 rounded-full bg-gray-200" />
+                              <span className="w-2 h-2 bg-gray-200" />
                             )}
                             {selected ? PRODUCT_STATUS_LABELS[status] : "—"}
                           </button>

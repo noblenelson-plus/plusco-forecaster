@@ -499,7 +499,7 @@ function ForecastPageContent() {
               title={penetrationOpen ? "Hide the % share panel" : "Show the % share panel"}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
                 penetrationOpen
-                  ? "border-yellow-300 bg-yellow-50 text-gray-900"
+                  ? "border-yellow-400 bg-yellow-400 text-gray-900"
                   : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
               }`}
             >
@@ -518,7 +518,7 @@ function ForecastPageContent() {
             title={notesOpen ? "Hide the submission notes" : "Show the submission notes"}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
               notesOpen
-                ? "border-amber-300 bg-amber-50 text-gray-900"
+                ? "border-yellow-400 bg-yellow-400 text-gray-900"
                 : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
             }`}
           >
@@ -536,7 +536,7 @@ function ForecastPageContent() {
               title={compareOpen ? "Hide the comparison panel" : "Show the comparison panel"}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
                 compareOpen
-                  ? "border-yellow-300 bg-yellow-50 text-gray-900"
+                  ? "border-yellow-400 bg-yellow-400 text-gray-900"
                   : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
               }`}
             >
@@ -696,7 +696,7 @@ function ForecastCurrencyBadge({ currency }: { currency: Currency }) {
     <span
       className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-lg border ${
         isUsd
-          ? "border-blue-200 bg-blue-50 text-blue-700"
+          ? "border-blue-300 bg-blue-200 text-gray-900"
           : "border-gray-200 bg-gray-50 text-gray-600"
       }`}
       title={`This client forecasts in ${currency}.`}
@@ -739,9 +739,9 @@ function SelectionPrompt({ clientOnly = false }: { clientOnly?: boolean }) {
         {steps.map((step) => (
           <span
             key={step.label}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+            className={`px-2.5 py-1 text-xs font-medium border ${
               step.done
-                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                ? "bg-green-500 text-white border-green-500"
                 : "bg-gray-50 text-gray-400 border-gray-200"
             }`}
           >
@@ -758,8 +758,8 @@ function SelectionPrompt({ clientOnly = false }: { clientOnly?: boolean }) {
 
 function NoPartnersBanner({ year }: { year: number | null }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-      <FlaskConical size={16} className="mt-0.5 flex-shrink-0 text-amber-500" />
+    <div className="flex items-start gap-2.5 rounded-lg border border-yellow-400 bg-yellow-400 px-4 py-3 text-sm text-gray-900">
+      <FlaskConical size={16} className="mt-0.5 flex-shrink-0 text-gray-800" />
       <p>
         No lab partner is configured{year ? ` for ${year}` : ""}. Add partners in{" "}
         <span className="font-semibold">Admin → Labs</span> to populate the partner
@@ -807,9 +807,9 @@ function ActualsOverBLBanner({
 }) {
   const fmt = (n: number) => Math.round(n).toLocaleString("en-CA");
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    <div className="rounded-lg border border-yellow-400 bg-yellow-400 px-4 py-3 text-sm text-gray-900">
       <div className="flex items-center gap-2 font-semibold">
-        <AlertTriangle size={16} className="flex-shrink-0 text-amber-500" />
+        <AlertTriangle size={16} className="flex-shrink-0 text-gray-800" />
         {actualsLabel} booked spend exceeds the BL Input forecast
       </div>
       <ul className="mt-1.5 space-y-0.5 pl-7 text-[13px]">
@@ -837,9 +837,9 @@ function LabsOverCapBanner({ result }: { result: LabsPenetrationResult }) {
   const fmt = (n: number) => Math.round(n).toLocaleString("en-CA");
   const over = result.byType.filter((t) => t.over);
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
       <div className="flex items-center gap-2 font-semibold">
-        <AlertTriangle size={16} className="flex-shrink-0 text-red-500" />
+        <AlertTriangle size={16} className="flex-shrink-0 text-white" />
         Labs investment exceeds the planned media budget
       </div>
       <ul className="mt-1.5 space-y-0.5 pl-7 text-[13px]">

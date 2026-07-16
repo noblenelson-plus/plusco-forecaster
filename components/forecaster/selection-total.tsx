@@ -37,7 +37,7 @@ export default function SelectionTotal({
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-gray-200 bg-white/95 px-4 py-2 shadow-lg backdrop-blur">
+    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 border border-gray-200 bg-white px-4 py-2 shadow-lg">
       <span className="text-[11px] font-medium uppercase tracking-wider text-gray-400">
         {count} cells
       </span>
@@ -47,7 +47,7 @@ export default function SelectionTotal({
       <button
         onClick={copy}
         aria-label="Copy total to clipboard"
-        className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-50"
+        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 transition-colors hover:bg-gray-100"
       >
         {copied ? <Check size={14} /> : <Copy size={14} />}
         {copied ? "Copied" : "Copy"}

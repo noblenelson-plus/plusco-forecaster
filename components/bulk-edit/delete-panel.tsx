@@ -51,7 +51,7 @@ function Chip({
       onClick={onClick}
       className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
         active
-          ? "bg-yellow-50 border-yellow-300 text-yellow-900"
+          ? "bg-yellow-400 border-yellow-400 text-gray-900"
           : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
       }`}
     >
@@ -250,21 +250,21 @@ export default function DeletePanel({
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+        <div className="bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
           {error}
         </div>
       )}
 
       {/* Preview — chips of every section that will be cleared */}
       {prepared && (
-        <div className="space-y-3 rounded-xl border border-red-200 bg-red-50/50 p-4">
+        <div className="space-y-3 rounded-xl border border-red-500 bg-red-500 p-4">
           {prepared.targets.length === 0 ? (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-white">
               Nothing to delete — the selected scope holds no data.
             </p>
           ) : (
             <>
-              <p className="text-sm font-semibold text-red-700">
+              <p className="text-sm font-semibold text-white">
                 {prepared.targets.length} section
                 {prepared.targets.length !== 1 ? "s" : ""} will be emptied:
               </p>
@@ -278,14 +278,14 @@ export default function DeletePanel({
         <div
           className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${
             result.errors.length === 0
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-amber-50 border-amber-200 text-amber-800"
+              ? "bg-green-500 border-green-500 text-white"
+              : "bg-yellow-400 border-yellow-400 text-gray-900"
           }`}
         >
           {result.errors.length === 0 ? (
-            <CheckCircle2 size={16} className="text-emerald-600" />
+            <CheckCircle2 size={16} className="text-white" />
           ) : (
-            <AlertTriangle size={16} className="text-amber-600" />
+            <AlertTriangle size={16} className="text-gray-900" />
           )}
           {result.sectionsCleared} section{result.sectionsCleared !== 1 ? "s" : ""} cleared
           {result.commissionsRecalculated > 0 &&

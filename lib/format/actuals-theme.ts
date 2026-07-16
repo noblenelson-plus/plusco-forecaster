@@ -1,47 +1,50 @@
 // lib/format/actuals-theme.ts
 
 /**
- * Per-source colour theme for the actuals sections in the forecast grid, so
+ * Per-source color theme for the actuals sections in the forecast grid, so
  * each data source reads at a glance:
  *   MediaOcean (Media/Labs actuals) → orange
  *   GAIA       (Revenue actuals)     → purple
  *   MediaBox   (synced section)      → blue (themed inline in its own component)
  * Unknown sources fall back to the original neutral grey.
  *
+ * Flat Plus style: the section header is a solid color block with white text;
+ * data rows stay neutral so the numbers remain easy to scan.
+ *
  * Tailwind needs whole class strings to survive purging, so each theme spells
- * its classes out rather than composing them from a colour name.
+ * its classes out rather than composing them from a color name.
  */
 export interface ActualsTheme {
   /** Section header row background + border. */
   headerRow: string;
-  /** Section header label text colour. */
+  /** Section header label text color. */
   headerText: string;
-  /** Lock icon colour in the header. */
+  /** Lock icon color in the header. */
   lockIcon: string;
   /** Data-row background (with group-hover). */
   rowBg: string;
-  /** Data-row label text colour. */
+  /** Data-row label text color. */
   labelClass: string;
   /** Empty-state row background + border. */
   emptyRow: string;
 }
 
 const ORANGE: ActualsTheme = {
-  headerRow: "bg-orange-50 border-y border-orange-200",
-  headerText: "text-orange-700",
-  lockIcon: "text-orange-300",
-  rowBg: "bg-orange-50/40 group-hover:bg-orange-100/50",
-  labelClass: "text-orange-800",
-  emptyRow: "bg-orange-50/40 border-b border-orange-100",
+  headerRow: "bg-orange-500 border-y border-orange-500",
+  headerText: "text-white",
+  lockIcon: "text-orange-200",
+  rowBg: "bg-gray-50 group-hover:bg-gray-100",
+  labelClass: "text-orange-700",
+  emptyRow: "bg-gray-50 border-b border-gray-100",
 };
 
 const PURPLE: ActualsTheme = {
-  headerRow: "bg-purple-50 border-y border-purple-200",
-  headerText: "text-purple-700",
+  headerRow: "bg-purple-600 border-y border-purple-600",
+  headerText: "text-white",
   lockIcon: "text-purple-300",
-  rowBg: "bg-purple-50/40 group-hover:bg-purple-100/50",
-  labelClass: "text-purple-800",
-  emptyRow: "bg-purple-50/40 border-b border-purple-100",
+  rowBg: "bg-gray-50 group-hover:bg-gray-100",
+  labelClass: "text-purple-700",
+  emptyRow: "bg-gray-50 border-b border-gray-100",
 };
 
 const GRAY: ActualsTheme = {

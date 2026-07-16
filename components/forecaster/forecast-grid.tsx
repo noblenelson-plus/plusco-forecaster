@@ -291,7 +291,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
       />
 
       {grid.error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg text-sm">
           {grid.error}
         </div>
       )}
@@ -401,7 +401,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                 <tr className="bg-gray-900">
                   <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap">
                     BL Submission
-                    <span className="ml-1.5 font-medium normal-case tracking-normal text-white/75">
+                    <span className="ml-1.5 font-medium normal-case tracking-normal text-gray-300">
                       · current submission
                     </span>
                   </td>
@@ -793,7 +793,7 @@ function DataRow({
           {expand && (
             <button
               onClick={expand.onToggle}
-              className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200/70 transition-colors flex-shrink-0"
+              className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors flex-shrink-0"
               title={expand.expanded ? "Hide detail" : "Show detail"}
             >
               {expand.expanded ? (
@@ -805,7 +805,7 @@ function DataRow({
           )}
           <span className={`text-sm ${labelClass}`}>{row.label}</span>
           {expand && expand.count > 0 && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-gray-200/70 text-gray-500">
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-gray-200 text-gray-500">
               {expand.count}
             </span>
           )}
@@ -827,7 +827,7 @@ function DataRow({
           {retired && (
             <span
               title="No longer configured — kept for its existing data, but can't be re-added."
-              className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-amber-100 text-amber-700"
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-yellow-400 text-gray-900"
             >
               Not configured
             </span>
@@ -927,7 +927,7 @@ export function NoteCell({
   return (
     <td
       className={`px-2 py-1.5 border-b align-middle ${
-        inverse ? "border-white/15" : "border-gray-100"
+        inverse ? "border-gray-700" : "border-gray-100"
       }`}
     >
       <button
@@ -937,12 +937,12 @@ export function NoteCell({
         className={`w-full text-left text-xs leading-snug line-clamp-2 break-words rounded px-1.5 py-1 transition-colors ${
           hasNote
             ? inverse
-              ? "text-white/90 hover:bg-white/10"
+              ? "text-gray-100 hover:bg-gray-800"
               : "text-gray-600 hover:bg-gray-100"
             : readOnly
               ? "cursor-default"
               : inverse
-                ? "italic text-white/40 hover:text-white/70 hover:bg-white/10"
+                ? "italic text-gray-400 hover:text-gray-200 hover:bg-gray-800"
                 : "italic text-gray-300 hover:text-gray-500 hover:bg-gray-100"
         }`}
       >
@@ -995,7 +995,7 @@ function BucketSection({
           <div className="flex items-center gap-1">
             <button
               onClick={onToggleCollapse}
-              className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200/70 transition-colors flex-shrink-0"
+              className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors flex-shrink-0"
               title={collapsed ? "Expand project" : "Collapse project"}
             >
               {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
@@ -1027,7 +1027,7 @@ function BucketSection({
                 {!lockName && (
                   <button
                     onClick={() => grid.removeBucket(bucket.bucketId)}
-                    className="p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    className="p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-gray-100 transition-colors"
                     title={`Remove ${config.bucketLabel.toLowerCase()} (until saved)`}
                   >
                     <Trash2 size={13} />

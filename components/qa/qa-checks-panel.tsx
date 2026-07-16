@@ -134,8 +134,8 @@ export default function QaChecksPanel({
       <div
         className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
           allPass
-            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-            : "border-red-200 bg-red-50 text-red-800"
+            ? "border-green-500 bg-green-500 text-white"
+            : "border-red-500 bg-red-500 text-white"
         }`}
       >
         {allPass ? (

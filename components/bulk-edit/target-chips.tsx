@@ -35,10 +35,10 @@ interface TargetGroup {
 
 function badgeClasses(g: TargetGroup): string {
   if (g.section === "BL")
-    return "bg-yellow-100 text-yellow-900 border-yellow-200";
+    return "bg-yellow-400 text-gray-900 border-yellow-400";
   return g.axisId === "revenue"
-    ? "bg-purple-100 text-purple-800 border-purple-200"
-    : "bg-orange-100 text-orange-800 border-orange-200";
+    ? "bg-purple-600 text-white border-purple-600"
+    : "bg-orange-500 text-white border-orange-500";
 }
 
 function sectionLabel(g: TargetGroup): string {
@@ -107,7 +107,7 @@ export default function TargetChips({ targets }: { targets: BulkTarget[] }) {
                 {g.rfq ? `${g.rfq}-${g.year}` : `${g.year} · annual`}
               </span>
               <span
-                className={`inline-flex flex-shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${badgeClasses(g)}`}
+                className={`inline-flex flex-shrink-0 items-center border px-2 py-0.5 text-[11px] font-semibold ${badgeClasses(g)}`}
               >
                 {AXIS_LABELS[g.axisId]} · {sectionLabel(g)}
               </span>
@@ -117,7 +117,7 @@ export default function TargetChips({ targets }: { targets: BulkTarget[] }) {
               </span>
             </button>
             {open && (
-              <div className="mx-9 mb-2.5 max-h-48 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50/60">
+              <div className="mx-9 mb-2.5 max-h-48 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50">
                 <ul className="divide-y divide-gray-100">
                   {g.clientNames.map((name, i) => (
                     <li

@@ -83,16 +83,16 @@ export default function MultiSelectDropdown({
           open
             ? "bg-white border-yellow-400 ring-1 ring-yellow-400"
             : hasSelection
-            ? "bg-yellow-50 border-yellow-300 text-yellow-900 hover:bg-yellow-100"
+            ? "bg-yellow-400 border-yellow-400 text-gray-900 hover:bg-yellow-300"
             : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
         }`}
       >
-        <span className={`truncate font-medium ${hasSelection && !open ? "text-yellow-800" : ""}`}>
+        <span className={`truncate font-medium ${hasSelection && !open ? "text-gray-900" : ""}`}>
           {displayLabel}
         </span>
         <ChevronDown
           size={14}
-          className={`flex-shrink-0 transition-transform ${open ? "rotate-180 text-gray-500" : "text-gray-400"} ${hasSelection && !open ? "text-yellow-600" : ""}`}
+          className={`flex-shrink-0 transition-transform ${open ? "rotate-180 text-gray-500" : "text-gray-400"} ${hasSelection && !open ? "text-gray-900" : ""}`}
         />
       </button>
 
@@ -110,7 +110,7 @@ export default function MultiSelectDropdown({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search..."
-                className="w-full pl-8 pr-3 py-2 text-sm bg-gray-50/50 focus:outline-none focus:bg-white transition-colors"
+                className="w-full pl-8 pr-3 py-2 text-sm bg-gray-50 focus:outline-none focus:bg-white transition-colors"
               />
             </div>
           )}

@@ -418,7 +418,7 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
       <RevenueToolbar grid={grid} showNotes={showNotes} onToggleNotes={toggleNotes} />
 
       {grid.error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg text-sm">
           {grid.error}
         </div>
       )}
@@ -673,7 +673,7 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                       <ChevronRight size={12} />
                     )}
                     BL Submission
-                    <span className="font-medium normal-case tracking-normal text-white/75">
+                    <span className="font-medium normal-case tracking-normal text-gray-300">
                       · current submission
                     </span>
                   </button>
@@ -695,31 +695,31 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                 </td>
               </tr>
 
-              {/* Per-stream breakdown of the counted (mauve) cells. */}
+              {/* Per-stream breakdown of the counted (pink) cells. */}
               {submissionExpanded &&
                 submissionStreamRows.map((row) => (
                   <tr
                     key={row.stream}
-                    className="bg-violet-50 border-b border-violet-100"
+                    className="bg-pink-200 border-b border-pink-300"
                   >
-                    <td className="sticky left-0 z-10 bg-violet-50 py-2 pl-10 pr-4 text-xs text-violet-800">
+                    <td className="sticky left-0 z-10 bg-pink-200 py-2 pl-10 pr-4 text-xs text-gray-900">
                       {row.label}
                     </td>
-                    {showNotes && <td className="bg-violet-50" />}
+                    {showNotes && <td className="bg-pink-200" />}
                     {MONTHS.map((m) => (
                       <td
                         key={m}
                         className="px-2.5 py-2 text-right align-middle"
                       >
-                        <p className="text-sm tabular-nums text-violet-800">
+                        <p className="text-sm tabular-nums text-gray-900">
                           {row.months[m]
                             ? Math.round(row.months[m]).toLocaleString("en-CA")
                             : "—"}
                         </p>
                       </td>
                     ))}
-                    <td className="px-2.5 py-2 text-right align-middle bg-violet-100/60">
-                      <p className="text-sm font-medium tabular-nums text-violet-900">
+                    <td className="px-2.5 py-2 text-right align-middle bg-pink-200">
+                      <p className="text-sm font-medium tabular-nums text-gray-900">
                         {Math.round(sumMonths(row.months)).toLocaleString("en-CA")}
                       </p>
                     </td>
@@ -1038,7 +1038,7 @@ function RevenueProjectHeader({
         <div className="flex items-center gap-1">
           <button
             onClick={onToggleCollapse}
-            className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200/70 transition-colors flex-shrink-0"
+            className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors flex-shrink-0"
             title={collapsed ? "Expand project" : "Collapse project"}
           >
             {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
@@ -1065,7 +1065,7 @@ function RevenueProjectHeader({
               {!lockName && (
                 <button
                   onClick={() => grid.removeBucket(bucket.bucketId)}
-                  className="p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  className="p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-gray-100 transition-colors"
                   title="Remove project (until saved)"
                 >
                   <Trash2 size={13} />
@@ -1134,7 +1134,7 @@ function AddLineControl({ onPick }: { onPick: (rowType: string) => void }) {
 
 function SourceOfTruthLegend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-gray-200 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-600">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-xs text-gray-600">
       <span className="inline-flex items-center gap-1.5 font-semibold text-gray-700">
         Source of truth
       </span>
@@ -1143,7 +1143,7 @@ function SourceOfTruthLegend() {
         Official Revenue (hand-entered, the source of truth)
       </span>
       <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block h-3 w-4 rounded-sm bg-violet-100 ring-1 ring-inset ring-violet-300" />
+        <span className="inline-block h-3 w-4 rounded-sm bg-pink-200 ring-1 ring-inset ring-pink-300" />
         Counted in BL Submission
       </span>
       <span className="inline-flex items-center gap-1.5">
@@ -1200,20 +1200,20 @@ function PrevOfficialRow({
 }) {
   const annual = totals ? sumMonths(totals) : null;
   return (
-    <tr className="bg-emerald-50 border-b border-emerald-100">
-      <td className="sticky left-0 z-10 bg-emerald-50 px-4 py-2 pl-6 text-xs font-semibold text-emerald-800/80 uppercase tracking-wider">
+    <tr className="bg-green-500 border-b border-green-500">
+      <td className="sticky left-0 z-10 bg-green-500 px-4 py-2 pl-6 text-xs font-semibold text-white uppercase tracking-wider">
         {label}
       </td>
-      {showNotes && <td className="bg-emerald-50 border-b border-emerald-100" />}
+      {showNotes && <td className="bg-green-500 border-b border-green-500" />}
       {MONTHS.map((m) => (
         <td key={m} className="px-2.5 py-2 text-right align-middle">
-          <p className="text-sm font-medium text-emerald-900/70 tabular-nums">
+          <p className="text-sm font-medium text-white tabular-nums">
             {loading && !totals ? "…" : fmtAmount(totals?.[m])}
           </p>
         </td>
       ))}
-      <td className="px-2.5 py-2 text-right align-middle bg-emerald-100">
-        <p className="text-sm font-semibold text-emerald-900/80 tabular-nums">
+      <td className="px-2.5 py-2 text-right align-middle bg-green-600">
+        <p className="text-sm font-semibold text-white tabular-nums">
           {loading && !totals ? "…" : fmtAmount(annual)}
         </p>
       </td>
@@ -1276,8 +1276,8 @@ function ExpandToggle({
       onClick={expand.onToggle}
       className={`p-0.5 rounded transition-colors flex-shrink-0 ${
         inverse
-          ? "text-white/60 hover:text-white hover:bg-white/15"
-          : "text-gray-400 hover:text-gray-700 hover:bg-gray-200/70"
+          ? "text-gray-300 hover:text-white hover:bg-gray-700"
+          : "text-gray-400 hover:text-gray-700 hover:bg-gray-200"
       }`}
       title={expand.expanded ? "Hide detail" : "Show detail"}
     >
@@ -1399,7 +1399,7 @@ function RevenueDataRow({
           <span className="text-sm text-gray-700">{row.label}</span>
           {labelTooltip && <InfoTooltip text={labelTooltip} />}
           {expand && expand.count > 0 && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-gray-200/70 text-gray-500">
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-gray-200 text-gray-500">
               {expand.count}
             </span>
           )}
@@ -1522,17 +1522,17 @@ function OfficialRevenueRow({
 
   return (
     <tr className="group bg-emerald-600 border-t-2 border-emerald-700">
-      <td className="sticky left-0 z-10 bg-emerald-600 px-4 py-2 border-b border-white/15">
+      <td className="sticky left-0 z-10 bg-emerald-600 px-4 py-2 border-b border-emerald-500">
         <div className={`flex items-center gap-1.5 ${expand ? "" : "pl-2"}`}>
           {expand && <ExpandToggle expand={expand} inverse />}
           <span className="text-xs font-bold text-white uppercase tracking-wider">
             {row.label}
           </span>
-          <span className="text-xs font-medium text-white/75">
+          <span className="text-xs font-medium text-gray-100">
             · current submission
           </span>
           {expand && expand.count > 0 && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-white/20 text-white">
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-emerald-500 text-white">
               {expand.count}
             </span>
           )}
@@ -1639,7 +1639,7 @@ function CommissionRow({
       <td className="sticky left-0 z-10 bg-gray-50 group-hover:bg-gray-100 px-4 py-1.5 border-b border-gray-100">
         <div className="flex items-center gap-1.5 pl-2">
           <span className="text-sm text-gray-700">Commission</span>
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-indigo-100 text-indigo-600">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-purple-600 text-white">
             <Sparkles size={10} />
             Calculated
           </span>
@@ -1696,7 +1696,7 @@ function CommissionCell({
   month: number;
   value: number;
   lines: CommissionBreakdown["byMonth"][number];
-  /** Counted in BL Submission for its month — highlighted mauve. */
+  /** Counted in BL Submission for its month — highlighted pink. */
   counted: boolean;
   /** Overridden by the GAIA detail lines — struck through. */
   overridden: boolean;
@@ -1710,9 +1710,9 @@ function CommissionCell({
 
   // BL Submission styling takes precedence over the default indigo look.
   const bg = anchor
-    ? "ring-1 ring-inset ring-indigo-300 bg-indigo-50/60"
+    ? "ring-1 ring-inset ring-indigo-300 bg-gray-100"
     : counted
-    ? "bg-violet-100"
+    ? "bg-pink-200"
     : "";
   const text =
     value === 0
@@ -1720,8 +1720,8 @@ function CommissionCell({
       : overridden
       ? "text-gray-400 line-through decoration-gray-400"
       : counted
-      ? "text-violet-900 font-semibold"
-      : "text-indigo-900/80";
+      ? "text-gray-900 font-semibold"
+      : "text-indigo-900";
 
   return (
     <td className="px-0 py-0 border-b border-r border-gray-100 align-middle">

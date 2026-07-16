@@ -85,12 +85,12 @@ function RefreshProgressTicker({
 
   return (
     <span
-      className="flex items-center gap-1.5 text-[11px] text-blue-600 tabular-nums"
+      className="flex items-center gap-1.5 text-[11px] text-gray-800 tabular-nums"
       title="MediaBox scans every campaign of this client — large clients can take a minute or two."
     >
       <span className="relative flex h-2 w-2">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-60" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+        <span className="absolute inline-flex h-full w-full animate-ping bg-blue-400 opacity-60" />
+        <span className="relative inline-flex h-2 w-2 bg-blue-500" />
       </span>
       {refreshing ? "Aggregating in MediaBox…" : "Requesting refresh…"} {elapsed}s
     </span>
@@ -121,9 +121,9 @@ function MoneyRow({
 }) {
   const labelText = bold ? "font-medium" : "";
   return (
-    <tr className="bg-blue-50/40 border-b border-blue-100">
+    <tr className="bg-blue-200 border-b border-blue-300">
       <td
-        className={`sticky left-0 z-10 bg-blue-50/40 py-2 text-xs text-blue-800 ${
+        className={`sticky left-0 z-10 bg-blue-200 py-2 text-xs text-gray-900 ${
           indent ? "pl-10 pr-4" : "px-4"
         } ${labelText}`}
       >
@@ -131,7 +131,7 @@ function MoneyRow({
           <button
             type="button"
             onClick={expand.onToggle}
-            className="flex items-center gap-1 hover:text-blue-950"
+            className="flex items-center gap-1 hover:text-black"
           >
             {expand.expanded ? (
               <ChevronDown size={12} />
@@ -144,7 +144,7 @@ function MoneyRow({
           <span className="truncate">{label}</span>
         )}
       </td>
-      {showNotes && <td className="bg-blue-50/40" />}
+      {showNotes && <td className="bg-blue-200" />}
       {MONTHS.map((m) => {
         const v = byMonth[m] ?? 0;
         return (
@@ -156,7 +156,7 @@ function MoneyRow({
           >
             <p
               className={`text-sm tabular-nums ${
-                bold ? "font-medium text-blue-900" : "text-blue-800"
+                bold ? "font-medium text-gray-900" : "text-gray-900"
               }`}
             >
               {money(v)}
@@ -167,13 +167,13 @@ function MoneyRow({
       <td
         onClick={() => total && copyCellValue(total)}
         title={total ? "Click to copy" : undefined}
-        className={`px-2.5 py-2 text-right align-middle bg-blue-100/50 ${
+        className={`px-2.5 py-2 text-right align-middle bg-blue-300 ${
           total ? "cursor-copy" : ""
         }`}
       >
         <p
           className={`text-sm tabular-nums ${
-            bold ? "font-semibold text-blue-900" : "text-blue-800"
+            bold ? "font-semibold text-gray-900" : "text-gray-900"
           }`}
         >
           {money(total)}
@@ -233,15 +233,15 @@ export default function MediaboxActualsSection({
   return (
     <>
       {/* Section header — matches the ADMIN_INPUT header styling. */}
-      <tr className="bg-blue-50 border-y border-blue-200">
+      <tr className="bg-blue-200 border-y border-blue-300">
         <td colSpan={colSpan} className="p-0">
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
-            <Database size={11} className="text-blue-500" />
-            <span className="text-xs font-semibold text-blue-700 uppercase tracking-wider">
+            <Database size={11} className="text-gray-900" />
+            <span className="text-xs font-semibold text-gray-900 uppercase tracking-wider">
               MediaBox
             </span>
-            <Lock size={10} className="text-blue-300" />
-            <span className="text-[11px] text-blue-400 normal-case">
+            <Lock size={10} className="text-gray-700" />
+            <span className="text-[11px] text-gray-800 normal-case">
               actual as of {formatSyncedAt(totals?.syncedAt)}
             </span>
             <button
@@ -249,7 +249,7 @@ export default function MediaboxActualsSection({
               onClick={refresh}
               disabled={busy}
               title="Refresh from MediaBox"
-              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium text-blue-600 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium text-gray-900 hover:bg-blue-300 disabled:opacity-50 transition-colors"
             >
               <RefreshCw size={11} className={busy ? "animate-spin" : ""} />
               {refreshing || triggering ? "Refreshing…" : "Refresh"}
@@ -260,7 +260,7 @@ export default function MediaboxActualsSection({
               startedAt={totals?.refreshStartedAt}
             />
             {cad && cad.hasUsd && !cad.usdConverted && (
-              <span className="flex items-center gap-1 text-[11px] text-amber-600">
+              <span className="flex items-center gap-1 text-[11px] text-gray-900">
                 <AlertTriangle size={11} />
                 USD not converted (no {year} rate)
               </span>
@@ -274,7 +274,7 @@ export default function MediaboxActualsSection({
         <tr>
           <td
             colSpan={colSpan}
-            className="px-8 py-2.5 text-xs text-blue-400 bg-blue-50/40 border-b border-blue-100"
+            className="px-8 py-2.5 text-xs text-gray-800 bg-blue-200 border-b border-blue-300"
           >
             {loading || triggering
               ? "Loading MediaBox data…"
@@ -315,10 +315,10 @@ export default function MediaboxActualsSection({
           })}
 
           {/* Summary: total per media type / partner. */}
-          <tr className="bg-blue-100/40 border-y border-blue-200">
+          <tr className="bg-blue-200 border-y border-blue-300">
             <td
               colSpan={colSpan}
-              className="sticky left-0 z-10 px-4 py-1.5 text-[11px] font-semibold text-blue-600 uppercase tracking-wider"
+              className="sticky left-0 z-10 px-4 py-1.5 text-[11px] font-semibold text-gray-900 uppercase tracking-wider"
             >
               Summary — total per {typeNoun}
             </td>
@@ -375,7 +375,7 @@ export default function MediaboxActualsSection({
         <tr>
           <td
             colSpan={colSpan}
-            className="px-8 py-1.5 text-[11px] text-red-500 bg-blue-50/40 border-b border-blue-100"
+            className="px-8 py-1.5 text-[11px] text-red-700 bg-blue-200 border-b border-blue-300"
           >
             {error}
           </td>

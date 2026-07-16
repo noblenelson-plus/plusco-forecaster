@@ -130,7 +130,7 @@ export default function AdminCurrencyPage() {
       <div className="p-6 max-w-2xl mx-auto">
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+          <div className="flex items-center gap-2 bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg mb-4 text-sm">
             <AlertCircle size={16} className="flex-shrink-0" />
             {error}
           </div>
@@ -255,8 +255,8 @@ function RateRow({
   return (
     <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors gap-3">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-8 h-8 rounded-lg bg-yellow-100 flex items-center justify-center flex-shrink-0">
-          <DollarSign size={14} className="text-yellow-600" />
+        <div className="w-8 h-8 rounded-lg bg-yellow-400 flex items-center justify-center flex-shrink-0">
+          <DollarSign size={14} className="text-gray-900" />
         </div>
         <span className="text-sm font-semibold text-gray-900">{year}</span>
       </div>
@@ -313,7 +313,7 @@ function RateRow({
           ) : (
             <button
               onClick={onAskDelete}
-              className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+              className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-gray-100 transition-colors"
               title="Remove rate"
             >
               <Trash2 size={14} />

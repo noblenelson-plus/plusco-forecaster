@@ -163,24 +163,24 @@ export function SpreadsheetCell({
   const stateClasses = inverse
     ? `${
         selected
-          ? "bg-yellow-200/70 text-gray-900 font-semibold"
-          : `hover:bg-white/10 font-bold ${
+          ? "bg-yellow-200 text-gray-900 font-semibold"
+          : `hover:bg-gray-800 font-bold ${
               value < 0
                 ? "text-red-200"
                 : empty
-                ? "text-white/50"
+                ? "text-gray-400"
                 : dirty
                 ? "text-yellow-200"
                 : "text-white"
             }`
       }`
-    : `${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : official ? "bg-emerald-100 hover:bg-emerald-100" : counted ? "bg-violet-100 hover:bg-violet-100" : muted ? "bg-gray-100/60" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
-       ${closed ? "text-gray-300" : overridden ? "text-gray-400 line-through decoration-gray-400" : official ? "text-emerald-900 font-semibold" : counted ? "text-violet-900 font-semibold" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-red-700" : empty ? "text-gray-300" : "text-gray-700"}`;
+    : `${selected ? "bg-yellow-200" : closed ? "bg-gray-100" : official ? "bg-blue-200 hover:bg-blue-200" : counted ? "bg-pink-200 hover:bg-pink-200" : muted ? "bg-gray-100" : value < 0 ? "bg-red-500 hover:bg-red-500" : "hover:bg-gray-50"}
+       ${closed ? "text-gray-300" : overridden ? "text-gray-400 line-through decoration-gray-400" : official ? "text-gray-900 font-semibold" : counted ? "text-gray-900 font-semibold" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-white" : empty ? "text-gray-300" : "text-gray-700"}`;
 
   return (
     <td
       className={`px-0 py-0 border-b border-r align-middle ${
-        inverse ? "border-white/15" : "border-gray-100"
+        inverse ? "border-gray-700" : "border-gray-100"
       }`}
     >
       {editing ? (
@@ -262,11 +262,11 @@ export function TotalCell({ value, emphasis = "row" }: TotalCellProps) {
       title={value !== 0 ? "Click to copy" : undefined}
       className={`px-2.5 py-1.5 border-b border-gray-100 text-right align-middle ${
         value !== 0 ? "cursor-copy" : ""
-      } ${value < 0 ? "bg-red-100/70" : ""}`}
+      } ${value < 0 ? "bg-red-500" : ""}`}
     >
       <p
         className={`tabular-nums ${styles} ${
-          value < 0 ? "!text-red-700" : value === 0 ? "!text-gray-300" : ""
+          value < 0 ? "!text-white" : value === 0 ? "!text-gray-300" : ""
         }`}
       >
         {formatMoney(value)}

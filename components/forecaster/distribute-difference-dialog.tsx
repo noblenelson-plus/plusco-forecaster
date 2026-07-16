@@ -333,7 +333,7 @@ export default function DistributeDifferenceDialog({
                         title={isLocked ? "Closed period — locked" : undefined}
                         className={`py-1.5 text-xs font-medium rounded-lg border transition-colors inline-flex items-center justify-center gap-1 ${
                           isLocked
-                            ? "bg-gray-100/80 border-gray-200 text-gray-300 cursor-not-allowed"
+                            ? "bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed"
                             : on
                             ? "bg-yellow-400 border-yellow-400 text-gray-900"
                             : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
@@ -398,14 +398,14 @@ export default function DistributeDifferenceDialog({
                         onClick={() => setSingle(p.bucketId)}
                         className={`w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-lg border transition-colors ${
                           single === p.bucketId
-                            ? "border-yellow-400 bg-yellow-50/60"
+                            ? "border-yellow-400 bg-yellow-400"
                             : "border-gray-200 hover:border-gray-300"
                         }`}
                       >
                         <span
-                          className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${
+                          className={`w-3.5 h-3.5 border-2 flex-shrink-0 ${
                             single === p.bucketId
-                              ? "border-yellow-500 bg-yellow-400"
+                              ? "border-gray-900 bg-gray-900"
                               : "border-gray-300"
                           }`}
                         />
@@ -413,7 +413,11 @@ export default function DistributeDifferenceDialog({
                           {p.name}
                         </span>
                         {!p.hasType && (
-                          <span className="text-[10px] text-gray-400 shrink-0">
+                          <span
+                            className={`text-[10px] shrink-0 ${
+                              single === p.bucketId ? "text-gray-800" : "text-gray-400"
+                            }`}
+                          >
                             new row
                           </span>
                         )}

@@ -157,7 +157,7 @@ export default function RecomputeTiersModal({
         {/* Body */}
         <div className="px-6 py-4 flex-1 overflow-y-auto space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+            <div className="bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
               {error}
             </div>
           )}
@@ -206,7 +206,7 @@ export default function RecomputeTiersModal({
           {report && (
             <div className="space-y-3">
               {report.changes.length === 0 ? (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-sm">
+                <div className="bg-green-500 border border-green-500 text-white px-3 py-2 rounded-lg text-sm">
                   All {report.computations.length - report.skipped.length}{" "}
                   computed tiers already match — nothing to update.
                 </div>
@@ -244,7 +244,7 @@ export default function RecomputeTiersModal({
               )}
 
               {report.skipped.length > 0 && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-xs flex gap-2">
+                <div className="bg-yellow-400 border border-yellow-400 text-gray-900 px-3 py-2 rounded-lg text-xs flex gap-2">
                   <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                   <span>
                     Skipped (no USD→CAD rate set for {year}):{" "}

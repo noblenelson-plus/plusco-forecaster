@@ -55,10 +55,10 @@ export default function RowActionsMenu({
         className={`p-0.5 rounded transition-colors flex-shrink-0 ${
           open
             ? inverse
-              ? "text-white bg-white/20"
-              : "text-gray-700 bg-gray-200/70"
+              ? "text-white bg-gray-700"
+              : "text-gray-700 bg-gray-200"
             : inverse
-            ? "text-white/60 hover:text-white hover:bg-white/15"
+            ? "text-gray-300 hover:text-white hover:bg-gray-700"
             : "text-gray-300 hover:text-gray-600 hover:bg-gray-100"
         }`}
       >
@@ -133,7 +133,7 @@ function MenuPanel({
             onClose();
           }}
           className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm transition-colors ${
-            a.danger ? "text-red-600 hover:bg-red-50" : "text-gray-700 hover:bg-gray-50"
+            a.danger ? "text-red-600 hover:bg-gray-100" : "text-gray-700 hover:bg-gray-50"
           }`}
         >
           <span className={`flex-shrink-0 ${a.danger ? "text-red-500" : "text-gray-400"}`}>

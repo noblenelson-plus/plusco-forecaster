@@ -116,8 +116,8 @@ export default function ReviewModal({
               a small viewport forces it to shrink. */}
           {!result && (
             <div className="px-6 py-4 border-b border-gray-100 space-y-3 overflow-y-auto">
-              <div className="flex items-start gap-2.5 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-3">
-                <Replace size={16} className="mt-0.5 flex-shrink-0 text-yellow-700" />
+              <div className="flex items-start gap-2.5 rounded-xl border border-yellow-400 bg-yellow-400 px-4 py-3">
+                <Replace size={16} className="mt-0.5 flex-shrink-0 text-gray-900" />
                 <p className="text-sm text-gray-800 leading-relaxed">
                   <span className="font-semibold">Replace</span> — each section
                   below is overwritten by the sheet&apos;s rows. Anything in
@@ -195,7 +195,7 @@ export default function ReviewModal({
           </div>
 
           {error && (
-            <div className="mx-6 mb-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+            <div className="mx-6 mb-2 bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
               {error}
             </div>
           )}
@@ -244,9 +244,9 @@ function Pill({
   children: React.ReactNode;
 }) {
   const map = {
-    emerald: "bg-emerald-50 border-emerald-200 text-emerald-700",
-    red: "bg-red-50 border-red-200 text-red-600",
-    amber: "bg-amber-50 border-amber-200 text-amber-700",
+    emerald: "bg-green-500 border-green-500 text-white",
+    red: "bg-red-500 border-red-500 text-white",
+    amber: "bg-yellow-400 border-yellow-400 text-gray-900",
     gray: "bg-gray-50 border-gray-200 text-gray-600",
   } as const;
   return (
@@ -279,7 +279,7 @@ function DiffStat({
     gray: "text-gray-400",
   } as const;
   return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+    <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5">
       <p className={`text-sm font-semibold ${map[tone]}`}>
         {value} <span className="font-medium">{label.toLowerCase()}</span>
       </p>
@@ -310,8 +310,8 @@ function ErrorRow({
 }) {
   const cls =
     tone === "red"
-      ? "bg-red-50 border-red-100 text-red-700"
-      : "bg-amber-50 border-amber-100 text-amber-800";
+      ? "bg-red-500 border-red-500 text-white"
+      : "bg-yellow-400 border-yellow-400 text-gray-900";
   return (
     <div className={`flex items-start gap-2.5 border rounded-lg px-3 py-2 ${cls}`}>
       <AlertTriangle size={13} className="flex-shrink-0 mt-0.5 opacity-70" />
@@ -347,7 +347,7 @@ function ResultView({ result }: { result: CommitResult }) {
       {result.errors.map((e, i) => (
         <div
           key={i}
-          className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-red-700"
+          className="flex items-start gap-2.5 bg-red-500 border border-red-500 rounded-lg px-3 py-2 text-white"
         >
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <p className="text-xs leading-relaxed">{e}</p>

@@ -340,7 +340,7 @@ export default function CommissionsDrawer({
         </div>
 
         {/* Toolbar — year + copy */}
-        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between gap-3">
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between gap-3">
           <div className="relative">
             <select
               value={year}
@@ -368,7 +368,7 @@ export default function CommissionsDrawer({
                 ? `Copy rates from ${year - 1}`
                 : `No configuration found for ${year - 1}`
             }
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-yellow-300 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-yellow-400 bg-yellow-400 text-gray-900 hover:bg-yellow-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Copy size={12} />
             Copy from {year - 1}
@@ -377,7 +377,7 @@ export default function CommissionsDrawer({
 
         {/* Error */}
         {error && (
-          <div className="mx-6 mt-3 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+          <div className="mx-6 mt-3 flex items-center gap-2 bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
             <AlertTriangle size={14} className="flex-shrink-0" />
             {error}
           </div>
@@ -395,7 +395,7 @@ export default function CommissionsDrawer({
                 className={`
                   rounded-xl border transition-colors
                   ${row.enabled
-                    ? "border-yellow-300 bg-yellow-50/50"
+                    ? "border-yellow-400 bg-yellow-400"
                     : "border-gray-100 bg-white"
                   }
                 `}
@@ -408,13 +408,13 @@ export default function CommissionsDrawer({
                         onClick={() => toggleEnabled(type)}
                         className={`
                             relative w-9 h-5 rounded-full flex-shrink-0 transition-colors
-                            ${row.enabled ? "bg-yellow-400" : "bg-gray-200"}
+                            ${row.enabled ? "bg-gray-900" : "bg-gray-200"}
                         `}
                         title={row.enabled ? "Disable commission" : "Enable commission"}
                         >
                         <span
                             className={`
-                            absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow
+                            absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white
                             transition-transform duration-150
                             ${row.enabled ? "translate-x-4" : "translate-x-0"}
                             `}
@@ -454,7 +454,7 @@ export default function CommissionsDrawer({
                       <button
                         type="button"
                         onClick={() => toggleExpanded(type)}
-                        className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                        className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-800 hover:text-gray-900 hover:bg-yellow-300 rounded-lg transition-colors flex-shrink-0"
                       >
                         {row.expanded ? (
                           <>
@@ -474,11 +474,11 @@ export default function CommissionsDrawer({
 
                 {/* Expanded monthly grid */}
                 {row.enabled && row.expanded && (
-                  <div className="px-4 pb-4 pt-1 border-t border-yellow-200/60">
+                  <div className="px-4 pb-4 pt-1 border-t border-yellow-300">
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">
                       {MONTHS.map((m) => (
                         <div key={m}>
-                          <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                          <label className="block text-[10px] font-semibold text-gray-800 uppercase tracking-wider mb-1">
                             {MONTH_LABELS[m - 1]}
                           </label>
                           <div className="relative">

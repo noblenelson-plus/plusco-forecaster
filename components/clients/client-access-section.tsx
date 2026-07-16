@@ -14,24 +14,23 @@ import {
 } from "../../lib/services/assignment-service";
 
 interface ClientAccessSectionProps {
-  /** ID du client en cours d'édition — null si création (section masquée) */
+  /** ID of the client being edited — null when creating (section hidden) */
   clId: string | null;
   /**
-   * Admin → contrôles complets (ajouter / retirer des accès).
-   * BL → liste en lecture seule (voir qui d'autre a accès au client).
+   * Admin → full controls (add / remove access).
+   * BL → read-only list (see who else has access to the client).
    */
   isAdmin: boolean;
 }
 
 /**
- * Section "Access" à insérer dans le ClientDrawer (mode édition).
+ * "Access" section embedded in the ClientDrawer (edit mode).
  *
- * — Liste les utilisateurs ayant accès au client (assignedClients ∋ clId)
- * — Admin only : combobox de recherche pour ajouter quelqu'un, bouton ×
- *   pour retirer un accès
+ * — Lists the users who have access to the client (assignedClients ∋ clId)
+ * — Admin only: search combobox to add someone, × button to remove access
  *
- * Les écritures sont immédiates (arrayUnion / arrayRemove sur users/{uid}),
- * indépendantes du Save du formulaire client.
+ * Writes are immediate (arrayUnion / arrayRemove on users/{uid}),
+ * independent of the client form's Save.
  */
 export default function ClientAccessSection({
   clId,
@@ -47,7 +46,7 @@ export default function ClientAccessSection({
   const [search, setSearch] = useState("");
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  // Charger tous les users (une fois par ouverture du drawer)
+  // Load all users (once per drawer opening)
   useEffect(() => {
     if (!clId) return;
 
@@ -71,7 +70,7 @@ export default function ClientAccessSection({
     fetchUsers();
   }, [clId]);
 
-  // Fermer le picker au clic extérieur
+  // Close the picker on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
@@ -105,7 +104,7 @@ export default function ClientAccessSection({
     setError("");
     try {
       await assignClientsToUser(uid, [clId]);
-      // Mise à jour optimiste locale
+      // Optimistic local update
       setUsers((prev) =>
         prev.map((u) =>
           u.uid === uid
@@ -147,7 +146,7 @@ export default function ClientAccessSection({
     }
   }
 
-  // Création d'un nouveau client → pas encore d'ID, on n'affiche rien
+  // Creating a new client → no ID yet, render nothing
   if (!clId) return null;
 
   return (
@@ -157,7 +156,7 @@ export default function ClientAccessSection({
       </p>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm mb-3">
+        <div className="bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm mb-3">
           {error}
         </div>
       )}
@@ -169,7 +168,7 @@ export default function ClientAccessSection({
         </div>
       ) : (
         <div className="space-y-2">
-          {/* Liste des users assignés */}
+          {/* Assigned users list */}
           {assignedUsers.length === 0 ? (
             <p className="text-sm text-gray-400 py-1">
               No one has access to this client yet.
@@ -199,7 +198,7 @@ export default function ClientAccessSection({
                   Add person
                 </button>
               ) : (
-                <div className="border border-gray-200 rounded-lg bg-white shadow-sm">
+                <div className="border border-gray-200 rounded-lg bg-white">
                   <div className="relative border-b border-gray-100">
                     <Search
                       size={14}
@@ -271,7 +270,7 @@ function AccessRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2.5 px-3 py-2 border border-gray-100 rounded-lg bg-gray-50/50">
+    <div className="flex items-center gap-2.5 px-3 py-2 border border-gray-100 rounded-lg bg-gray-50">
       <UserAvatar user={user} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-gray-900 truncate">
@@ -280,8 +279,8 @@ function AccessRow({
         <p className="text-xs text-gray-400 truncate">{user.email}</p>
       </div>
 
-      {/* Badge rôle */}
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white border border-gray-200 text-gray-500 flex-shrink-0">
+      {/* Role badge */}
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-white border border-gray-200 text-gray-500 flex-shrink-0">
         {user.role === "ADMIN" ? (
           <>
             <Shield size={10} className="text-yellow-500" /> Admin
@@ -293,7 +292,7 @@ function AccessRow({
         )}
       </span>
 
-      {/* Retrait — admin only */}
+      {/* Removal — admin only */}
       {canRemove && (
         <button
           type="button"
@@ -324,7 +323,7 @@ function UserAvatar({ user }: { user: UserProfile }) {
     : user.email[0].toUpperCase();
 
   return (
-    <div className="w-7 h-7 rounded-full bg-yellow-400 flex items-center justify-center text-gray-900 text-[10px] font-bold flex-shrink-0">
+    <div className="w-7 h-7 bg-yellow-400 flex items-center justify-center text-gray-900 text-[10px] font-bold flex-shrink-0">
       {initials}
     </div>
   );

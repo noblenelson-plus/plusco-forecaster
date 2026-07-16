@@ -569,7 +569,7 @@ const GROUPS: ChapterGroup[] = [
             </Lead>
             <Callout tone="tip" icon={Sparkles} title="Commission is calculated">
               The{" "}
-              <span className="inline-flex items-center gap-1 align-middle rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-600">
+              <span className="inline-flex items-center gap-1 align-middle rounded bg-purple-600 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
                 <Sparkles size={10} /> Calculated
               </span>{" "}
               row is derived from your <strong>Media Spend</strong> × the
@@ -965,8 +965,8 @@ export default function HowToGuide({ onJump }: HowToGuideProps) {
 
         {/* End CTA — only on the last chapter */}
         {!next && onJump && (
-          <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-yellow-200 bg-yellow-50 px-6 py-7 text-center">
-            <CheckCircle2 className="text-yellow-500" size={26} />
+          <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-yellow-400 bg-yellow-400 px-6 py-7 text-center">
+            <CheckCircle2 className="text-gray-900" size={26} />
             <p className="text-sm font-medium text-gray-800">
               That&apos;s the whole flow. Ready to forecast?
             </p>
@@ -1150,7 +1150,7 @@ function Steps({ children }: { children: React.ReactNode }) {
 function Step({ n, children }: { n: number; children: React.ReactNode }) {
   return (
     <li className="flex gap-3">
-      <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-900 text-[11px] font-bold text-white">
+      <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center bg-gray-900 text-[11px] font-bold text-white">
         {n}
       </span>
       <span className="min-w-0">{children}</span>
@@ -1234,7 +1234,7 @@ function IconText({
 /** Keyboard key cap. */
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-block rounded border border-gray-300 bg-white px-1.5 py-0.5 align-middle font-mono text-[11px] font-semibold text-gray-700 shadow-[0_1px_0_rgba(0,0,0,0.08)]">
+    <kbd className="inline-block rounded border border-gray-300 bg-white px-1.5 py-0.5 align-middle font-mono text-[11px] font-semibold text-gray-700">
       {children}
     </kbd>
   );
@@ -1292,14 +1292,29 @@ function Callout({
   children: React.ReactNode;
 }) {
   const styles = {
-    info: { box: "border-blue-200 bg-blue-50", icon: "text-blue-500", title: "text-blue-900" },
-    tip: { box: "border-emerald-200 bg-emerald-50", icon: "text-emerald-500", title: "text-emerald-900" },
-    warn: { box: "border-amber-200 bg-amber-50", icon: "text-amber-500", title: "text-amber-900" },
+    info: {
+      box: "border-blue-300 bg-blue-200",
+      icon: "text-gray-900",
+      title: "text-gray-900",
+      body: "text-gray-800",
+    },
+    tip: {
+      box: "border-green-500 bg-green-500",
+      icon: "text-white",
+      title: "text-white",
+      body: "text-white",
+    },
+    warn: {
+      box: "border-yellow-400 bg-yellow-400",
+      icon: "text-gray-900",
+      title: "text-gray-900",
+      body: "text-gray-800",
+    },
   }[tone];
   return (
     <div className={`flex gap-3 rounded-xl border px-4 py-3 ${styles.box}`}>
       <Icon size={17} className={`mt-0.5 flex-shrink-0 ${styles.icon}`} />
-      <div className="min-w-0 text-sm leading-relaxed text-gray-700">
+      <div className={`min-w-0 text-sm leading-relaxed ${styles.body}`}>
         <p className={`mb-0.5 font-semibold ${styles.title}`}>{title}</p>
         {children}
       </div>
@@ -1324,7 +1339,7 @@ function AxisCard({
     <Tag
       onClick={onClick}
       className={`flex flex-col rounded-xl border border-gray-200 bg-white p-4 text-left ${
-        onClick ? "transition-colors hover:border-yellow-300 hover:bg-yellow-50/40" : ""
+        onClick ? "transition-colors hover:border-yellow-400 hover:bg-gray-100" : ""
       }`}
     >
       <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">

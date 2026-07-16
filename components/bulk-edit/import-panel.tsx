@@ -108,7 +108,7 @@ export default function ImportPanel({
                 onClick={() => toggleAxis(a.id)}
                 className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
                   checked
-                    ? "bg-yellow-50 border-yellow-300 text-yellow-900"
+                    ? "bg-yellow-400 border-yellow-400 text-gray-900"
                     : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
                 }`}
               >
@@ -131,7 +131,7 @@ export default function ImportPanel({
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+        <div className="bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
           {error}
         </div>
       )}

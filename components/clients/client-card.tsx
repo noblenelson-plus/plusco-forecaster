@@ -28,8 +28,8 @@ const TIER_LABELS: Record<string, string> = {
 };
 
 const TIER_COLORS: Record<string, string> = {
-  TIER_1: "bg-yellow-100 text-yellow-800",
-  TIER_2: "bg-blue-100 text-blue-800",
+  TIER_1: "bg-yellow-400 text-gray-900",
+  TIER_2: "bg-blue-200 text-gray-900",
   TIER_3: "bg-gray-100 text-gray-600",
 };
 
@@ -67,14 +67,14 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
   return (
     <button
       onClick={() => onEdit(client)}
-      className="group w-full text-left bg-white border border-gray-200 rounded-xl p-5 hover:border-yellow-400 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+      className="group w-full text-left bg-white border border-gray-200 rounded-xl p-5 hover:border-yellow-400 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-yellow-400"
     >
       {/* Top row — logo/avatar + status */}
       <div className="flex items-start justify-between mb-4">
         <div
           className={`w-11 h-11 rounded-xl ${
             client.CL_Logo ? "bg-transparent" : avatarBg
-          } flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden`}
+          } flex items-center justify-center flex-shrink-0 overflow-hidden`}
         >
           {client.CL_Logo ? (
             <img
@@ -88,18 +88,18 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
         </div>
         <div className="flex items-center gap-1.5">
           {hidden && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
               <EyeOff size={10} />
               Hidden
             </span>
           )}
           <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+            className={`inline-flex items-center px-2 py-0.5 text-xs font-medium border ${
               STATUS_BADGE_COLORS[status] ?? "bg-gray-100 text-gray-500 border-gray-200"
             }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+              className={`w-1.5 h-1.5 mr-1.5 ${
                 STATUS_DOT_COLORS[status] ?? "bg-gray-400"
               }`}
             />

@@ -113,9 +113,9 @@ export default function MediaboxCoverageSection({
         </div>
       </div>
 
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+      <div className="mt-3 h-2 overflow-hidden bg-muted">
         <div
-          className="h-full rounded-full bg-primary transition-[width]"
+          className="h-full bg-primary transition-[width]"
           style={{
             width: `${Math.min(100, Math.max(0, (coverage ?? 0) * 100))}%`,
           }}
@@ -203,14 +203,14 @@ export default function MediaboxCoverageSection({
             <div className="mb-3 flex gap-4 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <span
-                  className="inline-block h-2 w-2 rounded-full"
+                  className="inline-block h-2 w-2"
                   style={{ backgroundColor: NEGATIVE_COLOR }}
                 />
                 MediaBox below forecast
               </span>
               <span className="flex items-center gap-1.5">
                 <span
-                  className="inline-block h-2 w-2 rounded-full"
+                  className="inline-block h-2 w-2"
                   style={{ backgroundColor: DIGITAL_COLOR }}
                 />
                 MediaBox above forecast

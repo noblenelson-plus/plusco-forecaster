@@ -51,7 +51,7 @@ export default function DashboardContextBar({
   } = useComparisonSelection();
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50/30">
+    <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50">
       <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 select-none mr-2">
         Time &amp; Context
       </span>
@@ -96,7 +96,7 @@ export default function DashboardContextBar({
       {/* Currency indicator — the dashboard always reports in CAD. */}
       <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
       <span
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-green-500 bg-green-500 text-white"
         title="All amounts are aggregated and displayed in CAD. USD clients are converted with the year's rate."
       >
         <DollarSign size={13} />
@@ -112,7 +112,7 @@ export default function DashboardContextBar({
 
       {missingRate && (
         <span
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-amber-200 bg-amber-50 text-amber-700"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-yellow-400 bg-yellow-400 text-gray-900"
           title="No USD→CAD rate is configured for this year in Admin → Currency. USD clients are shown unconverted."
         >
           <AlertTriangle size={13} />

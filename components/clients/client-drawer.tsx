@@ -403,7 +403,7 @@ export default function ClientDrawer({
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+            <div className="bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
               {error}
             </div>
           )}
@@ -704,10 +704,10 @@ export default function ClientDrawer({
                 <button
                   type="button"
                   onClick={() => setCommissionsOpen(true)}
-                  className="w-full flex items-center justify-between px-3 py-2.5 border border-gray-200 rounded-lg bg-white hover:border-yellow-400 hover:bg-yellow-50/50 transition-colors group"
+                  className="w-full flex items-center justify-between px-3 py-2.5 border border-gray-200 rounded-lg bg-white hover:border-yellow-400 hover:bg-gray-100 transition-colors group"
                 >
                   <span className="flex items-center gap-2 text-sm text-gray-700">
-                    <span className="w-7 h-7 rounded-lg bg-yellow-100 text-yellow-700 flex items-center justify-center group-hover:bg-yellow-400 group-hover:text-gray-900 transition-colors">
+                    <span className="w-7 h-7 rounded-lg bg-yellow-400 text-gray-900 flex items-center justify-center group-hover:bg-yellow-300 transition-colors">
                       <Percent size={13} strokeWidth={2.5} />
                     </span>
                     Manage commissions
@@ -746,8 +746,8 @@ export default function ClientDrawer({
                   Delete client
                 </button>
               ) : (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                  <p className="text-sm text-red-700 mb-3">
+                <div className="bg-red-500 border border-red-500 rounded-lg p-3">
+                  <p className="text-sm text-white mb-3">
                     Are you sure? This deletes the client <strong>and all its
                     forecast data</strong> (every submission, MediaOcean
                     actuals, MediaBox totals) and unassigns it from every user.
@@ -757,14 +757,14 @@ export default function ClientDrawer({
                     <button
                       onClick={handleDelete}
                       disabled={deleting}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
                     >
                       {deleting && <Loader2 size={13} className="animate-spin" />}
                       Yes, delete
                     </button>
                     <button
                       onClick={() => setConfirmDelete(false)}
-                      className="px-3 py-1.5 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                      className="px-3 py-1.5 text-sm text-white border border-white rounded-lg hover:bg-red-400 transition-colors"
                     >
                       Cancel
                     </button>
@@ -855,7 +855,7 @@ function Toggle({
         }`}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
             checked ? "translate-x-4" : "translate-x-0.5"
           }`}
         />

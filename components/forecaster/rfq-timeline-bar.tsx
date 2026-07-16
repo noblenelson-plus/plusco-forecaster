@@ -2,7 +2,7 @@
 "use client";
 
 /**
- * Sticky timeline (échéancier) pinned to the bottom of the forecast page,
+ * Sticky timeline (schedule) pinned to the bottom of the forecast page,
  * rendered as a two-state mini gantt:
  *
  * - At rest it is an ultra-slim yellow strip labeled "Timeline": thin colored
@@ -129,17 +129,17 @@ const STATUS_STYLES: Record<
   { bar: string; tooltipStatus: string; label: string }
 > = {
   completed: {
-    bar: "bg-emerald-500 border-emerald-600/40 text-white hover:bg-emerald-400",
+    bar: "bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-400",
     tooltipStatus: "text-emerald-300",
     label: "Completed",
   },
   active: {
-    bar: "bg-orange-500 border-orange-600/50 text-white hover:bg-orange-400",
+    bar: "bg-orange-500 border-orange-600 text-white hover:bg-orange-400",
     tooltipStatus: "text-orange-300",
     label: "Active",
   },
   future: {
-    bar: "bg-gray-800 border-gray-900/50 text-gray-100 hover:bg-gray-700",
+    bar: "bg-gray-800 border-gray-900 text-gray-100 hover:bg-gray-700",
     tooltipStatus: "text-gray-300",
     label: "Upcoming",
   },
@@ -193,7 +193,7 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
       <div
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
-        className={`absolute inset-x-0 bottom-0 border-t border-yellow-500/60 bg-yellow-400/95 backdrop-blur supports-[backdrop-filter]:bg-yellow-400/90 transition-all duration-200 ease-out motion-reduce:transition-none ${
+        className={`absolute inset-x-0 bottom-0 border-t border-yellow-500 bg-yellow-400 transition-all duration-200 ease-out motion-reduce:transition-none ${
           open ? "shadow-[0_-8px_24px_rgba(0,0,0,0.2)]" : ""
         }`}
         style={{ height: panelHeight }}
@@ -217,13 +217,13 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
               <div key={tick.pct}>
                 <div
                   className={`absolute inset-y-0 w-px transition-colors duration-200 ${
-                    open ? "bg-black/15" : "bg-black/10"
+                    open ? "bg-yellow-600" : "bg-yellow-500"
                   }`}
                   style={{ left: `${tick.pct}%` }}
                 />
                 {i % labelStep === 0 && tick.pct < 96 && (
                   <span
-                    className={`absolute top-0 pl-1 text-[9px] font-medium leading-none text-yellow-900/70 whitespace-nowrap transition-opacity duration-200 ${
+                    className={`absolute top-0 pl-1 text-[9px] font-medium leading-none text-yellow-900 whitespace-nowrap transition-opacity duration-200 ${
                       open ? "opacity-100" : "opacity-0"
                     }`}
                     style={{ left: `${tick.pct}%` }}
@@ -237,10 +237,10 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
             {/* Today marker */}
             {todayPct !== null && (
               <div
-                className="pointer-events-none absolute inset-y-0 z-10 w-[2px] rounded-full bg-red-600"
+                className="pointer-events-none absolute inset-y-0 z-10 w-[2px] bg-red-600"
                 style={{ left: `${todayPct}%` }}
               >
-                <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-600" />
+                <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 bg-red-600" />
               </div>
             )}
 
@@ -264,7 +264,7 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
               return (
                 <div
                   key={period.id}
-                  className={`group @container absolute z-20 flex cursor-default items-center overflow-visible rounded-full border transition-all duration-200 ease-out motion-reduce:transition-none hover:z-30 hover:shadow-md hover:ring-2 hover:ring-white/70 ${styles.bar}`}
+                  className={`group @container absolute z-20 flex cursor-default items-center overflow-visible border transition-all duration-200 ease-out motion-reduce:transition-none hover:z-30 hover:ring-2 hover:ring-white ${styles.bar}`}
                   style={{
                     top: s.axis + lane * s.pitch + (s.pitch - s.bar) / 2,
                     height: s.bar,
@@ -289,7 +289,7 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
                         narrow bar the name wins and the chip drops out (the
                         tooltip still shows the owner). */}
                     {period.owner && (
-                      <span className="hidden flex-shrink-0 rounded-full border border-black/10 bg-white/75 px-1.5 py-px text-[8px] font-bold leading-none text-gray-700 @min-[96px]:inline-block">
+                      <span className="hidden flex-shrink-0 border border-gray-300 bg-white px-1.5 py-px text-[8px] font-bold leading-none text-gray-700 @min-[96px]:inline-block">
                         {OWNER_SHORT[period.owner]}
                       </span>
                     )}
@@ -298,7 +298,7 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
                   {/* Hover tooltip with the full details */}
                   <div
                     role="tooltip"
-                    className={`pointer-events-none absolute bottom-full z-50 mb-2 w-max max-w-xs rounded-lg bg-gray-900 px-3 py-2 text-left opacity-0 shadow-lg ring-1 ring-white/10 transition-opacity duration-150 group-hover:opacity-100 ${tooltipPos}`}
+                    className={`pointer-events-none absolute bottom-full z-50 mb-2 w-max max-w-xs rounded-lg bg-gray-900 px-3 py-2 text-left opacity-0 shadow-lg ring-1 ring-gray-700 transition-opacity duration-150 group-hover:opacity-100 ${tooltipPos}`}
                   >
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-semibold text-white">

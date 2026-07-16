@@ -46,7 +46,7 @@ function Chip({
       onClick={onClick}
       className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
         active
-          ? "bg-yellow-50 border-yellow-300 text-yellow-900"
+          ? "bg-yellow-400 border-yellow-400 text-gray-900"
           : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
       }`}
     >
@@ -194,22 +194,22 @@ export default function GeneralForecastReport({
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+        <div className="bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
           {error}
         </div>
       )}
 
       {result && (
-        <div className="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
-          <span className="flex items-center gap-2 text-sm text-emerald-800">
-            <CheckCircle2 size={16} className="text-emerald-600" />
+        <div className="flex items-center justify-between gap-3 bg-green-500 border border-green-500 rounded-lg px-4 py-3">
+          <span className="flex items-center gap-2 text-sm text-white">
+            <CheckCircle2 size={16} className="text-white" />
             Report created — {result.rowCount} rows.
           </span>
           <a
             href={result.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-900"
+            className="flex items-center gap-1.5 text-sm font-medium text-white hover:underline"
           >
             Open <ExternalLink size={14} />
           </a>

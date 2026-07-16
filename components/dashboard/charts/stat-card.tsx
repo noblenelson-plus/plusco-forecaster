@@ -60,8 +60,8 @@ export default function StatCard({
                 isFlat 
                   ? "bg-gray-100 text-gray-500" 
                   : variance.isFavorable
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-red-50 text-red-600"
+                    ? "bg-green-500 text-white"
+                    : "bg-red-500 text-white"
               }`}
             >
               {isDown ? (

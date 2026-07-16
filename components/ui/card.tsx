@@ -9,10 +9,9 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        // Borderless: a soft layered shadow (tight contact + wider ambient
-        // lift) makes the white card clearly float over the muted page —
-        // modern, no hard outline.
-        "flex flex-col gap-5 rounded-2xl bg-card text-card-foreground shadow-[0_1px_3px_rgba(16,24,40,0.06),0_8px_24px_-6px_rgba(16,24,40,0.12)]",
+        // Flat Plus style: square white surface with a thin hard outline —
+        // no shadows, no rounding (Brand Guidelines: flat, rectilinear).
+        "flex flex-col gap-5 border border-gray-200 bg-card text-card-foreground",
         className
       )}
       {...props}

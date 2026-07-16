@@ -295,7 +295,7 @@ export default function ComparisonPanel({
     <>
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       {/* Header — comparison controls only (the selectors say what is compared). */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/60">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -425,7 +425,7 @@ function ViewToggle({
     { mode: "donut", icon: ChartPie, title: "Double donut" },
   ];
   return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-gray-200/70 p-0.5">
+    <div className="flex items-center gap-0.5 rounded-lg bg-gray-200 p-0.5">
       {items.map(({ mode, icon: Icon, title }) => (
         <button
           key={mode}
@@ -436,7 +436,7 @@ function ViewToggle({
           onClick={() => onChange(mode)}
           className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
             view === mode
-              ? "bg-white text-gray-900 shadow-sm"
+              ? "bg-white text-gray-900"
               : "text-gray-500 hover:text-gray-700"
           }`}
         >
@@ -962,11 +962,11 @@ function VariancePill({
   const up = v.absolute > 0;
   const cls = dark
     ? up
-      ? "bg-emerald-400/15 text-emerald-300 ring-1 ring-inset ring-emerald-400/25"
-      : "bg-red-400/15 text-red-300 ring-1 ring-inset ring-red-400/25"
+      ? "bg-emerald-500 text-white"
+      : "bg-red-500 text-white"
     : up
-    ? "bg-emerald-50 text-emerald-700"
-    : "bg-red-50 text-red-600";
+    ? "bg-green-500 text-white"
+    : "bg-red-500 text-white";
 
   return (
     <span
@@ -998,9 +998,9 @@ function VolumeBar({
   const pct = max > 0 ? (value / max) * 100 : 0;
   return (
     <div className="flex items-center gap-2 mt-1 first:mt-0">
-      <div className="relative h-2.5 flex-1 rounded-full bg-gray-100">
+      <div className="relative h-2.5 flex-1 bg-gray-100">
         <div
-          className="absolute left-0 top-0 h-full rounded-full"
+          className="absolute left-0 top-0 h-full"
           style={{
             width: `${pct}%`,
             backgroundColor: color,
@@ -1040,7 +1040,7 @@ function BarsView({
             <span className="truncate">{baseLabel}</span>
           </span>
           <span className="flex items-center gap-1.5 min-w-0">
-            <span className="inline-block h-2 w-2 rounded-sm bg-gray-500/40 shrink-0" />
+            <span className="inline-block h-2 w-2 rounded-sm bg-gray-300 shrink-0" />
             <span className="truncate">{refLabel}</span>
           </span>
         </div>
@@ -1149,11 +1149,11 @@ function DonutView({
       {/* Ring legend — name each ring directly, ref included inline */}
       <div className="mt-3 space-y-0.5 text-[11px] text-gray-500">
         <p className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full bg-gray-400 ring-2 ring-gray-200 shrink-0" />
+          <span className="inline-block h-2 w-2 bg-gray-400 ring-2 ring-gray-200 shrink-0" />
           <span className="truncate">Outer = {baseLabel}</span>
         </p>
         <p className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full bg-gray-300 shrink-0" />
+          <span className="inline-block h-2 w-2 bg-gray-300 shrink-0" />
           <span className="truncate">Inner = {refLabel}</span>
         </p>
       </div>

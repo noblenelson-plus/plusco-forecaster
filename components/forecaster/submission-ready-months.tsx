@@ -58,14 +58,14 @@ export default function SubmissionReadyMonths() {
         title="Flag which months are complete and ready"
         className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
           count > 0
-            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+            ? "border-green-500 bg-green-500 text-white"
             : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
         }`}
       >
         {status === "saving" ? (
           <Loader2 size={13} className="animate-spin" />
         ) : (
-          <CalendarCheck size={13} className={count > 0 ? "text-emerald-600" : ""} />
+          <CalendarCheck size={13} className={count > 0 ? "text-white" : ""} />
         )}
         <span>Data ready</span>
         <span className="tabular-nums opacity-80">{count}/12</span>
@@ -82,7 +82,7 @@ export default function SubmissionReadyMonths() {
                 type="button"
                 onClick={selectAll}
                 disabled={loading}
-                className="px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 rounded hover:bg-emerald-50 disabled:opacity-40"
+                className="px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 rounded hover:bg-gray-100 disabled:opacity-40"
               >
                 All
               </button>
@@ -111,11 +111,11 @@ export default function SubmissionReadyMonths() {
                   aria-pressed={on}
                   className={`flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md border transition-colors disabled:opacity-50 ${
                     on
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                      ? "border-green-500 bg-green-500 text-white"
                       : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                   }`}
                 >
-                  {on && <Check size={11} className="text-emerald-600" />}
+                  {on && <Check size={11} className="text-white" />}
                   {label}
                 </button>
               );

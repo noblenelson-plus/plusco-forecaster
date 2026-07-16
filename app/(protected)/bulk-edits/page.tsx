@@ -83,7 +83,7 @@ export default function BulkEditsPage() {
         )}
 
         {refError && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+          <div className="bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg text-sm">
             {refError}
           </div>
         )}

@@ -178,7 +178,7 @@ export default function DashboardPage() {
 
       <main className="mx-auto w-full max-w-[1700px] flex-1 p-6 md:p-8">
         {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {error}
           </div>
         ) : loading ? (
@@ -190,7 +190,7 @@ export default function DashboardPage() {
             No clients are available for your account yet.
           </div>
         ) : forecastData.error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {forecastData.error}
           </div>
         ) : tab === "media" ? (

@@ -267,7 +267,7 @@ export default function AdminRFQsPage() {
 
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+          <div className="flex items-center gap-2 bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg mb-4 text-sm">
             <AlertCircle size={16} className="flex-shrink-0" />
             {error}
           </div>
@@ -461,13 +461,13 @@ function RFQRow({
       <div className="flex items-center gap-3 min-w-0">
         <div
           className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-            isLocked ? "bg-gray-100" : "bg-yellow-100"
+            isLocked ? "bg-gray-100" : "bg-yellow-400"
           }`}
         >
           {isLocked ? (
             <Lock size={14} className="text-gray-500" />
           ) : (
-            <Unlock size={14} className="text-yellow-600" />
+            <Unlock size={14} className="text-gray-900" />
           )}
         </div>
         <div className="min-w-0">
@@ -492,9 +492,9 @@ function RFQRow({
           Timeline
           {rfq.periods && rfq.periods.length > 0 && (
             <span
-              className={`ml-0.5 rounded-full px-1.5 text-[10px] font-semibold ${
+              className={`ml-0.5 px-1.5 text-[10px] font-semibold ${
                 periodsExpanded
-                  ? "bg-white/20 text-white"
+                  ? "bg-white text-gray-900"
                   : "bg-gray-100 text-gray-500"
               }`}
             >
@@ -551,7 +551,7 @@ function RFQRow({
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 ${
                 isLocked
                   ? "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200"
-                  : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                  : "bg-green-500 text-white border-green-500 hover:bg-green-600"
               }`}
             >
               {busy ? (
@@ -567,7 +567,7 @@ function RFQRow({
             {/* Delete */}
             <button
               onClick={onAskDelete}
-              className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+              className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-gray-100 transition-colors"
             >
               <Trash2 size={14} />
             </button>
@@ -578,7 +578,7 @@ function RFQRow({
 
       {/* Expandable per-axis closed-months editor */}
       {expanded && (
-        <div className="px-4 pb-4 pt-1 bg-gray-50/60 border-t border-gray-100">
+        <div className="px-4 pb-4 pt-1 bg-gray-50 border-t border-gray-100">
           <p className="text-xs text-gray-500 mb-3">
             Locked months are read-only for Business Leads (admins can always
             edit). Toggle each month independently per axis.
@@ -670,16 +670,16 @@ const EMPTY_PERIOD_DRAFT: PeriodDraft = {
 };
 
 const OWNER_BADGE: Record<PeriodOwner, string> = {
-  BL: "bg-sky-50 text-sky-700 border-sky-200",
-  ADMIN: "bg-violet-50 text-violet-700 border-violet-200",
+  BL: "bg-blue-200 text-gray-900 border-blue-300",
+  ADMIN: "bg-purple-600 text-white border-purple-600",
 };
 
 const PERIOD_STATUS_BADGE: Record<
   ReturnType<typeof resolvePeriodStatus>,
   { label: string; className: string }
 > = {
-  completed: { label: "Completed", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  active: { label: "Active", className: "bg-yellow-50 text-yellow-700 border-yellow-300" },
+  completed: { label: "Completed", className: "bg-green-500 text-white border-green-500" },
+  active: { label: "Active", className: "bg-yellow-400 text-gray-900 border-yellow-400" },
   future: { label: "Upcoming", className: "bg-gray-50 text-gray-500 border-gray-200" },
 };
 
@@ -762,7 +762,7 @@ function RFQPeriodsPanel({
   }
 
   return (
-    <div className="px-4 pb-4 pt-1 bg-gray-50/60 border-t border-gray-100">
+    <div className="px-4 pb-4 pt-1 bg-gray-50 border-t border-gray-100">
       <p className="text-xs text-gray-500 mb-3">
         Timeline periods (échéancier) appear as a step bar at the bottom of the
         Forecast page, highlighting which milestone is currently active.
@@ -780,13 +780,13 @@ function RFQPeriodsPanel({
                 className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2"
               >
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${badge.className}`}
+                  className={`px-2 py-0.5 text-[10px] font-semibold border flex-shrink-0 ${badge.className}`}
                 >
                   {badge.label}
                 </span>
                 {period.owner && (
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${OWNER_BADGE[period.owner]}`}
+                    className={`px-2 py-0.5 text-[10px] font-semibold border flex-shrink-0 ${OWNER_BADGE[period.owner]}`}
                   >
                     {PERIOD_OWNERS.find((o) => o.value === period.owner)?.short}
                   </span>
@@ -812,7 +812,7 @@ function RFQPeriodsPanel({
                   onClick={() => handleDelete(period.id)}
                   disabled={saving}
                   title="Delete period"
-                  className="p-1.5 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                  className="p-1.5 rounded-md text-gray-300 hover:text-red-500 hover:bg-gray-100 transition-colors disabled:opacity-50"
                 >
                   <Trash2 size={13} />
                 </button>

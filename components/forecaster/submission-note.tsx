@@ -33,7 +33,7 @@ function formatStamp(iso?: string): string {
 function StatusIndicator({ status }: { status: ReturnType<typeof useSubmissionNote>["status"] }) {
   if (status === "saving") {
     return (
-      <span className="flex items-center gap-1 text-[11px] text-gray-400">
+      <span className="flex items-center gap-1 text-[11px] text-gray-800">
         <Loader2 size={11} className="animate-spin" />
         Saving…
       </span>
@@ -41,7 +41,7 @@ function StatusIndicator({ status }: { status: ReturnType<typeof useSubmissionNo
   }
   if (status === "saved") {
     return (
-      <span className="flex items-center gap-1 text-[11px] text-emerald-600">
+      <span className="flex items-center gap-1 text-[11px] text-green-800">
         <Check size={11} />
         Saved
       </span>
@@ -49,7 +49,7 @@ function StatusIndicator({ status }: { status: ReturnType<typeof useSubmissionNo
   }
   if (status === "error") {
     return (
-      <span className="flex items-center gap-1 text-[11px] text-red-600">
+      <span className="flex items-center gap-1 text-[11px] text-red-700">
         <AlertCircle size={11} />
         Save failed
       </span>
@@ -69,13 +69,14 @@ export default function SubmissionNote() {
   const stamp = formatStamp(updatedAt);
 
   return (
-    <section className="rounded-xl border border-amber-200 bg-amber-50/40">
+    // Flat Plus Yellow block — solid brand color, square, black text.
+    <section className="bg-yellow-400">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-amber-200/70">
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-gray-900/10">
         <div className="flex items-center gap-2">
-          <StickyNote size={15} className="text-amber-500" />
+          <StickyNote size={15} className="text-gray-900" />
           <h3 className="text-sm font-semibold text-gray-900">Submission notes</h3>
-          <span className="hidden sm:inline text-[11px] text-gray-500">
+          <span className="hidden sm:inline text-[11px] text-gray-800">
             · shared across Media, Revenue &amp; Labs for this submission
           </span>
         </div>
@@ -97,12 +98,12 @@ export default function SubmissionNote() {
           placeholder={
             loading ? "Loading…" : "Add notes for this submission (visible to everyone with access)…"
           }
-          className="w-full px-3 py-2 text-sm bg-white border border-amber-200 rounded-lg resize-y
-            focus:outline-none focus:ring-2 focus:ring-amber-400
+          className="w-full px-3 py-2 text-sm bg-white border border-gray-900 resize-y
+            focus:outline-none focus:ring-2 focus:ring-gray-900
             disabled:bg-gray-50 disabled:text-gray-400"
         />
         {stamp && (
-          <p className="mt-1.5 text-[11px] text-gray-400">
+          <p className="mt-1.5 text-[11px] text-gray-800">
             Last edited {stamp}
             {editorName ? ` by ${editorName}` : ""}
           </p>

@@ -10,7 +10,7 @@ interface PageHeaderProps {
  * Reusable page banner.
  * — Sticky at the top of the content area (the body is the scroll container).
  * — On mobile it sits right under the topbar (h ≈ 56px → top-14).
- * — Light backdrop-blur for a clean look when content passes underneath.
+ * — Solid white (flat brand style — no translucency).
  * — Ends with the Plus color-pattern hairline (Brand Guidelines p.17), the
  *   brand's signature stripe.
  *
@@ -23,7 +23,7 @@ interface PageHeaderProps {
  */
 export default function PageHeader({ title, description, actions }: PageHeaderProps) {
   return (
-    <div className="sticky top-14 lg:top-0 z-10 bg-white/90 backdrop-blur-sm">
+    <div className="sticky top-14 lg:top-0 z-10 bg-white">
       <div className="px-6 py-4 flex items-center justify-between gap-4">
         {/* Title + description */}
         <div className="min-w-0">

@@ -150,7 +150,7 @@ export default function AdminQaPage() {
       </header>
       <main className="mx-auto w-full max-w-[1700px] flex-1 p-6 md:p-8">
         {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {error}
           </div>
         ) : clientsLoading ? (
@@ -162,7 +162,7 @@ export default function AdminQaPage() {
             No clients are available for your account yet.
           </div>
         ) : data.error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {data.error}
           </div>
         ) : (

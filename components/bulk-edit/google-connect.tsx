@@ -49,12 +49,12 @@ export default function GoogleConnect({
 
   if (!configured) {
     return (
-      <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-        <AlertTriangle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
-        <div className="text-xs text-amber-800 leading-relaxed">
+      <div className="flex items-start gap-2.5 bg-yellow-400 border border-yellow-400 rounded-lg px-3 py-2.5">
+        <AlertTriangle size={15} className="text-gray-900 flex-shrink-0 mt-0.5" />
+        <div className="text-xs text-gray-900 leading-relaxed">
           <span className="font-semibold">Google Sheets not configured.</span> Set{" "}
-          <code className="font-mono bg-amber-100 px-1 rounded">NEXT_PUBLIC_GOOGLE_CLIENT_ID</code>{" "}
-          in <code className="font-mono bg-amber-100 px-1 rounded">.env.local</code> (OAuth Web
+          <code className="font-mono bg-gray-900 text-yellow-400 px-1 rounded">NEXT_PUBLIC_GOOGLE_CLIENT_ID</code>{" "}
+          in <code className="font-mono bg-gray-900 text-yellow-400 px-1 rounded">.env.local</code> (OAuth Web
           client with the Sheets + Drive APIs enabled), then restart the dev server.
         </div>
       </div>
@@ -65,7 +65,7 @@ export default function GoogleConnect({
     <div className="flex items-center gap-3">
       {connected ? (
         <>
-          <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-sm font-medium text-emerald-700">
+          <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 border border-green-500 rounded-lg text-sm font-medium text-white">
             <CheckCircle2 size={14} /> Connected to Google
           </span>
           <button

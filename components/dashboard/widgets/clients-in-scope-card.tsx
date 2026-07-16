@@ -14,7 +14,7 @@ export default function ClientsInScopeCard({ scope }: { scope: DashboardScope })
   const { clientIds, year, rfq } = scope;
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div className="flex h-full flex-col justify-between rounded-xl border border-gray-200 bg-white p-6">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
         <Users size={16} className="text-yellow-500" />
         Clients in scope
@@ -37,7 +37,7 @@ export default function ClientsInScopeCard({ scope }: { scope: DashboardScope })
 
 function ContextChip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-gray-600">
+    <span className="inline-flex items-center gap-1 border border-gray-200 bg-gray-50 px-2.5 py-1 text-gray-600">
       <span className="text-gray-400">{label}</span>
       <span className="font-semibold text-gray-800">{value}</span>
     </span>

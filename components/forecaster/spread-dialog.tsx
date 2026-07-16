@@ -189,7 +189,7 @@ export default function SpreadDialog({
                     title={isLocked ? "Closed period — locked" : undefined}
                     className={`py-1.5 text-xs font-medium rounded-lg border transition-colors inline-flex items-center justify-center gap-1 ${
                       isLocked
-                        ? "bg-gray-100/80 border-gray-200 text-gray-300 cursor-not-allowed"
+                        ? "bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed"
                         : on
                         ? "bg-yellow-400 border-yellow-400 text-gray-900"
                         : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
@@ -305,17 +305,21 @@ function RadioRow({
     <button
       onClick={onClick}
       className={`w-full flex items-start gap-2.5 px-3 py-2 text-left rounded-lg border transition-colors ${
-        checked ? "border-yellow-400 bg-yellow-50/60" : "border-gray-200 hover:border-gray-300"
+        checked ? "border-yellow-400 bg-yellow-400" : "border-gray-200 hover:border-gray-300"
       }`}
     >
       <span
-        className={`mt-0.5 w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${
-          checked ? "border-yellow-500 bg-yellow-400" : "border-gray-300"
+        className={`mt-0.5 w-3.5 h-3.5 border-2 flex-shrink-0 ${
+          checked ? "border-gray-900 bg-gray-900" : "border-gray-300"
         }`}
       />
       <span>
         <span className="block text-xs font-medium text-gray-900">{title}</span>
-        <span className="block text-[11px] text-gray-500">{desc}</span>
+        <span
+          className={`block text-[11px] ${checked ? "text-gray-800" : "text-gray-500"}`}
+        >
+          {desc}
+        </span>
       </span>
     </button>
   );

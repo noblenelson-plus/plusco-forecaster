@@ -27,7 +27,7 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
   const [updatingUid, setUpdatingUid] = useState<string | null>(null);
 
-  // Drawer d'assignation de clients
+  // Client assignment drawer
   const [assignUser, setAssignUser] = useState<UserProfile | null>(null);
 
   // Guard — redirect non-admins
@@ -75,7 +75,7 @@ export default function AdminUsersPage() {
     }
   }
 
-  // Après Save du drawer — met à jour le compteur localement
+  // After the drawer saves — update the counter locally
   function handleAssignmentsSaved(uid: string, assignedClients: string[]) {
     setUsers((prev) =>
       prev.map((u) => (u.uid === uid ? { ...u, assignedClients } : u))
@@ -105,7 +105,7 @@ export default function AdminUsersPage() {
 
       {/* Error */}
       {error && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+        <div className="flex items-center gap-2 bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg mb-4 text-sm">
           <AlertCircle size={16} className="flex-shrink-0" />
           {error}
         </div>
@@ -170,7 +170,7 @@ export default function AdminUsersPage() {
         )}
       </div>
 
-      {/* Drawer d'assignation user → clients */}
+      {/* User → clients assignment drawer */}
       <UserClientsDrawer
         open={!!assignUser}
         user={assignUser}
@@ -202,7 +202,7 @@ function UserRow({
       {/* User info */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center text-gray-900 text-xs font-bold flex-shrink-0">
+          <div className="w-8 h-8 bg-yellow-400 flex items-center justify-center text-gray-900 text-xs font-bold flex-shrink-0">
             {initials}
           </div>
           <div className="min-w-0">
@@ -249,12 +249,12 @@ function UserRow({
         </div>
       </td>
 
-      {/* Assigned clients count — cliquable, ouvre le drawer d'assignation */}
+      {/* Assigned clients count — clickable, opens the assignment drawer */}
       <td className="px-4 py-3 hidden sm:table-cell">
         <button
           type="button"
           onClick={onAssignClients}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-yellow-100 hover:text-yellow-800 border border-transparent hover:border-yellow-300 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800 border border-transparent transition-colors cursor-pointer"
           title="Manage client assignments"
         >
           {user.assignedClients?.length ?? 0} client{(user.assignedClients?.length ?? 0) !== 1 ? "s" : ""}

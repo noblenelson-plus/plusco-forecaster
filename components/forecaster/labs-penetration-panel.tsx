@@ -106,9 +106,9 @@ function RatioHeader({ result }: { result: LabsPenetrationResult }) {
         </span>
       </div>
 
-      <div className="mt-2 h-1.5 rounded-full bg-white/15 overflow-hidden">
+      <div className="mt-2 h-1.5 bg-gray-700 overflow-hidden">
         <div
-          className={`h-full rounded-full ${reached ? "bg-emerald-400" : "bg-yellow-400"}`}
+          className={`h-full ${reached ? "bg-emerald-400" : "bg-yellow-400"}`}
           style={{ width: `${fill}%` }}
         />
       </div>
@@ -142,7 +142,7 @@ function TypeSection({
             {MEDIA_TYPE_LABELS[type.mediaType]}
           </span>
           {type.over && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-100 text-red-700">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-500 text-white">
               <AlertTriangle size={10} />
               Over 100%
             </span>
@@ -161,7 +161,7 @@ function TypeSection({
       {type.plannedAnnual > 0 && (
         <div className="px-4 pt-2.5">
           <div
-            className={`flex h-1.5 rounded-full overflow-hidden bg-gray-100 ${
+            className={`flex h-1.5 overflow-hidden bg-gray-100 ${
               type.over ? "ring-1 ring-red-300" : ""
             }`}
           >

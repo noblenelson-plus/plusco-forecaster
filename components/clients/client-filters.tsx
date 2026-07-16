@@ -163,7 +163,7 @@ export default function ClientFilters({
                 onClick={() => onStatusFilterChange(opt.value)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                   statusFilter === opt.value
-                    ? "bg-white text-gray-900 shadow-sm"
+                    ? "bg-white text-gray-900"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
@@ -336,7 +336,7 @@ export default function ClientFilters({
 
       {/* Import error (fatal — before modal) */}
       {importError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+        <div className="bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg mb-4 text-sm">
           {importError}
         </div>
       )}

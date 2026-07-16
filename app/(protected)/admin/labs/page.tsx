@@ -183,7 +183,7 @@ export default function AdminLabsPage() {
       <div className="p-6 max-w-4xl mx-auto">
         {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+          <div className="flex items-center gap-2 bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg mb-4 text-sm">
             <AlertCircle size={16} className="flex-shrink-0" />
             {error}
           </div>
@@ -542,8 +542,8 @@ function PartnerRow({
       ) : (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-yellow-100 flex items-center justify-center flex-shrink-0">
-              <FlaskConical size={14} className="text-yellow-600" />
+            <div className="w-8 h-8 rounded-lg bg-yellow-400 flex items-center justify-center flex-shrink-0">
+              <FlaskConical size={14} className="text-gray-900" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -551,7 +551,7 @@ function PartnerRow({
                   {partner.name}
                 </p>
                 {partner.mediaType && (
-                  <span className="flex-shrink-0 px-2 py-0.5 text-[11px] font-medium text-yellow-700 bg-yellow-100 rounded-full">
+                  <span className="flex-shrink-0 px-2 py-0.5 text-[11px] font-medium text-gray-900 bg-yellow-400">
                     {MEDIA_TYPE_LABELS[partner.mediaType]}
                   </span>
                 )}
@@ -594,7 +594,7 @@ function PartnerRow({
                 </button>
                 <button
                   onClick={onAskDelete}
-                  className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-gray-100 transition-colors"
                   title="Remove partner"
                 >
                   <Trash2 size={14} />

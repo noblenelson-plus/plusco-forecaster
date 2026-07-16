@@ -297,7 +297,7 @@ const TRIGGER_STYLES: Record<
 > = {
   dark: {
     open: "bg-gray-800 border-gray-600",
-    closed: "bg-gray-800/60 border-gray-700 hover:bg-gray-800",
+    closed: "bg-gray-800 border-gray-700 hover:bg-gray-700",
     icon: "text-gray-400",
     value: "text-white font-medium",
     placeholder: "text-gray-500",
@@ -320,7 +320,7 @@ const PANEL_STYLES: Record<
   dark: {
     panel: "bg-gray-800 border-gray-700",
     empty: "text-gray-500",
-    itemBase: "text-gray-300 hover:bg-gray-700/60 hover:text-white",
+    itemBase: "text-gray-300 hover:bg-gray-700 hover:text-white",
     itemSelected: "bg-gray-700 text-white",
     sublabel: "text-gray-500",
     searchBorder: "border-gray-700",

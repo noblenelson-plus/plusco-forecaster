@@ -30,14 +30,14 @@ interface UserClientsDrawerProps {
   open: boolean;
   user: UserProfile | null;
   onClose: () => void;
-  /** Callback après Save réussi — renvoie la nouvelle liste d'assignations */
+  /** Callback after a successful Save — returns the new assignments list */
   onSaved: (uid: string, assignedClients: string[]) => void;
 }
 
 type AgencyFilter = "ALL" | string;
 type StatusFilter = "ALL" | ClientStatus;
 
-// Palette d'avatars — même logique que client-card pour la cohérence
+// Avatar palette — same logic as client-card for consistency
 const AVATAR_COLORS = [
   "bg-yellow-400",
   "bg-blue-400",
@@ -57,13 +57,13 @@ function avatarColor(name: string): string {
 }
 
 /**
- * Drawer d'assignation en masse : 1 user → N clients.
+ * Bulk assignment drawer: 1 user → N clients.
  *
- * — Recherche + filtres Agency / Status
- * — "Select all (filtered)" / "Clear (filtered)" pour les assignations par lot
- *   (ex. tous les clients d'une agence)
- * — Un seul Save : remplace assignedClients d'un coup (setUserAssignments)
- * — Compteur de diff (+X / −Y) avant commit
+ * — Search + Agency / Status filters
+ * — "Select all (filtered)" / "Clear (filtered)" for batch assignments
+ *   (e.g. all clients of an agency)
+ * — Single Save: replaces assignedClients at once (setUserAssignments)
+ * — Diff counter (+X / −Y) before commit
  */
 export default function UserClientsDrawer({
   open,
@@ -76,16 +76,16 @@ export default function UserClientsDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Sélection en cours d'édition
+  // Selection being edited
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const initialAssignments = user?.assignedClients ?? [];
 
-  // Filtres
+  // Filters
   const [search, setSearch] = useState("");
   const [agencyFilter, setAgencyFilter] = useState<AgencyFilter>("ALL");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
-  // Charger les clients à l'ouverture
+  // Load clients on open
   useEffect(() => {
     if (!open) return;
 
@@ -98,7 +98,7 @@ export default function UserClientsDrawer({
           cl_id: d.id,
           ...(d.data() as Omit<Client, "cl_id">),
         }));
-        // Tri alpha pour scanner la liste facilement
+        // Alphabetical sort so the list is easy to scan
         data.sort((a, b) => a.CL_Name.localeCompare(b.CL_Name));
         setClients(data);
       } catch (err: any) {
@@ -111,7 +111,7 @@ export default function UserClientsDrawer({
     fetchClients();
   }, [open]);
 
-  // Réinitialiser la sélection quand le user change ou que le drawer s'ouvre
+  // Reset the selection when the user changes or the drawer opens
   useEffect(() => {
     setSelected(new Set(user?.assignedClients ?? []));
     setSearch("");
@@ -120,7 +120,7 @@ export default function UserClientsDrawer({
     setError("");
   }, [user, open]);
 
-  // Clients visibles selon filtres
+  // Clients visible according to the filters
   const filteredClients = useMemo(() => {
     const q = search.toLowerCase();
     return clients.filter((c) => {
@@ -204,7 +204,7 @@ export default function UserClientsDrawer({
         />
       )}
 
-      {/* Drawer élargi : max-w-2xl */}
+      {/* Widened drawer: max-w-2xl */}
       <div
         className={`
           fixed top-0 right-0 z-50 h-full w-full max-w-2xl bg-white shadow-2xl
@@ -212,10 +212,10 @@ export default function UserClientsDrawer({
           ${open ? "translate-x-0" : "translate-x-full"}
         `}
       >
-        {/* Header — bandeau sombre assorti à la sidebar */}
+        {/* Header — dark banner matching the sidebar */}
         <div className="bg-gray-900 px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-gray-900 text-sm font-bold flex-shrink-0">
+            <div className="w-10 h-10 bg-yellow-400 flex items-center justify-center text-gray-900 text-sm font-bold flex-shrink-0">
               {userInitials}
             </div>
             <div className="min-w-0">
@@ -235,10 +235,10 @@ export default function UserClientsDrawer({
           </button>
         </div>
 
-        {/* Toolbar — recherche + filtres */}
-        <div className="px-6 py-4 border-b border-gray-100 space-y-3 bg-gray-50/60">
+        {/* Toolbar — search + filters */}
+        <div className="px-6 py-4 border-b border-gray-100 space-y-3 bg-gray-50">
           <div className="flex items-center gap-2">
-            {/* Recherche */}
+            {/* Search */}
             <div className="relative flex-1">
               <Search
                 size={15}
@@ -253,7 +253,7 @@ export default function UserClientsDrawer({
               />
             </div>
 
-            {/* Filtre agence */}
+            {/* Agency filter */}
             <div className="relative">
               <select
                 value={agencyFilter}
@@ -273,7 +273,7 @@ export default function UserClientsDrawer({
               />
             </div>
 
-            {/* Filtre statut */}
+            {/* Status filter */}
             <div className="relative">
               <select
                 value={statusFilter}
@@ -293,14 +293,14 @@ export default function UserClientsDrawer({
             </div>
           </div>
 
-          {/* Actions par lot + compteur */}
+          {/* Batch actions + counter */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={allFilteredSelected ? clearFiltered : selectAllFiltered}
                 disabled={filteredClients.length === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-yellow-300 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 disabled:opacity-40 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-yellow-400 bg-yellow-400 text-gray-900 hover:bg-yellow-300 disabled:opacity-40 transition-colors"
               >
                 <Sparkles size={12} />
                 {allFilteredSelected
@@ -315,14 +315,14 @@ export default function UserClientsDrawer({
           </div>
         </div>
 
-        {/* Erreur */}
+        {/* Error */}
         {error && (
-          <div className="mx-6 mt-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+          <div className="mx-6 mt-3 bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
             {error}
           </div>
         )}
 
-        {/* Liste des clients */}
+        {/* Client list */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
             <div className="flex items-center justify-center py-16 gap-2 text-gray-400">
@@ -353,18 +353,18 @@ export default function UserClientsDrawer({
                         w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left
                         transition-all duration-100
                         ${isSelected
-                          ? "border-yellow-400 bg-yellow-50 shadow-sm"
+                          ? "border-yellow-400 bg-yellow-400"
                           : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50"
                         }
                       `}
                     >
-                      {/* Checkbox custom */}
+                      {/* Custom checkbox */}
                       <span
                         className={`
                           w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0
                           transition-colors
                           ${isSelected
-                            ? "bg-yellow-400 border-yellow-400 text-gray-900"
+                            ? "bg-gray-900 border-gray-900 text-yellow-400"
                             : "bg-white border-gray-300"
                           }
                         `}
@@ -391,12 +391,12 @@ export default function UserClientsDrawer({
                         )}
                       </div>
 
-                      {/* Nom + agence */}
+                      {/* Name + agency */}
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-gray-900 truncate">
                           {c.CL_Name}
                         </p>
-                        <p className="text-xs text-gray-400 truncate">
+                        <p className={`text-xs truncate ${isSelected ? "text-gray-800" : "text-gray-400"}`}>
                           {c.CL_Agency}
                         </p>
                       </div>
@@ -407,11 +407,11 @@ export default function UserClientsDrawer({
                         return (
                           <span className="flex items-center gap-1.5 flex-shrink-0">
                             <span
-                              className={`w-1.5 h-1.5 rounded-full ${
+                              className={`w-1.5 h-1.5 ${
                                 STATUS_DOT_COLORS[status] ?? "bg-gray-300"
                               }`}
                             />
-                            <span className="text-xs text-gray-400 hidden sm:inline">
+                            <span className={`text-xs hidden sm:inline ${isSelected ? "text-gray-800" : "text-gray-400"}`}>
                               {status === "NEW_CLIENT"
                                 ? "New"
                                 : status.charAt(0) + status.slice(1).toLowerCase()}
@@ -429,15 +429,15 @@ export default function UserClientsDrawer({
 
         {/* Footer — diff + Save */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 bg-white">
-          {/* Compteur de changements */}
+          {/* Change counter */}
           <div className="flex items-center gap-2 text-xs">
             {diff.added.length > 0 && (
-              <span className="px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+              <span className="px-2 py-1 rounded-md bg-green-500 text-white border border-green-500 font-medium">
                 +{diff.added.length}
               </span>
             )}
             {diff.removed.length > 0 && (
-              <span className="px-2 py-1 rounded-md bg-red-50 text-red-600 border border-red-200 font-medium">
+              <span className="px-2 py-1 rounded-md bg-red-500 text-white border border-red-500 font-medium">
                 −{diff.removed.length}
               </span>
             )}

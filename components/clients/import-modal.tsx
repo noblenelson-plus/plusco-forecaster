@@ -78,16 +78,16 @@ export default function ImportModal({
 
           {/* Summary pills */}
           <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
-              <CheckCircle2 size={14} className="text-emerald-600" />
-              <span className="text-sm font-medium text-emerald-700">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500 border border-green-500 rounded-lg">
+              <CheckCircle2 size={14} className="text-white" />
+              <span className="text-sm font-medium text-white">
                 {validation.validRows.length} ready
               </span>
             </div>
             {hasErrors && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
-                <AlertTriangle size={14} className="text-red-500" />
-                <span className="text-sm font-medium text-red-600">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500 border border-red-500 rounded-lg">
+                <AlertTriangle size={14} className="text-white" />
+                <span className="text-sm font-medium text-white">
                   {validation.errors.length} error{validation.errors.length !== 1 ? "s" : ""}
                 </span>
               </div>
@@ -103,13 +103,13 @@ export default function ImportModal({
               {validation.errors.map((err, i) => (
                 <div
                   key={i}
-                  className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-lg px-3 py-2.5"
+                  className="flex items-start gap-2.5 bg-red-500 border border-red-500 rounded-lg px-3 py-2.5"
                 >
                   <AlertTriangle
                     size={13}
-                    className="text-red-400 flex-shrink-0 mt-0.5"
+                    className="text-white flex-shrink-0 mt-0.5"
                   />
-                  <p className="text-xs text-red-700 leading-relaxed">{err}</p>
+                  <p className="text-xs text-white leading-relaxed">{err}</p>
                 </div>
               ))}
             </div>
@@ -130,7 +130,7 @@ export default function ImportModal({
 
           {/* Global error */}
           {error && (
-            <div className="mx-6 mb-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+            <div className="mx-6 mb-2 bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
               {error}
             </div>
           )}

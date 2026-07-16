@@ -136,7 +136,7 @@ export default function CopyCommissionsModal({
         {/* Body */}
         <div className="px-6 py-4 flex-1 overflow-y-auto space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+            <div className="bg-red-500 border border-red-500 text-white px-3 py-2 rounded-lg text-sm">
               {error}
             </div>
           )}
@@ -207,7 +207,7 @@ export default function CopyCommissionsModal({
               {report && (
                 <div className="space-y-3">
                   {report.copies.length === 0 ? (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-sm">
+                    <div className="bg-yellow-400 border border-yellow-400 text-gray-900 px-3 py-2 rounded-lg text-sm">
                       Nothing to copy: no client has {report.fromYear} rates
                       {report.skippedExisting.length > 0 &&
                         ` without existing ${report.toYear} rates`}
@@ -230,7 +230,7 @@ export default function CopyCommissionsModal({
                             <span className="flex items-center gap-1.5 flex-shrink-0 text-xs text-gray-400">
                               {c.mediaTypes.length} type{c.mediaTypes.length !== 1 ? "s" : ""}
                               {c.hadTargetConfig && (
-                                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+                                <span className="px-1.5 py-0.5 rounded bg-yellow-400 text-gray-900 font-medium">
                                   overwrites
                                 </span>
                               )}

@@ -159,7 +159,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
           }`}
           title={collapsed ? profile?.displayName ?? user?.email ?? undefined : undefined}
         >
-          <div className="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center text-gray-900 text-xs font-bold flex-shrink-0">
+          <div className="w-8 h-8 bg-yellow-400 flex items-center justify-center text-gray-900 text-xs font-bold flex-shrink-0">
             {initials}
           </div>
           {!collapsed && (
