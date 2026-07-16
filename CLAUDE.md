@@ -39,6 +39,7 @@ The visual identity follows the Plus Company Brand Guidelines 2024. Everything i
 - The logo is an SVG recreation in `components/_shared/plus-logo.tsx` (also `app/icon.svg` for the favicon) — no raster logo assets.
 - Chart colors come from `PLUS`/`CATEGORICAL_COLORS` in `components/dashboard/charts/colors.ts`; raw-hex chart palettes elsewhere should reuse those hexes.
 - Black (`bg-gray-900`) surfaces (drawer headers, totals rows, tooltips) are intentional — Plus Black is part of the palette; black + Plus Yellow is an on-brand pairing.
+- **Flat and square.** The whole radius scale is zeroed in `globals.css` (`rounded-*` renders square; `rounded-full` is reserved for functional circles: spinners, toggle-switch knobs). Surfaces are solid colors — no pale `*-50/-100` tint washes (status surfaces use flat `yellow-400`/`red-500`/`green-500`/`blue-200`/`purple-600` with contrast text), no `/NN` color alphas except modal scrims (`bg-black/40`), no backdrop-blur, and no decorative shadows on static cards/chips (floating overlays — menus, modals, tooltips, toasts — keep elevation).
 
 ## Architecture
 
