@@ -7,7 +7,7 @@
  * hundreds of targets), so targets are rolled up into one row per
  * submission × axis × section — "RFQ0-2026 · Media BL · 132 clients" — each
  * expandable to list its clients. Section colors match the grid's sources:
- * BL Input yellow, Revenue GAIA purple, Media/Labs MediaOcean orange.
+ * BL Input yellow, Revenue GAIA purple, Media/Labs MediaOcean pink.
  */
 
 import { useMemo, useState } from "react";
@@ -38,7 +38,7 @@ function badgeClasses(g: TargetGroup): string {
     return "bg-yellow-400 text-gray-900 border-yellow-400";
   return g.axisId === "revenue"
     ? "bg-purple-600 text-white border-purple-600"
-    : "bg-orange-500 text-white border-orange-500";
+    : "bg-pink-500 text-gray-900 border-pink-500";
 }
 
 function sectionLabel(g: TargetGroup): string {

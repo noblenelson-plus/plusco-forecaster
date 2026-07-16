@@ -3,9 +3,9 @@
 /**
  * Per-source color theme for the actuals sections in the forecast grid, so
  * each data source reads at a glance:
- *   MediaOcean (Media/Labs actuals) → orange
- *   GAIA       (Revenue actuals)     → purple
- *   MediaBox   (synced section)      → blue (themed inline in its own component)
+ *   MediaOcean (Media/Labs actuals) → Plus Pink
+ *   GAIA       (Revenue actuals)     → Plus Purple
+ *   MediaBox   (synced section)      → Plus Blue (themed inline in its own component)
  * Unknown sources fall back to the original neutral grey.
  *
  * Flat Plus style: the section header is a solid color block with white text;
@@ -29,12 +29,13 @@ export interface ActualsTheme {
   emptyRow: string;
 }
 
-const ORANGE: ActualsTheme = {
-  headerRow: "bg-orange-500 border-y border-orange-500",
-  headerText: "text-white",
-  lockIcon: "text-orange-200",
+// Black text on Plus Pink — the brand pairs black type with its flat colors.
+const PINK: ActualsTheme = {
+  headerRow: "bg-pink-500 border-y border-pink-500",
+  headerText: "text-gray-900",
+  lockIcon: "text-pink-800",
   rowBg: "bg-gray-50 group-hover:bg-gray-100",
-  labelClass: "text-orange-700",
+  labelClass: "text-pink-700",
   emptyRow: "bg-gray-50 border-b border-gray-100",
 };
 
@@ -59,7 +60,7 @@ const GRAY: ActualsTheme = {
 /** Pick the theme for an actuals source by its label (e.g. "MediaOcean"). */
 export function actualsTheme(label: string | undefined): ActualsTheme {
   const k = (label ?? "").toLowerCase();
-  if (k.includes("mediaocean")) return ORANGE;
+  if (k.includes("mediaocean")) return PINK;
   if (k.includes("gaia")) return PURPLE;
   return GRAY;
 }

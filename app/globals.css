@@ -27,9 +27,6 @@
   --plus-blue: #66d9e5;
   --plus-purple: #594a99;
   --plus-black: #000000;
-  /* Derived warm orange (between Plus Yellow and Plus Red) so orange-* keeps
-     its own identity instead of collapsing into yellow. */
-  --plus-orange: color-mix(in oklab, var(--plus-red) 50%, var(--plus-yellow));
 
   /* ── Semantic tokens ── */
   --background: #ffffff;
@@ -123,18 +120,19 @@
   --color-amber-900: var(--color-yellow-900);
   --color-amber-950: var(--color-yellow-950);
 
-  /* ── Plus Orange scale (derived) ── */
-  --color-orange-50: color-mix(in oklab, var(--plus-orange) 9%, white);
-  --color-orange-100: color-mix(in oklab, var(--plus-orange) 18%, white);
-  --color-orange-200: color-mix(in oklab, var(--plus-orange) 36%, white);
-  --color-orange-300: color-mix(in oklab, var(--plus-orange) 58%, white);
-  --color-orange-400: color-mix(in oklab, var(--plus-orange) 80%, white);
-  --color-orange-500: var(--plus-orange);
-  --color-orange-600: color-mix(in oklab, var(--plus-orange) 85%, black);
-  --color-orange-700: color-mix(in oklab, var(--plus-orange) 68%, black);
-  --color-orange-800: color-mix(in oklab, var(--plus-orange) 52%, black);
-  --color-orange-900: color-mix(in oklab, var(--plus-orange) 40%, black);
-  --color-orange-950: color-mix(in oklab, var(--plus-orange) 27%, black);
+  /* ── Orange is not a Plus color — alias it to the Plus Pink scale so any
+        stray orange-* utility still renders on-brand. ── */
+  --color-orange-50: var(--color-pink-50);
+  --color-orange-100: var(--color-pink-100);
+  --color-orange-200: var(--color-pink-200);
+  --color-orange-300: var(--color-pink-300);
+  --color-orange-400: var(--color-pink-400);
+  --color-orange-500: var(--color-pink-500);
+  --color-orange-600: var(--color-pink-600);
+  --color-orange-700: var(--color-pink-700);
+  --color-orange-800: var(--color-pink-800);
+  --color-orange-900: var(--color-pink-900);
+  --color-orange-950: var(--color-pink-950);
 
   /* ── Plus Red scale (anchor: 500 = brand red) — also used by rose ── */
   --color-red-50: color-mix(in oklab, var(--plus-red) 8%, white);

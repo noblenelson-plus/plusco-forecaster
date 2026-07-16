@@ -464,7 +464,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
 /**
  * Splits the table into its two top-level sections: "BL Submission" (the
  * editable forecast) and "Reference Data" (MediaOcean + MediaBox, read-only
- * sources). Heavier than the per-source bands (orange/blue) nested under it.
+ * sources). Heavier than the per-source bands (pink/blue) nested under it.
  */
 function SectionBand({
   label,
@@ -1251,7 +1251,7 @@ function ActualsSection({
   const types = availableTypes(config, actuals);
   const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
   const colCount = showNotes ? 15 : 14;
-  // Per-source colour: MediaOcean → orange, GAIA → purple, others → grey.
+  // Per-source color: MediaOcean → pink, GAIA → purple, others → grey.
   const theme = actualsTheme(config.actualsLabel);
 
   return (

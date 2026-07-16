@@ -5,8 +5,8 @@
  * Sticky timeline (schedule) pinned to the bottom of the forecast page,
  * rendered as a two-state mini gantt:
  *
- * - At rest it is an ultra-slim yellow strip labeled "Timeline": thin colored
- *   bars on a proportional time axis (green done / orange active / dark-gray
+ * - At rest it is an ultra-slim white strip labeled "Timeline": thin colored
+ *   bars on a proportional time axis (green done / yellow active / dark-gray
  *   upcoming) and a red "today" line — just enough to see where the round
  *   stands without stealing screen space.
  * - When the mouse enters the strip, the panel expands **upward as an
@@ -122,20 +122,20 @@ function assignLanes(sorted: RFQPeriod[]): { period: RFQPeriod; lane: number }[]
 const REST = { axis: 0, pitch: 10, bar: 6, padTop: 10, padBottom: 10 };
 const OPEN = { axis: 20, pitch: 30, bar: 22, padTop: 12, padBottom: 12 };
 
-// Bar palette on the yellow (sidebar-avatar yellow-400) strip: green = done,
-// orange = in progress, dark gray = not started yet.
+// Bar palette on the white strip — Plus brand colors: green = done,
+// yellow = in progress, dark gray = not started yet.
 const STATUS_STYLES: Record<
   PeriodStatus,
   { bar: string; tooltipStatus: string; label: string }
 > = {
   completed: {
-    bar: "bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-400",
-    tooltipStatus: "text-emerald-300",
+    bar: "bg-green-500 border-green-600 text-white hover:bg-green-400",
+    tooltipStatus: "text-green-400",
     label: "Completed",
   },
   active: {
-    bar: "bg-orange-500 border-orange-600 text-white hover:bg-orange-400",
-    tooltipStatus: "text-orange-300",
+    bar: "bg-yellow-400 border-yellow-500 text-gray-900 hover:bg-yellow-300",
+    tooltipStatus: "text-yellow-400",
     label: "Active",
   },
   future: {
@@ -193,8 +193,8 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
       <div
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
-        className={`absolute inset-x-0 bottom-0 border-t border-yellow-500 bg-yellow-400 transition-all duration-200 ease-out motion-reduce:transition-none ${
-          open ? "shadow-[0_-8px_24px_rgba(0,0,0,0.2)]" : ""
+        className={`absolute inset-x-0 bottom-0 border-t border-gray-200 bg-white transition-all duration-200 ease-out motion-reduce:transition-none ${
+          open ? "shadow-[0_-8px_24px_rgba(0,0,0,0.12)]" : ""
         }`}
         style={{ height: panelHeight }}
       >
@@ -217,13 +217,13 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
               <div key={tick.pct}>
                 <div
                   className={`absolute inset-y-0 w-px transition-colors duration-200 ${
-                    open ? "bg-yellow-600" : "bg-yellow-500"
+                    open ? "bg-gray-300" : "bg-gray-200"
                   }`}
                   style={{ left: `${tick.pct}%` }}
                 />
                 {i % labelStep === 0 && tick.pct < 96 && (
                   <span
-                    className={`absolute top-0 pl-1 text-[9px] font-medium leading-none text-yellow-900 whitespace-nowrap transition-opacity duration-200 ${
+                    className={`absolute top-0 pl-1 text-[9px] font-medium leading-none text-gray-400 whitespace-nowrap transition-opacity duration-200 ${
                       open ? "opacity-100" : "opacity-0"
                     }`}
                     style={{ left: `${tick.pct}%` }}
@@ -264,7 +264,7 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
               return (
                 <div
                   key={period.id}
-                  className={`group @container absolute z-20 flex cursor-default items-center overflow-visible border transition-all duration-200 ease-out motion-reduce:transition-none hover:z-30 hover:ring-2 hover:ring-white ${styles.bar}`}
+                  className={`group @container absolute z-20 flex cursor-default items-center overflow-visible border transition-all duration-200 ease-out motion-reduce:transition-none hover:z-30 hover:ring-2 hover:ring-gray-900 ${styles.bar}`}
                   style={{
                     top: s.axis + lane * s.pitch + (s.pitch - s.bar) / 2,
                     height: s.bar,

@@ -42,16 +42,17 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
     .toUpperCase()
     .slice(0, 2);
 
-  // Distinct background color per client based on name hash
+  // Distinct background color per client based on name hash — flat Plus
+  // palette, light enough for black initials (black-on-color, per the brand).
   const bgColors = [
     "bg-yellow-400",
     "bg-blue-400",
-    "bg-emerald-400",
-    "bg-rose-400",
-    "bg-violet-400",
-    "bg-orange-400",
-    "bg-teal-400",
-    "bg-pink-400",
+    "bg-green-400",
+    "bg-red-400",
+    "bg-purple-400",
+    "bg-pink-500",
+    "bg-blue-200",
+    "bg-pink-200",
   ];
   const colorIndex =
     client.CL_Name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) %
@@ -83,7 +84,7 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
               className="w-full h-full object-cover"
             />
           ) : (
-            <span className="text-white text-sm font-bold">{initials}</span>
+            <span className="text-gray-900 text-sm font-bold">{initials}</span>
           )}
         </div>
         <div className="flex items-center gap-1.5">

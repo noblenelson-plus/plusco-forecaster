@@ -37,16 +37,17 @@ interface UserClientsDrawerProps {
 type AgencyFilter = "ALL" | string;
 type StatusFilter = "ALL" | ClientStatus;
 
-// Avatar palette — same logic as client-card for consistency
+// Avatar palette — same logic as client-card for consistency (flat Plus
+// palette, light enough for black initials).
 const AVATAR_COLORS = [
   "bg-yellow-400",
   "bg-blue-400",
-  "bg-emerald-400",
-  "bg-rose-400",
-  "bg-violet-400",
-  "bg-orange-400",
-  "bg-teal-400",
-  "bg-pink-400",
+  "bg-green-400",
+  "bg-red-400",
+  "bg-purple-400",
+  "bg-pink-500",
+  "bg-blue-200",
+  "bg-pink-200",
 ];
 
 function avatarColor(name: string): string {
@@ -385,7 +386,7 @@ export default function UserClientsDrawer({
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <span className="text-white text-[10px] font-bold">
+                          <span className="text-gray-900 text-[10px] font-bold">
                             {initials}
                           </span>
                         )}
