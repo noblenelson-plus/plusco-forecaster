@@ -13,7 +13,7 @@
  * time with the year's rate.
  */
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   RefreshCw,
   Database,
@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import type { AxisId } from "../../lib/types/forecaster.types";
-import { useMediaboxTotals } from "../../lib/hooks/use-mediabox-totals";
+import type { UseMediaboxTotalsResult } from "../../lib/hooks/use-mediabox-totals";
 import { copyCellValue } from "../../lib/format/copy-cell";
 import {
   groupByCampaign,
@@ -41,6 +41,60 @@ function formatSyncedAt(iso?: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "unknown";
   return d.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
+}
+
+/**
+ * Staged progress label for a running refresh, with an elapsed-seconds ticker.
+ * "Requesting" = our trigger call is in flight; once the MediaBox function
+ * flips the doc's `refreshing` flag, we show the aggregation stage instead.
+ * The elapsed time prefers the server's own `refreshStartedAt` stamp.
+ */
+function RefreshProgress({
+  triggering,
+  refreshing,
+  startedAt,
+}: {
+  triggering: boolean;
+  refreshing: boolean;
+  startedAt?: string | null;
+}) {
+  // The ticker is mounted only while a refresh is active, so it can capture
+  // its local start time once at mount (and the interval dies with it).
+  if (!triggering && !refreshing) return null;
+  return <RefreshProgressTicker refreshing={refreshing} startedAt={startedAt} />;
+}
+
+function RefreshProgressTicker({
+  refreshing,
+  startedAt,
+}: {
+  refreshing: boolean;
+  startedAt?: string | null;
+}) {
+  // Local fallback start (the trigger stage has no server stamp yet).
+  const [localStart] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const serverStart = refreshing && startedAt ? Date.parse(startedAt) : NaN;
+  const start = !isNaN(serverStart) ? serverStart : localStart;
+  const elapsed = Math.max(0, Math.round((now - start) / 1000));
+
+  return (
+    <span
+      className="flex items-center gap-1.5 text-[11px] text-blue-600 tabular-nums"
+      title="MediaBox scans every campaign of this client — large clients can take a minute or two."
+    >
+      <span className="relative flex h-2 w-2">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-60" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+      </span>
+      {refreshing ? "Aggregating in MediaBox…" : "Requesting refresh…"} {elapsed}s
+    </span>
+  );
 }
 
 function money(value: number): string {
@@ -131,17 +185,18 @@ function MoneyRow({
 
 export default function MediaboxActualsSection({
   axisId,
-  clientId,
   year,
   showNotes,
+  mediabox,
 }: {
   axisId: AxisId;
-  clientId: string | undefined | null;
   year: number | null;
   showNotes: boolean;
+  /** Owned by ForecastGrid so the CSV export shares the same data. */
+  mediabox: UseMediaboxTotalsResult;
 }) {
   const { cad, totals, refreshing, triggering, loading, error, refresh } =
-    useMediaboxTotals(clientId, year);
+    mediabox;
 
   // Which media-type rows are expanded to show their campaigns.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -166,6 +221,12 @@ export default function MediaboxActualsSection({
   // Inverted view: campaign at the top, media types / partners nested.
   const campaignGroups = groupByCampaign(typeRows);
   const typeNoun = axisId === "labs" ? "partner" : "media type";
+
+  // Grand total across every type/partner — the section's bottom line.
+  const grandByMonth: MonthlyMap = {};
+  for (const m of MONTHS)
+    grandByMonth[m] = typeRows.reduce((acc, t) => acc + (t.byMonth[m] ?? 0), 0);
+  const grandTotal = typeRows.reduce((acc, t) => acc + t.total, 0);
 
   const busy = loading || refreshing || triggering;
 
@@ -193,6 +254,11 @@ export default function MediaboxActualsSection({
               <RefreshCw size={11} className={busy ? "animate-spin" : ""} />
               {refreshing || triggering ? "Refreshing…" : "Refresh"}
             </button>
+            <RefreshProgress
+              triggering={triggering}
+              refreshing={refreshing}
+              startedAt={totals?.refreshStartedAt}
+            />
             {cad && cad.hasUsd && !cad.usdConverted && (
               <span className="flex items-center gap-1 text-[11px] text-amber-600">
                 <AlertTriangle size={11} />
@@ -267,6 +333,41 @@ export default function MediaboxActualsSection({
               bold
             />
           ))}
+
+          {/* Grand total — mirrors the dark total rows of the other sections,
+              in the MediaBox blue so the source stays recognizable. */}
+          <tr className="bg-blue-700 border-t-2 border-blue-800">
+            <td className="sticky left-0 z-10 bg-blue-700 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider">
+              MediaBox total
+            </td>
+            {showNotes && <td className="bg-blue-700" />}
+            {MONTHS.map((m) => {
+              const v = grandByMonth[m] ?? 0;
+              return (
+                <td
+                  key={m}
+                  onClick={() => v && copyCellValue(v)}
+                  title={v ? "Click to copy" : undefined}
+                  className={`px-2.5 py-2 text-right align-middle ${v ? "cursor-copy" : ""}`}
+                >
+                  <p className="text-sm font-bold text-white tabular-nums">
+                    {money(v)}
+                  </p>
+                </td>
+              );
+            })}
+            <td
+              onClick={() => grandTotal && copyCellValue(grandTotal)}
+              title={grandTotal ? "Click to copy" : undefined}
+              className={`px-2.5 py-2 text-right align-middle bg-blue-800 ${
+                grandTotal ? "cursor-copy" : ""
+              }`}
+            >
+              <p className="text-sm font-bold text-white tabular-nums">
+                {money(grandTotal)}
+              </p>
+            </td>
+          </tr>
         </>
       )}
 

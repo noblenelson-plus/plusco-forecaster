@@ -2,13 +2,14 @@
 "use client";
 
 /**
- * Unified forecast page — a single page with three switchable tabs
- * (Media Spend / Revenue / Labs), all powered by the same generic grid engine.
+ * Unified forecast page — a single page with four switchable tabs.
+ * Media Spend / Revenue / Labs are powered by the same generic grid engine;
+ * Product is a standalone always-on status grid (client-only, no year/RFQ).
  *
  * Layout:
- *   [Context bar]  Client · Year · Submission selectors + comparison selector
- *   [Tabs]         Media Spend · Revenue · Labs (free switching)
- *   [Content]      the active axis grid (Media), or a "coming soon" placeholder
+ *   [Context bar]  Client · Year · Submission selectors + panel toggles
+ *   [Tabs]         Media Spend · Labs · Revenue (free switching)
+ *   [Content]      the active axis grid + side panels
  *
  * The Client/Year/RFQ selectors used to live in the sidebar; they now sit at
  * the top of this page (the sidebar only keeps navigation). The comparison
@@ -16,7 +17,8 @@
  * active grid.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   TrendingUp,
   DollarSign,
@@ -25,15 +27,15 @@ import {
   AlertTriangle,
   Percent,
   GitCompare,
-  BookOpen,
   StickyNote,
+  Package,
 } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import SubmissionNote from "../../../components/forecaster/submission-note";
-import HowToGuide from "../../../components/forecaster/how-to-guide";
 import ForecastGrid, { type RowMeta } from "../../../components/forecaster/forecast-grid";
 import CopyToast from "../../../components/forecaster/copy-toast";
 import RevenueGrid from "../../../components/forecaster/revenue-grid";
+import ProductGrid from "../../../components/forecaster/product-grid";
 import ComparisonPanel from "../../../components/forecaster/comparison-panel";
 import LabsPenetrationPanel from "../../../components/forecaster/labs-penetration-panel";
 import RFQTimelineBar from "../../../components/forecaster/rfq-timeline-bar";
@@ -50,6 +52,8 @@ import { subscribeToClient } from "../../../lib/services/client-service";
 import { syncRevenueCommission } from "../../../lib/services/data-entry-service";
 import type { CommissionsConfig, Currency } from "../../../lib/types/client.types";
 import {
+  applyCommissionOverwrite,
+  commissionOverwriteMonths,
   computeCommission,
   ensureRevenueShape,
 } from "../../../lib/format/revenue-commission";
@@ -82,18 +86,34 @@ import {
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { RFQ } from "../../../lib/types/rfq.types";
 
-type Tab = "media" | "revenue" | "labs" | "howto";
+type Tab = "media" | "revenue" | "labs" | "product";
 
 const TABS: { id: Tab; label: string; icon: typeof TrendingUp }[] = [
   { id: "media", label: "Media Spend", icon: TrendingUp },
-  { id: "revenue", label: "Revenue", icon: DollarSign },
   { id: "labs", label: "Labs", icon: FlaskConical },
-  { id: "howto", label: "How to", icon: BookOpen },
+  { id: "revenue", label: "Revenue", icon: DollarSign },
+  { id: "product", label: "Product", icon: Package },
 ];
 
+// useSearchParams requires a Suspense boundary for static prerendering.
 export default function ForecastPage() {
+  return (
+    <Suspense>
+      <ForecastPageContent />
+    </Suspense>
+  );
+}
+
+function ForecastPageContent() {
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
-  const [tab, setTab] = useState<Tab>("media");
+  // Deep link from the How-to guide (main nav): /forecast?tab=media|labs|revenue
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = searchParams.get("tab");
+    return t === "media" || t === "labs" || t === "revenue" || t === "product"
+      ? t
+      : "media";
+  });
   // Labs penetration panel — open by default on the Labs tab, toggleable.
   const [penetrationOpen, setPenetrationOpen] = useState(true);
   // Comparison panel (Media & Labs) — open by default, toggleable.
@@ -165,23 +185,46 @@ export default function ForecastPage() {
     normalizeLoaded: ensureSingleProjectGeneral,
   });
 
-  const commission = useMemo(
+  // Base commission from the Media plan — the Commission Overwrite rule (a
+  // month with an overwrite value suppresses the calculation) is applied
+  // against the Revenue axis's own working copy below.
+  const commissionBase = useMemo(
     () => computeCommission(mediaGrid.data, yearRates),
     [mediaGrid.data, yearRates]
   );
-  // Stable overlay array — the hook treats this Commission row as read-only and
-  // persists it on Save.
-  const revenueComputedRows = useMemo(
-    () => [{ rowType: REVENUE_COMMISSION_TYPE, months: commission.months }],
-    [commission.months]
+  // Stable overlay callback — resolved by the hook against the live Revenue
+  // data, so typing a Commission Overwrite value zeroes the Commission row
+  // (displayed AND persisted on Save) for that month instantly.
+  const revenueComputedRows = useCallback(
+    (revenueData: AxisData) => [
+      {
+        rowType: REVENUE_COMMISSION_TYPE,
+        months: applyCommissionOverwrite(
+          commissionBase,
+          commissionOverwriteMonths(revenueData)
+        ).months,
+      },
+    ],
+    [commissionBase]
   );
   const revenueGrid = useForecasterGrid(REVENUE_AXIS_CONFIG, {
     normalizeLoaded: ensureRevenueShape,
     computedRows: revenueComputedRows,
   });
+  // Final breakdown (overwrite applied) — drives the grid's Commission row
+  // rendering and its hover explanations.
+  const commission = useMemo(
+    () =>
+      applyCommissionOverwrite(
+        commissionBase,
+        commissionOverwriteMonths(revenueGrid.data)
+      ),
+    [commissionBase, revenueGrid.data]
+  );
   const revenueNoRates = !yearRates || Object.keys(yearRates).length === 0;
 
-  // Active axis — all three are implemented; comparison is available on each.
+  // Active axis (grid tabs only — Product has no grid engine, no year/RFQ).
+  // On the Product tab these fall back to Media but are never rendered.
   const activeGrid =
     tab === "labs" ? labsGrid : tab === "revenue" ? revenueGrid : mediaGrid;
   const activeConfig =
@@ -441,8 +484,9 @@ export default function ForecastPage() {
           <ForecastSelectors orientation="horizontal" theme="light" />
 
           {/* Currency this client forecasts in — amounts entered are in this
-              currency (the dashboard converts everything to CAD). */}
-          {selectedClient && (
+              currency (the dashboard converts everything to CAD). Hidden on
+              the Product tab, which carries no dollar amounts. */}
+          {selectedClient && tab !== "product" && (
             <ForecastCurrencyBadge currency={selectedClient.CL_Currency ?? "CAD"} />
           )}
 
@@ -464,26 +508,27 @@ export default function ForecastPage() {
             </button>
           )}
 
-          {/* Submission notes toggle (all axis tabs — the note is shared). */}
-          {tab !== "howto" && (
-            <button
-              type="button"
-              onClick={() => setNotesOpen((v) => !v)}
-              aria-pressed={notesOpen}
-              title={notesOpen ? "Hide the submission notes" : "Show the submission notes"}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                notesOpen
-                  ? "border-amber-300 bg-amber-50 text-gray-900"
-                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              <StickyNote size={14} />
-              Notes
-            </button>
+          {/* Submission notes toggle (grid tabs — the note is per submission,
+              which the Product tab doesn't have). */}
+          {tab !== "product" && (
+          <button
+            type="button"
+            onClick={() => setNotesOpen((v) => !v)}
+            aria-pressed={notesOpen}
+            title={notesOpen ? "Hide the submission notes" : "Show the submission notes"}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+              notesOpen
+                ? "border-amber-300 bg-amber-50 text-gray-900"
+                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <StickyNote size={14} />
+            Notes
+          </button>
           )}
 
           {/* Comparison panel toggle (Media & Labs tabs). */}
-          {tab !== "revenue" && tab !== "howto" && (
+          {tab !== "revenue" && tab !== "product" && (
             <button
               type="button"
               onClick={() => setCompareOpen((v) => !v)}
@@ -528,9 +573,13 @@ export default function ForecastPage() {
       {/* flex-1 lets this area fill the remaining height so the timeline bar
           below stays pinned to the bottom of the screen. */}
       <div className="flex-1 w-full p-6 max-w-[1700px] mx-auto">
-        {tab === "howto" ? (
-          // Standalone guide — no submission required, jumps to the axis tabs.
-          <HowToGuide onJump={setTab} />
+        {tab === "product" ? (
+          // Product is always-on per client — only a client is required.
+          selectedClient ? (
+            <ProductGrid clientId={selectedClient.cl_id} />
+          ) : (
+            <SelectionPrompt clientOnly />
+          )
         ) : !activeGrid.selectionReady ? (
           <SelectionPrompt />
         ) : (
@@ -613,10 +662,11 @@ export default function ForecastPage() {
         )}
       </div>
 
-      {/* Sticky timeline (échéancier) — shown only with a full context selected
-          and never on the standalone How-to tab. Renders nothing when the RFQ
-          has no periods. */}
-      {tab !== "howto" && activeGrid.selectionReady && (
+      {/* Sticky timeline (échéancier) — shown with a full context selected.
+          Renders nothing when the RFQ has no periods. The Product tab has no
+          RFQ selectors of its own but still shows the timeline of the
+          globally selected RFQ (empty selection → no periods → nothing). */}
+      {(tab === "product" || activeGrid.selectionReady) && (
         <RFQTimelineBar periods={timelinePeriods} />
       )}
 
@@ -659,14 +709,17 @@ function ForecastCurrencyBadge({ currency }: { currency: Currency }) {
 
 // ─── Empty state — incomplete triplet ────────────────────────────────────────
 
-function SelectionPrompt() {
+function SelectionPrompt({ clientOnly = false }: { clientOnly?: boolean }) {
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
 
-  const steps = [
-    { label: "Client", done: !!selectedClient },
-    { label: "Year", done: !!selectedYear },
-    { label: "RFQ", done: !!selectedRFQ },
-  ];
+  // The Product tab is always-on: it only needs a client, not a year/RFQ.
+  const steps = clientOnly
+    ? [{ label: "Client", done: !!selectedClient }]
+    : [
+        { label: "Client", done: !!selectedClient },
+        { label: "Year", done: !!selectedYear },
+        { label: "RFQ", done: !!selectedRFQ },
+      ];
 
   return (
     <div className="flex flex-col items-center justify-center py-24 text-gray-400 bg-white border border-gray-200 rounded-xl">

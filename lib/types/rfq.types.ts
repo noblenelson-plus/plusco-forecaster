@@ -26,16 +26,33 @@ export type RFQStatus = (typeof RFQ_STATUSES)[number]["value"];
 // ─── RFQ Timeline period (échéancier) ─────────────────────────────────────────
 
 /**
+ * Who is responsible for a timeline period: the Business Leads or the admins.
+ * Purely informational (no permission implications) — shown on the timeline
+ * bar and in the admin editor. Absent on pre-existing periods.
+ */
+export const PERIOD_OWNERS = [
+  { value: "BL", label: "Business Lead", short: "BL" },
+  { value: "ADMIN", label: "Admin", short: "Admin" },
+] as const;
+
+export type PeriodOwner = (typeof PERIOD_OWNERS)[number]["value"];
+
+export function periodOwnerLabel(owner: PeriodOwner): string {
+  return PERIOD_OWNERS.find((o) => o.value === owner)?.label ?? owner;
+}
+
+/**
  * A scheduling milestone within an RFQ's timeline (échéancier). Admins define
  * an ordered set of these per RFQ; the forecast page renders them as a sticky
- * step bar that highlights which one is currently active. Dates are stored as
- * local calendar strings ("YYYY-MM-DD"), so a plain lexicographic comparison
- * against today's date yields the status.
+ * mini gantt that highlights which ones are currently active. Dates are stored
+ * as local calendar strings ("YYYY-MM-DD"), so a plain lexicographic
+ * comparison against today's date yields the status.
  */
 export interface RFQPeriod {
   id: string;            // stable id (random) — survives reordering/edits
   name: string;
   description?: string;
+  owner?: PeriodOwner;   // informational responsibility tag (BL or Admin)
   startDate: string;     // "YYYY-MM-DD"
   endDate: string;       // "YYYY-MM-DD"
 }

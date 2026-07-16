@@ -2,10 +2,11 @@
 "use client";
 
 /**
- * QA + confirmation step for a bulk import. Shows the validation outcome, an
- * explicit Add / Replace toggle with a live recap (added / replaced / deleted)
- * recomputed per mode, and the per-row error list — nothing is written until the
- * user confirms. Extends the pattern of components/clients/import-modal.tsx.
+ * QA + confirmation step for a bulk import. Imports are always REPLACE: each
+ * targeted client × submission × section is overwritten by the sheet's rows.
+ * The modal shows the validation outcome, preview chips of exactly which
+ * targets get replaced, and the per-row error list — nothing is written until
+ * the user confirms.
  */
 
 import { useMemo, useState } from "react";
@@ -15,7 +16,6 @@ import {
   CheckCircle2,
   Loader2,
   Info,
-  Plus,
   Replace,
 } from "lucide-react";
 import {
@@ -23,8 +23,9 @@ import {
   type CommitResult,
   summarizeImport,
   commitImport,
+  replaceTargets,
 } from "../../lib/services/bulk-import-service";
-import type { ImportMode } from "../../lib/format/bulk-forecast";
+import TargetChips from "./target-chips";
 
 export default function ReviewModal({
   prepared,
@@ -37,12 +38,12 @@ export default function ReviewModal({
   onClose: () => void;
   onImported: () => void;
 }) {
-  const [mode, setMode] = useState<ImportMode>("ADD");
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<CommitResult | null>(null);
 
-  const summary = useMemo(() => summarizeImport(prepared, mode), [prepared, mode]);
+  const summary = useMemo(() => summarizeImport(prepared, "REPLACE"), [prepared]);
+  const targets = useMemo(() => replaceTargets(prepared), [prepared]);
 
   const canCommit = !importing && summary.readyRows > 0;
 
@@ -50,7 +51,7 @@ export default function ReviewModal({
     setImporting(true);
     setError("");
     try {
-      const res = await commitImport(prepared, mode, userUid);
+      const res = await commitImport(prepared, "REPLACE", userUid);
       setResult(res);
       if (res.errors.length === 0) {
         // Brief success view, then let the parent refresh.
@@ -82,65 +83,86 @@ export default function ReviewModal({
             </button>
           </div>
 
-          {/* Summary pills */}
+          {/* Summary pills — hover any pill for its definition */}
           <div className="flex flex-wrap items-center gap-2.5 px-6 py-4 border-b border-gray-100">
-            <Pill color="emerald" icon={<CheckCircle2 size={14} />}>
-              {summary.readyRows} ready
-            </Pill>
-            <Pill color="gray" icon={<Info size={14} />}>
-              {summary.affectedTargets} target{summary.affectedTargets !== 1 ? "s" : ""}
+            <Pill
+              color="emerald"
+              icon={<CheckCircle2 size={14} />}
+              title="Sheet rows that passed validation — these are the rows that will be written."
+            >
+              {summary.readyRows} valid row{summary.readyRows !== 1 ? "s" : ""}
             </Pill>
             {summary.ignoredRows > 0 && (
-              <Pill color="amber" icon={<Info size={14} />}>
-                {summary.ignoredRows} ignored
+              <Pill
+                color="amber"
+                icon={<Info size={14} />}
+                title="Rows skipped on purpose: the BL Commission line is always computed from Media Spend, so importing it makes no sense."
+              >
+                {summary.ignoredRows} skipped (computed)
               </Pill>
             )}
             {summary.errorRows > 0 && (
-              <Pill color="red" icon={<AlertTriangle size={14} />}>
+              <Pill
+                color="red"
+                icon={<AlertTriangle size={14} />}
+                title="Rows with a problem (unknown client, locked RFQ, bad value…) — they will NOT be written. Details below."
+              >
                 {summary.errorRows} error{summary.errorRows !== 1 ? "s" : ""}
               </Pill>
             )}
           </div>
 
-          {/* Mode toggle + recap */}
+          {/* Replace recap + preview chips of every target. Scrolls itself if
+              a small viewport forces it to shrink. */}
           {!result && (
-            <div className="px-6 py-4 border-b border-gray-100 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <ModeCard
-                  active={mode === "ADD"}
-                  onClick={() => setMode("ADD")}
-                  icon={<Plus size={16} />}
-                  title="Add"
-                  desc="Upsert: matching rows updated, new rows added, others kept."
+            <div className="px-6 py-4 border-b border-gray-100 space-y-3 overflow-y-auto">
+              <div className="flex items-start gap-2.5 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-3">
+                <Replace size={16} className="mt-0.5 flex-shrink-0 text-yellow-700" />
+                <p className="text-sm text-gray-800 leading-relaxed">
+                  <span className="font-semibold">Replace</span> — each section
+                  below is overwritten by the sheet&apos;s rows. Anything in
+                  those sections that isn&apos;t in the sheet is removed.
+                </p>
+              </div>
+              {/* Line-level impact vs the live data, spelled out */}
+              <div className="grid grid-cols-3 gap-3">
+                <DiffStat
+                  value={summary.diff.added}
+                  tone="emerald"
+                  label="New lines"
+                  desc="In the sheet but not in the app yet — they get created."
                 />
-                <ModeCard
-                  active={mode === "REPLACE"}
-                  onClick={() => setMode("REPLACE")}
-                  icon={<Replace size={16} />}
-                  title="Replace"
-                  desc="Overwrite each target's section with these rows."
+                <DiffStat
+                  value={summary.diff.replaced}
+                  tone="blue"
+                  label="Overwritten"
+                  desc="Already in the app — their values are replaced by the sheet's."
+                />
+                <DiffStat
+                  value={summary.diff.deleted}
+                  tone={summary.diff.deleted > 0 ? "red" : "gray"}
+                  label="Removed"
+                  desc="In the app but missing from the sheet — deleted by the replace."
                 />
               </div>
-              <div className="flex items-center gap-4 text-sm">
-                <span className="flex items-center gap-1.5 text-emerald-700">
-                  <span className="font-semibold">{summary.diff.added}</span> added
-                </span>
-                <span className="flex items-center gap-1.5 text-blue-700">
-                  <span className="font-semibold">{summary.diff.replaced}</span> replaced
-                </span>
-                <span
-                  className={`flex items-center gap-1.5 ${
-                    mode === "REPLACE" && summary.diff.deleted > 0 ? "text-red-700" : "text-gray-400"
-                  }`}
-                >
-                  <span className="font-semibold">{summary.diff.deleted}</span> deleted
-                </span>
-              </div>
+              {targets.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Sections being replaced
+                  </p>
+                  {/* Capped + scrollable so a large import can't squeeze the
+                      error list below out of the modal. */}
+                  <div className="max-h-52 overflow-y-auto">
+                    <TargetChips targets={targets} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Scrollable body — errors / ignored / result */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {/* Scrollable body — errors / ignored / result. min-h keeps it
+              visible even when the recap above is at its cap. */}
+          <div className="flex-1 min-h-32 overflow-y-auto px-6 py-4 space-y-4">
             {result ? (
               <ResultView result={result} />
             ) : (
@@ -164,7 +186,7 @@ export default function ReviewModal({
                     <CheckCircle2 size={32} className="text-emerald-500 mb-3" />
                     <p className="text-sm font-medium text-gray-900">All rows are valid</p>
                     <p className="text-xs text-gray-400 mt-1">
-                      {summary.readyRows} rows ready across {summary.affectedTargets} targets.
+                      {summary.readyRows} rows ready to write.
                     </p>
                   </div>
                 )}
@@ -195,7 +217,7 @@ export default function ReviewModal({
                 {importing && <Loader2 size={14} className="animate-spin" />}
                 {importing
                   ? "Importing…"
-                  : `${mode === "ADD" ? "Add" : "Replace"} ${summary.readyRows} row${
+                  : `Replace ${summary.readyRows} row${
                       summary.readyRows !== 1 ? "s" : ""
                     }`}
               </button>
@@ -212,10 +234,13 @@ export default function ReviewModal({
 function Pill({
   color,
   icon,
+  title,
   children,
 }: {
   color: "emerald" | "red" | "amber" | "gray";
   icon: React.ReactNode;
+  /** Plain-language definition, shown on hover. */
+  title?: string;
   children: React.ReactNode;
 }) {
   const map = {
@@ -225,42 +250,41 @@ function Pill({
     gray: "bg-gray-50 border-gray-200 text-gray-600",
   } as const;
   return (
-    <div className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium ${map[color]}`}>
+    <div
+      title={title}
+      className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium ${map[color]} ${title ? "cursor-help" : ""}`}
+    >
       {icon}
       {children}
     </div>
   );
 }
 
-function ModeCard({
-  active,
-  onClick,
-  icon,
-  title,
+/** One line-level impact stat (new / overwritten / removed), definition inline. */
+function DiffStat({
+  value,
+  tone,
+  label,
   desc,
 }: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  title: string;
+  value: number;
+  tone: "emerald" | "blue" | "red" | "gray";
+  label: string;
   desc: string;
 }) {
+  const map = {
+    emerald: "text-emerald-700",
+    blue: "text-blue-700",
+    red: "text-red-700",
+    gray: "text-gray-400",
+  } as const;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`text-left px-4 py-3 rounded-xl border transition-colors ${
-        active
-          ? "bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400"
-          : "bg-white border-gray-200 hover:bg-gray-50"
-      }`}
-    >
-      <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-        {icon}
-        {title}
-      </span>
-      <span className="block text-xs text-gray-500 mt-1 leading-relaxed">{desc}</span>
-    </button>
+    <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+      <p className={`text-sm font-semibold ${map[tone]}`}>
+        {value} <span className="font-medium">{label.toLowerCase()}</span>
+      </p>
+      <p className="mt-0.5 text-[11px] leading-snug text-gray-500">{desc}</p>
+    </div>
   );
 }
 

@@ -77,11 +77,30 @@ export const CLIENT_CURRENCIES: { value: Currency; label: string }[] = [
   { value: "USD", label: "USD" },
 ];
 
+// ─── Advertiser Vertical ──────────────────────────────────────────────────────
+
+export const CLIENT_ADVERTISER_VERTICALS = [
+  { value: "Automotive",                                      label: "Automotive" },
+  { value: "B2B",                                             label: "B2B" },
+  { value: "Consumer Packaged Goods (CPG)",                   label: "Consumer Packaged Goods (CPG)" },
+  { value: "Education, Non-Profit & Public Interest",         label: "Education, Non-Profit & Public Interest" },
+  { value: "Finance, Insurance & Legal",                      label: "Finance, Insurance & Legal" },
+  { value: "Government, Crown Corporations & Public Sector",  label: "Government, Crown Corporations & Public Sector" },
+  { value: "Healthcare, Pharmaceuticals & Wellness",          label: "Healthcare, Pharmaceuticals & Wellness" },
+  { value: "Retail & E-Commerce",                             label: "Retail & E-Commerce" },
+  { value: "Telecommunications, Media & Entertainment",       label: "Telecommunications, Media & Entertainment" },
+  { value: "Travel, Tourism, Hospitality & Leisure",          label: "Travel, Tourism, Hospitality & Leisure" },
+  { value: "Other",                                           label: "Other" },
+] as const;
+
+export type AdvertiserVertical = (typeof CLIENT_ADVERTISER_VERTICALS)[number]["value"];
+
 // ─── Fee Structure ────────────────────────────────────────────────────────────
 
 export const CLIENT_FEE_STRUCTURES = [
-  { value: "RETAINER",   label: "Retainer" },
+  { value: "RETAINER",   label: "Fees/Retainer" },
   { value: "COMMISSION", label: "Commission" },
+  { value: "HYBRID",     label: "Hybrid" },
 ] as const;
 
 export type FeeStructure = (typeof CLIENT_FEE_STRUCTURES)[number]["value"];

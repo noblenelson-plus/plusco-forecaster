@@ -27,7 +27,10 @@ import {
   computeLabsPenetration,
   type LabsPenetrationResult,
 } from "../../format/labs-penetration";
+import { commissionOverwriteMonths } from "../../format/revenue-commission";
+import type { ClientOverwriteMonths } from "./qa-checks";
 import {
+  rollUpActuals,
   type AxisData,
   type AxisId,
   type DataEntry,
@@ -38,15 +41,18 @@ import type { Currency } from "../../types/client.types";
 import type { DashboardScope } from "../widgets/widget.types";
 import { aggregateByType } from "../../types/forecaster.types";
 import {
+  actualsMonthly,
   computeLabsMonthly,
   computeMediaBreakdown,
   computeRevenueBreakdown,
   labsByPartnerForClient,
+  maskAxisDataToMonths,
   mergeAxisData,
   resolveLabsDetail,
   scaleAxisData,
   type ClientLabsRaw,
   type ClientMediaBreakdown,
+  type ClientMonthlyTotal,
   type ClientRevenueBreakdown,
   type LabsDetailRow,
   type MediaBreakdown,
@@ -93,6 +99,16 @@ export interface ScopeForecastData {
   labsMonthly: MonthlyMap;
   /** One row per (client × partner) with spend, for the detailed Labs table. */
   labsDetail: LabsDetailRow[];
+  /** Per-client GAIA (ADMIN_INPUT) revenue by stream — feeds the QA checks. */
+  revenueActualsByClient: ClientRevenueBreakdown[];
+  /** Per-client months carrying a Commission Overwrite — feeds the QA
+   *  commission check (explicit zeros survive here where the aggregated
+   *  streams lose them). */
+  commissionOverwriteMonthsByClient: ClientOverwriteMonths[];
+  /** Per-client MediaOcean media actuals per month — feeds the QA checks. */
+  mediaActualsByClient: ClientMonthlyTotal[];
+  /** Per-client MediaOcean Labs actuals per month — feeds the QA checks. */
+  labsActualsByClient: ClientMonthlyTotal[];
   /** In-scope clients that forecast in USD (their amounts were converted to CAD). */
   usdClientCount: number;
   /** True when an in-scope USD client has no USD→CAD rate set for the year, so
@@ -105,7 +121,12 @@ export function useScopeForecastData(
   /** Currency per client id; a client absent from the map is treated as CAD. */
   currencyByClient?: Record<string, Currency>,
   /** USD→CAD rate for the selected year; undefined when none is configured. */
-  usdToCad?: number
+  usdToCad?: number,
+  /**
+   * Months (1..12) to restrict every aggregation to. Empty/undefined (or all
+   * 12) = no restriction. A pure recompute — changing it never refetches.
+   */
+  months?: number[]
 ): ScopeForecastData {
   const { clientIds, year, rfq } = scope;
   const hasContext = year !== null && rfq !== null;
@@ -151,11 +172,19 @@ export function useScopeForecastData(
 
         const next: RawClientAxes[] = results.map(([entry, annual], i) => {
           // Media/Labs actuals come from the annual doc, not the submission doc.
+          // Every ADMIN_INPUT side gets the same detail roll-up as the grid
+          // (a row with detail lines derives its months from them) — stored
+          // parent months can be zero/stale on docs saved before the roll-up.
           const media = axisOf(entry, "media");
-          media.actuals = Array.isArray(annual.media) ? annual.media : [];
+          media.actuals = rollUpActuals(
+            Array.isArray(annual.media) ? annual.media : []
+          );
           const labs = axisOf(entry, "labs");
-          labs.actuals = Array.isArray(annual.labs) ? annual.labs : [];
+          labs.actuals = rollUpActuals(
+            Array.isArray(annual.labs) ? annual.labs : []
+          );
           const revenue = axisOf(entry, "revenue");
+          revenue.actuals = rollUpActuals(revenue.actuals);
           return { clientId: clientIds[i], media, labs, revenue };
         });
         setRawClients(next);
@@ -182,11 +211,23 @@ export function useScopeForecastData(
     [partners, year]
   );
 
-  // Normalize each client to CAD, then merge + reshape into scope aggregates.
-  // When disabled the scope is empty so this collapses to empty breakdowns
-  // without writing state from an effect (`rawClients` may hold stale data).
+  // Stable month-filter key — the caller's array identity changes per render.
+  const monthsKey =
+    months && months.length > 0 && months.length < 12
+      ? [...months].sort((a, b) => a - b).join(",")
+      : "";
+
+  // Normalize each client to CAD (and mask to the selected months), then
+  // merge + reshape into scope aggregates. When disabled the scope is empty so
+  // this collapses to empty breakdowns without writing state from an effect
+  // (`rawClients` may hold stale data).
   const processed = useMemo(() => {
     const list = disabled ? [] : rawClients;
+    const monthSet = monthsKey
+      ? new Set(monthsKey.split(",").map(Number))
+      : null;
+    const restrict = (data: AxisData): AxisData =>
+      monthSet ? maskAxisDataToMonths(data, monthSet) : data;
 
     const mediaList: AxisData[] = [];
     const labsList: AxisData[] = [];
@@ -194,6 +235,10 @@ export function useScopeForecastData(
     const mediaByClient: ClientMediaBreakdown[] = [];
     const labsByClient: ClientLabsRaw[] = [];
     const revenueByClient: ClientRevenueBreakdown[] = [];
+    const revenueActualsByClient: ClientRevenueBreakdown[] = [];
+    const commissionOverwriteMonthsByClient: ClientOverwriteMonths[] = [];
+    const mediaActualsByClient: ClientMonthlyTotal[] = [];
+    const labsActualsByClient: ClientMonthlyTotal[] = [];
     let clientsWithData = 0;
     let usdClientCount = 0;
     let missingRate = false;
@@ -207,9 +252,9 @@ export function useScopeForecastData(
         else missingRate = true; // no rate → left unconverted, surfaced in the UI
       }
 
-      const media = scaleAxisData(rc.media, factor);
-      const labs = scaleAxisData(rc.labs, factor);
-      const revenue = scaleAxisData(rc.revenue, factor);
+      const media = restrict(scaleAxisData(rc.media, factor));
+      const labs = restrict(scaleAxisData(rc.labs, factor));
+      const revenue = restrict(scaleAxisData(rc.revenue, factor));
 
       mediaList.push(media);
       labsList.push(labs);
@@ -235,6 +280,37 @@ export function useScopeForecastData(
           clientId: rc.clientId,
           byStream: aggregateByType(revenue, "BL_INPUT"),
         });
+        // Overwrite months come from the raw axis: explicit-zero overwrites
+        // (deliberate $0) are invisible in the aggregated streams. A month
+        // masked out by the month filter compares 0 vs 0 downstream anyway,
+        // so masking is irrelevant here.
+        const owMonths = commissionOverwriteMonths(rc.revenue);
+        if (owMonths.size > 0) {
+          commissionOverwriteMonthsByClient.push({
+            clientId: rc.clientId,
+            months: [...owMonths],
+          });
+        }
+      }
+
+      // ADMIN_INPUT sides, per client — consumed by the QA tab's checks.
+      if (revenue.actuals.length > 0) {
+        revenueActualsByClient.push({
+          clientId: rc.clientId,
+          byStream: aggregateByType(revenue, "ADMIN_INPUT"),
+        });
+      }
+      if (media.actuals.length > 0) {
+        mediaActualsByClient.push({
+          clientId: rc.clientId,
+          months: actualsMonthly(media),
+        });
+      }
+      if (labs.actuals.length > 0) {
+        labsActualsByClient.push({
+          clientId: rc.clientId,
+          months: actualsMonthly(labs),
+        });
       }
       if (hasAnyInput(media) || hasAnyInput(labs) || hasAnyInput(revenue)) {
         clientsWithData += 1;
@@ -248,11 +324,15 @@ export function useScopeForecastData(
       mediaByClient,
       labsByClient,
       revenueByClient,
+      revenueActualsByClient,
+      commissionOverwriteMonthsByClient,
+      mediaActualsByClient,
+      labsActualsByClient,
       clientsWithData,
       usdClientCount,
       missingRate,
     };
-  }, [disabled, rawClients, currencyByClient, usdToCad]);
+  }, [disabled, rawClients, currencyByClient, usdToCad, monthsKey]);
 
   const media = useMemo(
     () => computeMediaBreakdown(processed.media),
@@ -288,6 +368,10 @@ export function useScopeForecastData(
     labs,
     labsMonthly,
     labsDetail,
+    revenueActualsByClient: processed.revenueActualsByClient,
+    commissionOverwriteMonthsByClient: processed.commissionOverwriteMonthsByClient,
+    mediaActualsByClient: processed.mediaActualsByClient,
+    labsActualsByClient: processed.labsActualsByClient,
     usdClientCount: processed.usdClientCount,
     missingRate: processed.missingRate,
   };

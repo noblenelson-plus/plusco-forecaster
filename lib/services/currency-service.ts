@@ -3,6 +3,7 @@
 import {
   collection,
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -33,6 +34,17 @@ export function subscribeToCurrencyRates(
     },
     (err) => onError?.(err)
   );
+}
+
+/**
+ * One-shot read of the USD → CAD rate for a year (document id = year).
+ * Returns undefined when no rate is configured for that year.
+ */
+export async function fetchCurrencyRateForYear(
+  year: number
+): Promise<number | undefined> {
+  const snap = await getDoc(doc(db, COLLECTION, String(year)));
+  return snap.exists() ? (snap.data() as CurrencyRate).usdToCad : undefined;
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────────

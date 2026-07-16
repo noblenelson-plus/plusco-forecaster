@@ -8,10 +8,11 @@ import type {
   ClientRegion,
   ClientOffice,
   ClientGMPod,
+  AdvertiserVertical,
 } from "../constants/client.constants";
 import type { MediaType, MonthlyMap } from "./common.types";
 
-export type { ClientStatus, ClientTier, FeeStructure };
+export type { ClientStatus, ClientTier, FeeStructure, AdvertiserVertical };
 
 export type Currency = "CAD" | "USD";
 
@@ -72,6 +73,8 @@ export interface Client {
   CL_Currency: Currency;
   CL_GAIA_Number: string[];
   CL_Tier: ClientTier;
+  /** Industry vertical of the advertiser. Optional — absent on older docs. */
+  CL_Advertiser_Vertical?: AdvertiserVertical;
   /** Per-year status map (canonical). Resolve via `resolveClientStatus`. */
   Client_Status_By_Year: Record<number, ClientStatus>;
   /** Legacy single-year status — kept for read-time fallback only. */
@@ -107,6 +110,8 @@ export interface ClientFormData {
   CL_Currency: Currency;
   CL_GAIA_Number: string[];
   CL_Tier: ClientTier;
+  /** "" while unselected in the form; validated dropdowns allow empty. */
+  CL_Advertiser_Vertical?: string;
   Client_Status_By_Year: Record<number, ClientStatus>;
   CL_Hidden?: boolean;
   Forecasting_Type: ForecastingType;

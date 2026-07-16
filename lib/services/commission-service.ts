@@ -1,13 +1,14 @@
 // lib/services/commission-service.ts
 
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
-import { CommissionsConfig } from "../types/client.types";
+import { Client, CommissionsConfig } from "../types/client.types";
 import {
   MediaType,
   MonthlyMap,
   MONTHS,
 } from "../types/common.types";
+import { propagateCommissionForYear } from "./data-entry-service";
 
 /**
  * Client commission management service.
@@ -166,4 +167,118 @@ export async function clearYearCommissions(
     [`commissionsConfig.${year}`]: {},
     updatedAt: new Date().toISOString(),
   });
+}
+
+// ─── Bulk year-to-year copy (admin) ───────────────────────────────────────────
+
+/** One client's planned copy. Produced by computeCommissionCopy (a dry run). */
+export interface CommissionCopyItem {
+  cl_id: string;
+  name: string;
+  /** Media types configured in the source year (what gets copied). */
+  mediaTypes: MediaType[];
+  /** True when the target year already had at least one configured type. */
+  hadTargetConfig: boolean;
+  /** Target-year config to write (December rate applied uniformly). */
+  yearConfig: Partial<Record<MediaType, MonthlyMap>>;
+}
+
+export interface CommissionCopyReport {
+  fromYear: number;
+  toYear: number;
+  /** Clients whose rates will be written on apply. */
+  copies: CommissionCopyItem[];
+  /** Target year already configured and overwrite is off — left untouched. */
+  skippedExisting: { cl_id: string; name: string }[];
+  /** No source-year config — nothing to copy. */
+  skippedNoSource: { cl_id: string; name: string }[];
+}
+
+/**
+ * Dry run: plans the bulk copy of commission rates from one year to another
+ * across every given client, following copyYearConfig's semantics (each
+ * type's December rate applied uniformly to the target year). Pure — no
+ * reads or writes; call applyCommissionCopy with the report after the admin
+ * confirms.
+ */
+export function computeCommissionCopy(
+  clients: Client[],
+  fromYear: number,
+  toYear: number,
+  overwrite: boolean
+): CommissionCopyReport {
+  const copies: CommissionCopyItem[] = [];
+  const skippedExisting: { cl_id: string; name: string }[] = [];
+  const skippedNoSource: { cl_id: string; name: string }[] = [];
+
+  for (const client of clients) {
+    const config = client.commissionsConfig ?? {};
+    const sourceTypes = Object.keys(config[fromYear] ?? {}) as MediaType[];
+    if (sourceTypes.length === 0) {
+      skippedNoSource.push({ cl_id: client.cl_id, name: client.CL_Name });
+      continue;
+    }
+    const hadTargetConfig = hasYearConfig(config, toYear);
+    if (hadTargetConfig && !overwrite) {
+      skippedExisting.push({ cl_id: client.cl_id, name: client.CL_Name });
+      continue;
+    }
+    copies.push({
+      cl_id: client.cl_id,
+      name: client.CL_Name,
+      mediaTypes: sourceTypes,
+      hadTargetConfig,
+      yearConfig: copyYearConfig(config, fromYear, toYear)[toYear] ?? {},
+    });
+  }
+
+  return { fromYear, toYear, copies, skippedExisting, skippedNoSource };
+}
+
+/**
+ * Writes a dry-run report's copies (batches of 500), then re-syncs the
+ * derived Revenue commission of the target year for each copied client —
+ * only existing unlocked submissions are touched, usually none for a fresh
+ * year. Propagation failures are collected rather than thrown: the rates
+ * themselves are already saved at that point, and re-applying the copy (or
+ * re-saving a client's rates) retries the sync.
+ */
+export async function applyCommissionCopy(
+  report: CommissionCopyReport,
+  onSyncProgress?: (done: number, total: number) => void
+): Promise<{ written: number; syncFailures: string[] }> {
+  const BATCH_SIZE = 500;
+  const now = new Date().toISOString();
+
+  for (let start = 0; start < report.copies.length; start += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    report.copies.slice(start, start + BATCH_SIZE).forEach((c) => {
+      batch.update(doc(db, "clients", c.cl_id), {
+        [`commissionsConfig.${report.toYear}`]: c.yearConfig,
+        updatedAt: now,
+      });
+    });
+    await batch.commit();
+  }
+
+  // Chunked to bound concurrent Firestore traffic.
+  const CONCURRENCY = 10;
+  const syncFailures: string[] = [];
+  let done = 0;
+  for (let start = 0; start < report.copies.length; start += CONCURRENCY) {
+    await Promise.all(
+      report.copies.slice(start, start + CONCURRENCY).map(async (c) => {
+        try {
+          await propagateCommissionForYear(c.cl_id, report.toYear, c.yearConfig);
+        } catch (err) {
+          console.error(`Commission sync failed for ${c.name}:`, err);
+          syncFailures.push(c.name);
+        }
+        done++;
+        onSyncProgress?.(done, report.copies.length);
+      })
+    );
+  }
+
+  return { written: report.copies.length, syncFailures };
 }

@@ -27,10 +27,15 @@ import TrendChart from "../charts/trend-chart";
 import StackedBarChart from "../charts/stacked-bar-chart";
 import HorizontalStackedBar from "../charts/horizontal-stacked-bar";
 import MediaDataTable from "../media-data-table";
+import MediaboxCoverageSection from "../mediabox-coverage-section";
+import DimensionBreakdown, {
+  type ClientDimensions,
+} from "../dimension-breakdown";
 import { DIGITAL_COLOR, TRADITIONAL_COLOR } from "../charts/colors";
 import { formatCompactMoney, formatPct } from "../charts/format";
 import { LoadingTab, NoContextNotice, EmptyDataNotice } from "./tab-states";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
+import type { ScopeMediaboxData } from "../../../lib/dashboard/data/use-scope-mediabox-totals";
 
 const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 0);
 
@@ -62,12 +67,16 @@ function getVariance(
 export default function MediaSpendTab({
   data,
   comparisonData,
+  mediabox,
   clientNameById,
+  clientDimensions,
   fileLabel,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
+  mediabox: ScopeMediaboxData;
   clientNameById: Record<string, string>;
+  clientDimensions: ClientDimensions;
   fileLabel?: string;
 }) {
   if (!data.hasContext) return <NoContextNotice />;
@@ -100,6 +109,12 @@ export default function MediaSpendTab({
     .filter((r) => r.total > 0)
     .sort((a, b) => b.total - a.total)
     .slice(0, 10);
+
+  // Annual BL media spend per client, for the Region / Business Lead breakdowns.
+  const clientTotals = data.mediaByClient.map((cb) => ({
+    clientId: cb.clientId,
+    total: Object.values(cb.byType).reduce((acc, m) => acc + sumMonthlyMap(m), 0),
+  }));
 
   return (
     <div className="space-y-8">
@@ -225,6 +240,18 @@ export default function MediaSpendTab({
           />
         </ChartCard>
       </div>
+
+      <MediaboxCoverageSection
+        data={data}
+        mediabox={mediabox}
+        clientNameById={clientNameById}
+      />
+
+      <DimensionBreakdown
+        totalsByClient={clientTotals}
+        dimensions={clientDimensions}
+        metricLabel="BL media spend"
+      />
 
       <ChartCard
         title="Monthly spend by media type"

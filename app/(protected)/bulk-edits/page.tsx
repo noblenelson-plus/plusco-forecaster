@@ -15,6 +15,7 @@ import PageHeader from "../../../components/_shared/page-header";
 import GoogleConnect from "../../../components/bulk-edit/google-connect";
 import ExportPanel from "../../../components/bulk-edit/export-panel";
 import ImportPanel from "../../../components/bulk-edit/import-panel";
+import DeletePanel from "../../../components/bulk-edit/delete-panel";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import { useAuth } from "../../../lib/auth-context";
 import {
@@ -95,6 +96,12 @@ export default function BulkEditsPage() {
               connected={connected}
               userUid={user?.uid}
               onImported={() => setImportNonce((n) => n + 1)}
+            />
+            {/* Bulk delete works straight against Firestore — no Google needed. */}
+            <DeletePanel
+              reference={reference}
+              userUid={user?.uid}
+              onDeleted={() => setImportNonce((n) => n + 1)}
             />
           </>
         )}

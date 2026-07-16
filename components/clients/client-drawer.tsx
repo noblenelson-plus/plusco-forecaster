@@ -11,7 +11,6 @@ import {
   Currency,
   FeeStructure,
   ClientStatus,
-  ClientTier,
   CommissionsConfig,
   ForecastingType,
 } from "../../lib/types/client.types";
@@ -24,9 +23,12 @@ import {
   CLIENT_GM_PODS,
   CLIENT_CURRENCIES,
   CLIENT_FEE_STRUCTURES,
+  CLIENT_ADVERTISER_VERTICALS,
 } from "../../lib/constants/client.constants";
 import { DEFAULT_FORECASTING_TYPE, isEligibleForPartner } from "../../lib/format/client";
 import { saveClient, deleteClient, uploadClientLogo } from "../../lib/services/client-service";
+import { triggerMediaboxRefresh } from "../../lib/services/mediabox-totals-service";
+import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import {
   subscribeToLabsPartners,
   getLabsPartnerYears,
@@ -59,7 +61,10 @@ const EMPTY_FORM: ClientFormData = {
   GM_Pod: "",
   CL_Currency: "" as Currency,
   CL_GAIA_Number: [],
-  CL_Tier: "" as ClientTier,
+  // Tier is computed from the digital spend forecast (Recompute tiers on the
+  // Clients page) — new clients start at PARTNER (no forecast yet → $0).
+  CL_Tier: "PARTNER",
+  CL_Advertiser_Vertical: "",
   Client_Status_By_Year: { [new Date().getFullYear()]: "ACTIVE" },
   CL_Hidden: false,
   Forecasting_Type: { ...DEFAULT_FORECASTING_TYPE },
@@ -77,7 +82,6 @@ const REQUIRED_FIELDS: Array<[keyof ClientFormData, string]> = [
   ["Client_Fee_Structure", "Fee structure"],
   ["GM_Pod", "GM Pod"],
   ["CL_Currency", "Currency"],
-  ["CL_Tier", "Tier"],
 ];
 
 export default function ClientDrawer({
@@ -89,6 +93,9 @@ export default function ClientDrawer({
   onDeleted,
 }: ClientDrawerProps) {
   const isEditing = !!client;
+
+  // Year used when a MediaBox-IDs change triggers a totals refresh.
+  const { selectedYear } = useForecastSelection();
 
   const [form, setForm] = useState<ClientFormData>(EMPTY_FORM);
   const [gaiaInput, setGaiaInput] = useState("");
@@ -127,7 +134,8 @@ export default function ClientDrawer({
         GM_Pod: client.GM_Pod,
         CL_Currency: client.CL_Currency,
         CL_GAIA_Number: client.CL_GAIA_Number ?? [],
-        CL_Tier: client.CL_Tier,
+        CL_Tier: client.CL_Tier ?? "PARTNER",
+        CL_Advertiser_Vertical: client.CL_Advertiser_Vertical ?? "",
         // Soft migration: seed the per-year map from the legacy 2026 scalar
         // when the map is empty, so old docs open with their status intact.
         Client_Status_By_Year:
@@ -283,6 +291,19 @@ export default function ClientDrawer({
         { ...form, CL_GAIA_Number: gaiaNumbers, CL_MediaBox_IDs: mediaboxIds },
         client?.cl_id ?? null
       );
+
+      // A changed MediaBox mapping makes the synced totals stale — kick off a
+      // recompute right away (fire-and-forget: the fresh doc lands via the
+      // grid/dashboard reads, and the nightly job is the fallback on failure).
+      const before = [...(client?.CL_MediaBox_IDs ?? [])].sort().join(",");
+      const after = [...mediaboxIds].sort().join(",");
+      if (before !== after) {
+        const year = selectedYear ?? new Date().getFullYear();
+        triggerMediaboxRefresh(saved.cl_id, year, true).catch((err) =>
+          console.warn("MediaBox refresh after mapping change failed:", err)
+        );
+      }
+
       onSaved(saved);
     } catch (err: any) {
       setError("Failed to save: " + (err?.message ?? "Unknown error"));
@@ -517,13 +538,15 @@ export default function ClientDrawer({
           {/* Section: Classification */}
           <Section label="Classification">
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Tier *">
-                <Select
-                  value={form.CL_Tier}
-                  onChange={(v) => set("CL_Tier", v as ClientTier)}
-                  options={CLIENT_TIERS}
-                  placeholder="Select tier"
-                />
+              <Field label="Tier">
+                <div className="px-3 py-2 text-sm border border-gray-100 rounded-lg bg-gray-50 text-gray-700">
+                  {CLIENT_TIERS.find((t) => t.value === form.CL_Tier)?.label ??
+                    form.CL_Tier ?? "—"}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Computed from the digital spend forecast — use “Tiers” on the
+                  Clients page to recompute.
+                </p>
               </Field>
               <Field label="Currency *">
                 <Select
@@ -534,6 +557,15 @@ export default function ClientDrawer({
                 />
               </Field>
             </div>
+
+            <Field label="Advertiser vertical">
+              <Select
+                value={form.CL_Advertiser_Vertical ?? ""}
+                onChange={(v) => set("CL_Advertiser_Vertical", v)}
+                options={CLIENT_ADVERTISER_VERTICALS}
+                placeholder="Select vertical"
+              />
+            </Field>
 
             {/* Status by year */}
             <Field label="Status by year">
@@ -701,8 +733,9 @@ export default function ClientDrawer({
             </Field>
           </Section>
 
-          {/* Delete zone */}
-          {isEditing && (
+          {/* Delete zone — admins only (the Firestore rules enforce it; hiding
+              the button for BLs avoids a guaranteed permission error). */}
+          {isAdmin && isEditing && (
             <div className="pt-2 pb-2 border-t border-gray-100">
               {!confirmDelete ? (
                 <button
@@ -715,7 +748,10 @@ export default function ClientDrawer({
               ) : (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                   <p className="text-sm text-red-700 mb-3">
-                    Are you sure? This cannot be undone.
+                    Are you sure? This deletes the client <strong>and all its
+                    forecast data</strong> (every submission, MediaOcean
+                    actuals, MediaBox totals) and unassigns it from every user.
+                    This cannot be undone.
                   </p>
                   <div className="flex gap-2">
                     <button

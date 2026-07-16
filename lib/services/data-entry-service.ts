@@ -1,17 +1,17 @@
 // lib/services/data-entry-service.ts
 
 /**
- * Service Firestore — collection "data_entries".
+ * Firestore service — "data_entries" collection.
  *
- * Un document par triplet {client, année, RFQ} (voir forecaster.types.ts).
- * Toutes les écritures d'axe passent par le dot-path "axes.{axisId}" :
- * sauvegarder l'axe Media ne touche jamais Revenue ni Labs, même si les
- * trois vivent dans le même document.
+ * One document per {client, year, RFQ} triplet (see forecaster.types.ts).
+ * Every axis write goes through the "axes.{axisId}" dot-path: saving the
+ * Media axis never touches Revenue or Labs, even though all three live in
+ * the same document.
  *
- * Stratégie V1 (Save explicite) :
- *   1. fetchDataEntry() au montage du grid (+ fetch du RFQ de comparaison)
- *   2. édition locale (dirty map dans use-forecaster-grid)
- *   3. saveAxisData() au clic sur Save — un seul write, axe complet
+ * V1 strategy (explicit Save):
+ *   1. fetchDataEntry() when the grid mounts (+ fetch of the comparison RFQ)
+ *   2. local editing (dirty map in use-forecaster-grid)
+ *   3. saveAxisData() on Save click — a single write, whole axis
  */
 
 import {
@@ -36,18 +36,20 @@ import {
   REVENUE_COMMISSION_TYPE,
 } from "../types/forecaster.types";
 import {
+  applyCommissionOverwrite,
+  commissionOverwriteMonths,
   computeCommission,
   ensureRevenueShape,
 } from "../format/revenue-commission";
 
 const COLLECTION = "data_entries";
 
-// ─── Lecture ──────────────────────────────────────────────────────────────────
+// ─── Reads ────────────────────────────────────────────────────────────────────
 
 /**
- * Récupère le document d'un triplet {client, année, RFQ}.
- * Retourne null s'il n'existe pas encore (aucune saisie faite) —
- * c'est un cas normal, pas une erreur.
+ * Fetches the document for a {client, year, RFQ} triplet.
+ * Returns null when it doesn't exist yet (nothing entered) —
+ * a normal case, not an error.
  */
 export async function fetchDataEntry(
   clientId: string,
@@ -64,9 +66,9 @@ export async function fetchDataEntry(
 }
 
 /**
- * Données d'un axe pour un triplet donné — toujours un AxisData utilisable.
- * Si le document ou l'axe n'existe pas, retourne un AxisData vide :
- * le grid n'a jamais à gérer null.
+ * One axis' data for a given triplet — always a usable AxisData.
+ * If the document or the axis doesn't exist, returns an empty AxisData:
+ * the grid never has to handle null.
  */
 export async function fetchAxisData(
   clientId: string,
@@ -110,15 +112,15 @@ export async function fetchAxisDataWithMeta(
   };
 }
 
-// ─── Écriture ─────────────────────────────────────────────────────────────────
+// ─── Writes ───────────────────────────────────────────────────────────────────
 
 /**
- * Sauvegarde l'axe complet d'un triplet — crée le document au premier Save.
+ * Saves a triplet's whole axis — creates the document on the first Save.
  *
- * setDoc + merge plutôt que updateDoc : pas besoin de savoir si le doc
- * existe déjà, et seuls les champs fournis sont écrits. Le dot-path est
- * exprimé via un objet imbriqué { axes: { [axisId]: ... } } qui, avec
- * merge:true, fusionne au niveau des clés sans écraser les autres axes.
+ * setDoc + merge rather than updateDoc: no need to know whether the doc
+ * already exists, and only the provided fields are written. The dot-path is
+ * expressed as a nested object { axes: { [axisId]: ... } } which, with
+ * merge:true, merges key-by-key without overwriting the other axes.
  */
 export async function saveAxisData(
   clientId: string,
@@ -133,7 +135,15 @@ export async function saveAxisData(
    * the same doc (Revenue's GAIA) pass touchedActuals explicitly. A side left
    * out keeps its previous stamp (deep merge).
    */
-  opts?: { touchedBL?: boolean; touchedActuals?: boolean }
+  opts?: {
+    touchedBL?: boolean;
+    touchedActuals?: boolean;
+    /**
+     * Caller already knows the doc exists with createdAt set — skips the
+     * backfill read below (saves a round trip on hot paths like propagation).
+     */
+    hasCreatedAt?: boolean;
+  }
 ): Promise<void> {
   const entryId = buildDataEntryId(clientId, year, rfq);
   const now = new Date().toISOString();
@@ -160,6 +170,7 @@ export async function saveAxisData(
 
   // createdAt: set once, after the fact, only if missing. The doc was just
   // written so this read hits the local cache.
+  if (opts?.hasCreatedAt) return;
   const snapshot = await getDoc(doc(db, COLLECTION, entryId));
   if (snapshot.exists() && !snapshot.data().createdAt) {
     await updateDoc(doc(db, COLLECTION, entryId), { createdAt: now });
@@ -184,16 +195,39 @@ export async function syncRevenueCommission(
   yearRates: Partial<Record<MediaType, MonthlyMap>> | undefined,
   userUid?: string
 ): Promise<void> {
-  const media = await fetchAxisData(clientId, year, rfq, "media");
-  const revenue = ensureRevenueShape(
-    await fetchAxisData(clientId, year, rfq, "revenue")
+  const entry = await fetchDataEntry(clientId, year, rfq);
+  await syncRevenueCommissionFromEntry(entry, clientId, year, rfq, yearRates, userUid);
+}
+
+/**
+ * Same as syncRevenueCommission, but reuses an already-fetched entry: the
+ * Media and Revenue axes live in the same doc, so no extra read is needed.
+ */
+async function syncRevenueCommissionFromEntry(
+  entry: DataEntry | null,
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  yearRates: Partial<Record<MediaType, MonthlyMap>> | undefined,
+  userUid?: string
+): Promise<void> {
+  const media = normalizeAxisData(entry?.axes?.media);
+  const revenue = ensureRevenueShape(normalizeAxisData(entry?.axes?.revenue));
+  // A month carrying a Commission Overwrite value keeps its commission at 0 —
+  // the overwrite replaces the calculation for that month.
+  const { months } = applyCommissionOverwrite(
+    computeCommission(media, yearRates),
+    commissionOverwriteMonths(revenue)
   );
-  const { months } = computeCommission(media, yearRates);
-  const row = revenue.buckets[0]?.rows.find(
-    (r) => r.rowType === REVENUE_COMMISSION_TYPE
-  );
+  // ensureRevenueShape pins the Commission row in the "General" project (the
+  // first bucket) — scan all rows anyway so a stray can never be missed.
+  const row = revenue.buckets
+    .flatMap((b) => b.rows)
+    .find((r) => r.rowType === REVENUE_COMMISSION_TYPE);
   if (row) row.months = months;
-  await saveAxisData(clientId, year, rfq, "revenue", revenue, userUid);
+  await saveAxisData(clientId, year, rfq, "revenue", revenue, userUid, {
+    hasCreatedAt: !!entry?.createdAt,
+  });
 }
 
 /**
@@ -201,6 +235,11 @@ export async function syncRevenueCommission(
  * recomputes and writes the Revenue Commission for each existing submission.
  * RFQs with no submission are skipped (nothing to sync), and LOCKED RFQs are
  * skipped — a locked submission is a frozen snapshot and must not be rewritten.
+ *
+ * All RFQs run in parallel and independently: one failure doesn't prevent the
+ * others from completing. If any RFQ fails, an error is thrown afterwards so
+ * the caller can retry — the sync is a recompute-from-source, so re-running
+ * the whole year is idempotent and safe.
  */
 export async function propagateCommissionForYear(
   clientId: string,
@@ -208,15 +247,27 @@ export async function propagateCommissionForYear(
   yearRates: Partial<Record<MediaType, MonthlyMap>> | undefined,
   userUid?: string
 ): Promise<void> {
-  const types = (Object.keys(RFQ_TYPE_ORDER) as RFQType[]).sort(
-    (a, b) => RFQ_TYPE_ORDER[a] - RFQ_TYPE_ORDER[b]
+  const types = Object.keys(RFQ_TYPE_ORDER) as RFQType[];
+  const results = await Promise.allSettled(
+    types.map(async (type) => {
+      // The entry and the RFQ lock status are independent — fetch both at once.
+      const [entry, rfqSnap] = await Promise.all([
+        fetchDataEntry(clientId, year, type),
+        getDoc(doc(db, "rfqs", buildRFQId(year, type))),
+      ]);
+      if (!entry) return; // no submission for this RFQ — nothing to sync
+      if (rfqSnap.exists() && rfqSnap.data().status === "LOCKED") return;
+      await syncRevenueCommissionFromEntry(entry, clientId, year, type, yearRates, userUid);
+    })
   );
-  for (const type of types) {
-    const entry = await fetchDataEntry(clientId, year, type);
-    if (!entry) continue; // no submission for this RFQ — nothing to sync
-    const rfqSnap = await getDoc(doc(db, "rfqs", buildRFQId(year, type)));
-    if (rfqSnap.exists() && rfqSnap.data().status === "LOCKED") continue;
-    await syncRevenueCommission(clientId, year, type, yearRates, userUid);
+  const failures = results.filter(
+    (r): r is PromiseRejectedResult => r.status === "rejected"
+  );
+  if (failures.length > 0) {
+    throw new Error(
+      `Commission propagation failed for ${failures.length} RFQ(s): ` +
+        failures.map((f) => String(f.reason)).join("; ")
+    );
   }
 }
 
@@ -355,9 +406,9 @@ export async function saveReadyMonths(
 }
 
 /**
- * Met à jour SEULEMENT les actuals d'un axe (ADMIN_INPUT).
- * Compatible avec une future security rule qui n'autoriserait que les
- * admins à toucher "axes.{axisId}.actuals".
+ * Updates ONLY an axis' actuals (ADMIN_INPUT).
+ * Compatible with a future security rule that would let only admins
+ * touch "axes.{axisId}.actuals".
  */
 export async function saveAxisActuals(
   clientId: string,

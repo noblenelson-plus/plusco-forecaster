@@ -3,8 +3,9 @@
 
 /**
  * Revenue tab — KPIs (total revenue, total media, revenue/media ratio), a
- * stream mix (donut), per-stream comparison (bars), a monthly stacked bar by
- * stream, the best/worst clients by revenue-to-media ratio, and a downloadable
+ * stream mix (donut), the top clients by revenue split by stream (stacked
+ * bars, mirroring the Media Spend tab), a monthly stacked bar by stream, the
+ * best/worst clients by revenue-to-media ratio, and a downloadable
  * per-client × stream detail table.
  * * Updated to accept `comparisonData` and calculate variance for the StatCards.
  */
@@ -16,6 +17,7 @@ import {
   BarChart3,
   TrendingUp,
   TrendingDown,
+  Users,
 } from "lucide-react";
 import { MONTHS, sumMonthlyMap } from "../../../lib/types/common.types";
 import { computeVariance } from "../../../lib/types/forecaster.types";
@@ -24,7 +26,11 @@ import ChartCard from "../charts/chart-card";
 import DonutChart from "../charts/donut-chart";
 import BarList from "../charts/bar-list";
 import StackedBarChart from "../charts/stacked-bar-chart";
+import HorizontalStackedBar from "../charts/horizontal-stacked-bar";
 import RevenueDataTable from "../revenue-data-table";
+import DimensionBreakdown, {
+  type ClientDimensions,
+} from "../dimension-breakdown";
 import { POSITIVE_COLOR, NEGATIVE_COLOR } from "../charts/colors";
 import { formatCompactMoney, formatPct } from "../charts/format";
 import { LoadingTab, NoContextNotice, EmptyDataNotice } from "./tab-states";
@@ -70,11 +76,13 @@ export default function RevenueTab({
   data,
   comparisonData,
   clientNameById,
+  clientDimensions,
   fileLabel,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
   clientNameById: Record<string, string>;
+  clientDimensions: ClientDimensions;
   fileLabel?: string;
 }) {
   if (!data.hasContext) return <NoContextNotice />;
@@ -127,6 +135,34 @@ export default function RevenueTab({
   const best = toItems(ratios.slice(0, 5), POSITIVE_COLOR);
   const worst = toItems(ratios.slice(-5).reverse(), NEGATIVE_COLOR);
 
+  // Top 10 clients by revenue, each broken down by stream for the stacked bar
+  // (mirrors the Media Spend tab's top-clients chart).
+  const clientRevenueSeries = revenue.byStream.map((s) => ({
+    key: s.key,
+    label: s.label,
+    color: s.color,
+  }));
+  const topClients = data.revenueByClient
+    .map((cb) => {
+      const values: Record<string, number> = {};
+      let total = 0;
+      for (const s of revenue.byStream) {
+        const v = cb.byStream[s.key] ? sumMonthlyMap(cb.byStream[s.key]) : 0;
+        values[s.key] = v;
+        total += v;
+      }
+      return { label: clientNameById[cb.clientId] ?? cb.clientId, total, values };
+    })
+    .filter((r) => r.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
+
+  // Annual BL revenue per client, for the Region / Business Lead breakdowns.
+  const clientTotals = data.revenueByClient.map((cb) => ({
+    clientId: cb.clientId,
+    total: sumAll(cb.byStream),
+  }));
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -154,11 +190,13 @@ export default function RevenueTab({
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* Asymmetric 5-col grid, like Media Spend: donut 40% / top clients 60%. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <ChartCard
           title="Revenue mix"
           subtitle="Annual revenue by stream"
           icon={Layers}
+          className="lg:col-span-2"
         >
           <DonutChart
             segments={streams.map((s) => ({
@@ -173,24 +211,30 @@ export default function RevenueTab({
         </ChartCard>
 
         <ChartCard
-          title="Revenue by stream"
-          subtitle="Annual total per stream"
-          icon={DollarSign}
+          title="Top 10 clients by revenue"
+          subtitle="Largest BL revenue, split by stream"
+          icon={Users}
+          className="lg:col-span-3"
         >
-          <BarList
-            items={streams.map((s) => ({
-              label: s.label,
-              value: s.annual,
-              color: s.color,
-              hint:
-                revenue.totalAnnual > 0
-                  ? `${Math.round((s.annual / revenue.totalAnnual) * 100)}%`
-                  : undefined,
-            }))}
-            valueFormat={formatCompactMoney}
-          />
+          {topClients.length > 0 ? (
+            <HorizontalStackedBar
+              series={clientRevenueSeries}
+              rows={topClients}
+              valueFormat={formatCompactMoney}
+            />
+          ) : (
+            <p className="py-8 text-center text-xs text-muted-foreground">
+              No client revenue in scope.
+            </p>
+          )}
         </ChartCard>
       </div>
+
+      <DimensionBreakdown
+        totalsByClient={clientTotals}
+        dimensions={clientDimensions}
+        metricLabel="BL revenue"
+      />
 
       <ChartCard
         title="Monthly revenue by stream"

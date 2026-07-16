@@ -1,22 +1,21 @@
 // lib/hooks/use-forecaster-grid.ts
 
 /**
- * Hook générique du grid de prévision — partagé par Media, Revenue et Labs.
+ * Generic forecast-grid hook — shared by Media, Revenue and Labs.
  *
- * Responsabilités :
- *   — Charger l'AxisData du triplet sélectionné (store Zustand global)
- *   — Maintenir une copie de travail locale + dirty map (Save explicite)
- *   — Mutations de structure : buckets et rows (selon l'AxisConfig)
- *   — Totaux : ligne, bucket/mois, grand total/mois, actuals
- *   — Comparaison : charger un RFQ de référence, retrouver les lignes
- *     correspondantes (par nom de bucket + rowType, puisque les IDs
- *     diffèrent d'un document à l'autre)
- *   — Save : un seul write Firestore de l'axe complet
+ * Responsibilities:
+ *   — Load the AxisData for the selected triplet (global Zustand store)
+ *   — Maintain a local working copy + dirty map (explicit Save)
+ *   — Structure mutations: buckets and rows (per the AxisConfig)
+ *   — Totals: row, bucket/month, grand total/month, actuals
+ *   — Comparison: load a reference RFQ and match its rows (by bucket name +
+ *     rowType, since IDs differ from one document to the next)
+ *   — Save: a single Firestore write of the whole axis
  *
- * Droits :
- *   — RFQ LOCKED → tout est read-only (BL et admin)
- *   — BL_INPUT éditable par tous si unlocked
- *   — ADMIN_INPUT (actuals) éditable seulement par les admins
+ * Permissions:
+ *   — RFQ LOCKED → everything is read-only (BL and admin)
+ *   — BL_INPUT editable by everyone while unlocked
+ *   — ADMIN_INPUT (actuals) editable by admins only
  */
 
 "use client";
@@ -47,23 +46,25 @@ import {
   type ForecastRow,
   type InputCategory,
   buildCellKey,
+  detailExplicitZeros,
   detailMonthTotals,
   emptyAxisData,
+  hasExplicitZero,
   newBucket,
   newDetail,
   newRow,
   rollUpActuals,
 } from "../types/forecaster.types";
 
-// ─── Helpers de calcul purs (exportés — le grid les applique aussi
-//     aux données de référence pour les variances de totaux) ─────────────────
+// ─── Pure computation helpers (exported — the grid also applies them to the
+//     reference data for the totals variances) ───────────────────────────────
 
-/** Total annuel d'une MonthlyMap. */
+/** Annual total of a MonthlyMap. */
 export function sumMonths(map: MonthlyMap): number {
   return MONTHS.reduce((acc, m) => acc + (map[m] ?? 0), 0);
 }
 
-/** Totaux par mois d'un ensemble de lignes. */
+/** Per-month totals of a set of rows. */
 export function monthTotals(rows: ForecastRow[]): MonthlyMap {
   const totals: MonthlyMap = Object.fromEntries(MONTHS.map((m) => [m, 0]));
   rows.forEach((row) => {
@@ -74,12 +75,12 @@ export function monthTotals(rows: ForecastRow[]): MonthlyMap {
   return totals;
 }
 
-/** Totaux par mois de tout le BL_INPUT d'un axe (tous buckets confondus). */
+/** Per-month totals of an axis's whole BL_INPUT (all buckets together). */
 export function grandMonthTotals(data: AxisData): MonthlyMap {
   return monthTotals(data.buckets.flatMap((b) => b.rows));
 }
 
-/** Deep copy sans dépendance — les AxisData sont du JSON pur. */
+/** Dependency-free deep copy — AxisData is plain JSON. */
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -96,7 +97,7 @@ function diffSides(
   };
 }
 
-/** Lit la valeur d'une coordonnée dans un AxisData (0 si absente). */
+/** Reads the value at a coordinate in an AxisData (0 when absent). */
 function getValueIn(data: AxisData, coord: CellCoord): number {
   if (coord.category === "ADMIN_INPUT") {
     const row = data.actuals.find((r) => r.rowId === coord.rowId);
@@ -111,10 +112,83 @@ function getValueIn(data: AxisData, coord: CellCoord): number {
   return row?.months[coord.month] ?? 0;
 }
 
+/** Does the coordinate hold a deliberate 0? ADMIN_INPUT rows and their detail
+ *  lines track explicit zeros (the flag lets a GAIA 0 override the BL Input),
+ *  plus the BL row types listed in `blZeroTypes` (config.blExplicitZeroRowTypes,
+ *  e.g. Revenue's Commission Overwrite). */
+function isExplicitZeroIn(
+  data: AxisData,
+  coord: CellCoord,
+  blZeroTypes: Set<string>
+): boolean {
+  if (coord.category !== "ADMIN_INPUT") {
+    if (blZeroTypes.size === 0) return false;
+    const bucket = data.buckets.find((b) => b.bucketId === coord.bucketId);
+    const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
+    return (
+      !!row && blZeroTypes.has(row.rowType) && hasExplicitZero(row, coord.month)
+    );
+  }
+  const row = data.actuals.find((r) => r.rowId === coord.rowId);
+  if (!row) return false;
+  if (coord.detailId) {
+    const detail = row.details?.find((d) => d.detailId === coord.detailId);
+    return !!detail && hasExplicitZero(detail, coord.month);
+  }
+  return hasExplicitZero(row, coord.month);
+}
+
+/** Adds/removes a month in a row's (or detail's) explicitZeros set — the field
+ *  is dropped entirely when empty, mirroring how an empty note is removed. */
+function setRowExplicitZero(
+  row: { explicitZeros?: number[] },
+  month: number,
+  explicit: boolean
+) {
+  const set = new Set(row.explicitZeros ?? []);
+  if (explicit) set.add(month);
+  else set.delete(month);
+  if (set.size > 0) row.explicitZeros = [...set].sort((a, b) => a - b);
+  else delete row.explicitZeros;
+}
+
+/** Re-derives a parent's months and explicit zeros from its detail lines
+ *  (row = Σ details) after a detail edit. Mutates the working-copy row. */
+function syncParentFromDetails(row: ForecastRow) {
+  const details = row.details ?? [];
+  row.months = detailMonthTotals(details);
+  const zeros = detailExplicitZeros(details);
+  if (zeros.length > 0) row.explicitZeros = zeros;
+  else delete row.explicitZeros;
+}
+
+/** Has a committed cell write changed anything vs the clean snapshot — the
+ *  value itself, or (for rows tracking explicit zeros) whether its 0 is
+ *  deliberate? BL capability is resolved against the original snapshot; a row
+ *  added this session isn't there, but adding it set structureDirty anyway. */
+function cellDiffers(
+  original: AxisData,
+  coord: CellCoord,
+  value: number | null,
+  blZeroTypes: Set<string>
+): boolean {
+  let tracksZeros = coord.category === "ADMIN_INPUT";
+  if (!tracksZeros && blZeroTypes.size > 0) {
+    const bucket = original.buckets.find((b) => b.bucketId === coord.bucketId);
+    const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
+    tracksZeros = !!row && blZeroTypes.has(row.rowType);
+  }
+  const explicit = value === 0 && tracksZeros;
+  return (
+    getValueIn(original, coord) !== (value ?? 0) ||
+    isExplicitZeroIn(original, coord, blZeroTypes) !== explicit
+  );
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export interface UseForecasterGridResult {
-  /** Le triplet client/année/RFQ est-il complet ? Sinon le grid ne s'affiche pas. */
+  /** Is the client/year/RFQ triplet complete? The grid hides otherwise. */
   selectionReady: boolean;
 
   loading: boolean;
@@ -125,26 +199,28 @@ export interface UseForecasterGridResult {
   /** Per-side last-save timestamps (ISO): BL_INPUT and ADMIN_INPUT (actuals). */
   lastUpdated: { bl?: string; actuals?: string };
 
-  /** RFQ verrouillé → aucune édition, pour personne. */
+  /** Locked RFQ → no editing, for anyone. */
   locked: boolean;
-  /** L'utilisateur peut-il éditer les actuals (ADMIN_INPUT) ? */
+  /** Can the current user edit the actuals (ADMIN_INPUT)? */
   canEditActuals: boolean;
-  /** Mois (1–12) en période fermée pour le RFQ sélectionné — verrou visuel. */
+  /** Months (1–12) in a closed period for the selected RFQ — visual lock. */
   closedMonths: Set<number>;
-  /** L'utilisateur peut-il éditer les cellules en période fermée ? (admins oui) */
+  /** Can the current user edit cells in a closed period? (admins can) */
   canEditClosed: boolean;
 
-  /** Copie de travail courante. */
+  /** Current working copy. */
   data: AxisData;
   dirtyMap: DirtyMap;
   dirtyCount: number;
   hasChanges: boolean;
 
-  // Édition de cellules
+  // Cell editing. A null value clears the cell (0, not deliberate) while a
+  // literal 0 on an ADMIN_INPUT row is recorded as an explicit zero — real
+  // data that the Revenue BL-Submission priority honours over the BL Input.
   getCellValue: (coord: CellCoord) => number;
-  setCellValue: (coord: CellCoord, value: number) => void;
+  setCellValue: (coord: CellCoord, value: number | null) => void;
   /** Batch write — one state + dirty-map update for many cells (paste, fill, spread). */
-  setCells: (updates: { coord: CellCoord; value: number }[]) => void;
+  setCells: (updates: { coord: CellCoord; value: number | null }[]) => void;
   /**
    * Add deltas onto BL_INPUT cells, targeting a row by (bucket, rowType) and
    * creating it if the project lacks that type. Used by the comparison panel
@@ -176,7 +252,7 @@ export interface UseForecasterGridResult {
     rowId: string,
     note: string
   ) => void;
-  /** Actuals (ADMIN_INPUT) — lignes typées, sans bucket. */
+  /** Actuals (ADMIN_INPUT) — typed rows, no bucket. */
   addActualsRow: (rowType: string) => void;
   removeActualsRow: (rowId: string) => void;
   /** Detail lines (breakdown) on an actuals row — admin-only, like the row. */
@@ -189,18 +265,18 @@ export interface UseForecasterGridResult {
     value: string
   ) => void;
 
-  // Comparaison — base fixe = BL du RFQ courant
+  // Comparison — fixed base = the current RFQ's BL
   compareRef: ComparisonRef | null;
   setCompareRef: (ref: ComparisonRef | null) => void;
   /**
-   * AxisData de référence (live `data` si auto-référence sur le RFQ courant,
-   * sinon le doc chargé). La vue de comparaison l'agrège via aggregateByType
-   * selon `compareRef.side`. null tant qu'aucune comparaison n'est active.
+   * Reference AxisData (the live `data` when self-referencing the current RFQ,
+   * the fetched doc otherwise). The comparison view aggregates it through
+   * aggregateByType per `compareRef.side`. null while no comparison is active.
    */
   referenceData: AxisData | null;
   referenceLoading: boolean;
 
-  // Persistance
+  // Persistence
   save: () => Promise<void>;
   discard: () => void;
 }
@@ -213,10 +289,15 @@ export interface UseForecasterGridResult {
  *   — computedRows    : derived, read-only BL rows whose months are overlaid by
  *     rowType (e.g. the computed Commission row). They display, total, compare
  *     and save with the computed value, but are never editable nor dirty.
+ *     Either a static array or a function of the live working copy — Revenue
+ *     uses the function form so the Commission overlay can react to the axis's
+ *     own Commission Overwrite lines. Must be a stable/memoized reference.
  */
 export interface UseForecasterGridOptions {
   normalizeLoaded?: (data: AxisData) => AxisData;
-  computedRows?: { rowType: string; months: MonthlyMap }[];
+  computedRows?:
+    | { rowType: string; months: MonthlyMap }[]
+    | ((data: AxisData) => { rowType: string; months: MonthlyMap }[]);
   /**
    * Called after a successful Save with the just-persisted data. Used by Media
    * to trigger the derived Revenue commission sync. Fire-and-forget — its work
@@ -241,6 +322,14 @@ export function useForecasterGrid(
   const selectionReady = !!selectedClient && !!selectedYear && !!selectedRFQ;
   const locked = selectedRFQ?.status === "LOCKED";
 
+  // BL row types tracking explicit zeros (config-driven — Revenue's Commission
+  // Overwrite). ADMIN_INPUT rows always track them.
+  const blZeroRowTypes = config.blExplicitZeroRowTypes;
+  const blZeroTypes = useMemo(
+    () => new Set(blZeroRowTypes ?? []),
+    [blZeroRowTypes]
+  );
+
   // Closed periods for the current RFQ + axis: per-month lock for BLs (admins
   // are never restricted). Independent of the RFQ's global lock. Resolved from
   // the admin-set per-axis override, falling back to the static default.
@@ -256,7 +345,7 @@ export function useForecasterGrid(
   );
   const canEditClosed = isAdmin;
 
-  // Snapshot Firestore (état "propre") + copie de travail
+  // Firestore snapshot (the "clean" state) + working copy
   const [original, setOriginal] = useState<AxisData>(emptyAxisData());
   const [data, setData] = useState<AxisData>(emptyAxisData());
   const [dirtyMap, setDirtyMap] = useState<DirtyMap>(new Map());
@@ -281,12 +370,12 @@ export function useForecasterGrid(
     actuals?: string;
   }>({});
 
-  // Comparaison — base fixe (BL du RFQ courant) vs référence (rfq, side)
+  // Comparison — fixed base (the current RFQ's BL) vs reference (rfq, side)
   const [compareRef, setCompareRef] = useState<ComparisonRef | null>(null);
   const [fetchedReference, setFetchedReference] = useState<AxisData | null>(null);
   const [referenceLoading, setReferenceLoading] = useState(false);
 
-  // ─── Chargement du triplet sélectionné ──────────────────────────────────
+  // ─── Loading the selected triplet ─────────────────────────────────────────
 
   useEffect(() => {
     if (!selectionReady) {
@@ -372,7 +461,7 @@ export function useForecasterGrid(
       // copy. Fire-and-forget — no state updates, since this view is moving on.
       flushOnSwitchRef.current();
     };
-    // selectedRFQ.rfq_id suffit — le statut (lock) est géré à part
+    // selectedRFQ.rfq_id is enough — the (lock) status is handled separately
   }, [
     selectionReady,
     selectedClient?.cl_id,
@@ -467,14 +556,23 @@ export function useForecasterGrid(
   // computed values so cells, totals, comparison base and Save all see them,
   // while the underlying `data` stays the user-editable working copy.
 
+  // Resolve the function form against the live working copy (e.g. Revenue's
+  // Commission overlay reacting to the Commission Overwrite lines).
+  const resolvedComputedRows = useMemo(
+    () =>
+      (typeof computedRows === "function" ? computedRows(data) : computedRows) ??
+      [],
+    [computedRows, data]
+  );
+
   const computedTypes = useMemo(
-    () => new Set((computedRows ?? []).map((c) => c.rowType)),
-    [computedRows]
+    () => new Set(resolvedComputedRows.map((c) => c.rowType)),
+    [resolvedComputedRows]
   );
 
   const effectiveData: AxisData = useMemo(() => {
-    if (!computedRows || computedRows.length === 0) return data;
-    const overlay = new Map(computedRows.map((c) => [c.rowType, c.months]));
+    if (resolvedComputedRows.length === 0) return data;
+    const overlay = new Map(resolvedComputedRows.map((c) => [c.rowType, c.months]));
     let changed = false;
     const buckets = data.buckets.map((b) => {
       let rowsChanged = false;
@@ -489,7 +587,7 @@ export function useForecasterGrid(
       return { ...b, rows };
     });
     return changed ? { ...data, buckets } : data;
-  }, [data, computedRows]);
+  }, [data, resolvedComputedRows]);
 
   // Is the coord a computed (read-only) BL row? Resolved by rowType.
   const isComputedCoord = useCallback(
@@ -511,17 +609,16 @@ export function useForecasterGrid(
     ? effectiveData
     : fetchedReference;
 
-  // ─── Édition de cellules ────────────────────────────────────────────────
+  // ─── Cell editing ─────────────────────────────────────────────────────────
 
   const getCellValue = useCallback(
     (coord: CellCoord) => getValueIn(effectiveData, coord),
     [effectiveData]
   );
 
-  // Une cellule est-elle modifiable par l'utilisateur courant ? Garde unique
-  // appliquée à tous les chemins d'écriture (saisie, coller, remplir, spread,
-  // distribution) — empêche les BL d'écrire dans une période fermée ou dans une
-  // ligne calculée (commission).
+  // Can the current user edit this cell? Single guard applied to every write
+  // path (typing, paste, fill, spread, distribute) — keeps BLs from writing
+  // into a closed period or a computed row (commission).
   const isCoordEditable = useCallback(
     (coord: CellCoord) => {
       if (locked) return false;
@@ -543,7 +640,7 @@ export function useForecasterGrid(
   );
 
   const setCellValue = useCallback(
-    (coord: CellCoord, value: number) => {
+    (coord: CellCoord, value: number | null) => {
       if (!isCoordEditable(coord)) return;
       setData((prev) => {
         const next = clone(prev);
@@ -553,31 +650,41 @@ export function useForecasterGrid(
           if (coord.detailId) {
             const detail = row.details?.find((d) => d.detailId === coord.detailId);
             if (!detail) return prev;
-            detail.months[coord.month] = value;
+            detail.months[coord.month] = value ?? 0;
+            // A committed 0 is deliberate; a cleared cell (null) is no data.
+            setRowExplicitZero(detail, coord.month, value === 0);
             // Keep the derived parent in sync (row = Σ details).
-            row.months = detailMonthTotals(row.details!);
+            syncParentFromDetails(row);
           } else {
-            row.months[coord.month] = value;
+            row.months[coord.month] = value ?? 0;
+            // A committed 0 is deliberate (it overrides the BL Input on
+            // Revenue); a cleared cell (null) is no data.
+            setRowExplicitZero(row, coord.month, value === 0);
           }
         } else {
           const bucket = next.buckets.find((b) => b.bucketId === coord.bucketId);
           const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
           if (!row) return prev;
-          row.months[coord.month] = value;
+          row.months[coord.month] = value ?? 0;
+          // BL rows tracking explicit zeros (Commission Overwrite): a committed
+          // 0 is deliberate; a cleared cell (null) is no data.
+          if (blZeroTypes.has(row.rowType))
+            setRowExplicitZero(row, coord.month, value === 0);
         }
         return next;
       });
 
-      // Dirty si différent du snapshot original ; sinon on nettoie la clé
+      // Dirty when the cell differs from the clean snapshot; else drop the key.
       setDirtyMap((prev) => {
         const next = new Map(prev);
         const key = buildCellKey(coord);
-        if (getValueIn(original, coord) !== value) next.set(key, value);
+        if (cellDiffers(original, coord, value, blZeroTypes))
+          next.set(key, value ?? 0);
         else next.delete(key);
         return next;
       });
     },
-    [original, isCoordEditable]
+    [original, isCoordEditable, blZeroTypes]
   );
 
   // Batch write — applies many cell updates in a single state + dirty-map pass.
@@ -585,7 +692,7 @@ export function useForecasterGrid(
   // otherwise clone the whole AxisData once per cell. Updates targeting a cell
   // the user can't edit (closed period for a BL) are dropped up front.
   const setCells = useCallback(
-    (rawUpdates: { coord: CellCoord; value: number }[]) => {
+    (rawUpdates: { coord: CellCoord; value: number | null }[]) => {
       const updates = rawUpdates.filter((u) => isCoordEditable(u.coord));
       if (updates.length === 0) return;
       setData((prev) => {
@@ -599,19 +706,29 @@ export function useForecasterGrid(
                 (d) => d.detailId === coord.detailId
               );
               if (detail) {
-                detail.months[coord.month] = value;
+                detail.months[coord.month] = value ?? 0;
+                // A committed 0 is deliberate; a cleared cell (null) is no data.
+                setRowExplicitZero(detail, coord.month, value === 0);
                 // Keep the derived parent in sync (row = Σ details).
-                row.months = detailMonthTotals(row.details!);
+                syncParentFromDetails(row);
               }
             } else {
-              row.months[coord.month] = value;
+              row.months[coord.month] = value ?? 0;
+              // A committed 0 is deliberate; a cleared cell (null) is no data.
+              setRowExplicitZero(row, coord.month, value === 0);
             }
           } else {
             const bucket = next.buckets.find(
               (b) => b.bucketId === coord.bucketId
             );
             const row = bucket?.rows.find((r) => r.rowId === coord.rowId);
-            if (row) row.months[coord.month] = value;
+            if (row) {
+              row.months[coord.month] = value ?? 0;
+              // BL rows tracking explicit zeros (Commission Overwrite): a
+              // committed 0 is deliberate; a cleared cell (null) is no data.
+              if (blZeroTypes.has(row.rowType))
+                setRowExplicitZero(row, coord.month, value === 0);
+            }
           }
         }
         return next;
@@ -621,13 +738,14 @@ export function useForecasterGrid(
         const next = new Map(prev);
         for (const { coord, value } of updates) {
           const key = buildCellKey(coord);
-          if (getValueIn(original, coord) !== value) next.set(key, value);
+          if (cellDiffers(original, coord, value, blZeroTypes))
+            next.set(key, value ?? 0);
           else next.delete(key);
         }
         return next;
       });
     },
-    [original, isCoordEditable]
+    [original, isCoordEditable, blZeroTypes]
   );
 
   // Add deltas onto BL_INPUT cells, targeting a row by (bucket, rowType) rather
@@ -722,7 +840,7 @@ export function useForecasterGrid(
       buckets: prev.buckets.filter((b) => b.bucketId !== bucketId),
     }));
     setStructureDirty(true);
-    // Purge des dirty keys orphelines de ce bucket
+    // Purge the dirty keys orphaned by this bucket
     setDirtyMap((prev) => {
       const next = new Map(prev);
       [...next.keys()].forEach((k) => {
@@ -744,7 +862,7 @@ export function useForecasterGrid(
             !config.allowDuplicateRowTypes &&
             b.rows.some((r) => r.rowType === rowType)
           ) {
-            return b; // doublon interdit — no-op
+            return b; // duplicates forbidden — no-op
           }
           return { ...b, rows: [...b.rows, newRow(rowType, label)] };
         }),
@@ -773,9 +891,9 @@ export function useForecasterGrid(
     });
   }, []);
 
-  // Note d'une ligne — stockée sur la row, persistée au Save comme une
-  // modification de structure. Une note vide retire le champ (le bouton se
-  // décolore et rien d'inutile n'est écrit dans Firestore).
+  // Row note — stored on the row, persisted at Save like a structure change.
+  // An empty note removes the field (the button loses its tint and nothing
+  // useless is written to Firestore).
   const setRowNote = useCallback(
     (
       category: InputCategory,
@@ -801,7 +919,7 @@ export function useForecasterGrid(
     []
   );
 
-  // ─── Actuals (ADMIN_INPUT) — lignes typées, sans bucket ─────────────────
+  // ─── Actuals (ADMIN_INPUT) — typed rows, no bucket ────────────────────────
 
   const addActualsRow = useCallback(
     (rowType: string) => {
@@ -812,7 +930,7 @@ export function useForecasterGrid(
           !config.allowDuplicateRowTypes &&
           prev.actuals.some((r) => r.rowType === rowType)
         ) {
-          return prev; // doublon interdit — no-op
+          return prev; // duplicates forbidden — no-op
         }
         return { ...prev, actuals: [...prev.actuals, newRow(rowType, label)] };
       });
@@ -847,11 +965,18 @@ export function useForecasterGrid(
       actuals: prev.actuals.map((r) => {
         if (r.rowId !== rowId) return r;
         const details = r.details ?? [];
-        // The first detail seeds with the row's current months, so the roll-up
-        // taking over leaves the displayed total unchanged.
+        // The first detail seeds with the row's current months (explicit zeros
+        // included), so the roll-up taking over leaves the displayed total —
+        // and the BL-Submission priority — unchanged.
         const detail =
           details.length === 0
-            ? { ...newDetail(), months: { ...r.months } }
+            ? {
+                ...newDetail(),
+                months: { ...r.months },
+                ...(r.explicitZeros?.length
+                  ? { explicitZeros: [...r.explicitZeros] }
+                  : {}),
+              }
             : newDetail();
         return { ...r, details: [...details, detail] };
       }),
@@ -876,7 +1001,7 @@ export function useForecasterGrid(
           else {
             next.details = details;
             // Re-derive the parent from the remaining details.
-            next.months = detailMonthTotals(details);
+            syncParentFromDetails(next);
           }
           return next;
         }),
@@ -910,7 +1035,7 @@ export function useForecasterGrid(
     []
   );
 
-  // ─── Persistance ────────────────────────────────────────────────────────
+  // ─── Persistence ──────────────────────────────────────────────────────────
 
   const hasChanges = dirtyMap.size > 0 || structureDirty;
 

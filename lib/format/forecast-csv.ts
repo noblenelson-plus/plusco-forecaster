@@ -4,9 +4,10 @@
  * CSV export for a forecast axis (Media Spend, Revenue, Labs).
  *
  * Flattens the axis data — the BL_INPUT buckets/rows first, then the
- * ADMIN_INPUT actuals — into one line per forecast row, with the 12 months and
- * a row total. The file is built and downloaded entirely client-side via a
- * Blob; nothing is sent to the server.
+ * ADMIN_INPUT actuals (MediaOcean), then the optional MediaBox rows — into one
+ * line per forecast row, with the 12 months and a row total. The file is built
+ * and downloaded entirely client-side via a Blob; nothing is sent to the
+ * server.
  */
 
 import { MONTHS, type MonthlyMap } from "../types/common.types";
@@ -40,8 +41,25 @@ export interface ForecastCSVContext {
   rfqType?: string;
 }
 
+/**
+ * MediaBox rows for the export, already converted to CAD — structurally
+ * compatible with `MediaboxCadType` (declared locally so lib/format stays
+ * Firebase-free). One CSV line is emitted per type × campaign.
+ */
+export interface MediaboxCSVTypeRow {
+  /** Media type on the Media axis, LABS partner on the Labs axis. */
+  label: string;
+  byMonth: MonthlyMap;
+  total: number;
+  campaigns: { name: string; byMonth: MonthlyMap; total: number }[];
+}
+
 /** Builds the CSV text for one axis (header + one row per forecast line). */
-export function buildAxisCSV(data: AxisData, config: AxisConfig): string {
+export function buildAxisCSV(
+  data: AxisData,
+  config: AxisConfig,
+  mediabox?: MediaboxCSVTypeRow[]
+): string {
   const header = [
     "Section",
     config.bucketLabel,
@@ -79,6 +97,33 @@ export function buildAxisCSV(data: AxisData, config: AxisConfig): string {
     ]);
   }
 
+  // MediaBox — one line per type × campaign, in CAD. The campaign takes the
+  // bucket column and the type/partner takes the row-type column, so the file
+  // pivots the same way as the BL rows.
+  for (const type of mediabox ?? []) {
+    if (type.campaigns.length === 0) {
+      rows.push([
+        "MediaBox",
+        "",
+        type.label,
+        "",
+        ...monthValues(type.byMonth),
+        String(type.total),
+      ]);
+      continue;
+    }
+    for (const campaign of type.campaigns) {
+      rows.push([
+        "MediaBox",
+        campaign.name,
+        type.label,
+        "",
+        ...monthValues(campaign.byMonth),
+        String(campaign.total),
+      ]);
+    }
+  }
+
   return [header, ...rows]
     .map((cells) => cells.map(escapeCSV).join(","))
     .join("\n");
@@ -101,9 +146,10 @@ function buildFileName(config: AxisConfig, ctx: ForecastCSVContext): string {
 export function downloadAxisCSV(
   data: AxisData,
   config: AxisConfig,
-  context: ForecastCSVContext = {}
+  context: ForecastCSVContext = {},
+  mediabox?: MediaboxCSVTypeRow[]
 ): void {
-  const csv = buildAxisCSV(data, config);
+  const csv = buildAxisCSV(data, config, mediabox);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

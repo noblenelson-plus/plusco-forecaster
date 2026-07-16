@@ -27,4 +27,9 @@ console.log("Firebase auth initialized");
 
 // Storage
 export const storage = getStorage(app);
+// Fail fast: the SDK default retries a broken upload for 10 minutes before
+// rejecting, which reads as an infinite spinner in the UI. 30s is plenty for
+// transient network hiccups on logo-sized files.
+storage.maxUploadRetryTime = 30_000;
+storage.maxOperationRetryTime = 30_000;
 console.log("Firebase storage initialized");

@@ -51,7 +51,9 @@ const monthOf = (col: number) => MONTHS[col]; // col 0 → month 1
 interface UseGridSelectionArgs {
   rows: GridRowDescriptor[];
   getValue: (coord: CellCoord) => number;
-  setCells: (updates: { coord: CellCoord; value: number }[]) => void;
+  /** value null = clear the cell (empty edit, blank paste, Delete) — distinct
+   *  from an explicit 0, which ADMIN_INPUT rows record as real data. */
+  setCells: (updates: { coord: CellCoord; value: number | null }[]) => void;
   /** Whole grid read-only (RFQ locked) — disables every mutation. */
   locked: boolean;
 }
@@ -74,7 +76,8 @@ export interface GridSelection {
   clear: () => void;
 
   beginEdit: (r: number, c: number, seed?: string) => void;
-  commitEdit: (value: number, move?: EditMove) => void;
+  /** value null = the edit field was left blank (clear the cell). */
+  commitEdit: (value: number | null, move?: EditMove) => void;
   cancelEdit: () => void;
 
   /** Container-level handlers. */
@@ -202,7 +205,7 @@ export function useGridSelection({
   );
 
   const commitEdit = useCallback(
-    (value: number, mv: EditMove = "down") => {
+    (value: number | null, mv: EditMove = "down") => {
       setEditing(false);
       if (focus && !locked && !rows[focus.r]?.cellReadOnly(focus.c)) {
         setCells([{ coord: rows[focus.r].coordFor(monthOf(focus.c)), value }]);
@@ -249,12 +252,15 @@ export function useGridSelection({
       if (matrix.length > 1 && matrix[matrix.length - 1] === "") matrix.pop();
       const grid = matrix.map((line) => line.split("\t"));
 
-      const updates: { coord: CellCoord; value: number }[] = [];
+      const updates: { coord: CellCoord; value: number | null }[] = [];
       const single = grid.length === 1 && grid[0].length === 1;
+      // A blank clipboard cell clears the target; "0" is a deliberate zero.
+      const parseCell = (raw: string): number | null =>
+        raw.trim() === "" ? null : parseMoney(raw);
 
       if (single && (rect.minR !== rect.maxR || rect.minC !== rect.maxC)) {
         // One source value → fill the whole current selection (Excel behaviour).
-        const v = parseMoney(grid[0][0]);
+        const v = parseCell(grid[0][0]);
         for (let r = rect.minR; r <= rect.maxR; r++) {
           for (let c = rect.minC; c <= rect.maxC; c++) {
             if (rows[r].cellReadOnly(c)) continue;
@@ -271,7 +277,7 @@ export function useGridSelection({
             if (c > COLS - 1 || rows[r].cellReadOnly(c)) continue;
             updates.push({
               coord: rows[r].coordFor(monthOf(c)),
-              value: parseMoney(grid[i][j]),
+              value: parseCell(grid[i][j]),
             });
           }
         }
@@ -285,9 +291,11 @@ export function useGridSelection({
 
   const fillDown = useCallback(() => {
     if (!rect || locked || rect.minR === rect.maxR) return;
-    const updates: { coord: CellCoord; value: number }[] = [];
+    const updates: { coord: CellCoord; value: number | null }[] = [];
     for (let c = rect.minC; c <= rect.maxC; c++) {
-      const src = getValue(rows[rect.minR].coordFor(monthOf(c)));
+      // getValue can't tell an untouched 0 from a deliberate one, so filling
+      // from a 0 clears the targets rather than stamping explicit zeros.
+      const src = getValue(rows[rect.minR].coordFor(monthOf(c))) || null;
       for (let r = rect.minR + 1; r <= rect.maxR; r++) {
         if (rows[r].cellReadOnly(c)) continue;
         updates.push({ coord: rows[r].coordFor(monthOf(c)), value: src });
@@ -298,9 +306,9 @@ export function useGridSelection({
 
   const fillRight = useCallback(() => {
     if (!rect || locked || rect.minC === rect.maxC) return;
-    const updates: { coord: CellCoord; value: number }[] = [];
+    const updates: { coord: CellCoord; value: number | null }[] = [];
     for (let r = rect.minR; r <= rect.maxR; r++) {
-      const src = getValue(rows[r].coordFor(monthOf(rect.minC)));
+      const src = getValue(rows[r].coordFor(monthOf(rect.minC))) || null;
       for (let c = rect.minC + 1; c <= rect.maxC; c++) {
         if (rows[r].cellReadOnly(c)) continue;
         updates.push({ coord: rows[r].coordFor(monthOf(c)), value: src });
@@ -311,11 +319,11 @@ export function useGridSelection({
 
   const clearSelection = useCallback(() => {
     if (!rect || locked) return;
-    const updates: { coord: CellCoord; value: number }[] = [];
+    const updates: { coord: CellCoord; value: number | null }[] = [];
     for (let r = rect.minR; r <= rect.maxR; r++) {
       for (let c = rect.minC; c <= rect.maxC; c++) {
         if (rows[r].cellReadOnly(c)) continue;
-        updates.push({ coord: rows[r].coordFor(monthOf(c)), value: 0 });
+        updates.push({ coord: rows[r].coordFor(monthOf(c)), value: null });
       }
     }
     setCells(updates);

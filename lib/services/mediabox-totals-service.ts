@@ -13,7 +13,7 @@
  * stale-while-revalidate loop with no polling.
  */
 
-import { doc, onSnapshot, Unsubscribe } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, Unsubscribe } from "firebase/firestore";
 import { db } from "../firebase";
 import type { MediaboxTotals, MediaboxTypeRow } from "../types/mediabox.types";
 import type { MonthlyMap } from "../types/common.types";
@@ -45,6 +45,38 @@ export function subscribeToMediaboxTotals(
   );
 }
 
+/**
+ * One-shot read of a client/year's MediaBox totals (dashboard aggregations —
+ * the grid uses the live subscription above). Null when never synced.
+ */
+export async function fetchMediaboxTotals(
+  clientId: string,
+  year: number
+): Promise<MediaboxTotals | null> {
+  const snap = await getDoc(doc(db, COLLECTION, buildMediaboxTotalsId(clientId, year)));
+  return snap.exists() ? (snap.data() as MediaboxTotals) : null;
+}
+
+/**
+ * CAD total of a per-currency monthly split, restricted to `months` (null =
+ * all 12). USD converts with the year's rate; with no rate USD is dropped —
+ * same policy as `splitToCad`.
+ */
+export function mediaboxCadTotalForMonths(
+  byMonth: Record<number, { CAD: number; USD: number }> | undefined,
+  usdToCad: number | undefined,
+  months: Set<number> | null
+): number {
+  let total = 0;
+  for (let m = 1; m <= 12; m++) {
+    if (months && !months.has(m)) continue;
+    const cell = byMonth?.[m];
+    if (!cell) continue;
+    total += (cell.CAD ?? 0) + (usdToCad ? (cell.USD ?? 0) * usdToCad : 0);
+  }
+  return total;
+}
+
 /** True when totals are missing or older than the staleness window. */
 export function isMediaboxTotalsStale(totals: MediaboxTotals | null): boolean {
   if (!totals?.syncedAt) return true;
@@ -54,24 +86,70 @@ export function isMediaboxTotalsStale(totals: MediaboxTotals | null): boolean {
 }
 
 /**
+ * An in-flight server refresh older than this is a crashed MediaBox function
+ * that never cleared the doc's `refreshing` flag (a real aggregation takes a
+ * minute or two). Past this point the flag must be ignored, otherwise the
+ * refresh button and the auto-refresh stay blocked forever.
+ */
+export const MEDIABOX_REFRESH_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * Epoch-ms deadline past which the doc's in-flight refresh must be treated as
+ * stuck. NaN when the start stamp is missing or unparseable, which makes every
+ * `now < deadline` check false — i.e. stuck right away, since with no start
+ * time the UI could stay blocked forever. Only meaningful when
+ * `totals.refreshing` is true.
+ */
+export function mediaboxRefreshDeadlineMs(totals: MediaboxTotals): number {
+  return Date.parse(totals.refreshStartedAt ?? "") + MEDIABOX_REFRESH_TIMEOUT_MS;
+}
+
+/** Transient upstream failures worth retrying (OOM/timeout/cold start). */
+const RETRYABLE_STATUSES = new Set([500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [2_000, 5_000];
+
+/**
  * Ask MediaBox to recompute this client/year. Fire-and-forget from the UI's
  * perspective — the fresh doc arrives via the `onSnapshot` subscription. Set
  * `force` to bypass the 24h freshness check (the manual "Refresh" button).
+ *
+ * Transient 5xx / network failures are retried a couple of times before
+ * surfacing — the MediaBox side has a concurrency guard, so a retry can never
+ * start a duplicate aggregation.
  */
 export async function triggerMediaboxRefresh(
   clientId: string,
   year: number,
   force = false
 ): Promise<void> {
-  const res = await fetch("/api/mediabox-refresh", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ forecasterClientId: clientId, year, force }),
-  });
-  if (!res.ok) {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
+    }
+
+    let res: Response;
+    try {
+      res = await fetch("/api/mediabox-refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ forecasterClientId: clientId, year, force }),
+      });
+    } catch (err) {
+      lastError =
+        err instanceof Error ? err : new Error("Network error reaching MediaBox.");
+      continue;
+    }
+
+    if (res.ok) return;
+
     const detail = await res.text().catch(() => "");
-    throw new Error(`MediaBox refresh failed (${res.status}): ${detail}`);
+    lastError = new Error(`MediaBox refresh failed (${res.status}): ${detail}`);
+    if (!RETRYABLE_STATUSES.has(res.status)) throw lastError;
   }
+
+  throw lastError ?? new Error("MediaBox refresh failed.");
 }
 
 // ─── Conversion (USD → CAD, at read time) ─────────────────────────────────────

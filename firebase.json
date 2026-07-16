@@ -2,6 +2,9 @@
   "firestore": {
     "rules": "firestoreRules.txt"
   },
+  "storage": {
+    "rules": "storage.rules"
+  },
   "hosting": {
     "source": ".",
     "site": "pluscoops",

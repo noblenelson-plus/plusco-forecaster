@@ -15,6 +15,7 @@ import {
   subscribeToMediaboxTotals,
   triggerMediaboxRefresh,
   isMediaboxTotalsStale,
+  mediaboxRefreshDeadlineMs,
   mediaboxTotalsToCad,
   type MediaboxTotalsCad,
 } from "../services/mediabox-totals-service";
@@ -28,7 +29,11 @@ import type { MediaboxTotals } from "../types/mediabox.types";
 export interface UseMediaboxTotalsResult {
   totals: MediaboxTotals | null;
   cad: MediaboxTotalsCad | null;
-  /** Server-side aggregation in flight (from the doc's own flag). */
+  /**
+   * Server-side aggregation in flight (from the doc's own flag). Flags left
+   * behind by a crashed function are ignored after a timeout — see
+   * MEDIABOX_REFRESH_TIMEOUT_MS.
+   */
   refreshing: boolean;
   /** A manual/background refresh trigger is in flight from this client. */
   triggering: boolean;
@@ -80,6 +85,21 @@ export function useMediaboxTotals(
     return () => unsub();
   }, []);
 
+  // A refresh "in flight" past its deadline is a crashed MediaBox function
+  // that never cleared the doc's flag: treat it as not refreshing so the
+  // button and the auto-refresh recover instead of waiting forever. `clock`
+  // is the last time we looked at the wall clock — set at mount, refreshed by
+  // the timer the moment a live refresh crosses its deadline. An NaN deadline
+  // (no start stamp) compares false and is therefore stuck immediately.
+  const [clock, setClock] = useState(() => Date.now());
+  const deadline = totals?.refreshing ? mediaboxRefreshDeadlineMs(totals) : null;
+  const refreshing = deadline != null && clock < deadline;
+  useEffect(() => {
+    if (!refreshing || deadline == null) return;
+    const id = setTimeout(() => setClock(Date.now()), deadline - Date.now());
+    return () => clearTimeout(id);
+  }, [refreshing, deadline]);
+
   const doTrigger = useCallback(
     async (force: boolean) => {
       if (!clientId || year == null) return;
@@ -100,12 +120,12 @@ export function useMediaboxTotals(
   useEffect(() => {
     if (loading || !clientId || year == null) return;
     if (autoTriggeredRef.current) return;
-    if (totals?.refreshing) return; // a refresh is already running server-side
+    if (refreshing) return; // a live refresh is already running server-side
     if (isMediaboxTotalsStale(totals)) {
       autoTriggeredRef.current = true;
       void doTrigger(false);
     }
-  }, [loading, totals, clientId, year, doTrigger]);
+  }, [loading, totals, refreshing, clientId, year, doTrigger]);
 
   const refresh = useCallback(() => {
     autoTriggeredRef.current = true; // a manual refresh covers the auto one
@@ -118,7 +138,7 @@ export function useMediaboxTotals(
   return {
     totals,
     cad,
-    refreshing: !!totals?.refreshing,
+    refreshing,
     triggering,
     loading,
     error,

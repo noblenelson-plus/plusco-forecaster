@@ -157,8 +157,10 @@ service cloud.firestore {
       // BLs cannot update actuals or gaiaAdjustment fields
       // This is enforced at the Server Action level as Firestore Rules
       // cannot easily diff nested map fields — keep logic in backend
-      // Nobody can delete entries from the client
-      allow delete: if false;
+      // Delete: admins only — used by the client-deletion cleanup
+      // (deleteClient in client-service.ts), which removes every submission
+      // of the deleted client. BLs can never delete entries.
+      allow delete: if isAdmin();
     }
     // ─── annual_actuals ───────────────────────────────────────────────────────
     // Document ID format: {cl_id}_{year} e.g. CL_001_2026
@@ -176,7 +178,8 @@ service cloud.firestore {
       // Create/update: admins only (BLs never edit actuals). RFQ locking does
       // not apply — these figures are not tied to a single submission.
       allow create, update: if isAdmin();
-      allow delete: if false;
+      // Delete: admins only — client-deletion cleanup (deleteClient).
+      allow delete: if isAdmin();
     }
     // ─── mediabox_totals ──────────────────────────────────────────────────────
     // Document ID format: {cl_id}_{year} e.g. CL_001_2026
@@ -188,7 +191,37 @@ service cloud.firestore {
       allow read: if isAuthenticated() &&
         (resource == null || canAccessClient(resource.data.clientId));
       // Never writable from a client — only the MediaBox Admin SDK writes here.
-      allow write: if false;
+      // Exception: admins may delete, so the client-deletion cleanup
+      // (deleteClient) can remove a dead client's synced totals.
+      allow create, update: if false;
+      allow delete: if isAdmin();
+    }
+    // ─── mediabox_coverage ────────────────────────────────────────────────────
+    // Document ID format: {year} e.g. 2026. One doc per year holding EVERY
+    // client's MediaBox totals (written by the MediaBox project's nightly full
+    // refresh). Because it spans all clients, reading it would leak amounts for
+    // clients a Business Lead cannot access — so it is admin-only. The
+    // dashboard coverage card does NOT read this doc; it reads the per-client
+    // mediabox_totals docs above, which enforce per-client access.
+    match /mediabox_coverage/{year} {
+      allow read: if isAdmin();
+      // Never writable from a client — only the MediaBox Admin SDK writes here.
+      allow create, update: if false;
+      allow delete: if isAdmin();
+    }
+    // ─── product_tracking ─────────────────────────────────────────────────────
+    // Document ID = the client's cl_id (one always-on doc per client, no
+    // year/RFQ). Holds the per-product pipeline status + optional timing.
+    // Not tied to a submission, so RFQ locking does not apply: any assigned
+    // BL (or admin) may write at any time.
+    match /product_tracking/{clientId} {
+      allow read: if canAccessClient(clientId);
+      // Create/update: admins, or a BL assigned to the client. The doc must
+      // stay keyed to its client (clientId field matches the doc ID).
+      allow create, update: if request.resource.data.clientId == clientId &&
+        (isAdmin() || (isBusinessLead() && isAssignedToClient(clientId)));
+      // Delete: admins only — client-deletion cleanup (deleteClient).
+      allow delete: if isAdmin();
     }
     // ─── rfqs ───────────────────────────────────────────────────────────────
 // Document ID format: {year}_{type} e.g. 2026_RFQ1

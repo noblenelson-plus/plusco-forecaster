@@ -22,9 +22,22 @@ export const MEDIA_TYPE_COLORS: Record<MediaType, string> = {
 export const REVENUE_STREAM_COLORS: Record<string, string> = {
   retainer: "#f59e0b",
   commission: "#6366f1",
+  commissionOverwrite: "#8b5cf6",
   projectFees: "#10b981",
   productFees: "#06b6d4",
 };
+
+/** Cycling palette for ad-hoc categorical breakdowns (regions, business leads). */
+export const CATEGORICAL_COLORS = [
+  "#f59e0b", // amber
+  "#6366f1", // indigo
+  "#10b981", // emerald
+  "#06b6d4", // cyan
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+  "#ef4444", // red
+  "#64748b", // slate
+];
 
 export const ACCENT = "#f59e0b"; // yellow-500
 export const DIGITAL_COLOR = "#6366f1"; // indigo

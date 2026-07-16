@@ -16,7 +16,13 @@
 
 import { DollarSign, AlertTriangle } from "lucide-react";
 import ForecastSelectors from "../_shared/forecast-selectors";
+import MultiSelectDropdown from "../_shared/multi-select-dropdown";
 import { useComparisonSelection } from "../../lib/stores/comparison-selection.store";
+
+const MONTH_OPTIONS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+].map((label, i) => ({ value: String(i + 1), label }));
 
 interface DashboardContextBarProps {
   /** USD→CAD rate applied for the selected year (undefined when none is set). */
@@ -25,12 +31,17 @@ interface DashboardContextBarProps {
   usdClientCount?: number;
   /** True when a USD client is in scope but no rate is configured for the year. */
   missingRate?: boolean;
+  /** Month filter (1..12) applied to every aggregation; empty = all months. */
+  months?: number[];
+  onMonthsChange?: (months: number[]) => void;
 }
 
 export default function DashboardContextBar({
   usdToCad,
   usdClientCount = 0,
   missingRate = false,
+  months = [],
+  onMonthsChange,
 }: DashboardContextBarProps = {}) {
   const {
     comparisonYear,
@@ -67,6 +78,20 @@ export default function DashboardContextBar({
           setRFQ: setComparisonRFQ,
         }}
       />
+
+      {/* Month filter — restricts every chart/table to the ticked months
+          (applied to both scopes). Empty selection = the full year. */}
+      {onMonthsChange && (
+        <>
+          <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
+          <MultiSelectDropdown
+            label="Months"
+            options={MONTH_OPTIONS}
+            selectedValues={months.map(String)}
+            onChange={(vals) => onMonthsChange(vals.map(Number))}
+          />
+        </>
+      )}
 
       {/* Currency indicator — the dashboard always reports in CAD. */}
       <div className="h-7 w-px bg-gray-200" aria-hidden="true" />

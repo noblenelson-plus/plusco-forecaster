@@ -59,6 +59,10 @@ Editing flow (`use-forecaster-grid.ts`) — **explicit save**, not autosave:
 - **Locking is owned by the RFQ doc, not the data:** a `selectedRFQ.status === "LOCKED"` makes the entire grid read-only for everyone. `actuals` (`ADMIN_INPUT`) are editable only by admins. The `rfqs` collection is subscribed in real-time so lock/unlock by an admin reflects instantly.
 - RFQ comparison: a second axis can be loaded as reference; matching is by bucket name + rowType (IDs differ across docs).
 
+### The Product axis (4th tab, no grid engine)
+
+The `/forecast` page has a 4th tab, **Product** — always-on product tracking per client, with **no year/RFQ/monthly dimension** (it does not use `AxisConfig`/`useForecasterGrid`). For each product of the static catalog (`PRODUCTS` in `lib/types/product.types.ts`), the BL picks a pipeline status (`Identified Prospect → Pitched To Client → Approved / Rejected`; clicking the active status clears it), may add an optional `timing` (`"YYYY-MM"`, the month revenue should start) for any status except Rejected, and a free-text `note` (which may exist without a status — all entry fields are optional; an entry with no fields left loses its key). Storage: `product_tracking` collection, one doc per client (ID = `cl_id`), `products: Record<productId, {status?, timing?, note?}>`, saved wholesale (no merge — cleared statuses must disappear) via `product-tracking-service.ts`. RFQ locking doesn't apply; any assigned BL or admin may write anytime. UI is `components/forecaster/product-grid.tsx` (same saving model as the grid axes: debounced `useAutosave` + manual Save/Discard); the tab only requires a selected client and hides the currency badge and notes/compare toggles; the RFQ timeline of the globally selected RFQ still shows.
+
 ### RFQs
 
 `rfqs` collection, doc ID `{year}_{type}` (e.g. `2026_RFQ1`). Types are an ordered enum `RFQ0 → RFQ1 → RFQ2 → RFQ3 → FINAL` (`RFQ_TYPE_ORDER`, `sortRFQs`). Status is `UNLOCKED` / `LOCKED`. Admins manage RFQs in `app/(protected)/admin/rfqs`.

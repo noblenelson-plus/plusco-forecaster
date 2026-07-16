@@ -31,7 +31,7 @@ interface CommissionsDrawerProps {
   open: boolean;
   client: Client | null;
   onClose: () => void;
-  /** Callback après Save — renvoie la config complète mise à jour */
+  /** Callback after Save — receives the full updated config */
   onSaved: (clId: string, config: CommissionsConfig) => void;
 }
 
@@ -51,18 +51,18 @@ const MONTH_LABELS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-// Années proposées dans le sélecteur : année courante −1 → +2
+// Years offered in the selector: current year −1 → +2
 function yearOptions(): number[] {
   const current = new Date().getFullYear();
   return [current - 1, current, current + 1, current + 2];
 }
 
-// État d'édition d'une rangée média
+// Edit state of one media row
 interface RowState {
-  enabled: boolean;        // type configuré pour l'année ?
-  expanded: boolean;       // mode mensuel déplié ?
-  uniform: string;         // valeur du champ unique (string pour l'input)
-  months: MonthlyMap;      // valeurs mensuelles
+  enabled: boolean;        // type configured for the year?
+  expanded: boolean;       // monthly mode expanded?
+  uniform: string;         // single-field value (string for the input)
+  months: MonthlyMap;      // monthly values
 }
 
 function buildRows(
@@ -84,7 +84,7 @@ function buildRows(
       const uniform = detectUniformRate(map);
       rows[type] = {
         enabled: true,
-        expanded: uniform === null, // mensuel non-uniforme → déplié d'office
+        expanded: uniform === null, // non-uniform monthly → expanded by default
         uniform: String(uniform ?? map[1] ?? 0),
         months: { ...map },
       };
@@ -94,13 +94,82 @@ function buildRows(
 }
 
 /**
- * Drawer de configuration des commissions d'un client.
+ * Number of commission propagations still pending (queued or running). While
+ * > 0, a beforeunload guard warns the user that closing the tab would leave
+ * the Revenue forecasts out of sync with the freshly saved rates. Module-level
+ * so the guard (and the propagation itself) survives the drawer closing.
+ */
+let pendingPropagations = 0;
+
+/**
+ * Serializes background propagations. Two overlapping runs could interleave
+ * their per-RFQ writes and leave a doc on the older rates — queuing guarantees
+ * the propagation of the most recent save always writes last.
+ */
+let propagationQueue: Promise<void> = Promise.resolve();
+
+function warnBeforeUnload(e: BeforeUnloadEvent) {
+  e.preventDefault();
+  // Chrome requires returnValue to be set for the confirmation dialog to show.
+  e.returnValue = "";
+}
+
+/**
+ * Queues the Revenue-commission propagation to run in the background, with
+ * retries. The rates themselves are already saved when this is called; the
+ * propagation is a recompute-from-source, so retrying the whole year is
+ * idempotent and safe. If every attempt fails, the user is alerted to re-save
+ * the rates (which re-triggers a full propagation).
+ */
+function queuePropagation(
+  clId: string,
+  clientName: string,
+  year: number,
+  yearConfig: Partial<Record<MediaType, MonthlyMap>>
+): void {
+  if (pendingPropagations === 0) {
+    window.addEventListener("beforeunload", warnBeforeUnload);
+  }
+  pendingPropagations++;
+  propagationQueue = propagationQueue.then(async () => {
+    try {
+      const MAX_ATTEMPTS = 3;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          await propagateCommissionForYear(clId, year, yearConfig);
+          return;
+        } catch (err) {
+          console.error(
+            `Commission propagation attempt ${attempt}/${MAX_ATTEMPTS} failed:`,
+            err
+          );
+          if (attempt < MAX_ATTEMPTS) {
+            await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+          }
+        }
+      }
+      alert(
+        `The ${year} commission rates for ${clientName} were saved, but syncing ` +
+          `the Revenue forecasts failed. Please reopen the commissions panel and ` +
+          `save again to retry.`
+      );
+    } finally {
+      pendingPropagations--;
+      if (pendingPropagations === 0) {
+        window.removeEventListener("beforeunload", warnBeforeUnload);
+      }
+    }
+  });
+}
+
+/**
+ * Client commissions configuration drawer.
  *
- * — Sélecteur d'année + "Copy from previous year"
- * — Une rangée par type de média : toggle on/off, champ % unique
- *   (cas courant), bouton déplier → 12 champs mensuels
- * — Un seul Save par année (saveYearCommissions)
- * — Accessible aux admins ET aux BLs assignés au client
+ * — Year selector + "Copy from previous year"
+ * — One row per media type: on/off toggle, single % field (common case),
+ *   expand button → 12 monthly fields
+ * — One Save per year (saveYearCommissions)
+ * — Accessible to admins AND to BLs assigned to the client
  */
 export default function CommissionsDrawer({
   open,
@@ -115,7 +184,7 @@ export default function CommissionsDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // (Ré)initialiser les rangées quand le client, l'année ou l'ouverture change
+  // (Re)initialize the rows when the client, year or open state changes
   useEffect(() => {
     if (!client) return;
     setRows(buildRows(client.commissionsConfig ?? {}, year));
@@ -131,7 +200,7 @@ export default function CommissionsDrawer({
     !!client &&
     Object.keys(client.commissionsConfig?.[year - 1] ?? {}).length > 0;
 
-  // ─── Mutations locales ──────────────────────────────────────────────────────
+  // ─── Local mutations ────────────────────────────────────────────────────────
 
   function updateRow(type: MediaType, patch: Partial<RowState>) {
     setRows((prev) => ({ ...prev, [type]: { ...prev[type], ...patch } }));
@@ -161,7 +230,7 @@ export default function CommissionsDrawer({
   function toggleExpanded(type: MediaType) {
     const row = rows[type];
     if (row.expanded) {
-      // Replier : on revient au mode uniforme avec la valeur du champ unique
+      // Collapse: back to uniform mode with the single-field value
       const num = parseFloat(row.uniform);
       updateRow(type, {
         expanded: false,
@@ -187,7 +256,7 @@ export default function CommissionsDrawer({
   async function handleSave() {
     if (!client) return;
 
-    // Construire la config de l'année à partir des rangées activées
+    // Build the year's config from the enabled rows
     const yearConfig: Partial<Record<MediaType, MonthlyMap>> = {};
     MEDIA_TYPES.forEach((type) => {
       const row = rows[type];
@@ -209,23 +278,24 @@ export default function CommissionsDrawer({
     setError("");
     try {
       await saveYearCommissions(client.cl_id, year, yearConfig);
-      // Re-sync the derived Revenue commission across every (unlocked) RFQ of
-      // the year so Firestore reflects the new rates immediately. Best-effort —
-      // a propagation failure must not fail the rate save itself.
-      try {
-        await propagateCommissionForYear(client.cl_id, year, yearConfig);
-      } catch (err) {
-        console.error("Commission propagation failed:", err);
-      }
-      const newConfig: CommissionsConfig = {
-        ...(client.commissionsConfig ?? {}),
-        [year]: yearConfig,
-      };
-      onSaved(client.cl_id, newConfig);
     } catch (err: any) {
       setError("Failed to save: " + (err?.message ?? "Unknown error"));
       setSaving(false);
+      return;
     }
+
+    // The rates are saved. Re-sync the derived Revenue commission across the
+    // year's (unlocked) RFQs in the background: closing the drawer doesn't
+    // cancel it (module-level runner), a beforeunload guard warns against
+    // closing the tab while it runs, and failures are retried then surfaced.
+    queuePropagation(client.cl_id, client.CL_Name, year, yearConfig);
+
+    const newConfig: CommissionsConfig = {
+      ...(client.commissionsConfig ?? {}),
+      [year]: yearConfig,
+    };
+    setSaving(false);
+    onSaved(client.cl_id, newConfig);
   }
 
   if (!client) return null;
@@ -246,7 +316,7 @@ export default function CommissionsDrawer({
           ${open ? "translate-x-0" : "translate-x-full"}
         `}
       >
-        {/* Header — bandeau sombre */}
+        {/* Header — dark banner */}
         <div className="bg-gray-900 px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-yellow-400 flex items-center justify-center text-gray-900 flex-shrink-0">
@@ -269,7 +339,7 @@ export default function CommissionsDrawer({
           </button>
         </div>
 
-        {/* Toolbar — année + copie */}
+        {/* Toolbar — year + copy */}
         <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between gap-3">
           <div className="relative">
             <select
@@ -305,7 +375,7 @@ export default function CommissionsDrawer({
           </button>
         </div>
 
-        {/* Erreur */}
+        {/* Error */}
         {error && (
           <div className="mx-6 mt-3 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
             <AlertTriangle size={14} className="flex-shrink-0" />
@@ -313,7 +383,7 @@ export default function CommissionsDrawer({
           </div>
         )}
 
-        {/* Rangées média */}
+        {/* Media rows */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
           {MEDIA_TYPES.map((type) => {
             const row = rows[type];
@@ -330,9 +400,9 @@ export default function CommissionsDrawer({
                   }
                 `}
               >
-                {/* Ligne principale */}
+                {/* Main line */}
                 <div className="flex items-center gap-3 px-4 py-3">
-                        {/* Toggle on/off */}
+                        {/* On/off toggle */}
                         <button
                         type="button"
                         onClick={() => toggleEnabled(type)}
@@ -351,7 +421,7 @@ export default function CommissionsDrawer({
                         />
                         </button>
 
-                  {/* Nom du type */}
+                  {/* Type name */}
                   <span
                     className={`text-sm font-medium flex-1 ${
                       row.enabled ? "text-gray-900" : "text-gray-400"
@@ -362,7 +432,7 @@ export default function CommissionsDrawer({
 
                   {row.enabled && (
                     <>
-                      {/* Champ uniforme — masqué si déplié */}
+                      {/* Uniform field — hidden when expanded */}
                       {!row.expanded && (
                         <div className="relative w-24">
                           <input
@@ -380,7 +450,7 @@ export default function CommissionsDrawer({
                         </div>
                       )}
 
-                      {/* Toggle mensuel */}
+                      {/* Monthly toggle */}
                       <button
                         type="button"
                         onClick={() => toggleExpanded(type)}
@@ -402,7 +472,7 @@ export default function CommissionsDrawer({
                   )}
                 </div>
 
-                {/* Grille mensuelle dépliée */}
+                {/* Expanded monthly grid */}
                 {row.enabled && row.expanded && (
                   <div className="px-4 pb-4 pt-1 border-t border-yellow-200/60">
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">

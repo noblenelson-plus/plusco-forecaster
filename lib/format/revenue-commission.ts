@@ -11,6 +11,10 @@
  * `byMonth` keeps the per-media-type contribution lines so the grid can show
  * the breakdown on hover.
  *
+ * A month can be overwritten: when the submission carries a value on a BL
+ * Commission Overwrite line for a month, the commission is NOT calculated for
+ * that month (`commissionOverwriteMonths` + `applyCommissionOverwrite`).
+ *
  * Also hosts `ensureRevenueShape`, which seeds the axis with its fixed rows
  * (one BL row per stream in a single implicit bucket, one GAIA actuals row per
  * admin stream) so the user sees every revenue type immediately, with no
@@ -27,14 +31,18 @@ import {
   aggregateByType,
   emptyMonthly,
   newBucket,
+  GENERAL_PROJECT_NAME,
   newRow,
   MEDIA_TYPE_LABELS,
   REVENUE_BL_STREAMS,
   REVENUE_ADMIN_STREAMS,
   REVENUE_STREAM_LABELS,
   REVENUE_COMMISSION_TYPE,
+  REVENUE_COMMISSION_OVERWRITE_TYPE,
   REVENUE_ACCRUAL_TYPE,
   REVENUE_GAIA_FORECAST_TYPE,
+  actualsMonthEntered,
+  hasExplicitZero,
   type AxisData,
   type ForecastRow,
   type ForecastBucket,
@@ -62,6 +70,12 @@ export interface CommissionBreakdown {
   byMonth: Record<number, CommissionMediaLine[]>;
   /** Annual commission total. */
   annual: number;
+  /**
+   * Months whose commission was suppressed because a BL Commission Overwrite
+   * line carries a value (see applyCommissionOverwrite). Empty straight out of
+   * computeCommission.
+   */
+  overwritten: Set<number>;
 }
 
 /**
@@ -107,7 +121,50 @@ export function computeCommission(
     annual += total;
   }
 
-  return { months, byMonth, annual };
+  return { months, byMonth, annual, overwritten: new Set() };
+}
+
+/**
+ * Months (1–12) where the submission carries a Commission Overwrite value —
+ * any BL Commission Overwrite line (across all projects) with a non-zero
+ * amount OR an explicitly entered 0 for that month. These months suppress the
+ * computed commission (a deliberate $0 overwrite zeroes it).
+ */
+export function commissionOverwriteMonths(revenueData: AxisData): Set<number> {
+  const overwritten = new Set<number>();
+  for (const bucket of revenueData.buckets) {
+    for (const row of bucket.rows) {
+      if (row.rowType !== REVENUE_COMMISSION_OVERWRITE_TYPE) continue;
+      for (const m of MONTHS) {
+        if ((row.months[m] ?? 0) !== 0 || hasExplicitZero(row, m))
+          overwritten.add(m);
+      }
+    }
+  }
+  return overwritten;
+}
+
+/**
+ * Applies the Commission Overwrite rule to a computed breakdown: for each
+ * overwritten month the commission is not calculated — the month is zeroed
+ * (value and hover lines) and flagged in `overwritten` so the grid can explain
+ * the suppression. Returns the base breakdown untouched when nothing is
+ * overwritten.
+ */
+export function applyCommissionOverwrite(
+  base: CommissionBreakdown,
+  overwritten: Set<number>
+): CommissionBreakdown {
+  if (overwritten.size === 0) return base;
+  const months = { ...base.months };
+  const byMonth = { ...base.byMonth };
+  let annual = base.annual;
+  for (const m of overwritten) {
+    annual -= months[m] ?? 0;
+    months[m] = 0;
+    byMonth[m] = [];
+  }
+  return { months, byMonth, annual, overwritten };
 }
 
 // ─── Official revenue & BL Submission ───────────────────────────────────────
@@ -130,9 +187,10 @@ export function officialRevenueByMonth(data: AxisData): MonthlyMap {
 /**
  * BL Submission per month — a two-level priority between the GAIA detail lines
  * and the BL Input. For each month the GAIA detail lines win when any of them
- * carries a value (summed); otherwise the BL Input is used (summed, Commission
- * included as stored). This is the figure compared against the previous RFQ's
- * official revenue in the grid's variance row.
+ * carries a value — a non-zero amount OR an explicitly entered 0 (summed);
+ * otherwise the BL Input is used (summed, Commission included as stored). This
+ * is the figure compared against the previous RFQ's official revenue in the
+ * grid's variance row.
  */
 export function blSubmissionByMonth(data: AxisData): MonthlyMap {
   const others = data.actuals.filter(
@@ -144,7 +202,7 @@ export function blSubmissionByMonth(data: AxisData): MonthlyMap {
     let hasDetail = false;
     for (const r of others) {
       const v = r.months[m] ?? 0;
-      if (v !== 0) hasDetail = true;
+      if (actualsMonthEntered(r, m)) hasDetail = true;
       detail += v;
     }
     if (hasDetail) {
@@ -161,43 +219,89 @@ export function blSubmissionByMonth(data: AxisData): MonthlyMap {
 // ─── Fixed-structure seeding ────────────────────────────────────────────────
 
 /**
- * Ensures the revenue axis carries its fixed structure: a single implicit BL
- * bucket with one row per BL stream, and one GAIA actuals row per admin stream,
- * in canonical order. Existing months (and row/bucket ids) are preserved by
- * matching `rowType`; this is idempotent and safe to run on every load. Run via
- * the grid hook's `normalizeLoaded` so the seeded rows are part of the clean
- * snapshot and never count as unsaved changes.
+ * Ensures the revenue axis carries its fixed structure: BL projects (buckets)
+ * of stream lines with a mandatory "General" project FIRST — it hosts the
+ * required Commission (computed) and Accrual lines, so the commission math
+ * always has one well-known home — and one GAIA actuals row per admin stream,
+ * in canonical order. Existing months (and row/bucket ids) are preserved;
+ * this is idempotent and safe to run on every load. Run via the grid hook's
+ * `normalizeLoaded` so the seeded rows are part of the clean snapshot and
+ * never count as unsaved changes.
  */
 export function ensureRevenueShape(data: AxisData): AxisData {
   // Fill all 12 months; the label is always the stream's canonical type label
-  // (rows are real revenue types, never renamed). The note is preserved.
-  const normalize = (row: ForecastRow): ForecastRow => ({
-    rowId: row.rowId,
-    rowType: row.rowType,
-    label: REVENUE_STREAM_LABELS[row.rowType as RevenueStream] ?? row.rowType,
-    months: { ...emptyMonthly(), ...row.months },
-    ...(row.note ? { note: row.note } : {}),
-  });
+  // (rows are real revenue types, never renamed). The note is preserved, and
+  // so are BL explicit zeros (Commission Overwrite) — dropping any month whose
+  // stored value is no longer 0 (a later non-zero entry supersedes the flag).
+  const normalize = (row: ForecastRow): ForecastRow => {
+    const months = { ...emptyMonthly(), ...row.months };
+    const explicitZeros = (row.explicitZeros ?? []).filter(
+      (m) => (months[m] ?? 0) === 0
+    );
+    return {
+      rowId: row.rowId,
+      rowType: row.rowType,
+      label: REVENUE_STREAM_LABELS[row.rowType as RevenueStream] ?? row.rowType,
+      months,
+      ...(row.note ? { note: row.note } : {}),
+      ...(explicitZeros.length ? { explicitZeros } : {}),
+    };
+  };
 
-  // BL Input — on a brand-new (empty) doc, seed the four base streams in order.
-  // On an existing doc, preserve EXACTLY what is stored (in order, including
-  // several lines of the same stream and minus any the user deleted), only
-  // ensuring the computed Commission row is present — it is required and is
-  // never added or removed by hand.
-  const existingBl = data.buckets.flatMap((b) => b.rows).map(normalize);
-  let blRows: ForecastRow[];
-  if (existingBl.length === 0) {
-    blRows = REVENUE_BL_STREAMS.map((s) => newRow(s, REVENUE_STREAM_LABELS[s]));
-  } else {
-    blRows = existingBl;
-    // The Commission (computed) and Accrual (fixed) rows are required and are
-    // never added or removed by hand — append them to pre-existing docs that
-    // predate them.
-    for (const required of [REVENUE_COMMISSION_TYPE, REVENUE_ACCRUAL_TYPE]) {
-      if (!blRows.some((r) => r.rowType === required)) {
-        blRows = [...blRows, newRow(required, REVENUE_STREAM_LABELS[required])];
+  // BL Input — preserve the stored projects (ids, names, row order), only
+  // normalizing each row. On a brand-new (empty) doc, seed a General project
+  // with the base streams.
+  let buckets: ForecastBucket[] = data.buckets.map((b) => ({
+    bucketId: b.bucketId,
+    name: b.name,
+    rows: b.rows.map(normalize),
+  }));
+  if (buckets.length === 0 || buckets.every((b) => b.rows.length === 0)) {
+    const seeded = buckets[0] ?? newBucket(GENERAL_PROJECT_NAME);
+    buckets = [
+      {
+        bucketId: seeded.bucketId,
+        name: GENERAL_PROJECT_NAME,
+        rows: REVENUE_BL_STREAMS.map((s) => newRow(s, REVENUE_STREAM_LABELS[s])),
+      },
+      ...buckets.slice(1),
+    ];
+  }
+
+  // The General project is mandatory and always first. A legacy single-bucket
+  // doc (named "Revenue") is simply renamed; with several projects and no
+  // General, one is prepended.
+  let generalIdx = buckets.findIndex((b) => b.name === GENERAL_PROJECT_NAME);
+  if (generalIdx === -1) {
+    if (buckets.length === 1) {
+      buckets[0] = { ...buckets[0], name: GENERAL_PROJECT_NAME };
+      generalIdx = 0;
+    } else {
+      buckets = [newBucket(GENERAL_PROJECT_NAME), ...buckets];
+      generalIdx = 0;
+    }
+  }
+  if (generalIdx !== 0) {
+    const [general] = buckets.splice(generalIdx, 1);
+    buckets = [general, ...buckets];
+  }
+
+  // The Commission (computed) and Accrual (fixed) rows are required, never
+  // added or removed by hand, and always live in General — commission math
+  // (computeCommission overlay, syncRevenueCommission) relies on it. Strays
+  // in other projects are moved home.
+  const general = buckets[0];
+  for (const required of [REVENUE_COMMISSION_TYPE, REVENUE_ACCRUAL_TYPE]) {
+    if (general.rows.some((r) => r.rowType === required)) continue;
+    let moved: ForecastRow | null = null;
+    for (const b of buckets.slice(1)) {
+      const at = b.rows.findIndex((r) => r.rowType === required);
+      if (at !== -1) {
+        [moved] = b.rows.splice(at, 1);
+        break;
       }
     }
+    general.rows.push(moved ?? newRow(required, REVENUE_STREAM_LABELS[required]));
   }
 
   // GAIA (ADMIN_INPUT) — exactly one row per stream, in the fixed order.
@@ -208,27 +312,27 @@ export function ensureRevenueShape(data: AxisData): AxisData {
   const ensureActual = (stream: RevenueStream): ForecastRow => {
     const prev = actualsByType.get(stream);
     if (prev) {
+      const months = { ...emptyMonthly(), ...prev.months };
+      // Explicit zeros survive the reload, dropping any month whose stored
+      // value is no longer 0 (a later non-zero entry supersedes the flag).
+      const explicitZeros = (prev.explicitZeros ?? []).filter(
+        (m) => (months[m] ?? 0) === 0
+      );
       return {
         rowId: prev.rowId,
         rowType: stream,
         label: REVENUE_STREAM_LABELS[stream],
-        months: { ...emptyMonthly(), ...prev.months },
+        months,
         ...(prev.note ? { note: prev.note } : {}),
         // Detail lines ride along — the grid hook derives the parent's months
         // from them (row = Σ details) after this normalization.
         ...(prev.details?.length ? { details: prev.details } : {}),
+        ...(explicitZeros.length ? { explicitZeros } : {}),
       };
     }
     return newRow(stream, REVENUE_STREAM_LABELS[stream]);
   };
   const actuals = REVENUE_ADMIN_STREAMS.map(ensureActual);
 
-  const base = data.buckets[0];
-  const bucket: ForecastBucket = {
-    bucketId: base?.bucketId ?? newBucket("Revenue").bucketId,
-    name: base?.name ?? "Revenue",
-    rows: blRows,
-  };
-
-  return { buckets: [bucket], actuals };
+  return { buckets, actuals };
 }

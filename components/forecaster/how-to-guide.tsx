@@ -2,18 +2,18 @@
 "use client";
 
 /**
- * How-to guide — the content of the "How to" tab on the forecast page.
+ * How-to guide — the content of the "How to" page (main sidebar).
  *
  * A chaptered, step-by-step manual aimed at someone who has never used the
  * platform. Instead of one long page, it splits into short focused chapters with
- * a grouped left-rail menu (a select on small screens) and Prev/Next paging, so
- * it stays light to navigate. The content mirrors the real workflow and uses the
- * same visual language as the app (yellow accent, inline UI chips, lucide icons)
- * so the instructions match what the reader sees on screen.
+ * a grouped rail menu (a select on small screens) and quick search, so it stays
+ * light to navigate. The content mirrors the real workflow and uses the same
+ * visual language as the app (yellow accent, inline UI chips, lucide icons) so
+ * the instructions match what the reader sees on screen.
  *
  * Purely presentational: no data, no Firebase. The only outward interaction is
- * the optional `onJump` callback, wired to the page's tab switcher so the guide
- * can send the reader straight to the relevant axis tab.
+ * the optional `onJump` callback — the How-to page wires it to navigate to
+ * /forecast?tab=… so the guide can send the reader straight to an axis tab.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -47,6 +47,7 @@ import {
   ListChecks,
   Save,
   Search,
+  StickyNote,
   X,
   CornerDownRight,
 } from "lucide-react";
@@ -102,14 +103,8 @@ const GROUPS: ChapterGroup[] = [
               <AxisCard
                 icon={TrendingUp}
                 title="Media Spend"
-                desc="Planned spend per media type, month by month. The backbone — Revenue commission is derived from it."
+                desc="Planned spend per media type, month by month. The backbone — Labs coverage and Revenue commission both build on it."
                 onClick={onJump ? () => onJump("media") : undefined}
-              />
-              <AxisCard
-                icon={DollarSign}
-                title="Revenue"
-                desc="Agency revenue streams. Commission is auto-calculated from Media Spend."
-                onClick={onJump ? () => onJump("revenue") : undefined}
               />
               <AxisCard
                 icon={FlaskConical}
@@ -117,11 +112,19 @@ const GROUPS: ChapterGroup[] = [
                 desc="Investment with Labs partners, tracked against planned media."
                 onClick={onJump ? () => onJump("labs") : undefined}
               />
+              <AxisCard
+                icon={DollarSign}
+                title="Revenue"
+                desc="Agency revenue lines. Commission is auto-calculated from Media Spend."
+                onClick={onJump ? () => onJump("revenue") : undefined}
+              />
             </div>
-            <Callout tone="info" icon={Save} title="Nothing autosaves">
-              Your edits stay on screen (highlighted) until you press{" "}
-              <SaveChip />. Switching tabs keeps unsaved edits; leaving the page
-              or pressing <Chip icon={RotateCcw}>Discard</Chip> drops them.
+            <Callout tone="info" icon={Save} title="Edits autosave">
+              Changes save on their own a moment after you stop typing — the
+              toolbar shows <em>Unsaved — autosaving…</em>, then{" "}
+              <em>Saving…</em>, then <em>Saved</em>. Press <SaveChip /> to force
+              an immediate write, or <Chip icon={RotateCcw}>Discard</Chip> to
+              restore the last saved state.
             </Callout>
           </>
         ),
@@ -134,9 +137,9 @@ const GROUPS: ChapterGroup[] = [
         body: () => (
           <>
             <Lead>
-              Use the three selectors at the top of the page. Until all three are
-              set, the grid stays empty and shows a checklist of what&apos;s
-              missing.
+              On the <strong>Forecast</strong> page, use the three selectors at
+              the top. Until all three are set, the grid stays empty and shows a
+              checklist of what&apos;s missing.
             </Lead>
             <Steps>
               <Step n={1}>
@@ -160,9 +163,16 @@ const GROUPS: ChapterGroup[] = [
               </Step>
             </Steps>
             <Callout tone="tip" icon={Lightbulb} title="One context, all tabs">
-              The Client / Year / RFQ applies to Media, Revenue, and Labs at once.
-              Switch tabs freely — you stay on the same submission.
+              The Client / Year / RFQ applies to Media Spend, Labs, and Revenue
+              at once. Switch tabs freely — you stay on the same submission.
             </Callout>
+            <Note>
+              Next to the selectors, a badge shows the <strong>currency</strong>{" "}
+              this client forecasts in (CAD or USD) — amounts you type are in
+              that currency. If the RFQ has scheduled periods, a{" "}
+              <strong>timeline bar</strong> pinned to the bottom of the page
+              shows where the round stands today.
+            </Note>
           </>
         ),
       },
@@ -170,39 +180,43 @@ const GROUPS: ChapterGroup[] = [
         id: "grid",
         label: "Read the grid",
         icon: ListChecks,
-        keywords: "project bucket row total months columns actuals mediaocean gaia closed period lock read only anatomy table layout",
+        keywords: "project bucket row total months columns actuals mediaocean mediabox reference data bl submission closed period lock read only anatomy table layout sections",
         body: () => (
           <>
             <Lead>
-              Every axis shows the same kind of table: rows on the left, the 12
-              months (Jan → Dec) across the top, and a <strong>Total</strong>{" "}
-              column on the right. It&apos;s three levels deep:
+              The Media Spend and Labs tables share one layout: rows on the
+              left, the 12 months (Jan → Dec) across the top, a{" "}
+              <strong>Total</strong> column on the right, and a{" "}
+              <strong>Notes</strong> column you can show or hide. The table is
+              split into two labelled sections:
             </Lead>
             <Steps>
               <Step n={1}>
-                <strong>Project</strong> (a bucket) — a named group, e.g. a
-                campaign. Its header row shows the project subtotal.
+                <strong>BL SUBMISSION</strong> — your editable forecast.{" "}
+                <strong>Projects</strong> (named groups, e.g. campaigns) each
+                hold typed rows (a media type, or a Labs partner) with 12
+                monthly amounts; the black{" "}
+                <Chip icon={null}>BL Submission · current submission</Chip> row
+                sums every project, per month and for the year.
               </Step>
               <Step n={2}>
-                <strong>Rows</strong> — one typed line inside a project (a media
-                type, revenue stream, or Labs partner), each with 12 monthly
-                amounts.
-              </Step>
-              <Step n={3}>
-                <strong>Total</strong> — the dark row sums every project, per
-                month and for the year.
-              </Step>
-              <Step n={4}>
-                <strong>Admin Input</strong> (<em>MediaOcean</em> for Media,{" "}
-                <em>GAIA</em> for Revenue) — booked numbers, <strong>admin-only
-                </strong>, used as a comparison reference.
+                <strong>REFERENCE DATA</strong> — read-only context under your
+                forecast. <em>MediaOcean</em> holds the booked numbers
+                (admin-entered, one annual set per year); <em>MediaBox</em> is
+                synced automatically and expands per campaign. Business Leads
+                can&apos;t edit either.
               </Step>
             </Steps>
             <Callout tone="info" icon={Lock} title="Closed periods">
               A month with a <Lock size={12} className="inline align-middle" />{" "}
-              lock in its header is a closed period — those cells are frozen for
-              Business Leads so past months can&apos;t change.
+              lock in its header is a closed period (set per axis by admins) —
+              those cells are frozen for Business Leads so past months
+              can&apos;t change.
             </Callout>
+            <Note>
+              Read-only cells aren&apos;t dead ends: click one to copy its value
+              to the clipboard.
+            </Note>
           </>
         ),
       },
@@ -226,11 +240,13 @@ const GROUPS: ChapterGroup[] = [
               <Step n={1}>
                 <strong>Add a project.</strong> Click{" "}
                 <Chip icon={FolderPlus}>Add project</Chip> (top-right), type a
-                name, press <Kbd>Enter</Kbd> or <Chip>Add</Chip>.
+                name, press <Kbd>Enter</Kbd> or <Chip>Add</Chip>. With a single
+                project it is always named <em>General</em>; add a second one to
+                rename them freely.
               </Step>
               <Step n={2}>
                 <strong>Add a row.</strong> In the project header, click{" "}
-                <Chip icon={Plus}>Media type</Chip> and pick a type. Each type
+                <Chip icon={Plus}>Media Type</Chip> and pick a type. Each type
                 can be added once per project.
               </Step>
               <Step n={3}>
@@ -243,14 +259,15 @@ const GROUPS: ChapterGroup[] = [
               See{" "}
               <GoLink onClick={() => go("spreadsheet")}>Spreadsheet skills</GoLink>{" "}
               for copy/paste &amp; fill, and{" "}
-              <GoLink onClick={() => go("spread")}>The Spread tool</GoLink> to
-              fan one total across months in a click.
+              <GoLink onClick={() => go("spread")}>Distribute an amount</GoLink>{" "}
+              to fan one total across months in a click.
             </Callout>
-            <Callout tone="info" icon={Trash2} title="Removing is safe">
-              The <Trash2 size={12} className="inline align-middle" /> icons
-              remove a row or whole project on your screen only — nothing is gone
-              until you Save, and <Chip icon={RotateCcw}>Discard</Chip> brings it
-              all back.
+            <Callout tone="info" icon={Trash2} title="Row actions live in the ⋯ menu">
+              Hover a row and open its <strong>⋯</strong> menu for{" "}
+              <em>Distribute…</em>, <em>Add note</em>, and <em>Remove</em>.
+              Removing a row or project becomes permanent once autosave runs —
+              press <Chip icon={RotateCcw}>Discard</Chip> right away to restore
+              the last saved state.
             </Callout>
             {onJump && (
               <PrimaryAction onClick={() => onJump("media")}>
@@ -284,6 +301,10 @@ const GROUPS: ChapterGroup[] = [
                 <strong>Fill</strong> a selection down with <Kbd>Ctrl/⌘</Kbd>+
                 <Kbd>D</Kbd> or right with <Kbd>Ctrl/⌘</Kbd>+<Kbd>R</Kbd>.
               </Bullet>
+              <Bullet>
+                <strong>Copy from read-only cells</strong> (MediaOcean,
+                MediaBox, locked months): a single click copies the value.
+              </Bullet>
             </ul>
             <div className="overflow-hidden rounded-xl border border-gray-200">
               <table className="w-full text-sm">
@@ -304,19 +325,16 @@ const GROUPS: ChapterGroup[] = [
       },
       {
         id: "spread",
-        label: "The Spread tool",
+        label: "Distribute an amount",
         icon: SplitSquareHorizontal,
         keywords: "distribute amount spread across months equal weighted line total replace add curve split one total fan",
         body: () => (
           <>
             <Lead>
-              To fan a single total across months in one row, hover the row and
-              click the{" "}
-              <SplitSquareHorizontal
-                size={13}
-                className="inline align-middle text-gray-500"
-              />{" "}
-              spread icon. The <strong>Distribute amount</strong> dialog opens.
+              To fan a single total across months in one row, open the
+              row&apos;s <strong>⋯</strong> menu and pick{" "}
+              <Chip icon={SplitSquareHorizontal}>Distribute…</Chip>. The{" "}
+              <strong>Distribute amount</strong> dialog opens.
             </Lead>
             <Steps>
               <Step n={1}>
@@ -356,30 +374,72 @@ const GROUPS: ChapterGroup[] = [
       },
       {
         id: "save",
-        label: "Save & discard",
+        label: "Autosave, save & discard",
         icon: Save,
-        keywords: "save discard unsaved changes counter dirty lock locked read only cannot save revert undo",
+        keywords: "save autosave discard unsaved changes counter dirty lock locked read only cannot save revert undo status saving saved",
         body: () => (
           <>
             <Lead>
-              Edits are local until you save. The <SaveChip /> button carries a
-              counter of unsaved changes.
+              You don&apos;t have to press Save: edits{" "}
+              <strong>autosave a moment after you pause</strong>, and pending
+              changes are also flushed when you switch away or close the tab.
+              The toolbar tells you where things stand:
             </Lead>
             <Steps>
               <Step n={1}>
-                Press <SaveChip /> to write the whole tab at once. It stays
-                disabled when there&apos;s nothing to save.
+                <em>Unsaved — autosaving…</em> → <em>Saving…</em> →{" "}
+                <em>Saved</em>. A whole editing burst lands as one write.
               </Step>
               <Step n={2}>
+                <SaveChip /> forces an immediate write (it carries a counter of
+                pending changes). Useful right before sharing or locking.
+              </Step>
+              <Step n={3}>
                 <Chip icon={RotateCcw}>Discard</Chip> restores the last saved
-                state.
+                state — it only rolls back what hasn&apos;t autosaved yet, so
+                use it quickly after a mistake.
               </Step>
             </Steps>
-            <Callout tone="warn" icon={AlertTriangle} title="Save greyed out?">
+            <Callout tone="warn" icon={AlertTriangle} title="Everything read-only?">
               If you see{" "}
               <IconText icon={Lock}>RFQ locked — read only</IconText>, an admin
               has locked this RFQ. Ask them to unlock it, or pick an unlocked one.
             </Callout>
+          </>
+        ),
+      },
+      {
+        id: "notes",
+        label: "Notes & readiness",
+        icon: StickyNote,
+        keywords: "notes column row note submission note comment shared ready months readiness flag complete",
+        body: () => (
+          <>
+            <Lead>
+              Three ways to annotate a submission — all shared with teammates
+              who can see the client:
+            </Lead>
+            <Steps>
+              <Step n={1}>
+                <strong>Row notes</strong> — every row has a cell in the{" "}
+                <strong>Notes</strong> column (click it, or use the row&apos;s{" "}
+                <strong>⋯</strong> menu → <em>Add note</em>). Toggle the column
+                with the <Chip icon={StickyNote}>Notes</Chip> button in the grid
+                toolbar; the choice sticks across reloads.
+              </Step>
+              <Step n={2}>
+                <strong>Submission note</strong> — the card above the grid
+                (toggled with the <Chip icon={StickyNote}>Notes</Chip> button in
+                the top bar) holds one free-text note for the whole{" "}
+                Client × Year × RFQ. It shows on all three tabs, autosaves, and
+                stays editable even on a locked RFQ.
+              </Step>
+              <Step n={3}>
+                <strong>Ready months</strong> — next to the submission note, tick
+                the months whose data is complete. Purely indicative: it locks
+                nothing, it just signals readiness to the team.
+              </Step>
+            </Steps>
           </>
         ),
       },
@@ -389,50 +449,6 @@ const GROUPS: ChapterGroup[] = [
     title: "The other axes",
     chapters: [
       {
-        id: "revenue",
-        label: "Revenue",
-        icon: DollarSign,
-        keywords: "revenue retainer commission project fees product fees calculated rates zero gaia streams breakdown hover",
-        body: ({ onJump }) => (
-          <>
-            <Lead>
-              The <Chip icon={DollarSign}>Revenue</Chip> tab has a fixed set of
-              rows — no projects to add. You fill in <strong>Retainer</strong>,{" "}
-              <strong>Project Fees</strong>, <strong>Product Fees</strong>, plus a
-              special <strong>Commission</strong> row.
-            </Lead>
-            <Callout tone="tip" icon={Sparkles} title="Commission is calculated">
-              The{" "}
-              <span className="inline-flex items-center gap-1 align-middle rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-600">
-                <Sparkles size={10} /> Calculated
-              </span>{" "}
-              row is derived from your <strong>Media Spend</strong> × the
-              client&apos;s commission rates. You can&apos;t type into it — hover
-              a month to see the per-media-type breakdown.
-            </Callout>
-            <Steps>
-              <Step n={1}>
-                Enter the fee rows like Media (cells, paste, spread tool).
-              </Step>
-              <Step n={2}>
-                If Commission is all zeros with a <strong>no rates</strong> note,
-                set rates in <Chip icon={null}>Clients → commissions</Chip> for
-                this client &amp; year, then return.
-              </Step>
-            </Steps>
-            <Note>
-              The <strong>GAIA</strong> section below holds booked admin figures
-              and is admin-only.
-            </Note>
-            {onJump && (
-              <PrimaryAction onClick={() => onJump("revenue")}>
-                Open the Revenue tab
-              </PrimaryAction>
-            )}
-          </>
-        ),
-      },
-      {
         id: "labs",
         label: "Labs basics",
         icon: FlaskConical,
@@ -441,13 +457,17 @@ const GROUPS: ChapterGroup[] = [
           <>
             <Lead>
               The <Chip icon={FlaskConical}>Labs</Chip> tab tracks investment with
-              Labs partners against your planned media.
+              Labs partners against your planned media. It works exactly like
+              Media Spend — projects, partner rows, the same BL SUBMISSION /
+              REFERENCE DATA sections — with partners instead of media types.
             </Lead>
             <Steps>
               <Step n={1}>
                 <strong>Partners come from setup.</strong> Rows are the partners
-                configured for the year. If the list is empty, an admin must add
-                them in <Chip icon={null}>Admin → Labs</Chip> first.
+                configured for the year; each carries a media-type chip (and a
+                description when two partners share a name). If the list is
+                empty, an admin must add them in{" "}
+                <Chip icon={null}>Admin → LABS</Chip> first.
               </Step>
               <Step n={2}>
                 Add a project and partner rows the same way as Media, then enter
@@ -474,11 +494,12 @@ const GROUPS: ChapterGroup[] = [
         body: () => (
           <>
             <Lead>
-              On the Labs tab, the <Chip icon={Percent}>Share</Chip> button opens
-              the penetration panel on the right. It shows, per media type, how
-              much your partners cover of the planned media, and the global{" "}
-              <IconText icon={Target}>Labs / Media</IconText> ratio against its
-              target.
+              On the Labs tab, the <Chip icon={Percent}>Share</Chip> toggle in
+              the top bar shows/hides the penetration panel on the right (open
+              by default). It lists each media type that has a Labs partner
+              configured, how much your partners cover of its planned media, and
+              the global <IconText icon={Target}>Labs / Media</IconText> ratio
+              against its target.
             </Lead>
             <h4 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
               <Pencil size={15} className="text-gray-400" />
@@ -527,6 +548,76 @@ const GROUPS: ChapterGroup[] = [
           </>
         ),
       },
+      {
+        id: "revenue",
+        label: "Revenue",
+        icon: DollarSign,
+        keywords: "revenue retainer commission overwrite project fees product fees accrual calculated rates zero gaia official bl submission source of truth variance mauve violet emerald green struck",
+        body: ({ onJump }) => (
+          <>
+            <Lead>
+              The <Chip icon={DollarSign}>Revenue</Chip> tab holds{" "}
+              <strong>projects</strong>, like Media and Labs: each project
+              carries its revenue lines (<strong>Retainer</strong>,{" "}
+              <strong>Commission Overwrite</strong>,{" "}
+              <strong>Project Fees</strong>, <strong>Product Fees</strong> —
+              added per project via <Chip icon={Plus}>Add line</Chip>). The{" "}
+              <strong>General</strong> project is fixed (it can&apos;t be
+              renamed or removed): it hosts the computed{" "}
+              <strong>Commission</strong> line and the <strong>Accrual</strong>{" "}
+              line.
+            </Lead>
+            <Callout tone="tip" icon={Sparkles} title="Commission is calculated">
+              The{" "}
+              <span className="inline-flex items-center gap-1 align-middle rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-600">
+                <Sparkles size={10} /> Calculated
+              </span>{" "}
+              row is derived from your <strong>Media Spend</strong> × the
+              client&apos;s commission rates and re-syncs whenever Media saves.
+              You can&apos;t type into it — hover a month for the
+              per-media-type breakdown. All zeros with a <em>no rates</em> note?
+              Set rates on the client (Clients page → commissions), then return.
+              To replace the calculation for a month, enter the amount on a{" "}
+              <strong>Commission Overwrite</strong> line: the commission is not
+              calculated for any month where an overwrite value exists — a
+              deliberately entered 0 counts (it zeroes the commission). The{" "}
+              <strong>Accrual</strong> line is for revenue (e.g. commission)
+              GAIA missed in closed months.
+            </Callout>
+            <Lead>
+              Below your input, the <strong>GAIA</strong> section (admin-only)
+              carries the booked figures per type, each expandable into detail
+              lines. Then come the summary rows:
+            </Lead>
+            <Steps>
+              <Step n={1}>
+                <strong className="text-violet-700">BL Submission · current
+                submission</strong> (mauve) — the month-by-month source of
+                truth: where a GAIA detail line has a value, it wins; otherwise
+                your BL Input counts. Counted cells are highlighted mauve,
+                overridden ones struck through (see the legend above the table).
+              </Step>
+              <Step n={2}>
+                <strong>Official Revenue · previous RFQ</strong> and{" "}
+                <strong>Variance</strong> — the previous submission&apos;s
+                official figure and how your current BL Submission moves against
+                it, per month.
+              </Step>
+              <Step n={3}>
+                <strong className="text-emerald-700">Official Revenue ·
+                current submission</strong> (green, bottom row) — the
+                hand-entered official total, admin-editable like the other GAIA
+                rows. It <em>is</em> the official number; nothing rolls into it.
+              </Step>
+            </Steps>
+            {onJump && (
+              <PrimaryAction onClick={() => onJump("revenue")}>
+                Open the Revenue tab
+              </PrimaryAction>
+            )}
+          </>
+        ),
+      },
     ],
   },
   {
@@ -536,33 +627,39 @@ const GROUPS: ChapterGroup[] = [
         id: "compare",
         label: "Compare submissions",
         icon: GitCompareArrows,
-        keywords: "compare comparison reference rfq actuals mediaocean gaia variance bars donut list view difference versus delta",
+        keywords: "compare comparison reference rfq actuals mediaocean variance bars donut list view difference versus delta default previous panel",
         body: () => (
           <>
             <Lead>
-              To see how this forecast moved versus a previous round (or the
-              admin input), use the <strong>Comparison</strong> group at the top
-              of the page.
+              On Media Spend and Labs, the <strong>Comparison</strong> panel
+              sits to the right of the grid (toggle it with the{" "}
+              <Chip icon={GitCompareArrows}>Compare</Chip> button in the top
+              bar). By default it compares against the{" "}
+              <strong>previous submission</strong> — no setup needed.
             </Lead>
             <Steps>
               <Step n={1}>
-                Open <Chip icon={GitCompareArrows}>Compare with…</Chip> and pick a
-                reference RFQ.
+                To compare against something else, use the selectors inside the
+                panel: a <strong>year</strong>, a <strong>submission</strong>,
+                and the side — <Chip>BL Input</Chip> (a forecast) or{" "}
+                <em>MediaOcean (annual)</em>. The{" "}
+                <Chip icon={RotateCcw}>Default</Chip> button returns to the
+                previous-submission comparison in one click.
               </Step>
               <Step n={2}>
-                Pick the side: <Chip>BL Input</Chip> (a forecast) or the admin
-                input (<em>MediaOcean</em> / <em>GAIA</em>).
-              </Step>
-              <Step n={3}>
-                A panel opens beside the grid. Toggle its three views —{" "}
-                <strong>list</strong>, <strong>variance bars</strong>, or a{" "}
-                <strong>double donut</strong> — and read the green/red variance
-                pills per type.
+                Toggle the three views — <strong>list</strong>,{" "}
+                <strong>variance bars</strong>, or a <strong>double donut</strong>{" "}
+                — and read the green/red variance pills per type. In the list
+                view, the <ChevronRight size={12} className="inline align-middle" />{" "}
+                chevron expands a type into its 12-month detail.
               </Step>
             </Steps>
             <Note>
               The left side is always your live edits, so the gap updates as you
-              type. Aggregated to the annual total per type (projects excluded).
+              type. Amounts are aggregated per type (projects excluded). The
+              Revenue tab has no side panel — its comparison is built into the
+              grid (<em>Official Revenue · previous RFQ</em> and the{" "}
+              <em>Variance</em> row).
             </Note>
           </>
         ),
@@ -616,8 +713,8 @@ const GROUPS: ChapterGroup[] = [
                 </Defs>
               </Step>
               <Step n={5}>
-                Press <Chip>Distribute</Chip>. The numbers land in the grid as
-                unsaved edits — review, then <SaveChip />.
+                Press <Chip>Distribute</Chip>. The numbers land in the grid like
+                any other edit — review them, and they autosave.
               </Step>
             </Steps>
             <Callout tone="tip" icon={Lightbulb} title="Typical use">
@@ -659,22 +756,35 @@ const GROUPS: ChapterGroup[] = [
               One of: the RFQ is <strong>locked</strong> (red lock), the month is
               a <strong>closed period</strong> (lock in its header), the client
               isn&apos;t assigned to you, or you&apos;re in the{" "}
-              <strong>Admin Input</strong> section (admin-only).
+              <strong>REFERENCE DATA</strong> section (MediaOcean is admin-only,
+              MediaBox is synced and never editable).
             </Faq>
-            <Faq q="My numbers disappeared / didn't save.">
-              Changes are local until you press <SaveChip />. Switching RFQ or
-              leaving the page without saving drops them.
+            <Faq q="Did my changes save?">
+              Edits autosave shortly after you pause; check the toolbar for the{" "}
+              <em>Saved</em> check. If it shows <em>Save failed</em>, edit any
+              cell to retry or press <SaveChip />.
+            </Faq>
+            <Faq q="I deleted a row by mistake.">
+              Press <strong>Discard</strong> right away — it restores the last
+              saved state. If autosave already ran, re-add the row (its type
+              picker keeps the same options).
             </Faq>
             <Faq q="The Revenue Commission row is all zeros.">
-              No commission rates for this client &amp; year. Set them in{" "}
-              <strong>Clients → commissions</strong>, then return.
+              No commission rates for this client &amp; year. Set them on the{" "}
+              <strong>Clients</strong> page (commissions), then come back — the
+              row recalculates from Media Spend.
             </Faq>
             <Faq q="The Labs partner list is empty.">
               No partner is configured for the year. An admin adds them in{" "}
-              <strong>Admin → Labs</strong>.
+              <strong>Admin → LABS</strong>.
+            </Faq>
+            <Faq q="A row is flagged “Not configured”.">
+              Its type (e.g. a Labs partner) was removed from the year&apos;s
+              setup. The data is kept, but the type can&apos;t be re-added.
             </Faq>
             <Faq q="I can't find a client in the dropdown.">
-              You only see clients assigned to you. Ask an admin to assign it.
+              You only see clients assigned to you (and hidden clients are
+              filtered out). Ask an admin to assign it or unhide it.
             </Faq>
           </>
         ),
@@ -705,29 +815,40 @@ const TOPICS: Topic[] = [
   { label: "Copy & paste from Excel", chapterId: "spreadsheet", keywords: "clipboard tsv block" },
   { label: "Fill down / fill right", chapterId: "spreadsheet", keywords: "ctrl d r repeat" },
   { label: "Keyboard shortcuts", chapterId: "spreadsheet", keywords: "keys hotkeys arrows tab" },
+  { label: "Copy a read-only cell", chapterId: "spreadsheet", keywords: "mediaocean mediabox click clipboard" },
   { label: "Distribute one amount across months", chapterId: "spread", keywords: "spread tool fan curve" },
   { label: "Equal vs weighted split", chapterId: "spread", keywords: "mode shape" },
   { label: "Line total / replace / add", chapterId: "spread", keywords: "behaviour existing values" },
-  { label: "Add a project", chapterId: "media", keywords: "bucket new campaign" },
+  { label: "Add a project", chapterId: "media", keywords: "bucket new campaign general" },
   { label: "Add a media type row", chapterId: "media", keywords: "row line type" },
+  { label: "Remove a row or project", chapterId: "media", keywords: "delete trash undo" },
   { label: "Lock / closed period / read-only", chapterId: "grid", keywords: "frozen cannot edit" },
-  { label: "Admin Input (MediaOcean / GAIA)", chapterId: "grid", keywords: "booked admin actuals reference" },
+  { label: "BL Submission vs Reference Data", chapterId: "grid", keywords: "sections black row total" },
+  { label: "MediaOcean & MediaBox", chapterId: "grid", keywords: "booked admin actuals reference synced campaigns" },
+  { label: "Autosave status (Saving… / Saved)", chapterId: "save", keywords: "indicator pending flush" },
+  { label: "Save or discard changes", chapterId: "save", keywords: "unsaved revert force" },
+  { label: "Row notes & the Notes column", chapterId: "notes", keywords: "comment annotate cell" },
+  { label: "Submission note (shared)", chapterId: "notes", keywords: "card team comment locked" },
+  { label: "Ready months", chapterId: "notes", keywords: "readiness complete flag tick" },
   { label: "Commission is zero / set rates", chapterId: "revenue", keywords: "no rates rate calculated" },
   { label: "Why commission can't be edited", chapterId: "revenue", keywords: "calculated derived media" },
+  { label: "Accrual line (revenue missed by GAIA)", chapterId: "revenue", keywords: "closed months commission catch up" },
+  { label: "BL Submission (mauve) source of truth", chapterId: "revenue", keywords: "violet purple struck overridden counted" },
+  { label: "Official Revenue (green row)", chapterId: "revenue", keywords: "emerald gaiaForecast official total bottom" },
   { label: "Labs partner list is empty", chapterId: "labs", keywords: "admin configure year" },
   { label: "Set a partner's coverage %", chapterId: "labs-share", keywords: "pencil penetration percent" },
   { label: "Labs / Media target ratio", chapterId: "labs-share", keywords: "share goal 25" },
   { label: "Split coverage across projects", chapterId: "labs-share", keywords: "even split percent" },
   { label: "Over 100% warning", chapterId: "labs-share", keywords: "exceeds budget cap" },
-  { label: "Compare with another RFQ", chapterId: "compare", keywords: "reference round versus" },
-  { label: "Compare against admin input", chapterId: "compare", keywords: "mediaocean gaia booked actuals" },
+  { label: "Compare with another RFQ", chapterId: "compare", keywords: "reference round versus year submission" },
+  { label: "Default comparison (previous submission)", chapterId: "compare", keywords: "reset auto" },
+  { label: "Compare against MediaOcean", chapterId: "compare", keywords: "booked actuals annual side" },
   { label: "Variance bars / donut views", chapterId: "compare", keywords: "chart pills" },
   { label: "Reallocate budget / distribute the difference", chapterId: "reallocate", keywords: "gap close push align" },
   { label: "Single vs Split % destination", chapterId: "reallocate", keywords: "project percent one many" },
   { label: "Export to CSV", chapterId: "export", keywords: "download file" },
-  { label: "Save or discard changes", chapterId: "save", keywords: "unsaved revert" },
   { label: "Can't edit / grid is read-only", chapterId: "faq", keywords: "locked closed not assigned" },
-  { label: "My numbers didn't save", chapterId: "faq", keywords: "disappeared lost" },
+  { label: "Did my changes save?", chapterId: "faq", keywords: "disappeared lost autosave failed" },
 ];
 
 // ─── Flat, searchable index of chapters + topics ─────────────────────────────

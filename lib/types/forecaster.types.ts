@@ -51,6 +51,9 @@ export interface RowDetail {
   levels: string[];
   /** 12-month budget of this detail line (independent of the parent total). */
   months: MonthlyMap;
+  /** Months (1–12) where a 0 was deliberately entered on this detail line —
+   *  same semantics as ForecastRow.explicitZeros. Absent when empty. */
+  explicitZeros?: number[];
 }
 
 /**
@@ -72,6 +75,35 @@ export interface ForecastRow {
    * expanded in the grid. Absent when none have been added.
    */
   details?: RowDetail[];
+  /**
+   * Months (1–12) where a 0 was deliberately entered (ADMIN_INPUT rows only).
+   * MonthlyMap can't tell "entered 0" from "never entered" (every month is
+   * stored, defaulting to 0), so this set marks the zeros that are real data —
+   * e.g. a GAIA month with genuinely no revenue, which must override the BL
+   * Input instead of falling back to it. Absent when empty.
+   */
+  explicitZeros?: number[];
+}
+
+/**
+ * True when `month` holds a deliberate 0 on this row (or detail line): it is
+ * flagged in `explicitZeros` AND the stored value is still 0 (a later non-zero
+ * entry supersedes a stale flag).
+ */
+export function hasExplicitZero(
+  row: { months: MonthlyMap; explicitZeros?: number[] },
+  month: number
+): boolean {
+  return (row.months[month] ?? 0) === 0 && !!row.explicitZeros?.includes(month);
+}
+
+/**
+ * True when `month` carries data on an ADMIN_INPUT row — a non-zero value or
+ * an explicit 0. This is what the Revenue BL-Submission priority tests to
+ * decide whether the GAIA lines override the BL Input for that month.
+ */
+export function actualsMonthEntered(row: ForecastRow, month: number): boolean {
+  return (row.months[month] ?? 0) !== 0 || hasExplicitZero(row, month);
 }
 
 // ─── Level 2 — Bucket ────────────────────────────────────────────────────────
@@ -208,6 +240,13 @@ export interface AxisConfig {
    * stored in the data_entries axis like the BL_INPUT (Revenue's GAIA).
    */
   annualActuals: boolean;
+  /**
+   * BL row types that track explicit zeros like ADMIN_INPUT rows do — a
+   * committed 0 is recorded in `ForecastRow.explicitZeros` as deliberate data
+   * (Revenue's Commission Overwrite, where a $0 overwrite must still suppress
+   * the computed commission). Absent → BL zeros are plain empty cells.
+   */
+  blExplicitZeroRowTypes?: string[];
 }
 
 // ─── Cell coordinates + dirty tracking ───────────────────────────────────────
@@ -418,14 +457,33 @@ export function detailMonthTotals(details: RowDetail[]): MonthlyMap {
 }
 
 /**
- * An ADMIN_INPUT row carrying detail lines derives its months from them
- * (row = sum of its details); its cells are read-only in the grid. A row
- * without details keeps its hand-entered months. Returns the same reference
- * when there is nothing to derive.
+ * Explicit zeros a parent row derives from its detail lines: the months where
+ * the details sum to 0 while at least one of them carries data — a non-zero
+ * amount (entries cancelling out) or its own explicit 0. Keeps a deliberate 0
+ * entered on a detail line overriding the BL Input like a hand-entered one.
+ */
+export function detailExplicitZeros(details: RowDetail[]): number[] {
+  const totals = detailMonthTotals(details);
+  return MONTHS.filter(
+    (m) =>
+      totals[m] === 0 &&
+      details.some((d) => (d.months[m] ?? 0) !== 0 || hasExplicitZero(d, m))
+  );
+}
+
+/**
+ * An ADMIN_INPUT row carrying detail lines derives its months — and its
+ * explicit zeros — from them (row = sum of its details); its cells are
+ * read-only in the grid. A row without details keeps its hand-entered months.
+ * Returns the same reference when there is nothing to derive.
  */
 export function rollUpDetailMonths(row: ForecastRow): ForecastRow {
   if (!row.details || row.details.length === 0) return row;
-  return { ...row, months: detailMonthTotals(row.details) };
+  const zeros = detailExplicitZeros(row.details);
+  const rolled = { ...row, months: detailMonthTotals(row.details) };
+  if (zeros.length > 0) rolled.explicitZeros = zeros;
+  else delete rolled.explicitZeros;
+  return rolled;
 }
 
 /** Applies the detail roll-up to a whole actuals set. */
@@ -528,14 +586,15 @@ export function buildLabsAxisConfig(partners: LabsPartner[]): AxisConfig {
  * (lib/dashboard/data/aggregate.ts) so the same `rowType` values flow through
  * the grid, the comparison panel and the dashboard.
  *
- * Unlike Media/Labs, Revenue has no project notion: a single implicit bucket
- * holds one fixed row per BL stream, and the grid offers no add/remove. The
- * Commission BL row is computed (media spend × commission rate), not entered —
- * see lib/format/revenue-commission.ts.
+ * Like Media/Labs, Revenue holds projects (buckets) of stream lines. The
+ * "General" project is fixed — it always exists and hosts the required
+ * Commission and Accrual lines. The Commission BL row is computed (media
+ * spend × commission rate), never entered — see lib/format/revenue-commission.ts.
  */
 export type RevenueStream =
   | "retainer"
   | "commission"
+  | "commissionOverwrite"
   | "projectFees"
   | "productFees"
   | "unallocated"
@@ -545,6 +604,7 @@ export type RevenueStream =
 export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
   retainer: "Retainer",
   commission: "Commission",
+  commissionOverwrite: "Commission Overwrite",
   projectFees: "Project Fees",
   productFees: "Product Fees",
   unallocated: "Unallocated",
@@ -554,6 +614,19 @@ export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
 
 /** The Commission BL row is calculated — read-only, never hand-entered. */
 export const REVENUE_COMMISSION_TYPE: RevenueStream = "commission";
+
+/**
+ * Commission Overwrite — a BL-only hand-entered stream (it has no GAIA
+ * counterpart), except for one rule: any month where a submission's BL
+ * Commission Overwrite lines carry a value — a non-zero amount OR an
+ * explicitly entered 0 — suppresses the computed Commission for that month
+ * (the overwrite replaces the calculation — see applyCommissionOverwrite in
+ * lib/format/revenue-commission.ts). It is the only BL stream tracking
+ * explicit zeros (`ForecastRow.explicitZeros`), so a deliberate $0 overwrite
+ * can zero the commission.
+ */
+export const REVENUE_COMMISSION_OVERWRITE_TYPE: RevenueStream =
+  "commissionOverwrite";
 
 /**
  * The Accrual BL row is a fixed line used to report revenue — such as
@@ -577,6 +650,7 @@ export const REVENUE_GAIA_FORECAST_TYPE: RevenueStream = "gaiaForecast";
 export const REVENUE_BL_STREAMS: RevenueStream[] = [
   "retainer",
   "commission",
+  "commissionOverwrite",
   "projectFees",
   "productFees",
   "accrual",
@@ -584,11 +658,12 @@ export const REVENUE_BL_STREAMS: RevenueStream[] = [
 
 /**
  * BL Input streams the user may add extra lines of. Commission is excluded
- * (it is the single computed row); the four base streams are always seeded by
- * `ensureRevenueShape`, but these three can have multiple lines.
+ * (it is the single computed row); the base streams are always seeded by
+ * `ensureRevenueShape`, but these can have multiple lines.
  */
 export const REVENUE_BL_ADDABLE_STREAMS: RevenueStream[] = [
   "retainer",
+  "commissionOverwrite",
   "projectFees",
   "productFees",
 ];
@@ -596,8 +671,8 @@ export const REVENUE_BL_ADDABLE_STREAMS: RevenueStream[] = [
 /**
  * Admin Input (GAIA) streams — the Official Revenue source-of-truth line
  * (`gaiaForecast`, rendered separately at the bottom of the grid), then the BL
- * four plus Unallocated and Accrual. The order here also drives the seeded
- * actuals row order (ensureRevenueShape).
+ * streams plus Unallocated. The order here also drives the seeded actuals row
+ * order (ensureRevenueShape).
  */
 export const REVENUE_ADMIN_STREAMS: RevenueStream[] = [
   "gaiaForecast",
@@ -609,23 +684,45 @@ export const REVENUE_ADMIN_STREAMS: RevenueStream[] = [
   "accrual",
 ];
 
+/**
+ * Every revenue stream, in canonical option order — the admin (GAIA) streams
+ * plus the BL-only Commission Overwrite. Drives the axis rowTypeOptions (so
+ * the comparison panel can order and label every stream) and the bulk sheets'
+ * Stream vocabulary.
+ */
+export const REVENUE_ALL_STREAMS: RevenueStream[] = [
+  "gaiaForecast",
+  "retainer",
+  "commission",
+  "commissionOverwrite",
+  "projectFees",
+  "productFees",
+  "unallocated",
+  "accrual",
+];
+
 export const REVENUE_AXIS_CONFIG: AxisConfig = {
   axisId: "revenue",
   title: "Revenue",
-  bucketLabel: "Revenue",
+  bucketLabel: "Project",
   rowTypeLabel: "Stream",
   // Every stream is listed so the comparison panel can order and label them;
-  // the grid itself seeds the fixed rows and exposes no add/remove UI.
-  rowTypeOptions: REVENUE_ADMIN_STREAMS.map((s) => ({
+  // the grid itself seeds the fixed rows and limits what can be added.
+  rowTypeOptions: REVENUE_ALL_STREAMS.map((s) => ({
     value: s,
     label: REVENUE_STREAM_LABELS[s],
   })),
-  allowMultipleBuckets: false,
-  // BL Input may hold several lines of the addable streams (Retainer, Project
+  // Projects, like Media/Labs. The "General" project is fixed (hosts the
+  // computed Commission and the Accrual lines) — enforced by ensureRevenueShape.
+  allowMultipleBuckets: true,
+  // A project may hold several lines of the addable streams (Retainer, Project
   // Fees, Product Fees); the grid limits which types can actually be added.
   allowDuplicateRowTypes: true,
   // Revenue actuals come from GAIA (Finance), not MediaOcean.
   actualsLabel: "GAIA",
   // GAIA is captured per submission (the roll-up logic is submission-specific).
   annualActuals: false,
+  // A deliberate $0 on a Commission Overwrite line is real data — it must
+  // suppress the computed commission like any other overwrite value.
+  blExplicitZeroRowTypes: [REVENUE_COMMISSION_OVERWRITE_TYPE],
 };

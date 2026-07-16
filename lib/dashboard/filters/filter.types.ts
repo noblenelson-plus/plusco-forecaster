@@ -15,6 +15,7 @@ export type FacetKey =
   | "regions"
   | "offices"
   | "tiers"
+  | "statuses"
   | "businessLeads"
   | "clients";
 
@@ -27,6 +28,8 @@ export interface FacetCtx {
   usersMap: Map<string, string>;
   /** cl_id → client name (Client facet). */
   clientNames: Map<string, string>;
+  /** Globally selected year — for year-dependent values (Status facet). */
+  year: number;
 }
 
 /**
@@ -39,7 +42,7 @@ export interface Facet {
   label: string;
   searchable?: boolean;
   /** The facet value of a client — used both for matching and as the option value. */
-  getValue: (client: Client) => string;
+  getValue: (client: Client, ctx: FacetCtx) => string;
   /** Resolve a value to a human-readable label. */
   getLabel: (value: string, ctx: FacetCtx) => string;
 }
@@ -50,6 +53,7 @@ export const EMPTY_FILTER_STATE: DashboardFilterState = {
   regions: [],
   offices: [],
   tiers: [],
+  statuses: [],
   businessLeads: [],
   clients: [],
 };

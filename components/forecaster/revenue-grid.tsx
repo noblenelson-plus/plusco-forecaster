@@ -5,17 +5,21 @@
  * Revenue grid — a flat, fixed-row variant of the forecast grid.
  *
  * Unlike Media/Labs there is no project notion: a single implicit bucket holds
- * the BL revenue streams (Retainer, Commission, Project Fees, Product Fees,
- * Accrual), and the GAIA (admin) section adds Unallocated. The base BL streams
- * are always seeded by `ensureRevenueShape`; the user may add extra lines of
- * Retainer, Project Fees or Product Fees (rename/remove them), but not
- * Commission (the single computed row) nor Accrual (a fixed line for reporting
- * revenue missed by GAIA in locked months). The GAIA section has no add/remove
- * UI.
+ * the BL revenue streams (Retainer, Commission, Commission Overwrite, Project
+ * Fees, Product Fees, Accrual), and the GAIA (admin) section adds Unallocated.
+ * The base BL streams are always seeded by `ensureRevenueShape`; the user may
+ * add extra lines of Retainer, Commission Overwrite, Project Fees or Product
+ * Fees (rename/remove them), but not Commission (the single computed row) nor
+ * Accrual (a fixed line for reporting revenue missed by GAIA in locked
+ * months). The GAIA section has no add/remove UI.
  *
  * The BL Commission row is calculated (media spend × commission rate, same
- * submission) — read-only, with a per-month hover breakdown. The GAIA
- * Commission row is a normal manual entry.
+ * submission) — read-only, with a per-month hover breakdown. Any month where a
+ * BL Commission Overwrite line carries a value — a non-zero amount or an
+ * explicitly entered 0 — suppresses the calculation for that month (the
+ * Commission cell shows 0 and the hover explains why). Commission Overwrite is
+ * BL-only (no GAIA counterpart). The GAIA Commission row is a normal manual
+ * entry.
  *
  * Two independent figures sit at the bottom of the grid:
  *   - Official Revenue = a single hand-entered line (stored as `gaiaForecast`,
@@ -51,20 +55,26 @@ import {
   StickyNote,
   ChevronDown,
   ChevronRight,
+  FolderPlus,
   Info,
 } from "lucide-react";
 import type {
+  ForecastBucket,
   ForecastRow,
   InputCategory,
 } from "../../lib/types/forecaster.types";
 import {
   REVENUE_AXIS_CONFIG,
   REVENUE_COMMISSION_TYPE,
+  REVENUE_COMMISSION_OVERWRITE_TYPE,
   REVENUE_ACCRUAL_TYPE,
   REVENUE_GAIA_FORECAST_TYPE,
   REVENUE_BL_ADDABLE_STREAMS,
   REVENUE_STREAM_LABELS,
+  GENERAL_PROJECT_NAME,
   buildCellKey,
+  actualsMonthEntered,
+  hasExplicitZero,
 } from "../../lib/types/forecaster.types";
 import {
   type UseForecasterGridResult,
@@ -103,8 +113,9 @@ const EMPTY_MONTHS: Set<number> = new Set();
 
 /**
  * Per-month winning level for BL Submission. The GAIA detail lines win when any
- * carries a value; otherwise the BL Input is used; 0 = no data. (The GAIA
- * Revenue line is independent — it is the Official Revenue, not part of this.)
+ * carries a value — a non-zero amount OR an explicitly entered 0; otherwise the
+ * BL Input is used; 0 = no data. (The GAIA Revenue line is independent — it is
+ * the Official Revenue, not part of this.)
  */
 type BlLevel = 0 | 2 | 3;
 const LEVEL_NONE: BlLevel = 0;
@@ -114,13 +125,15 @@ const LEVEL_BL: BlLevel = 3; // BL Input, summed — the fallback
 /**
  * Visual state for a BL Submission cell at `level`, given its month's winning
  * level: `counted` (mauve, in the BL Submission total) or `overridden` (struck).
+ * `entered` marks a deliberate 0 (GAIA cells), which counts like any value.
  */
 function blCellState(
   level: BlLevel,
   winning: BlLevel,
-  value: number
+  value: number,
+  entered = false
 ): { counted: boolean; overridden: boolean } {
-  if (value === 0) return { counted: false, overridden: false };
+  if (value === 0 && !entered) return { counted: false, overridden: false };
   if (winning === level) return { counted: true, overridden: false };
   return { counted: false, overridden: true };
 }
@@ -167,9 +180,19 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
       return next;
     });
 
-  const bucket = grid.data.buckets[0];
-  const blRows = useMemo(() => bucket?.rows ?? [], [bucket]);
+  const buckets = grid.data.buckets;
   const actuals = grid.data.actuals;
+
+  // Collapsed projects — hidden rows also leave the selection model below so
+  // keyboard navigation / paste never reach rows you can't see.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleCollapse = (bucketId: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(bucketId)) next.delete(bucketId);
+      else next.add(bucketId);
+      return next;
+    });
 
   // Expanded GAIA (actuals) rows — their detail lines are shown, and only the
   // visible detail cells join the selection model below.
@@ -191,8 +214,9 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
   // Official Revenue is the hand-entered `gaiaForecast` line, rendered as the
   // editable emerald row at the bottom of the grid. BL Submission is a
   // two-level priority among the rest: the GAIA detail lines win each month
-  // when any carries a value, otherwise the BL Input is used; the winning
-  // level's cells are mauve, the losing ones struck through.
+  // when any carries a value (non-zero, or an explicitly entered 0), otherwise
+  // the BL Input is used; the winning level's cells are mauve, the losing ones
+  // struck through.
   const otherActuals = useMemo(
     () => actuals.filter((row) => row.rowType !== REVENUE_GAIA_FORECAST_TYPE),
     [actuals]
@@ -205,11 +229,13 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
     [actuals]
   );
 
-  // Which level feeds BL Submission each month (0 when neither carries a value).
+  // Which level feeds BL Submission each month (0 when neither carries a
+  // value). An explicit GAIA 0 counts as data: the month stays on the GAIA
+  // level instead of falling back to the BL Input.
   const blLevel = useMemo<Record<number, BlLevel>>(() => {
     const map: Record<number, BlLevel> = {};
     for (const m of MONTHS) {
-      if (otherActuals.some((row) => (row.months[m] ?? 0) !== 0))
+      if (otherActuals.some((row) => actualsMonthEntered(row, m)))
         map[m] = LEVEL_DETAIL;
       else if (blTotals[m] !== 0) map[m] = LEVEL_BL;
       else map[m] = LEVEL_NONE;
@@ -222,6 +248,48 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
     () => blSubmissionByMonth(grid.data),
     [grid.data]
   );
+
+  // BL Submission broken down by stream — for each month, the winning level's
+  // rows (the mauve cells) grouped by rowType. The rows sum back to
+  // `blSubmissionTotals` by construction. Rendered under the BL Submission row
+  // when it is expanded.
+  const [submissionExpanded, setSubmissionExpanded] = useState(false);
+  const submissionStreamRows = useMemo(() => {
+    const byStream = new Map<string, MonthlyMap>();
+    const add = (stream: string, m: number, v: number) => {
+      if (!v) return;
+      let months = byStream.get(stream);
+      if (!months) {
+        months = {};
+        byStream.set(stream, months);
+      }
+      months[m] = (months[m] ?? 0) + v;
+    };
+    for (const m of MONTHS) {
+      const level = blLevel[m];
+      if (level === LEVEL_DETAIL) {
+        for (const row of otherActuals) add(row.rowType, m, row.months[m] ?? 0);
+      } else if (level === LEVEL_BL) {
+        for (const b of buckets)
+          for (const row of b.rows) add(row.rowType, m, row.months[m] ?? 0);
+      }
+    }
+    // Fixed stream order (the labels map), unknown types appended last.
+    const order = Object.keys(REVENUE_STREAM_LABELS);
+    return [...byStream.entries()]
+      .sort(([a], [b]) => {
+        const ia = order.indexOf(a);
+        const ib = order.indexOf(b);
+        return (ia === -1 ? order.length : ia) - (ib === -1 ? order.length : ib);
+      })
+      .map(([stream, months]) => ({
+        stream,
+        label:
+          REVENUE_STREAM_LABELS[stream as keyof typeof REVENUE_STREAM_LABELS] ??
+          stream,
+        months,
+      }));
+  }, [blLevel, otherActuals, buckets]);
 
   // Previous RFQ's Official Revenue (`gaiaForecast` line) — the comparison
   // reference (defaults to the previous submission). Null until a reference is
@@ -244,17 +312,21 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
     : null;
 
   // Selection model — editable rows only. The computed BL Commission row is
-  // excluded (read-only, never edited/copied through the selection layer).
+  // excluded (read-only, never edited/copied through the selection layer),
+  // and collapsed projects' rows leave the model with them.
   const orderedRows = useMemo<OrderedRow[]>(() => {
     const list: OrderedRow[] = [];
-    for (const row of blRows) {
-      if (row.rowType === REVENUE_COMMISSION_TYPE) continue;
-      list.push({
-        key: row.rowId,
-        rowId: row.rowId,
-        category: "BL_INPUT",
-        bucketId: bucket?.bucketId ?? null,
-      });
+    for (const b of buckets) {
+      if (collapsed.has(b.bucketId)) continue;
+      for (const row of b.rows) {
+        if (row.rowType === REVENUE_COMMISSION_TYPE) continue;
+        list.push({
+          key: row.rowId,
+          rowId: row.rowId,
+          category: "BL_INPUT",
+          bucketId: b.bucketId,
+        });
+      }
     }
     const pushActuals = (row: ForecastRow) => {
       list.push({
@@ -287,7 +359,7 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
     );
     if (official) pushActuals(official);
     return list;
-  }, [blRows, actuals, bucket?.bucketId, expandedActuals]);
+  }, [buckets, actuals, collapsed, expandedActuals]);
 
   const rowIndex = useMemo(
     () => new Map(orderedRows.map((r, i) => [r.key, i])),
@@ -370,9 +442,10 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
           <table className="w-full text-sm border-collapse min-w-[1100px]">
             <thead>
               <tr className="bg-gray-50">
-                <th className="sticky left-0 top-0 z-30 bg-gray-50 text-left px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs w-52 border-b border-gray-200">
-                  {config.rowTypeLabel}
-                </th>
+                {/* First column header intentionally left blank — the section
+                    bands (BL Input, GAIA) already name what the rows are. */}
+                <th className="sticky left-0 top-0 z-30 bg-gray-50 text-left px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs w-52 border-b border-gray-200" />
+
                 {showNotes && (
                   <th className="sticky top-0 z-20 bg-gray-50 px-3 py-2.5 font-semibold text-gray-500 uppercase tracking-wider text-xs text-left min-w-[200px] border-b border-gray-200">
                     <span className="inline-flex items-center gap-1.5">
@@ -412,62 +485,75 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
             </thead>
 
             <tbody>
-              {/* ─── BL Input ─── */}
-              <BlSectionHeader
-                showNotes={showNotes}
-                canAdd={!blReadOnly}
-                onAdd={(rowType) =>
-                  bucket && grid.addRow(bucket.bucketId, rowType)
-                }
-              />
-              {blRows.map((row) => {
-                if (row.rowType === REVENUE_COMMISSION_TYPE) {
-                  return (
-                    <CommissionRow
-                      key={row.rowId}
-                      row={row}
-                      bucketId={bucket?.bucketId ?? null}
+              {/* ─── BL Input — one section per project. "General" is fixed
+                  (unremovable, unrenamable) and hosts Commission + Accrual. */}
+              <BlSectionHeader showNotes={showNotes} />
+              {buckets.map((b) => {
+                const isGeneral = b.name === GENERAL_PROJECT_NAME;
+                const isCollapsed = collapsed.has(b.bucketId);
+                return (
+                  <Fragment key={b.bucketId}>
+                    <RevenueProjectHeader
+                      bucket={b}
                       readOnly={blReadOnly}
+                      lockName={isGeneral}
+                      collapsed={isCollapsed}
+                      onToggleCollapse={() => toggleCollapse(b.bucketId)}
                       grid={grid}
-                      commission={commission}
-                      blLevel={blLevel}
-                      noRates={noRates}
                       showNotes={showNotes}
                     />
-                  );
-                }
-                const isAccrual = row.rowType === REVENUE_ACCRUAL_TYPE;
-                return (
-                  <RevenueDataRow
-                    key={row.rowId}
-                    row={row}
-                    category="BL_INPUT"
-                    level={LEVEL_BL}
-                    blLevel={blLevel}
-                    bucketId={bucket?.bucketId ?? null}
-                    readOnly={blReadOnly}
-                    removable={!isAccrual}
-                    labelTooltip={
-                      isAccrual
-                        ? "Use this line to report revenue — such as commission — that was not captured in GAIA for locked (closed) months."
-                        : undefined
-                    }
-                    grid={grid}
-                    sel={sel}
-                    rowIndex={rowIndex}
-                    draggingRef={draggingRef}
-                    rowBg="bg-white group-hover:bg-gray-50"
-                    showNotes={showNotes}
-                    onSpread={() =>
-                      setSpreadRow({
-                        category: "BL_INPUT",
-                        bucketId: bucket?.bucketId ?? null,
-                        rowId: row.rowId,
-                        label: row.label,
-                        months: row.months,
-                      })
-                    }
-                  />
+                    {!isCollapsed &&
+                      b.rows.map((row) => {
+                        if (row.rowType === REVENUE_COMMISSION_TYPE) {
+                          return (
+                            <CommissionRow
+                              key={row.rowId}
+                              row={row}
+                              bucketId={b.bucketId}
+                              readOnly={blReadOnly}
+                              grid={grid}
+                              commission={commission}
+                              blLevel={blLevel}
+                              noRates={noRates}
+                              showNotes={showNotes}
+                            />
+                          );
+                        }
+                        const isAccrual = row.rowType === REVENUE_ACCRUAL_TYPE;
+                        return (
+                          <RevenueDataRow
+                            key={row.rowId}
+                            row={row}
+                            category="BL_INPUT"
+                            level={LEVEL_BL}
+                            blLevel={blLevel}
+                            bucketId={b.bucketId}
+                            readOnly={blReadOnly}
+                            removable={!isAccrual}
+                            labelTooltip={
+                              isAccrual
+                                ? "Use this line to report revenue — such as commission — that was not captured in GAIA for locked (closed) months."
+                                : undefined
+                            }
+                            grid={grid}
+                            sel={sel}
+                            rowIndex={rowIndex}
+                            draggingRef={draggingRef}
+                            rowBg="bg-white group-hover:bg-gray-50"
+                            showNotes={showNotes}
+                            onSpread={() =>
+                              setSpreadRow({
+                                category: "BL_INPUT",
+                                bucketId: b.bucketId,
+                                rowId: row.rowId,
+                                label: row.label,
+                                months: row.months,
+                              })
+                            }
+                          />
+                        );
+                      })}
+                  </Fragment>
                 );
               })}
 
@@ -575,7 +661,22 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
               {/* ─── BL Submission (GAIA detail lines over BL Input) ─── */}
               <tr className="bg-violet-600 border-t-2 border-violet-700">
                 <td className="sticky left-0 z-10 bg-violet-600 px-4 py-2.5 text-xs font-bold text-white uppercase tracking-wider">
-                  BL Submission
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionExpanded((prev) => !prev)}
+                    title="Show the total per stream (the counted cells)"
+                    className="flex items-center gap-1.5 uppercase tracking-wider hover:text-violet-100"
+                  >
+                    {submissionExpanded ? (
+                      <ChevronDown size={12} />
+                    ) : (
+                      <ChevronRight size={12} />
+                    )}
+                    BL Submission
+                    <span className="font-medium normal-case tracking-normal text-white/75">
+                      · current submission
+                    </span>
+                  </button>
                 </td>
                 {showNotes && <td className="bg-violet-600" />}
                 {MONTHS.map((m) => (
@@ -593,6 +694,37 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                   </p>
                 </td>
               </tr>
+
+              {/* Per-stream breakdown of the counted (mauve) cells. */}
+              {submissionExpanded &&
+                submissionStreamRows.map((row) => (
+                  <tr
+                    key={row.stream}
+                    className="bg-violet-50 border-b border-violet-100"
+                  >
+                    <td className="sticky left-0 z-10 bg-violet-50 py-2 pl-10 pr-4 text-xs text-violet-800">
+                      {row.label}
+                    </td>
+                    {showNotes && <td className="bg-violet-50" />}
+                    {MONTHS.map((m) => (
+                      <td
+                        key={m}
+                        className="px-2.5 py-2 text-right align-middle"
+                      >
+                        <p className="text-sm tabular-nums text-violet-800">
+                          {row.months[m]
+                            ? Math.round(row.months[m]).toLocaleString("en-CA")
+                            : "—"}
+                        </p>
+                      </td>
+                    ))}
+                    <td className="px-2.5 py-2 text-right align-middle bg-violet-100/60">
+                      <p className="text-sm font-medium tabular-nums text-violet-900">
+                        {Math.round(sumMonths(row.months)).toLocaleString("en-CA")}
+                      </p>
+                    </td>
+                  </tr>
+                ))}
 
               {/* Official revenue of the comparison reference (previous RFQ by
                   default) + the per-month variance of the current BL Submission
@@ -733,6 +865,17 @@ function RevenueToolbar({
   onToggleNotes: () => void;
 }) {
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
+  const [addingBucket, setAddingBucket] = useState(false);
+  const [bucketName, setBucketName] = useState("");
+
+  function submitBucket() {
+    const name = bucketName.trim();
+    // "General" is the fixed project — a duplicate would confuse the required
+    // Commission/Accrual placement, so it can't be created by hand.
+    if (name && name !== GENERAL_PROJECT_NAME) grid.addBucket(name);
+    setBucketName("");
+    setAddingBucket(false);
+  }
 
   function downloadCSV() {
     downloadAxisCSV(grid.data, REVENUE_AXIS_CONFIG, {
@@ -760,6 +903,38 @@ function RevenueToolbar({
 
       <div className="flex items-center gap-2">
         {!grid.locked && <SaveStatusIndicator status={grid.saveStatus} />}
+
+        {!grid.locked &&
+          (addingBucket ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                type="text"
+                value={bucketName}
+                onChange={(e) => setBucketName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submitBucket();
+                  if (e.key === "Escape") setAddingBucket(false);
+                }}
+                placeholder="Project name..."
+                className="w-44 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400"
+              />
+              <button
+                onClick={submitBucket}
+                className="px-3 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-lg hover:bg-yellow-500 transition-colors"
+              >
+                Add
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAddingBucket(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
+            >
+              <FolderPlus size={14} />
+              Add project
+            </button>
+          ))}
 
         <button
           onClick={onToggleNotes}
@@ -812,17 +987,9 @@ function RevenueToolbar({
   );
 }
 
-// ─── BL Input section header (label + add-line control) ──────────────────────
+// ─── BL Input section header (plain band — the projects structure the rows) ──
 
-function BlSectionHeader({
-  showNotes,
-  canAdd,
-  onAdd,
-}: {
-  showNotes: boolean;
-  canAdd: boolean;
-  onAdd: (rowType: string) => void;
-}) {
+function BlSectionHeader({ showNotes }: { showNotes: boolean }) {
   return (
     <tr className="bg-gray-100 border-y border-gray-200">
       <td colSpan={showNotes ? 15 : 14} className="p-0">
@@ -830,9 +997,89 @@ function BlSectionHeader({
           <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
             BL Input
           </span>
-          {canAdd && <AddLineControl onPick={onAdd} />}
         </div>
       </td>
+    </tr>
+  );
+}
+
+// ─── Project header (name + subtotal + add-line + remove) ────────────────────
+
+/**
+ * One revenue project's header row, mirroring the Media/Labs bucket header:
+ * collapse chevron, editable name, per-project add-line control, remove
+ * button, and the project's monthly subtotal across the row. The "General"
+ * project is fixed — unrenamable and unremovable — because it hosts the
+ * computed Commission and the Accrual lines (see ensureRevenueShape).
+ */
+function RevenueProjectHeader({
+  bucket,
+  readOnly,
+  lockName,
+  collapsed,
+  onToggleCollapse,
+  grid,
+  showNotes,
+}: {
+  bucket: ForecastBucket;
+  readOnly: boolean;
+  /** The fixed General project — no rename, no remove. */
+  lockName: boolean;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  grid: UseForecasterGridResult;
+  showNotes: boolean;
+}) {
+  const totals = useMemo(() => monthTotals(bucket.rows), [bucket.rows]);
+
+  return (
+    <tr className="bg-gray-50 border-t border-gray-200">
+      <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 border-b border-gray-100">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onToggleCollapse}
+            className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200/70 transition-colors flex-shrink-0"
+            title={collapsed ? "Expand project" : "Collapse project"}
+          >
+            {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+          </button>
+          <input
+            type="text"
+            value={bucket.name}
+            disabled={readOnly || lockName}
+            onChange={(e) => grid.renameBucket(bucket.bucketId, e.target.value)}
+            title={
+              lockName
+                ? `The "${GENERAL_PROJECT_NAME}" project is fixed — it hosts the Commission and Accrual lines.`
+                : undefined
+            }
+            className="font-semibold text-gray-900 text-sm bg-transparent border border-transparent rounded-md px-1.5 py-0.5 min-w-0 flex-1
+              hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white
+              disabled:hover:border-transparent"
+          />
+          {!readOnly && (
+            <>
+              <AddLineControl
+                onPick={(rowType) => grid.addRow(bucket.bucketId, rowType)}
+              />
+              {!lockName && (
+                <button
+                  onClick={() => grid.removeBucket(bucket.bucketId)}
+                  className="p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  title="Remove project (until saved)"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </td>
+      {showNotes && <td className="bg-gray-50 border-b border-gray-100" />}
+      {MONTHS.map((m) => (
+        <TotalCell key={m} value={totals[m] ?? 0} emphasis="bucket" />
+      ))}
+      <TotalCell value={sumMonths(totals)} emphasis="bucket" />
     </tr>
   );
 }
@@ -875,7 +1122,7 @@ function AddLineControl({ onPick }: { onPick: (rowType: string) => void }) {
     <button
       onClick={() => setAdding(true)}
       className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-      title="Add a Retainer, Project Fees or Product Fees line"
+      title="Add a Retainer, Commission Overwrite, Project Fees or Product Fees line"
     >
       <Plus size={12} />
       Add line
@@ -1206,7 +1453,19 @@ function RevenueDataRow({
         const coord = { category, bucketId, rowId: row.rowId, month: m };
         const closed = closedHere.has(m);
         const value = row.months[m] ?? 0;
-        const { counted, overridden } = blCellState(level, blLevel[m], value);
+        // A deliberate 0 is real data: it renders as "0" and wins the month
+        // over the BL Input like any other value (GAIA rows), or suppresses
+        // the computed commission (the BL Commission Overwrite lines).
+        const explicitZero =
+          (category === "ADMIN_INPUT" ||
+            row.rowType === REVENUE_COMMISSION_OVERWRITE_TYPE) &&
+          hasExplicitZero(row, m);
+        const { counted, overridden } = blCellState(
+          level,
+          blLevel[m],
+          value,
+          explicitZero
+        );
         return (
           <SpreadsheetCell
             key={m}
@@ -1217,6 +1476,7 @@ function RevenueDataRow({
             closed={closed}
             counted={counted}
             overridden={overridden}
+            explicitZero={explicitZero}
             dirty={grid.dirtyMap.has(buildCellKey(coord))}
             sel={sel}
             draggingRef={draggingRef}
@@ -1267,6 +1527,9 @@ function OfficialRevenueRow({
           {expand && <ExpandToggle expand={expand} inverse />}
           <span className="text-xs font-bold text-white uppercase tracking-wider">
             {row.label}
+          </span>
+          <span className="text-xs font-medium text-white/75">
+            · current submission
           </span>
           {expand && expand.count > 0 && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums bg-white/20 text-white">
@@ -1331,6 +1594,7 @@ function OfficialRevenueRow({
             value={row.months[m] ?? 0}
             readOnly={readOnly || monthsDerived}
             inverse
+            explicitZero={hasExplicitZero(row, m)}
             dirty={grid.dirtyMap.has(buildCellKey(coord))}
             sel={sel}
             draggingRef={draggingRef}
@@ -1412,6 +1676,7 @@ function CommissionRow({
             lines={commission.byMonth[m] ?? []}
             counted={counted}
             overridden={overridden}
+            suppressed={commission.overwritten.has(m)}
           />
         );
       })}
@@ -1426,6 +1691,7 @@ function CommissionCell({
   lines,
   counted,
   overridden,
+  suppressed,
 }: {
   month: number;
   value: number;
@@ -1434,6 +1700,8 @@ function CommissionCell({
   counted: boolean;
   /** Overridden by the GAIA detail lines — struck through. */
   overridden: boolean;
+  /** Not calculated — a Commission Overwrite value exists for this month. */
+  suppressed: boolean;
 }) {
   // Anchor rect captured on hover — the tooltip renders through a portal in
   // fixed position so it escapes the table's overflow-x clipping.
@@ -1469,7 +1737,13 @@ function CommissionCell({
       </div>
 
       {anchor && (
-        <CommissionTooltip month={month} value={value} lines={lines} anchor={anchor} />
+        <CommissionTooltip
+          month={month}
+          value={value}
+          lines={lines}
+          suppressed={suppressed}
+          anchor={anchor}
+        />
       )}
     </td>
   );
@@ -1480,11 +1754,14 @@ function CommissionTooltip({
   month,
   value,
   lines,
+  suppressed,
   anchor,
 }: {
   month: number;
   value: number;
   lines: CommissionBreakdown["byMonth"][number];
+  /** Not calculated — a Commission Overwrite value exists for this month. */
+  suppressed: boolean;
   anchor: DOMRect;
 }) {
   if (typeof document === "undefined") return null;
@@ -1517,7 +1794,12 @@ function CommissionTooltip({
         <Sparkles size={11} className="text-indigo-400" />
         Commission · {MONTH_LABELS[month - 1]}
       </p>
-      {lines.length === 0 ? (
+      {suppressed ? (
+        <p className="text-xs text-gray-400">
+          Not calculated — a Commission Overwrite value is entered for this
+          month.
+        </p>
+      ) : lines.length === 0 ? (
         <p className="text-xs text-gray-400">No media spend or rate this month.</p>
       ) : (
         <ul className="space-y-1.5">

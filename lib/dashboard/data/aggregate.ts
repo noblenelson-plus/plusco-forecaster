@@ -78,8 +78,82 @@ export function scaleAxisData(data: AxisData, factor: number): AxisData {
   };
 }
 
+/**
+ * Restricts an axis to a set of months: values outside the set are zeroed on
+ * every BL and actuals row, so all downstream aggregations (totals, ratios,
+ * tables) only count the selected months. Feed it a strict subset — with all
+ * 12 months selected just skip the call.
+ */
+export function maskAxisDataToMonths(
+  data: AxisData,
+  months: ReadonlySet<number>
+): AxisData {
+  const maskRow = (r: ForecastRow): ForecastRow => {
+    const masked = emptyMonthly();
+    for (const m of MONTHS) masked[m] = months.has(m) ? r.months[m] ?? 0 : 0;
+    return { ...r, months: masked };
+  };
+  return {
+    buckets: data.buckets.map((b) => ({ ...b, rows: b.rows.map(maskRow) })),
+    actuals: data.actuals.map(maskRow),
+  };
+}
+
 function addInto(target: MonthlyMap, source: MonthlyMap): void {
   for (const m of MONTHS) target[m] += source[m] ?? 0;
+}
+
+// ─── Dimension breakdowns (by client attribute) ──────────────────────────────
+
+/** One in-scope client's annual total for an axis (already CAD-normalized). */
+export interface ClientAnnualTotal {
+  clientId: string;
+  total: number;
+}
+
+/** One in-scope client's monthly totals for an axis (already CAD-normalized). */
+export interface ClientMonthlyTotal {
+  clientId: string;
+  months: MonthlyMap;
+}
+
+/** Monthly total of an axis's ADMIN_INPUT (actuals) rows, all types summed. */
+export function actualsMonthly(data: AxisData): MonthlyMap {
+  const monthly = emptyMonthly();
+  for (const row of data.actuals) addInto(monthly, row.months);
+  return monthly;
+}
+
+export interface DimensionSlice {
+  label: string;
+  annual: number;
+  /** annual / scope total — null when the scope total is zero. */
+  share: number | null;
+}
+
+/**
+ * Group per-client annual totals under a resolved label (the client's region,
+ * business lead, …) and sort descending. Zero-total groups are omitted.
+ */
+export function groupTotalsByLabel(
+  totals: ClientAnnualTotal[],
+  labelOf: (clientId: string) => string
+): DimensionSlice[] {
+  const byLabel = new Map<string, number>();
+  let grand = 0;
+  for (const t of totals) {
+    const label = labelOf(t.clientId);
+    byLabel.set(label, (byLabel.get(label) ?? 0) + t.total);
+    grand += t.total;
+  }
+  return [...byLabel.entries()]
+    .filter(([, annual]) => annual > 0)
+    .map(([label, annual]) => ({
+      label,
+      annual,
+      share: grand > 0 ? annual / grand : null,
+    }))
+    .sort((a, b) => b.annual - a.annual);
 }
 
 // ─── Media ───────────────────────────────────────────────────────────────────
@@ -152,6 +226,7 @@ export function computeMediaBreakdown(media: AxisData): MediaBreakdown {
 const REVENUE_STREAMS: { key: string; label: string }[] = [
   { key: "retainer", label: "Retainer" },
   { key: "commission", label: "Commission" },
+  { key: "commissionOverwrite", label: "Commission Overwrite" },
   { key: "projectFees", label: "Project Fees" },
   { key: "productFees", label: "Product Fees" },
 ];

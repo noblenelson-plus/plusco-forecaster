@@ -26,8 +26,10 @@ import { useAccessibleClients } from "../../lib/hooks/use-accessible-clients";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
+import { useScopeMediaboxTotals } from "../../lib/dashboard/data/use-scope-mediabox-totals";
 import { useCurrencyRates } from "../../lib/hooks/use-currency-rates";
 import { getCurrencyRateForYear } from "../../lib/services/currency-service";
+import type { ClientDimensions } from "../../components/dashboard/dimension-breakdown";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../lib/stores/comparison-selection.store";
 import type { DashboardScope } from "../../lib/dashboard/widgets/widget.types";
@@ -43,13 +45,19 @@ export default function DashboardPage() {
   // Comparison Context
   const { comparisonYear, comparisonRFQ } = useComparisonSelection();
 
+  // Status facet resolves per year — fallback to the current year when no
+  // year is selected yet (same convention as the Clients page).
   const {
     facetViews,
     filteredClientIds,
     totalAccessible,
     hasActiveFilters,
     reset,
-  } = useDashboardFilters(clients, usersMap);
+  } = useDashboardFilters(
+    clients,
+    usersMap,
+    selectedYear ?? new Date().getFullYear()
+  );
 
   // Primary Scope
   const scope = useMemo<DashboardScope>(
@@ -83,20 +91,46 @@ export default function DashboardPage() {
     [clients]
   );
 
+  // Month filter — restricts every aggregation (both scopes, so variances stay
+  // apples-to-apples) to the selected months. Empty = all 12.
+  const [selMonths, setSelMonths] = useState<number[]>([]);
+
   // Active analysis tab + the forecast data for both scopes. The data is
   // fetched once here (not per tab) so switching tabs doesn't refetch.
   const [tab, setTab] = useState<DashboardTab>("media");
-  const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad);
+  const forecastData = useScopeForecastData(
+    scope,
+    currencyByClient,
+    usdToCad,
+    selMonths
+  );
   const comparisonData = useScopeForecastData(
     comparisonScope,
     currencyByClient,
-    comparisonUsdToCad
+    comparisonUsdToCad,
+    selMonths
   );
+  // MediaBox totals for the same scope — feeds the coverage card (Media tab).
+  const mediaboxData = useScopeMediaboxTotals(scope, usdToCad, selMonths);
 
   const clientNameById = useMemo(
     () => Object.fromEntries(clients.map((c) => [c.cl_id, c.CL_Name])),
     [clients]
   );
+
+  // Resolved display labels per client for the Region / Business Lead
+  // breakdowns rendered on every tab (BL UIDs resolve through the users map).
+  const clientDimensions = useMemo<ClientDimensions>(() => {
+    const regionByClient: Record<string, string> = {};
+    const businessLeadByClient: Record<string, string> = {};
+    for (const c of clients) {
+      regionByClient[c.cl_id] = c.CL_Business_Unit_Region || "No region";
+      businessLeadByClient[c.cl_id] = c.CL_Business_Lead
+        ? usersMap.get(c.CL_Business_Lead) ?? c.CL_Business_Lead
+        : "Unassigned";
+    }
+    return { regionByClient, businessLeadByClient };
+  }, [clients, usersMap]);
   
   const fileLabel =
     selectedYear && selectedRFQ ? `${selectedYear}-${selectedRFQ.type}` : undefined;
@@ -108,6 +142,8 @@ export default function DashboardPage() {
           usdToCad={usdToCad}
           usdClientCount={forecastData.usdClientCount}
           missingRate={forecastData.missingRate}
+          months={selMonths}
+          onMonthsChange={setSelMonths}
         />
         <DashboardFilterBar
           facetViews={facetViews}
@@ -161,7 +197,9 @@ export default function DashboardPage() {
           <MediaSpendTab
             data={forecastData}
             comparisonData={comparisonData}
+            mediabox={mediaboxData}
             clientNameById={clientNameById}
+            clientDimensions={clientDimensions}
             fileLabel={fileLabel}
           />
         ) : tab === "revenue" ? (
@@ -169,6 +207,7 @@ export default function DashboardPage() {
             data={forecastData}
             comparisonData={comparisonData}
             clientNameById={clientNameById}
+            clientDimensions={clientDimensions}
             fileLabel={fileLabel}
           />
         ) : (
@@ -176,6 +215,7 @@ export default function DashboardPage() {
             data={forecastData}
             comparisonData={comparisonData}
             clientNameById={clientNameById}
+            clientDimensions={clientDimensions}
             fileLabel={fileLabel}
           />
         )}

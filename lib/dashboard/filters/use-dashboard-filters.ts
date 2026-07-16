@@ -43,19 +43,25 @@ export interface UseDashboardFiltersResult {
 }
 
 /** Does a client pass a single facet's selection? (empty selection = passes) */
-function matchesFacet(client: Client, facet: Facet, selected: string[]): boolean {
+function matchesFacet(
+  client: Client,
+  facet: Facet,
+  selected: string[],
+  ctx: FacetCtx
+): boolean {
   if (selected.length === 0) return true;
-  return selected.includes(facet.getValue(client));
+  return selected.includes(facet.getValue(client, ctx));
 }
 
 /** Does a client pass every facet except the excluded one? */
 function matchesAllExcept(
   client: Client,
   selection: DashboardFilterState,
-  exclude: FacetKey | null
+  exclude: FacetKey | null,
+  ctx: FacetCtx
 ): boolean {
   return FACETS.every(
-    (f) => f.key === exclude || matchesFacet(client, f, selection[f.key])
+    (f) => f.key === exclude || matchesFacet(client, f, selection[f.key], ctx)
   );
 }
 
@@ -68,7 +74,7 @@ function deriveOptions(
   const seen = new Set<string>();
   const options: Option[] = [];
   for (const c of clients) {
-    const value = facet.getValue(c);
+    const value = facet.getValue(c, ctx);
     if (!value || seen.has(value)) continue;
     seen.add(value);
     options.push({ value, label: facet.getLabel(value, ctx) });
@@ -78,14 +84,16 @@ function deriveOptions(
 
 export function useDashboardFilters(
   clients: Client[],
-  usersMap: Map<string, string>
+  usersMap: Map<string, string>,
+  /** Globally selected year — drives year-dependent facets (Status). */
+  year: number
 ): UseDashboardFiltersResult {
   const [selection, setSelection] = useState<DashboardFilterState>(EMPTY_FILTER_STATE);
 
   const ctx = useMemo<FacetCtx>(() => {
     const clientNames = new Map(clients.map((c) => [c.cl_id, c.CL_Name]));
-    return { usersMap, clientNames };
-  }, [clients, usersMap]);
+    return { usersMap, clientNames, year };
+  }, [clients, usersMap, year]);
 
   const setFacet = useCallback((key: FacetKey, values: string[]) => {
     setSelection((prev) => ({ ...prev, [key]: values }));
@@ -97,7 +105,9 @@ export function useDashboardFilters(
   // values are kept in the list even if narrowed out, so they stay removable.
   const facetViews = useMemo<FacetView[]>(() => {
     return FACETS.map((facet) => {
-      const base = clients.filter((c) => matchesAllExcept(c, selection, facet.key));
+      const base = clients.filter((c) =>
+        matchesAllExcept(c, selection, facet.key, ctx)
+      );
       const options = deriveOptions(facet, base, ctx);
 
       const selected = selection[facet.key];
@@ -120,8 +130,8 @@ export function useDashboardFilters(
   }, [clients, selection, ctx, setFacet]);
 
   const filteredClients = useMemo(
-    () => clients.filter((c) => matchesAllExcept(c, selection, null)),
-    [clients, selection]
+    () => clients.filter((c) => matchesAllExcept(c, selection, null, ctx)),
+    [clients, selection, ctx]
   );
 
   const filteredClientIds = useMemo(

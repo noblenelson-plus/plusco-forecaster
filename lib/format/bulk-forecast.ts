@@ -78,6 +78,13 @@ export interface BulkRecord {
   /** The 3 free-text detail levels — only meaningful for DETAIL rows. */
   levels: string[];
   months: MonthlyMap;
+  /**
+   * Months (1–12) whose sheet cell carries a literal 0 (not a blank) — a
+   * deliberate zero. Exported from the row's stored explicit zeros; on import
+   * the builders persist it where the flag has meaning (Admin rows/details,
+   * the BL Commission Overwrite lines).
+   */
+  explicitZeros: number[];
 }
 
 // ─── Per-axis columns ────────────────────────────────────────────────────────
@@ -146,11 +153,17 @@ function cellForField(rec: BulkRecord, field: BulkField): string | number {
   }
 }
 
-/** One record → one sheet row, ordered by `columns` then the 12 months. */
+/** One record → one sheet row, ordered by `columns` then the 12 months. An
+ *  empty month exports as a blank cell — only a deliberate (explicit) zero
+ *  writes a literal 0, so the sheet round-trips the blank/0 distinction. */
 export function recordToRow(rec: BulkRecord, columns: BulkColumn[]): (string | number)[] {
   return [
     ...columns.map((c) => cellForField(rec, c.field)),
-    ...MONTHS.map((m) => rec.months[m] ?? 0),
+    ...MONTHS.map((m) => {
+      const v = rec.months[m] ?? 0;
+      if (v !== 0) return v;
+      return rec.explicitZeros.includes(m) ? 0 : "";
+    }),
   ];
 }
 
@@ -231,10 +244,17 @@ export function parseMatrix(matrix: unknown[][], columns: BulkColumn[]): ParseRe
     const row = matrix[i];
     if (!row || row.every((c) => String(c ?? "").trim() === "")) continue;
 
+    // A blank month cell is "no data" (0, not deliberate); a literal 0 is a
+    // deliberate zero, tracked in explicitZeros.
     const months = emptyMonthly();
+    const explicitZeros: number[] = [];
     MONTHS.forEach((m, idx) => {
       const label = MONTH_LABELS[idx];
-      months[m] = label in headerIndex ? coerceMoney(row[headerIndex[label]]) : 0;
+      if (!(label in headerIndex)) return;
+      const raw = row[headerIndex[label]];
+      const value = coerceMoney(raw);
+      months[m] = value;
+      if (value === 0 && String(raw ?? "").trim() !== "") explicitZeros.push(m);
     });
 
     const levels = [read(row, "level1"), read(row, "level2"), read(row, "level3")];
@@ -273,6 +293,7 @@ export function parseMatrix(matrix: unknown[][], columns: BulkColumn[]): ParseRe
         note: read(row, "note"),
         levels,
         months,
+        explicitZeros,
       },
     });
   }
@@ -309,6 +330,12 @@ export interface BulkValidationContext {
    * importable.
    */
   computedRowTypes: Set<string>;
+  /**
+   * Row types that only exist in the BL section (Revenue's Commission
+   * Overwrite has no GAIA counterpart) — an Admin/Detail line of one of these
+   * is a blocking error.
+   */
+  blOnlyRowTypes: Set<string>;
 }
 
 /**
@@ -349,9 +376,17 @@ export function validateRecords(
     if (!ctx.isRowTypeAllowed(record.rowType, record.year))
       return err(`Invalid type "${record.label || record.rowType}" for ${ctx.axisId} ${record.year}.`);
 
-    // RFQ requirement: every line needs a real, existing, unlocked RFQ —
-    // EXCEPT annual actuals and their details (Media/Labs MediaOcean), which
-    // are not RFQ-scoped.
+    // BL-only streams (Revenue's Commission Overwrite) have no Admin/GAIA row.
+    if (record.section !== "BL" && ctx.blOnlyRowTypes.has(record.rowType))
+      return err(
+        `"${record.label || record.rowType}" is a BL-only stream — not importable in the Admin section.`
+      );
+
+    // RFQ requirement: every line needs a real, existing RFQ — EXCEPT annual
+    // actuals and their details (Media/Labs MediaOcean), which are not
+    // RFQ-scoped. LOCKED submissions are NOT rejected: the Bulk tools are
+    // admin-only and deliberately bypass the lock (which gates the Business
+    // Leads' grid; the Firestore rules always allow admin writes).
     const isAnnual = record.section !== "BL" && ctx.annualActuals;
     if (!isAnnual) {
       if (!record.rfq) return err("Missing RFQ.");
@@ -359,8 +394,6 @@ export function validateRecords(
       const status = ctx.rfqStatus(record.year, record.rfq);
       if (status === "MISSING")
         return err(`RFQ ${record.year}/${record.rfq} does not exist — create it first.`);
-      if (status === "LOCKED")
-        return err(`RFQ ${record.year}/${record.rfq} is LOCKED — cannot import into a locked submission.`);
     }
 
     // Month values must be finite numbers.

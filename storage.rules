@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// Cloud Storage rules — the bucket only holds client logos, uploaded from the
+// admin-only client drawer. Reads require sign-in (the app displays logos via
+// tokened download URLs anyway); writes require the ADMIN role, checked
+// against the caller's Firestore user doc (cross-service rules).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /client-logos/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == "ADMIN"
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Everything else is locked down.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

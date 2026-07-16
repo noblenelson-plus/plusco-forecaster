@@ -51,6 +51,7 @@ import {
   buildCellKey,
   DETAIL_LEVEL_COUNT,
   GENERAL_PROJECT_NAME,
+  hasExplicitZero,
 } from "../../lib/types/forecaster.types";
 import {
   type UseForecasterGridResult,
@@ -73,7 +74,13 @@ import RowActionsMenu from "./row-actions-menu";
 import SelectionTotal from "./selection-total";
 import SaveStatusIndicator from "./save-status";
 import GridLastUpdated from "./grid-last-updated";
-import MediaboxActualsSection from "./mediabox-actuals-section";
+import MediaboxActualsSection, {
+  axisHasMediabox,
+} from "./mediabox-actuals-section";
+import {
+  useMediaboxTotals,
+  type UseMediaboxTotalsResult,
+} from "../../lib/hooks/use-mediabox-totals";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -128,6 +135,14 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
 
   // Client/year drive the read-only MediaBox actuals section under MediaOcean.
   const { selectedClient, selectedYear } = useForecastSelection();
+
+  // MediaBox totals — owned here (not by the section) so the CSV export can
+  // include the same rows. Disabled (undefined client) on axes without a
+  // MediaBox section, e.g. Revenue.
+  const mediabox = useMediaboxTotals(
+    axisHasMediabox(config.axisId) ? selectedClient?.cl_id : undefined,
+    selectedYear
+  );
 
   const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
 
@@ -270,6 +285,7 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
       <GridToolbar
         config={config}
         grid={grid}
+        mediabox={mediabox}
         showNotes={showNotes}
         onToggleNotes={toggleNotes}
       />
@@ -341,6 +357,9 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
             </thead>
 
             <tbody>
+              {/* ─── Section 1 — BL Submission (the editable forecast) ─── */}
+              <SectionBand label="BL Submission" colSpan={colCount} />
+
               {grid.data.buckets.length === 0 ? (
                 <tr>
                   <td colSpan={colCount} className="px-4 py-16 text-center text-gray-400">
@@ -380,8 +399,11 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
               {/* ─── BL_INPUT grand total ─── */}
               {grid.data.buckets.length > 0 && (
                 <tr className="bg-gray-900">
-                  <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider">
-                    Total
+                  <td className="sticky left-0 z-10 bg-gray-900 px-4 py-2 text-xs font-bold text-white uppercase tracking-wider whitespace-nowrap">
+                    BL Submission
+                    <span className="ml-1.5 font-medium normal-case tracking-normal text-white/75">
+                      · current submission
+                    </span>
                   </td>
                   {showNotes && <td className="bg-gray-900" />}
                   {MONTHS.map((m) => (
@@ -401,6 +423,9 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
                 </tr>
               )}
 
+              {/* ─── Section 2 — Reference data (MediaOcean + MediaBox) ─── */}
+              <SectionBand label="Reference Data" colSpan={colCount} gap />
+
               {/* ─── Actuals (ADMIN_INPUT) — one row per type ─── */}
               <ActualsSection
                 config={config}
@@ -417,9 +442,9 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
               {/* ─── MediaBox actuals (read-only, synced) — under MediaOcean ─── */}
               <MediaboxActualsSection
                 axisId={config.axisId}
-                clientId={selectedClient?.cl_id}
                 year={selectedYear}
                 showNotes={showNotes}
+                mediabox={mediabox}
               />
             </tbody>
           </table>
@@ -434,16 +459,53 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
   );
 }
 
+// ─── Top-level section band ──────────────────────────────────────────────────
+
+/**
+ * Splits the table into its two top-level sections: "BL Submission" (the
+ * editable forecast) and "Reference Data" (MediaOcean + MediaBox, read-only
+ * sources). Heavier than the per-source bands (orange/blue) nested under it.
+ */
+function SectionBand({
+  label,
+  colSpan,
+  gap = false,
+}: {
+  label: string;
+  colSpan: number;
+  /** Thick light top border — visually detaches this section from the previous one. */
+  gap?: boolean;
+}) {
+  return (
+    <tr>
+      <td
+        colSpan={colSpan}
+        className={`p-0 bg-gray-200 border-y border-gray-300 ${
+          gap ? "border-t-8 border-t-gray-100" : ""
+        }`}
+      >
+        <div className="sticky left-0 z-10 flex w-fit items-center px-4 py-2">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-gray-700">
+            {label}
+          </span>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 // ─── Toolbar ──────────────────────────────────────────────────────────────────
 
 function GridToolbar({
   config,
   grid,
+  mediabox,
   showNotes,
   onToggleNotes,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
+  mediabox: UseMediaboxTotalsResult;
   showNotes: boolean;
   onToggleNotes: () => void;
 }) {
@@ -451,10 +513,19 @@ function GridToolbar({
   const [addingBucket, setAddingBucket] = useState(false);
   const [bucketName, setBucketName] = useState("");
 
-  // Something to export only if any BL row or actuals row holds a line.
+  // MediaBox rows for the export — same grouping as the grid section (media
+  // type on the Media axis, LABS partner on Labs; empty on Revenue).
+  const mediaboxRows = mediabox.cad
+    ? config.axisId === "labs"
+      ? mediabox.cad.labsByPartner
+      : mediabox.cad.mediaByType
+    : [];
+
+  // Something to export only if a BL, actuals or MediaBox row holds a line.
   const hasData =
     grid.data.buckets.some((b) => b.rows.length > 0) ||
-    grid.data.actuals.length > 0;
+    grid.data.actuals.length > 0 ||
+    mediaboxRows.length > 0;
 
   function submitBucket() {
     const name = bucketName.trim();
@@ -464,11 +535,16 @@ function GridToolbar({
   }
 
   function downloadCSV() {
-    downloadAxisCSV(grid.data, config, {
-      clientName: selectedClient?.CL_Name,
-      year: selectedYear,
-      rfqType: selectedRFQ?.type,
-    });
+    downloadAxisCSV(
+      grid.data,
+      config,
+      {
+        clientName: selectedClient?.CL_Name,
+        year: selectedYear,
+        rfqType: selectedRFQ?.type,
+      },
+      mediaboxRows
+    );
   }
 
   return (
@@ -1134,6 +1210,7 @@ export function DetailRow({
             value={detail.months[m] ?? 0}
             readOnly={readOnly}
             closed={false}
+            explicitZero={hasExplicitZero(detail, m)}
             dirty={grid.dirtyMap.has(buildCellKey(coord))}
             sel={sel}
             draggingRef={draggingRef}

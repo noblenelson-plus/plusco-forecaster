@@ -6,6 +6,7 @@
  * media budget and how much the Labs partners cover of it, with each partner's
  * coverage % editable: setting a desired % rewrites the partner's BL forecast to
  * that share of the planned media, month by month (following the media curve).
+ * Only media types with at least one Labs partner configured are listed.
  *
  * A media type is flagged when its partners together exceed 100% of the planned
  * budget. The header shows the global Labs/Media ratio against the 25% goal.
@@ -45,17 +46,22 @@ export default function LabsPenetrationPanel({
   canEdit,
   onSetCoverage,
 }: PanelProps) {
+  // Only media types with at least one Labs partner available — types that
+  // carry planned media but no partner have nothing to cover and are hidden
+  // here (the dashboard recap still surfaces them as coverage gaps).
+  const types = result.byType.filter((t) => t.partners.length > 0);
+
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <RatioHeader result={result} />
 
       <div className="max-h-[62vh] overflow-y-auto divide-y-8 divide-gray-100">
-        {result.byType.length === 0 ? (
+        {types.length === 0 ? (
           <p className="px-4 py-8 text-center text-xs text-gray-400">
-            No media budget or partner yet.
+            No Labs partner configured for this year.
           </p>
         ) : (
-          result.byType.map((type) => (
+          types.map((type) => (
             <TypeSection
               key={type.mediaType}
               type={type}
@@ -180,23 +186,18 @@ function TypeSection({
         </div>
       )}
 
-      {/* Partners */}
+      {/* Partners — every listed type has at least one (types without Labs
+          partners are filtered out above). */}
       <div className="px-4 pt-2 pb-3.5">
-        {type.partners.length === 0 ? (
-          <p className="py-1.5 text-[11px] text-gray-400 italic">
-            No partner configured for this type.
-          </p>
-        ) : (
-          type.partners.map((p, i) => (
-            <PartnerRow
-              key={p.partnerId}
-              partner={p}
-              color={SEGMENTS[i % SEGMENTS.length]}
-              editable={editable}
-              onSetCoverage={onSetCoverage}
-            />
-          ))
-        )}
+        {type.partners.map((p, i) => (
+          <PartnerRow
+            key={p.partnerId}
+            partner={p}
+            color={SEGMENTS[i % SEGMENTS.length]}
+            editable={editable}
+            onSetCoverage={onSetCoverage}
+          />
+        ))}
       </div>
     </section>
   );

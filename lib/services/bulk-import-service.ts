@@ -4,7 +4,7 @@
  * Orchestration for the Bulk Edit module — the only layer that talks to both
  * Firestore and Google Sheets. It:
  *   • EXPORT: fetches the in-scope forecast data, flattens it (lib/format/
- *     bulk-forecast) and pushes one tab per axis (+ a Guide) to a new sheet.
+ *     bulk-forecast) and pushes one tab per axis to a new sheet.
  *   • IMPORT: pulls those tabs back, runs the QA (pure validation), computes the
  *     add/replace diff against the live data, and — on confirm — writes BL +
  *     actuals across the 3 axes, re-syncing the derived Revenue commission and
@@ -22,6 +22,7 @@ import type { Client } from "../types/client.types";
 import type { LabsPartner } from "../types/labs.types";
 import {
   MEDIA_TYPES,
+  MONTHS,
   type MediaType,
   type MonthlyMap,
 } from "../types/common.types";
@@ -36,19 +37,27 @@ import {
   newRow,
   newDetail,
   detailMonthTotals,
+  detailExplicitZeros,
   DETAIL_LEVEL_COUNT,
   MEDIA_AXIS_CONFIG,
   MEDIA_TYPE_LABELS,
   REVENUE_AXIS_CONFIG,
-  REVENUE_ADMIN_STREAMS,
+  REVENUE_ALL_STREAMS,
   REVENUE_STREAM_LABELS,
   REVENUE_COMMISSION_TYPE,
+  REVENUE_COMMISSION_OVERWRITE_TYPE,
   REVENUE_GAIA_FORECAST_TYPE,
   buildLabsAxisConfig,
   type AxisConfig,
   type RevenueStream,
 } from "../types/forecaster.types";
-import { type RFQType, type RFQ, RFQ_TYPES, buildRFQId } from "../types/rfq.types";
+import {
+  type RFQType,
+  type RFQ,
+  RFQ_TYPES,
+  RFQ_TYPE_ORDER,
+  buildRFQId,
+} from "../types/rfq.types";
 import { fetchRFQs } from "./rfq-service";
 import {
   fetchDataEntry,
@@ -93,14 +102,14 @@ const AXIS_TABS: { axisId: AxisId; tab: string }[] = [
   { axisId: "revenue", tab: "Revenue" },
   { axisId: "labs", tab: "Labs" },
 ];
-const GUIDE_TAB = "Guide";
 
 // ─── Per-axis sheet columns ──────────────────────────────────────────────────
 
 /**
  * Each axis tab shows only the columns it needs. The type column carries a
  * human label (Media type / stream / partner name) rather than the opaque key;
- * Media/Labs add a Project column, Revenue has none. `rowType` is intentionally
+ * every axis carries a Project column (Revenue BL rows without one land in
+ * "General"). `rowType` is intentionally
  * absent from the sheet — it is resolved from the label on import.
  */
 const COMMON_HEAD: BulkColumn[] = [
@@ -128,6 +137,7 @@ const AXIS_COLUMNS: Record<AxisId, BulkColumn[]> = {
   ],
   revenue: [
     ...COMMON_HEAD,
+    { header: "Project", field: "bucket" },
     { header: "Stream", field: "label", required: true },
     { header: "Note", field: "note" },
     ...DETAIL_COLS,
@@ -148,7 +158,7 @@ function typeOptions(axisId: AxisId, ref: BulkReference, years: number[]): strin
   if (axisId === "media")
     return MEDIA_TYPES.map((t) => MEDIA_TYPE_LABELS[t]);
   if (axisId === "revenue")
-    return REVENUE_ADMIN_STREAMS.map((s) => REVENUE_STREAM_LABELS[s]);
+    return REVENUE_ALL_STREAMS.map((s) => REVENUE_STREAM_LABELS[s]);
   // labs — union of partner names across the in-scope years
   const names = new Set<string>();
   for (const y of years) {
@@ -178,11 +188,11 @@ function resolveRowType(
     return hit ?? "";
   }
   if (axisId === "revenue") {
-    if ((REVENUE_ADMIN_STREAMS as string[]).some((s) => norm(s) === n)) return n;
+    if ((REVENUE_ALL_STREAMS as string[]).some((s) => norm(s) === n)) return n;
     // Legacy label — the `gaiaForecast` stream was exported as "GAIA Revenue"
     // before it was renamed to "Official Revenue"; keep old sheets importable.
     if (n === "gaia revenue") return REVENUE_GAIA_FORECAST_TYPE;
-    const hit = REVENUE_ADMIN_STREAMS.find(
+    const hit = REVENUE_ALL_STREAMS.find(
       (s) => norm(REVENUE_STREAM_LABELS[s]) === n
     );
     return hit ?? "";
@@ -251,7 +261,7 @@ function rowTypeChecker(axisId: AxisId, ref: BulkReference) {
   return (rowType: string, year: number): boolean => {
     if (axisId === "media") return (MEDIA_TYPES as string[]).includes(rowType);
     if (axisId === "revenue")
-      return (REVENUE_ADMIN_STREAMS as string[]).includes(rowType);
+      return (REVENUE_ALL_STREAMS as string[]).includes(rowType);
     return ref.partnersByYear.get(year)?.has(rowType) ?? false;
   };
 }
@@ -296,10 +306,20 @@ function blRecordsFromAxis(
         note: row.note ?? "",
         levels: ["", "", ""],
         months: { ...emptyMonthly(), ...row.months },
+        explicitZeros: liveExplicitZeros(row),
       });
     }
   }
   return out;
+}
+
+/** A row's (or detail's) explicit zeros, dropping months whose stored value is
+ *  no longer 0 (a later non-zero entry supersedes the flag). */
+function liveExplicitZeros(row: {
+  months: MonthlyMap;
+  explicitZeros?: number[];
+}): number[] {
+  return (row.explicitZeros ?? []).filter((m) => (row.months[m] ?? 0) === 0);
 }
 
 /**
@@ -326,6 +346,7 @@ function actualsRecordsFromRows(
       note: row.note ?? "",
       levels: ["", "", ""],
       months: { ...emptyMonthly(), ...row.months },
+      explicitZeros: liveExplicitZeros(row),
     });
     for (const detail of row.details ?? []) {
       out.push({
@@ -344,6 +365,7 @@ function actualsRecordsFromRows(
           detail.levels[2] ?? "",
         ],
         months: { ...emptyMonthly(), ...detail.months },
+        explicitZeros: liveExplicitZeros(detail),
       });
     }
   }
@@ -425,37 +447,6 @@ export async function fetchExportRecords(
   return result;
 }
 
-function guideMatrix(): string[][] {
-  return [
-    ["PlusCo Forecaster — Bulk Edit guide"],
-    [""],
-    ["How it works"],
-    ["1. Edit values directly in the Media / Revenue / Labs tabs."],
-    ["2. Coloured cells (Section, RFQ, type) offer dropdowns — use them."],
-    ["3. Back in the app, paste this sheet's URL and click Pull & Review."],
-    ["4. Pick Add or Replace, review the QA, then confirm."],
-    [""],
-    ["Columns"],
-    ["ClientId", "Join key — DO NOT change. ClientName is for reading only."],
-    ["Year / RFQ", "Identify the submission. Use a real, unlocked RFQ."],
-    ["Section", `"${SECTION_BL}" = BL input, "${SECTION_ACTUALS}" = admin input. An ${SECTION_ACTUALS} row with any Level filled is a breakdown line of its type.`],
-    ["Project", `Project name (Media/Labs tabs only). Leave blank for ${SECTION_ACTUALS} rows.`],
-    ["Media Type / Stream / Partner", "The line's type — pick from the dropdown."],
-    ["Level 1 / 2 / 3", `Free-text breakdown info. Filling any level turns an "${SECTION_ACTUALS}" row into a breakdown line under its type's parent row.`],
-    ["Jan..Dec", "Monthly dollar values."],
-    [""],
-    ["Add vs Replace"],
-    ["Add", "Upsert: matching rows updated, new rows added, others kept."],
-    ["Replace", "The submission's axis/section is overwritten by these rows."],
-    [""],
-    ["Notes"],
-    [`MediaOcean ${SECTION_ACTUALS} rows (Media/Labs) are annual:`, `set RFQ to "${ANNUAL_RFQ_SENTINEL}" or leave blank.`],
-    ["Revenue Commission is computed from Media in BL only", `— BL Commission is ignored on import; the GAIA (${SECTION_ACTUALS}) Commission is imported normally.`],
-    ["Locked RFQs are rejected.", "Duplicate rows for the same type: last one wins."],
-    [`An ${SECTION_ACTUALS} row with breakdown lines is their sum`, `— its own monthly values are derived from them. Importing only breakdown lines fills the parent's totals.`],
-  ];
-}
-
 export interface ExportResult {
   spreadsheetId: string;
   url: string;
@@ -470,13 +461,13 @@ export async function exportToSheet(
   const records = await fetchExportRecords(scope, ref);
 
   const title = `PlusCo Forecaster export — ${new Date().toISOString().slice(0, 10)}`;
-  const created = await sheets.createSpreadsheet(title, [
-    ...AXIS_TABS.map((a) => a.tab),
-    GUIDE_TAB,
-  ]);
+  const created = await sheets.createSpreadsheet(
+    title,
+    AXIS_TABS.map((a) => a.tab)
+  );
 
   // Write each axis tab (header always present so the round-trip parses even
-  // when an axis has no data) and the guide.
+  // when an axis has no data).
   for (const { axisId, tab } of AXIS_TABS) {
     await sheets.writeValues(
       created.spreadsheetId,
@@ -484,7 +475,6 @@ export async function exportToSheet(
       buildMatrix(records[axisId], AXIS_COLUMNS[axisId])
     );
   }
-  await sheets.writeValues(created.spreadsheetId, GUIDE_TAB, guideMatrix());
 
   // In-sheet dropdowns for Section, RFQ and the type column on each axis tab —
   // makes manual entry safe and obvious. Best-effort: a validation failure must
@@ -608,6 +598,10 @@ export async function prepareImport(
       rfqStatus,
       computedRowTypes:
         axisId === "revenue" ? new Set([REVENUE_COMMISSION_TYPE]) : new Set<string>(),
+      blOnlyRowTypes:
+        axisId === "revenue"
+          ? new Set([REVENUE_COMMISSION_OVERWRITE_TYPE])
+          : new Set<string>(),
     });
     const grouped = groupRecords(validated, annual);
 
@@ -659,6 +653,7 @@ function emptyRecord(): BulkRecord {
     note: "",
     levels: ["", "", ""],
     months: emptyMonthly(),
+    explicitZeros: [],
   };
 }
 
@@ -676,13 +671,29 @@ export interface ImportSummary {
   ignored: { axisId: AxisId; rowNumber: number; message: string }[];
 }
 
-const blKeys = (data: AxisData): string[] =>
-  data.buckets.flatMap((b) => b.rows.map((r) => `${b.name}::${r.rowType}`));
-const incomingBLKeys = (g: BLGroup): string[] => {
-  const keys = new Set<string>();
+/**
+ * Suffixes repeated keys with their occurrence index (`key#0`, `key#1`, …) so
+ * duplicate BL lines of the same type (Revenue) each count in the diff.
+ */
+const withOccurrences = (keys: string[]): string[] => {
+  const seen = new Map<string, number>();
+  return keys.map((k) => {
+    const i = seen.get(k) ?? 0;
+    seen.set(k, i + 1);
+    return `${k}#${i}`;
+  });
+};
+const blKeys = (data: AxisData, allowDuplicates: boolean): string[] => {
+  const keys = data.buckets.flatMap((b) =>
+    b.rows.map((r) => `${b.name}::${r.rowType}`)
+  );
+  return allowDuplicates ? withOccurrences(keys) : [...new Set(keys)];
+};
+const incomingBLKeys = (g: BLGroup, allowDuplicates: boolean): string[] => {
+  const keys: string[] = [];
   for (const [bucket, recs] of g.buckets)
-    for (const rec of recs) keys.add(`${bucket}::${rec.rowType}`);
-  return [...keys];
+    for (const rec of recs) keys.push(`${bucket}::${rec.rowType}`);
+  return allowDuplicates ? withOccurrences(keys) : [...new Set(keys)];
 };
 const rowTypeKeys = (rows: { rowType: string }[]): string[] => [
   ...new Set(rows.map((r) => r.rowType)),
@@ -719,7 +730,14 @@ export function summarizeImport(
         buckets: [],
         actuals: [],
       };
-      diff = addDiff(diff, diffKeys(blKeys(existing), incomingBLKeys(g), mode));
+      diff = addDiff(
+        diff,
+        diffKeys(
+          blKeys(existing, axis.config.allowDuplicateRowTypes),
+          incomingBLKeys(g, axis.config.allowDuplicateRowTypes),
+          mode
+        )
+      );
     }
     for (const g of axis.grouped.submissionActuals) {
       targets.add(`act|${axis.axisId}|${submKey(g.clientId, g.year, g.rfq)}`);
@@ -752,7 +770,10 @@ export function summarizeImport(
 function buildRow(
   rec: BulkRecord,
   existing: ForecastRow | undefined,
-  labelOf: (rowType: string, year: number) => string
+  labelOf: (rowType: string, year: number) => string,
+  /** Persist the sheet's literal 0s as explicit zeros — Admin rows always
+   *  track them; among BL rows only Revenue's Commission Overwrite does. */
+  keepExplicitZeros: boolean
 ): ForecastRow {
   return {
     rowId: existing?.rowId ?? newRow(rec.rowType, "").rowId,
@@ -760,6 +781,9 @@ function buildRow(
     label: labelOf(rec.rowType, rec.year) || rec.label || rec.rowType,
     months: { ...emptyMonthly(), ...rec.months },
     ...(rec.note ? { note: rec.note } : {}),
+    ...(keepExplicitZeros && rec.explicitZeros.length
+      ? { explicitZeros: [...rec.explicitZeros] }
+      : {}),
     // Preserve existing detail lines by default; the actuals builder overrides
     // them when the import provides Detail rows for this parent.
     ...(existing?.details ? { details: existing.details } : {}),
@@ -773,41 +797,104 @@ function buildDetail(rec: BulkRecord): RowDetail {
     detailId: base.detailId,
     levels: Array.from({ length: DETAIL_LEVEL_COUNT }, (_, i) => rec.levels[i] ?? ""),
     months: { ...emptyMonthly(), ...rec.months },
+    ...(rec.explicitZeros.length
+      ? { explicitZeros: [...rec.explicitZeros] }
+      : {}),
   };
 }
 
-/** Builds the new BL buckets for a submission under the chosen mode. */
+/** Explicit zeros surviving a merge of two rows: the union of both sides'
+ *  flags, dropping months whose summed value is no longer 0. */
+function mergedExplicitZeros(
+  a: { explicitZeros?: number[] },
+  b: { explicitZeros?: number[] },
+  months: MonthlyMap
+): number[] {
+  const set = new Set([...(a.explicitZeros ?? []), ...(b.explicitZeros ?? [])]);
+  return [...set].filter((m) => (months[m] ?? 0) === 0).sort((x, y) => x - y);
+}
+
+/**
+ * Builds the new BL buckets for a submission under the chosen mode.
+ *
+ * `allowDuplicates` mirrors the axis config: Revenue BL may hold several lines
+ * of the same stream (extra Retainer / Project Fees / Product Fees lines), so
+ * every sheet row becomes its own grid row — the nth imported line of a type
+ * matches the nth existing row of that type (preserving rowIds line by line),
+ * and in ADD mode the imported lines of a type replace ALL existing lines of
+ * that type. Media/Labs hold exactly one row per bucket+type, so there
+ * duplicate sheet lines are MERGED into that row: months are summed, notes
+ * joined — no line is silently dropped.
+ */
 function buildBLBuckets(
   existing: AxisData,
   group: BLGroup,
   mode: ImportMode,
-  labelOf: (rowType: string, year: number) => string
+  labelOf: (rowType: string, year: number) => string,
+  allowDuplicates: boolean
 ): ForecastBucket[] {
-  const existingRowByKey = new Map<string, ForecastRow>();
+  // Existing rows per bucket+type, in stored order (several for Revenue dupes).
+  const existingRowsByKey = new Map<string, ForecastRow[]>();
   const bucketIdByName = new Map<string, string>();
   for (const b of existing.buckets) {
     bucketIdByName.set(b.name, b.bucketId);
-    for (const r of b.rows) existingRowByKey.set(`${b.name}::${r.rowType}`, r);
+    for (const r of b.rows) {
+      const key = `${b.name}::${r.rowType}`;
+      const list = existingRowsByKey.get(key) ?? [];
+      list.push(r);
+      existingRowsByKey.set(key, list);
+    }
   }
 
-  // Imported buckets (last-wins per bucket+rowType key).
+  // Imported buckets, in sheet order.
   const imported: ForecastBucket[] = [];
   for (const [bucketName, recs] of group.buckets) {
-    const byType = new Map<string, ForecastRow>();
+    const rows: ForecastRow[] = [];
+    // rowType → index of that type's row in `rows` (merge target) or the
+    // count of occurrences consumed so far (duplicate matching).
+    const seen = new Map<string, number>();
     for (const rec of recs) {
-      const prev = existingRowByKey.get(`${bucketName}::${rec.rowType}`);
-      byType.set(rec.rowType, buildRow(rec, prev, labelOf));
+      const key = `${bucketName}::${rec.rowType}`;
+      // Among BL rows only the Commission Overwrite lines persist explicit
+      // zeros (a deliberate $0 overwrite); Media/Labs types never match.
+      const keepZeros = rec.rowType === REVENUE_COMMISSION_OVERWRITE_TYPE;
+      if (allowDuplicates) {
+        const occurrence = seen.get(rec.rowType) ?? 0;
+        seen.set(rec.rowType, occurrence + 1);
+        const prev = existingRowsByKey.get(key)?.[occurrence];
+        rows.push(buildRow(rec, prev, labelOf, keepZeros));
+      } else {
+        const prev = existingRowsByKey.get(key)?.[0];
+        const row = buildRow(rec, prev, labelOf, keepZeros);
+        const at = seen.get(rec.rowType);
+        if (at !== undefined) {
+          // One row per bucket+type — a repeated sheet line adds into it.
+          const base = rows[at];
+          const months: MonthlyMap = { ...base.months };
+          for (const m of MONTHS)
+            months[m] = (months[m] ?? 0) + (row.months[m] ?? 0);
+          const note = [base.note, row.note]
+            .filter((n): n is string => !!n)
+            .join("\n");
+          rows[at] = { ...base, months, ...(note ? { note } : {}) };
+        } else {
+          seen.set(rec.rowType, rows.length);
+          rows.push(row);
+        }
+      }
     }
     imported.push({
       bucketId: bucketIdByName.get(bucketName) ?? newBucket(bucketName).bucketId,
       name: bucketName,
-      rows: [...byType.values()],
+      rows,
     });
   }
 
   if (mode === "REPLACE") return imported;
 
-  // ADD — upsert into the existing buckets, keep untouched buckets/rows.
+  // ADD — upsert into the existing buckets, keep untouched buckets/rows. The
+  // imported lines of a type replace all existing lines of that type, inserted
+  // where the first one sat; types absent from the import are left untouched.
   const result: ForecastBucket[] = existing.buckets.map((b) => ({
     ...b,
     rows: [...b.rows],
@@ -820,9 +907,30 @@ function buildBLBuckets(
       byName.set(ib.name, ib);
       continue;
     }
-    const byType = new Map(target.rows.map((r) => [r.rowType, r] as const));
-    for (const r of ib.rows) byType.set(r.rowType, r);
-    target.rows = [...byType.values()];
+    const importedByType = new Map<string, ForecastRow[]>();
+    for (const r of ib.rows) {
+      const list = importedByType.get(r.rowType) ?? [];
+      list.push(r);
+      importedByType.set(r.rowType, list);
+    }
+    const rows: ForecastRow[] = [];
+    const placed = new Set<string>();
+    for (const r of target.rows) {
+      const incoming = importedByType.get(r.rowType);
+      if (!incoming) {
+        rows.push(r);
+        continue;
+      }
+      if (!placed.has(r.rowType)) {
+        rows.push(...incoming);
+        placed.add(r.rowType);
+      }
+      // Further existing lines of an imported type are dropped — replaced by
+      // the imported set above.
+    }
+    for (const [type, incoming] of importedByType)
+      if (!placed.has(type)) rows.push(...incoming);
+    target.rows = rows;
   }
   return result;
 }
@@ -830,6 +938,10 @@ function buildBLBuckets(
 /**
  * Builds the new actuals rows (rowType-keyed) under the chosen mode, attaching
  * detail lines to their parent row.
+ *
+ * Actuals hold at most one row per type, so repeated sheet lines of the same
+ * type are MERGED into it: months are summed, notes joined — no line is
+ * silently dropped (mirrors the Media/Labs BL merge).
  *
  * Details follow their parent: when the import provides Detail rows for a type,
  * that parent's details are set to exactly those (both modes). When it provides
@@ -865,9 +977,29 @@ function buildActualsRows(
   if (mode === "ADD") {
     for (const [t, r] of existingByType) out.set(t, { ...r, months: { ...r.months } });
   }
-  // Upsert imported parent rows.
+  // Upsert imported parent rows. The first line of a type replaces the
+  // existing row; further lines of that type add into it.
+  const importedTypes = new Set<string>();
   for (const rec of parentRecs) {
-    out.set(rec.rowType, buildRow(rec, existingByType.get(rec.rowType), labelOf));
+    // Admin rows always track explicit zeros — a literal 0 in the sheet is a
+    // deliberate value (it wins the Revenue BL-Submission priority).
+    const row = buildRow(rec, existingByType.get(rec.rowType), labelOf, true);
+    if (importedTypes.has(rec.rowType)) {
+      const base = out.get(rec.rowType)!;
+      const months: MonthlyMap = { ...base.months };
+      for (const m of MONTHS) months[m] = (months[m] ?? 0) + (row.months[m] ?? 0);
+      const note = [base.note, row.note]
+        .filter((n): n is string => !!n)
+        .join("\n");
+      const zeros = mergedExplicitZeros(base, row, months);
+      const merged: ForecastRow = { ...base, months, ...(note ? { note } : {}) };
+      if (zeros.length) merged.explicitZeros = zeros;
+      else delete merged.explicitZeros;
+      out.set(rec.rowType, merged);
+    } else {
+      importedTypes.add(rec.rowType);
+      out.set(rec.rowType, row);
+    }
   }
   // Ensure a parent exists for any detail-only type (keep its existing months).
   for (const t of detailsByType.keys()) {
@@ -890,9 +1022,14 @@ function buildActualsRows(
     }
     // ADD with no imported details → keep whatever was preserved on the row.
   }
-  // Roll-up: a parent with detail lines derives its months from them.
+  // Roll-up: a parent with detail lines derives its months — and its explicit
+  // zeros — from them (row = Σ details).
   for (const row of out.values()) {
-    if (row.details?.length) row.months = detailMonthTotals(row.details);
+    if (!row.details?.length) continue;
+    row.months = detailMonthTotals(row.details);
+    const zeros = detailExplicitZeros(row.details);
+    if (zeros.length) row.explicitZeros = zeros;
+    else delete row.explicitZeros;
   }
   return [...out.values()];
 }
@@ -935,7 +1072,13 @@ export async function commitImport(
             buckets: [],
             actuals: [],
           };
-        const buckets = buildBLBuckets(existing, g, mode, labelOf);
+        const buckets = buildBLBuckets(
+          existing,
+          g,
+          mode,
+          labelOf,
+          axis.config.allowDuplicateRowTypes
+        );
 
         if (axisId === "revenue") {
           // Revenue keeps BL + actuals in one doc; preserve actuals, normalize
@@ -1019,4 +1162,271 @@ export async function commitImport(
 
 function msg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TARGETS (preview chips) + BULK DELETE
+// ════════════════════════════════════════════════════════════════════════════
+
+/** One (client × submission × axis × section) a bulk operation touches. */
+export interface BulkTarget {
+  clientId: string;
+  clientName: string;
+  year: number;
+  /** null → the year's annual MediaOcean data (shared by every RFQ). */
+  rfq: RFQType | null;
+  axisId: AxisId;
+  section: "BL" | "ADMIN";
+}
+
+const targetKey = (t: BulkTarget) =>
+  `${t.clientId}|${t.year}|${t.rfq ?? "annual"}|${t.axisId}|${t.section}`;
+
+/** Sort for display: client name, year, RFQ order, axis order, BL first. */
+function sortTargets(targets: BulkTarget[]): BulkTarget[] {
+  const axisRank: Record<AxisId, number> = { media: 0, labs: 1, revenue: 2 };
+  return targets.sort(
+    (a, b) =>
+      a.clientName.localeCompare(b.clientName) ||
+      a.year - b.year ||
+      (a.rfq ? RFQ_TYPE_ORDER[a.rfq] : -1) - (b.rfq ? RFQ_TYPE_ORDER[b.rfq] : -1) ||
+      axisRank[a.axisId] - axisRank[b.axisId] ||
+      (a.section === "BL" ? 0 : 1) - (b.section === "BL" ? 0 : 1)
+  );
+}
+
+/**
+ * Flat list of what a prepared import will REPLACE — one entry per
+ * client × submission × axis × section carrying valid rows. Drives the
+ * preview chips in the review modal.
+ */
+export function replaceTargets(prepared: PreparedImport): BulkTarget[] {
+  const nameOf = (id: string) =>
+    prepared.ref.clientsById.get(id)?.CL_Name ?? id;
+  const targets: BulkTarget[] = [];
+  for (const axis of prepared.axes) {
+    for (const g of axis.grouped.bl) {
+      targets.push({
+        clientId: g.clientId, clientName: nameOf(g.clientId),
+        year: g.year, rfq: g.rfq, axisId: axis.axisId, section: "BL",
+      });
+    }
+    for (const g of axis.grouped.submissionActuals) {
+      targets.push({
+        clientId: g.clientId, clientName: nameOf(g.clientId),
+        year: g.year, rfq: g.rfq, axisId: axis.axisId, section: "ADMIN",
+      });
+    }
+    for (const g of axis.grouped.annualActuals) {
+      targets.push({
+        clientId: g.clientId, clientName: nameOf(g.clientId),
+        year: g.year, rfq: null, axisId: axis.axisId, section: "ADMIN",
+      });
+    }
+  }
+  return sortTargets(targets);
+}
+
+export interface DeleteScope {
+  clientIds: string[];
+  years: number[];
+  rfqs: RFQType[];
+  axes: AxisId[];
+  /** Wipe the BL Input section. */
+  includeBL: boolean;
+  /** Wipe the Admin section (Revenue GAIA per submission; Media/Labs annual
+   *  MediaOcean — the whole YEAR's figures, not one RFQ's). */
+  includeActuals: boolean;
+}
+
+export interface PreparedDelete {
+  /** Non-empty sections that will actually be cleared. */
+  targets: BulkTarget[];
+}
+
+/**
+ * Reads the live data for the scope and lists every non-empty section it would
+ * clear — nothing is written here. LOCKED submissions are included: the Bulk
+ * tools are admin-only and bypass the lock (which gates the BLs' grid only).
+ */
+export async function prepareBulkDelete(
+  scope: DeleteScope,
+  ref: BulkReference
+): Promise<PreparedDelete> {
+  const nameOf = (id: string) => ref.clientsById.get(id)?.CL_Name ?? id;
+  const targets: BulkTarget[] = [];
+
+  const tasks: Promise<void>[] = [];
+
+  for (const clientId of scope.clientIds) {
+    for (const year of scope.years) {
+      // Submission-scoped sections (BL for all axes, Revenue GAIA).
+      for (const rfq of scope.rfqs) {
+        const status = ref.rfqStatusByKey.get(buildRFQId(year, rfq)) ?? "MISSING";
+        if (status === "MISSING") continue;
+        tasks.push(
+          (async () => {
+            const entry = await fetchDataEntry(clientId, year, rfq);
+            if (!entry) return;
+            for (const axisId of scope.axes) {
+              const axis = entry.axes?.[axisId];
+              const hasBl = !!axis?.buckets?.some((b) => b.rows.length > 0);
+              if (scope.includeBL && hasBl) {
+                targets.push({
+                  clientId, clientName: nameOf(clientId),
+                  year, rfq, axisId, section: "BL",
+                });
+              }
+              // Per-submission actuals only exist on Revenue (GAIA).
+              if (
+                scope.includeActuals &&
+                axisId === "revenue" &&
+                (axis?.actuals?.length ?? 0) > 0
+              ) {
+                targets.push({
+                  clientId, clientName: nameOf(clientId),
+                  year, rfq, axisId, section: "ADMIN",
+                });
+              }
+            }
+          })()
+        );
+      }
+
+      // Annual MediaOcean actuals (Media/Labs) — year-scoped, RFQ-independent.
+      if (
+        scope.includeActuals &&
+        (scope.axes.includes("media") || scope.axes.includes("labs"))
+      ) {
+        tasks.push(
+          (async () => {
+            const annual = await fetchAnnualActualsEntry(clientId, year);
+            for (const axisId of ["media", "labs"] as const) {
+              if (!scope.axes.includes(axisId)) continue;
+              const rows = annual[axisId];
+              if (Array.isArray(rows) && rows.length > 0) {
+                targets.push({
+                  clientId, clientName: nameOf(clientId),
+                  year, rfq: null, axisId, section: "ADMIN",
+                });
+              }
+            }
+          })()
+        );
+      }
+    }
+  }
+
+  await Promise.all(tasks);
+
+  // Concurrent tasks can never duplicate a key, but keep the output stable.
+  const unique = new Map(targets.map((t) => [targetKey(t), t]));
+  return { targets: sortTargets([...unique.values()]) };
+}
+
+export interface DeleteResult {
+  sectionsCleared: number;
+  commissionsRecalculated: number;
+  errors: string[];
+}
+
+/**
+ * Clears every prepared target: BL sections are emptied (Revenue keeps its
+ * GAIA actuals unless they are targeted too, and vice versa), annual
+ * MediaOcean actuals are emptied per year. The derived Revenue commission is
+ * then re-synced for touched submissions — it is computed from Media, so
+ * deleting Media zeroes it and deleting Revenue BL re-derives it.
+ */
+export async function commitBulkDelete(
+  prepared: PreparedDelete,
+  ref: BulkReference,
+  userUid?: string
+): Promise<DeleteResult> {
+  const errors: string[] = [];
+  let sectionsCleared = 0;
+
+  // Group the submission-scoped targets per (triplet × axis) so Revenue's BL
+  // and GAIA clear in ONE write of the axis.
+  interface AxisClear {
+    clientId: string;
+    year: number;
+    rfq: RFQType;
+    axisId: AxisId;
+    bl: boolean;
+    admin: boolean;
+  }
+  const byTripletAxis = new Map<string, AxisClear>();
+  const annualTargets: BulkTarget[] = [];
+
+  for (const t of prepared.targets) {
+    if (t.rfq === null) {
+      annualTargets.push(t);
+      continue;
+    }
+    const key = `${t.clientId}|${t.year}|${t.rfq}|${t.axisId}`;
+    const g =
+      byTripletAxis.get(key) ??
+      ({
+        clientId: t.clientId, year: t.year, rfq: t.rfq, axisId: t.axisId,
+        bl: false, admin: false,
+      } as AxisClear);
+    if (t.section === "BL") g.bl = true;
+    else g.admin = true;
+    byTripletAxis.set(key, g);
+  }
+
+  // Submissions whose Media or Revenue changed → commission re-sync.
+  const commissionTargets = new Map<
+    string,
+    { clientId: string; year: number; rfq: RFQType }
+  >();
+
+  for (const g of byTripletAxis.values()) {
+    try {
+      const existing = await fetchAxisData(g.clientId, g.year, g.rfq, g.axisId);
+      const next: AxisData = {
+        buckets: g.bl ? [] : existing.buckets,
+        // Media/Labs submission docs never hold actuals (they are annual);
+        // Revenue keeps its GAIA rows unless they are being cleared too.
+        actuals:
+          g.axisId === "revenue" ? (g.admin ? [] : existing.actuals) : [],
+      };
+      await saveAxisData(g.clientId, g.year, g.rfq, g.axisId, next, userUid, {
+        touchedBL: g.bl,
+        touchedActuals: g.admin,
+      });
+      sectionsCleared += (g.bl ? 1 : 0) + (g.admin ? 1 : 0);
+      if (g.axisId === "media" || g.axisId === "revenue") {
+        commissionTargets.set(submKey(g.clientId, g.year, g.rfq), {
+          clientId: g.clientId, year: g.year, rfq: g.rfq,
+        });
+      }
+    } catch (err) {
+      errors.push(`${g.axisId} ${g.clientId}/${g.year}/${g.rfq}: ${msg(err)}`);
+    }
+  }
+
+  for (const t of annualTargets) {
+    try {
+      await saveAnnualActuals(t.clientId, t.year, t.axisId, [], userUid);
+      sectionsCleared++;
+    } catch (err) {
+      errors.push(`Annual ${t.axisId} ${t.clientId}/${t.year}: ${msg(err)}`);
+    }
+  }
+
+  let commissionsRecalculated = 0;
+  for (const { clientId, year, rfq } of commissionTargets.values()) {
+    try {
+      const client = ref.clientsById.get(clientId);
+      await syncRevenueCommission(
+        clientId, year, rfq, client?.commissionsConfig?.[year], userUid
+      );
+      commissionsRecalculated++;
+    } catch (err) {
+      errors.push(`Commission sync ${clientId}/${year}/${rfq}: ${msg(err)}`);
+    }
+  }
+
+  return { sectionsCleared, commissionsRecalculated, errors };
 }

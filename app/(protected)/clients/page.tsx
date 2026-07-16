@@ -10,11 +10,11 @@ import ClientGrid from "../../../components/clients/client-grid";
 import ClientFilters from "../../../components/clients/client-filters";
 import ClientDrawer from "../../../components/clients/client-drawer";
 import PageHeader from "../../../components/_shared/page-header";
-import type { ClientStatus, ClientTier } from "../../../lib/constants/client.constants";
+import type { ClientStatus } from "../../../lib/constants/client.constants";
 import { resolveClientStatus, isClientHidden } from "../../../lib/format/client";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 
-// Firestore limite les requêtes "in" à 30 valeurs — on découpe en lots
+// Firestore caps "in" queries at 30 values — split into batches
 const IN_QUERY_LIMIT = 30;
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -36,11 +36,13 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Filter state
+  // Filter state — the facet filters are multi-select; empty = no filter.
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | ClientStatus>("ALL");
-  const [agencyFilter, setAgencyFilter] = useState<"ALL" | string>("ALL");
-  const [tierFilter, setTierFilter] = useState<"ALL" | ClientTier>("ALL");
+  const [agencyFilter, setAgencyFilter] = useState<string[]>([]);
+  const [tierFilter, setTierFilter] = useState<string[]>([]);
+  const [regionFilter, setRegionFilter] = useState<string[]>([]);
+  const [verticalFilter, setVerticalFilter] = useState<string[]>([]);
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -69,8 +71,8 @@ export default function ClientsPage() {
             return;
           }
 
-          // Firestore "in" supporte max 30 valeurs → requêtes par lots
-          // de 30, exécutées en parallèle puis fusionnées
+          // Firestore "in" supports at most 30 values → batched queries
+          // of 30, run in parallel then merged
           const snapshots = await Promise.all(
             chunk(assigned, IN_QUERY_LIMIT).map((ids) =>
               getDocs(
@@ -107,10 +109,23 @@ export default function ClientsPage() {
     const matchesStatus =
       statusFilter === "ALL" || resolveClientStatus(c, year) === statusFilter;
     const matchesAgency =
-      agencyFilter === "ALL" || c.CL_Agency === agencyFilter;
+      agencyFilter.length === 0 || agencyFilter.includes(c.CL_Agency);
     const matchesTier =
-      tierFilter === "ALL" || c.CL_Tier === tierFilter;
-    return matchesSearch && matchesStatus && matchesAgency && matchesTier;
+      tierFilter.length === 0 || tierFilter.includes(c.CL_Tier);
+    const matchesRegion =
+      regionFilter.length === 0 || regionFilter.includes(c.CL_Business_Unit_Region);
+    // Unset verticals resolve to "" — matched by the "(Not set)" option.
+    const matchesVertical =
+      verticalFilter.length === 0 ||
+      verticalFilter.includes(c.CL_Advertiser_Vertical ?? "");
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesAgency &&
+      matchesTier &&
+      matchesRegion &&
+      matchesVertical
+    );
   });
 
   // Handlers
@@ -149,13 +164,13 @@ export default function ClientsPage() {
   return (
     <div>
 
-      {/* Bandeau sticky — pleine largeur, hors du conteneur paddé */}
+      {/* Sticky banner — full width, outside the padded container */}
       <PageHeader
         title="Clients"
         description={isAdmin ? "Manage all agency clients." : "Your assigned clients."}
       />
 
-      {/* Contenu de page — le padding vit ici, pas sur le header */}
+      {/* Page content — the padding lives here, not on the header */}
       <div className="p-6 max-w-7xl mx-auto">
 
         {/* Filters + actions */}
@@ -168,6 +183,10 @@ export default function ClientsPage() {
           onAgencyFilterChange={setAgencyFilter}
           tierFilter={tierFilter}
           onTierFilterChange={setTierFilter}
+          regionFilter={regionFilter}
+          onRegionFilterChange={setRegionFilter}
+          verticalFilter={verticalFilter}
+          onVerticalFilterChange={setVerticalFilter}
           clients={clients}
           filteredClients={filteredClients}
           isAdmin={isAdmin}

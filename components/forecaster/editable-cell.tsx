@@ -35,7 +35,8 @@ function EditingInput({
   initial: string;
   /** true → select all (Enter/F2/double-click); false → caret at end (typed). */
   selectOnFocus: boolean;
-  onCommit: (value: number, move: EditMove) => void;
+  /** null = the field was left blank (clear the cell), as opposed to a typed 0. */
+  onCommit: (value: number | null, move: EditMove) => void;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
@@ -55,7 +56,9 @@ function EditingInput({
   function commit(move: EditMove) {
     if (done.current) return;
     done.current = true;
-    onCommit(parseMoney(draft), move);
+    // A blank field clears the cell (null); "0" is a real, deliberate zero —
+    // the distinction lets GAIA months record an explicit 0.
+    onCommit(draft.trim() === "" ? null : parseMoney(draft), move);
   }
 
   return (
@@ -106,6 +109,9 @@ interface SpreadsheetCellProps {
   counted?: boolean;
   /** A non-source value its month overrides — struck through, excluded from totals. */
   overridden?: boolean;
+  /** The 0 in this cell was deliberately entered — rendered "0" (not an em
+   *  dash) and styled like any real value. */
+  explicitZero?: boolean;
   /** Rendered on a dark row (e.g. the Official Revenue row) — light text on the
    *  row's own background. Mutually exclusive with the light-row state props. */
   inverse?: boolean;
@@ -127,6 +133,7 @@ export function SpreadsheetCell({
   official = false,
   counted = false,
   overridden = false,
+  explicitZero = false,
   inverse = false,
   badge,
   dirty,
@@ -144,7 +151,9 @@ export function SpreadsheetCell({
     if (active && !editing) divRef.current?.focus();
   }, [active, editing]);
 
-  const display = value === 0 ? "" : formatMoney(value);
+  // An untouched 0 renders as an em dash; a deliberate 0 shows as "0".
+  const empty = value === 0 && !explicitZero;
+  const display = empty ? "" : value === 0 ? "0" : formatMoney(value);
   // A value the user can't edit (locked / closed / actuals) → click copies it.
   const copyable = readOnly || closed;
 
@@ -158,7 +167,7 @@ export function SpreadsheetCell({
           : `hover:bg-white/10 font-bold ${
               value < 0
                 ? "text-red-200"
-                : value === 0
+                : empty
                 ? "text-white/50"
                 : dirty
                 ? "text-yellow-200"
@@ -166,7 +175,7 @@ export function SpreadsheetCell({
             }`
       }`
     : `${selected ? "bg-yellow-200/70" : closed ? "bg-gray-100/80" : official ? "bg-emerald-100 hover:bg-emerald-100" : counted ? "bg-violet-100 hover:bg-violet-100" : muted ? "bg-gray-100/60" : value < 0 ? "bg-red-100/70 hover:bg-red-100" : "hover:bg-gray-50"}
-       ${closed ? "text-gray-300" : overridden ? "text-gray-400 line-through decoration-gray-400" : official ? "text-emerald-900 font-semibold" : counted ? "text-violet-900 font-semibold" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-red-700" : value === 0 ? "text-gray-300" : "text-gray-700"}`;
+       ${closed ? "text-gray-300" : overridden ? "text-gray-400 line-through decoration-gray-400" : official ? "text-emerald-900 font-semibold" : counted ? "text-violet-900 font-semibold" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-red-700" : empty ? "text-gray-300" : "text-gray-700"}`;
 
   return (
     <td
@@ -177,7 +186,7 @@ export function SpreadsheetCell({
       {editing ? (
         <div className="px-1 py-1">
           <EditingInput
-            initial={sel.editSeed !== "" ? sel.editSeed : value === 0 ? "" : String(value)}
+            initial={sel.editSeed !== "" ? sel.editSeed : empty ? "" : String(value)}
             selectOnFocus={sel.editSeed === ""}
             onCommit={sel.commitEdit}
             onCancel={sel.cancelEdit}
@@ -207,7 +216,7 @@ export function SpreadsheetCell({
             onClick={() => {
               // Read-only / closed cells aren't editable, so a click copies
               // the value to the clipboard instead.
-              if (copyable && value !== 0) copyCellValue(value);
+              if (copyable && !empty) copyCellValue(value);
             }}
             title={copyable ? "Click to copy" : undefined}
             className={`relative w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md

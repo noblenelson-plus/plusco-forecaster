@@ -13,8 +13,10 @@ import {
   CLIENT_GM_PODS,
   CLIENT_REGIONS,
   CLIENT_OFFICES,
+  CLIENT_STATUSES,
   CLIENT_TIERS,
 } from "../../constants/client.constants";
+import { resolveClientStatus } from "../../format/client";
 import type { Facet } from "./filter.types";
 
 /** Build a `value → label` resolver from a constant `{ value, label }[]` set. */
@@ -29,6 +31,7 @@ const agencyLabel = labelMap(CLIENT_AGENCIES);
 const gmPodLabel = labelMap(CLIENT_GM_PODS);
 const regionLabel = labelMap(CLIENT_REGIONS);
 const officeLabel = labelMap(CLIENT_OFFICES);
+const statusLabel = labelMap(CLIENT_STATUSES);
 const tierLabel = labelMap(CLIENT_TIERS);
 
 export const FACETS: Facet[] = [
@@ -61,6 +64,13 @@ export const FACETS: Facet[] = [
     label: "Tier",
     getValue: (c) => c.CL_Tier,
     getLabel: (v) => tierLabel(v),
+  },
+  {
+    key: "statuses",
+    label: "Status",
+    // Status is per year — resolved against the globally selected year.
+    getValue: (c, ctx) => resolveClientStatus(c, ctx.year),
+    getLabel: (v) => statusLabel(v),
   },
   {
     key: "businessLeads",

@@ -24,6 +24,8 @@ import {
   RFQType,
   RFQPeriod,
   RFQ_TYPES,
+  PERIOD_OWNERS,
+  PeriodOwner,
   resolveClosedMonths,
   resolvePeriodStatus,
   sortPeriods,
@@ -651,11 +653,25 @@ function RFQRow({
 
 // ─── Timeline (periods) editor ────────────────────────────────────────────────
 
-const EMPTY_PERIOD_DRAFT = {
+interface PeriodDraft {
+  name: string;
+  description: string;
+  owner: "" | PeriodOwner; // "" = no owner selected
+  startDate: string;
+  endDate: string;
+}
+
+const EMPTY_PERIOD_DRAFT: PeriodDraft = {
   name: "",
   description: "",
+  owner: "",
   startDate: "",
   endDate: "",
+};
+
+const OWNER_BADGE: Record<PeriodOwner, string> = {
+  BL: "bg-sky-50 text-sky-700 border-sky-200",
+  ADMIN: "bg-violet-50 text-violet-700 border-violet-200",
 };
 
 const PERIOD_STATUS_BADGE: Record<
@@ -695,6 +711,7 @@ function RFQPeriodsPanel({
     setDraft({
       name: period.name,
       description: period.description ?? "",
+      owner: period.owner ?? "",
       startDate: period.startDate,
       endDate: period.endDate,
     });
@@ -721,16 +738,19 @@ function RFQPeriodsPanel({
     if (draft.endDate < draft.startDate)
       return setFormError("End date cannot be before the start date.");
 
-    const payload = {
+    // Omit `owner` when unset — Firestore rejects `undefined` inside array
+    // values, and rebuilding the period wholesale lets an edit clear it.
+    const payload: Omit<RFQPeriod, "id"> = {
       name,
       description: draft.description.trim(),
+      ...(draft.owner ? { owner: draft.owner } : {}),
       startDate: draft.startDate,
       endDate: draft.endDate,
     };
 
     if (editingId) {
       await commit(
-        periods.map((p) => (p.id === editingId ? { ...p, ...payload } : p))
+        periods.map((p) => (p.id === editingId ? { id: p.id, ...payload } : p))
       );
     } else {
       await commit([...periods, { id: crypto.randomUUID(), ...payload }]);
@@ -764,6 +784,13 @@ function RFQPeriodsPanel({
                 >
                   {badge.label}
                 </span>
+                {period.owner && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${OWNER_BADGE[period.owner]}`}
+                  >
+                    {PERIOD_OWNERS.find((o) => o.value === period.owner)?.short}
+                  </span>
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-gray-900 truncate">
                     {period.name}
@@ -836,6 +863,31 @@ function RFQPeriodsPanel({
               onChange={(e) => setDraft((d) => ({ ...d, endDate: e.target.value }))}
               className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Owner <span className="text-gray-400">(optional)</span>
+            </label>
+            <div className="relative">
+              <select
+                value={draft.owner}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, owner: e.target.value as PeriodDraft["owner"] }))
+                }
+                className="w-36 appearance-none px-2.5 py-1.5 pr-8 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent cursor-pointer"
+              >
+                <option value="">—</option>
+                {PERIOD_OWNERS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={13}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+            </div>
           </div>
         </div>
         <div className="mt-2">
