@@ -22,10 +22,10 @@ import type {
 import { MEDIA_TYPE_LABELS } from "../../lib/types/forecaster.types";
 import { formatMoney } from "./editable-cell";
 
-/** Per-partner segment colors for the coverage bar. */
+/** Per-partner segment colors for the coverage bar (Plus Company palette). */
 const SEGMENTS = [
-  "#6366f1", "#10b981", "#f59e0b", "#ec4899",
-  "#06b6d4", "#8b5cf6", "#f97316", "#84cc16",
+  "#594a99", "#4db04f", "#ffc929", "#f2739e",
+  "#66d9e5", "#f54236", "#f7b0c9", "#abebf2",
 ];
 
 function pctText(coverage: number | null): string {

@@ -3,11 +3,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import confetti from "canvas-confetti";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { Zap, Sparkles, LayoutDashboard, Hand } from "lucide-react";
 import { useAuth } from "../../../lib/auth-context";
+import PlusLogo from "../../../components/_shared/plus-logo";
 
 // Initial forecast curve — the climb continues forever once mounted.
 const INITIAL_SERIES = Array.from({ length: 18 }, (_, i) => ({
@@ -19,15 +19,26 @@ const TAGLINES = [
   "Where the numbers go up and to the right",
   "Forecasting, finally made painless",
   "Turning gut feelings into clean charts",
-  "Plan smarter, not harder",
+  "Partners in possibility",
 ];
 
-// The improvements 2.0 ships with.
+// The improvements 2.0 ships with — each feature gets its own Plus color.
 const FEATURES = [
-  { icon: Zap, title: "Faster", desc: "Crunches forecasts in a blink" },
-  { icon: Sparkles, title: "More intuitive", desc: "Designed to just make sense" },
-  { icon: LayoutDashboard, title: "All in one view", desc: "Every chart, one place" },
-  { icon: Hand, title: "Easy to tweak", desc: "Edit numbers effortlessly" },
+  { icon: Zap, title: "Faster", desc: "Crunches forecasts in a blink", color: "text-yellow-500" },
+  { icon: Sparkles, title: "More intuitive", desc: "Designed to just make sense", color: "text-pink-500" },
+  { icon: LayoutDashboard, title: "All in one view", desc: "Every chart, one place", color: "text-purple-600" },
+  { icon: Hand, title: "Easy to tweak", desc: "Edit numbers effortlessly", color: "text-green-600" },
+];
+
+// Plus Company brand palette (Brand Guidelines 2024).
+const PLUS_YELLOW = "#ffc929";
+const CONFETTI_COLORS = [
+  "#ffc929", // Plus Yellow
+  "#f2739e", // Plus Pink
+  "#66d9e5", // Plus Blue
+  "#4db04f", // Plus Green
+  "#f54236", // Plus Red
+  "#594a99", // Plus Purple
 ];
 
 const money = new Intl.NumberFormat("en-US", {
@@ -46,14 +57,14 @@ export default function LoginPage() {
   const [tagline, setTagline] = useState(0);
   const firedRef = useRef(false);
 
-  // Confetti in the nav's yellow, with money/chart emojis for flavour.
+  // Confetti in the full Plus palette, with money/chart emojis for flavour.
   const celebrate = useCallback((power = 1) => {
     const bill = confetti.shapeFromText({ text: "💵", scalar: 2.2 });
     const chart = confetti.shapeFromText({ text: "📈", scalar: 2.2 });
     const n = Math.round(60 * power);
     const opts = {
       particleCount: n, spread: 75, startVelocity: 50,
-      colors: ["#facc15", "#fde68a", "#ffffff", "#fbbf24"],
+      colors: CONFETTI_COLORS,
       shapes: [bill, chart, "circle" as const], scalar: 1.4,
     };
     confetti({ ...opts, angle: 60, origin: { x: 0, y: 1 } });
@@ -107,7 +118,7 @@ export default function LoginPage() {
 
   if (loading || user) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-900">
+      <main className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
           <p className="text-sm tracking-wide text-gray-400">Loading...</p>
@@ -117,33 +128,35 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-900 p-4">
-      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-gray-700 bg-gray-800 shadow-2xl shadow-black/50">
+    <main className="relative flex min-h-screen items-center justify-center bg-gray-50 p-4">
+      {/* Signature Plus color stripe across the top of the page */}
+      <div className="plus-pattern absolute inset-x-0 top-0 h-2" />
+
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-200/60">
+        <div className="plus-pattern h-1.5 w-full" />
         <div className="p-8">
-          {/* Brand lockup — single logo */}
+          {/* Brand lockup */}
           <div className="mb-7 flex items-center gap-3">
-            <Image
-              src="/plusco_logo.jpeg"
-              alt="PlusCo logo"
-              width={40}
-              height={40}
-              className="rounded-lg"
-              priority
-            />
-            <span className="text-lg font-bold tracking-tight text-white">
-              PlusCo <span className="text-yellow-400">Forecaster</span>
+            <PlusLogo size={40} />
+            <span className="leading-none">
+              <span className="block text-lg font-bold tracking-tight text-gray-900 lowercase">
+                plus company
+              </span>
+              <span className="mt-1 inline-block rounded bg-yellow-400 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-900">
+                Forecaster
+              </span>
             </span>
           </div>
 
           {/* Forever-climbing figure */}
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
             Total forecast · live
           </p>
           <div className="flex items-end gap-2">
-            <span className="font-mono text-4xl font-extrabold tabular-nums text-yellow-400">
+            <span className="font-mono text-4xl font-extrabold tabular-nums text-gray-900">
               {money.format(count)}
             </span>
-            <span className="mb-1.5 rounded bg-yellow-400/15 px-1.5 py-0.5 text-xs font-bold text-yellow-400">
+            <span className="mb-1.5 rounded bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-700">
               ▲ live
             </span>
           </div>
@@ -154,14 +167,14 @@ export default function LoginPage() {
               <AreaChart data={series} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#facc15" stopOpacity={0.45} />
-                    <stop offset="100%" stopColor="#facc15" stopOpacity={0} />
+                    <stop offset="0%" stopColor={PLUS_YELLOW} stopOpacity={0.5} />
+                    <stop offset="100%" stopColor={PLUS_YELLOW} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <Area
                   type="monotone"
                   dataKey="v"
-                  stroke="#facc15"
+                  stroke={PLUS_YELLOW}
                   strokeWidth={2.5}
                   fill="url(#forecastFill)"
                   isAnimationActive={false}
@@ -171,21 +184,22 @@ export default function LoginPage() {
             </ResponsiveContainer>
           </div>
 
-          <h1 className="text-2xl font-bold text-white">
-            Welcome to the Forecaster <span className="text-yellow-400">2.0</span>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+            Welcome to the Forecaster{" "}
+            <span className="text-pink-500">2.0</span>
           </h1>
-          <p className="mt-1 h-5 text-sm text-gray-400">{TAGLINES[tagline]}</p>
+          <p className="mt-1 h-5 text-sm text-gray-500">{TAGLINES[tagline]}</p>
 
           {/* What's new in 2.0 */}
           <div className="mt-6 grid grid-cols-2 gap-3">
-            {FEATURES.map(({ icon: Icon, title, desc }) => (
+            {FEATURES.map(({ icon: Icon, title, desc, color }) => (
               <div
                 key={title}
-                className="rounded-xl border border-gray-700 bg-gray-900/50 p-3 transition-colors hover:border-yellow-400/40"
+                className="rounded-xl border border-gray-200 bg-gray-50 p-3 transition-colors hover:border-yellow-400"
               >
-                <Icon className="mb-2 h-5 w-5 text-yellow-400" />
-                <p className="text-sm font-semibold text-white">{title}</p>
-                <p className="text-xs leading-snug text-gray-400">{desc}</p>
+                <Icon className={`mb-2 h-5 w-5 ${color}`} />
+                <p className="text-sm font-semibold text-gray-900">{title}</p>
+                <p className="text-xs leading-snug text-gray-500">{desc}</p>
               </div>
             ))}
           </div>
@@ -205,15 +219,15 @@ export default function LoginPage() {
           </button>
 
           {error && (
-            <div className="mt-4 rounded border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-300">
+            <div className="mt-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
           {/* Signature */}
-          <p className="mt-6 text-center text-xs text-gray-500">
+          <p className="mt-6 text-center text-xs text-gray-400">
             Crafted by{" "}
-            <span className="font-medium text-gray-300">Noble, Tristan &amp; Adriana</span>
+            <span className="font-medium text-gray-600">Noble, Tristan &amp; Adriana</span>
           </p>
         </div>
       </div>

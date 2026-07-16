@@ -107,18 +107,19 @@ const MONTH_LABELS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/** Stable color palette assigned by row order so list/bars/donut agree. */
+/** Stable color palette assigned by row order so list/bars/donut agree.
+ *  Plus Company brand palette (Brand Guidelines 2024). */
 const PALETTE = [
-  "#6366f1", // indigo
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#ec4899", // pink
-  "#06b6d4", // cyan
-  "#8b5cf6", // violet
-  "#f97316", // orange
-  "#84cc16", // lime
-  "#14b8a6", // teal
-  "#ef4444", // red
+  "#594a99", // Plus Purple
+  "#4db04f", // Plus Green
+  "#ffc929", // Plus Yellow
+  "#f2739e", // Plus Pink
+  "#66d9e5", // Plus Blue
+  "#f54236", // Plus Red
+  "#f7b0c9", // Plus Light Pink
+  "#abebf2", // Plus Light Blue
+  "#8a7bc4", // Plus Purple (light tint)
+  "#94d996", // Plus Green (light tint)
 ];
 
 function sideLabel(side: ComparisonSide, config: AxisConfig): string {

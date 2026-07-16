@@ -2,48 +2,62 @@
 
 /**
  * Chart palette — fixed colors so a media type / revenue stream keeps the same
- * hue across every chart on the dashboard (donut, bars, legend). The yellow
- * accent (#f59e0b) matches the app's primary color.
+ * hue across every chart on the dashboard (donut, bars, legend). All hues come
+ * from the Plus Company brand palette (Brand Guidelines 2024, "Plus colors" /
+ * "Plus infographic").
  */
 
 import type { MediaType } from "../../../lib/types/common.types";
 
+// Plus Company brand palette.
+export const PLUS = {
+  pink: "#f2739e",
+  lightPink: "#f7b0c9",
+  green: "#4db04f",
+  yellow: "#ffc929",
+  red: "#f54236",
+  lightBlue: "#abebf2",
+  blue: "#66d9e5",
+  purple: "#594a99",
+  black: "#000000",
+} as const;
+
 export const MEDIA_TYPE_COLORS: Record<MediaType, string> = {
-  social: "#f59e0b", // amber (digital)
-  programmatic: "#6366f1", // indigo (digital)
-  sem: "#10b981", // emerald (digital)
-  digitalDirect: "#06b6d4", // cyan (digital)
-  ooh: "#8b5cf6", // violet (traditional)
-  print: "#ec4899", // pink (traditional)
-  tv: "#ef4444", // red (traditional)
-  radio: "#64748b", // slate (traditional)
+  social: PLUS.yellow, // digital
+  programmatic: PLUS.purple, // digital
+  sem: PLUS.green, // digital
+  digitalDirect: PLUS.blue, // digital
+  ooh: PLUS.pink, // traditional
+  print: PLUS.lightPink, // traditional
+  tv: PLUS.red, // traditional
+  radio: PLUS.lightBlue, // traditional
 };
 
 export const REVENUE_STREAM_COLORS: Record<string, string> = {
-  retainer: "#f59e0b",
-  commission: "#6366f1",
-  commissionOverwrite: "#8b5cf6",
-  projectFees: "#10b981",
-  productFees: "#06b6d4",
+  retainer: PLUS.yellow,
+  commission: PLUS.purple,
+  commissionOverwrite: PLUS.pink,
+  projectFees: PLUS.green,
+  productFees: PLUS.blue,
 };
 
 /** Cycling palette for ad-hoc categorical breakdowns (regions, business leads). */
 export const CATEGORICAL_COLORS = [
-  "#f59e0b", // amber
-  "#6366f1", // indigo
-  "#10b981", // emerald
-  "#06b6d4", // cyan
-  "#8b5cf6", // violet
-  "#ec4899", // pink
-  "#ef4444", // red
-  "#64748b", // slate
+  PLUS.yellow,
+  PLUS.purple,
+  PLUS.green,
+  PLUS.blue,
+  PLUS.pink,
+  PLUS.red,
+  PLUS.lightBlue,
+  PLUS.lightPink,
 ];
 
-export const ACCENT = "#f59e0b"; // yellow-500
-export const DIGITAL_COLOR = "#6366f1"; // indigo
-export const TRADITIONAL_COLOR = "#cbd5e1"; // slate-300
+export const ACCENT = PLUS.yellow;
+export const DIGITAL_COLOR = PLUS.purple;
+export const TRADITIONAL_COLOR = PLUS.lightPink;
 export const TRACK_COLOR = "#f1f5f9"; // slate-100 (chart backgrounds)
-export const LABS_COLOR = "#6366f1"; // indigo — Labs spend
+export const LABS_COLOR = PLUS.purple; // Labs spend
 export const NEUTRAL_FILL = "#e2e8f0"; // slate-200 — "other / remainder" segments
-export const POSITIVE_COLOR = "#10b981"; // emerald — best / favorable
-export const NEGATIVE_COLOR = "#ef4444"; // red — worst / unfavorable
+export const POSITIVE_COLOR = PLUS.green; // best / favorable
+export const NEGATIVE_COLOR = PLUS.red; // worst / unfavorable

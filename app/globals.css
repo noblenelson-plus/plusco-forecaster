@@ -1,27 +1,48 @@
 @import "tailwindcss";
 
 /**
- * Design tokens (shadcn/ui convention, adapted for Tailwind v4).
- * Semantic color variables live in :root; `@theme inline` maps them onto
- * Tailwind color utilities (bg-background, text-muted-foreground, border-border…)
- * so components stay theme-driven instead of hard-coding hex values.
+ * Plus Company design tokens.
+ *
+ * Two layers:
+ * 1. Brand palette (--plus-*) straight from the 2024 Brand Guidelines.
+ * 2. Tailwind v4 `@theme` overrides that re-anchor the default color scales
+ *    (yellow, red, green, blue, purple, pink…) onto the Plus palette, so the
+ *    hundreds of existing `bg-yellow-400` / `text-red-700` utilities across
+ *    the app resolve to on-brand colors without per-file edits.
+ *
+ * Semantic tokens (shadcn/ui convention) still drive the ui/* primitives.
  */
 
 :root {
   --radius: 0.65rem;
 
+  /* ── Plus Company brand palette (Brand Guidelines 2024, p.16) ── */
+  --plus-pink: #f2739e;
+  --plus-light-pink: #f7b0c9;
+  --plus-green: #4db04f;
+  --plus-yellow: #ffc929;
+  --plus-red: #f54236;
+  --plus-light-blue: #abebf2;
+  --plus-blue: #66d9e5;
+  --plus-purple: #594a99;
+  --plus-black: #000000;
+  /* Derived warm orange (between Plus Yellow and Plus Red) so orange-* keeps
+     its own identity instead of collapsing into yellow. */
+  --plus-orange: color-mix(in oklab, var(--plus-red) 50%, var(--plus-yellow));
+
+  /* ── Semantic tokens ── */
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #111111;
 
   --card: #ffffff;
-  --card-foreground: #171717;
+  --card-foreground: #111111;
 
   --popover: #ffffff;
-  --popover-foreground: #171717;
+  --popover-foreground: #111111;
 
-  /* Brand accent — the app's amber/yellow. */
-  --primary: #f59e0b;
-  --primary-foreground: #1c1917;
+  /* Brand accent — Plus Yellow with black text, as in the guidelines. */
+  --primary: var(--plus-yellow);
+  --primary-foreground: #111111;
 
   --secondary: #f4f4f5;
   --secondary-foreground: #18181b;
@@ -33,12 +54,12 @@
   --accent: #f4f4f5;
   --accent-foreground: #18181b;
 
-  --destructive: #ef4444;
+  --destructive: var(--plus-red);
   --destructive-foreground: #ffffff;
 
   --border: #e5e7eb;
   --input: #e5e7eb;
-  --ring: #f59e0b;
+  --ring: var(--plus-blue);
 }
 
 @theme inline {
@@ -67,12 +88,240 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-urbanist);
   --font-mono: var(--font-geist-mono);
+
+  /* ── Plus Yellow scale (anchor: 400 = brand yellow) — also used by amber ── */
+  --color-yellow-50: color-mix(in oklab, var(--plus-yellow) 10%, white);
+  --color-yellow-100: color-mix(in oklab, var(--plus-yellow) 20%, white);
+  --color-yellow-200: color-mix(in oklab, var(--plus-yellow) 40%, white);
+  --color-yellow-300: color-mix(in oklab, var(--plus-yellow) 65%, white);
+  --color-yellow-400: var(--plus-yellow);
+  --color-yellow-500: color-mix(in oklab, var(--plus-yellow) 92%, black);
+  --color-yellow-600: color-mix(in oklab, var(--plus-yellow) 78%, black);
+  --color-yellow-700: color-mix(in oklab, var(--plus-yellow) 60%, black);
+  --color-yellow-800: color-mix(in oklab, var(--plus-yellow) 46%, black);
+  --color-yellow-900: color-mix(in oklab, var(--plus-yellow) 35%, black);
+  --color-yellow-950: color-mix(in oklab, var(--plus-yellow) 24%, black);
+
+  --color-amber-50: var(--color-yellow-50);
+  --color-amber-100: var(--color-yellow-100);
+  --color-amber-200: var(--color-yellow-200);
+  --color-amber-300: var(--color-yellow-300);
+  --color-amber-400: var(--color-yellow-400);
+  --color-amber-500: var(--color-yellow-500);
+  --color-amber-600: var(--color-yellow-600);
+  --color-amber-700: var(--color-yellow-700);
+  --color-amber-800: var(--color-yellow-800);
+  --color-amber-900: var(--color-yellow-900);
+  --color-amber-950: var(--color-yellow-950);
+
+  /* ── Plus Orange scale (derived) ── */
+  --color-orange-50: color-mix(in oklab, var(--plus-orange) 9%, white);
+  --color-orange-100: color-mix(in oklab, var(--plus-orange) 18%, white);
+  --color-orange-200: color-mix(in oklab, var(--plus-orange) 36%, white);
+  --color-orange-300: color-mix(in oklab, var(--plus-orange) 58%, white);
+  --color-orange-400: color-mix(in oklab, var(--plus-orange) 80%, white);
+  --color-orange-500: var(--plus-orange);
+  --color-orange-600: color-mix(in oklab, var(--plus-orange) 85%, black);
+  --color-orange-700: color-mix(in oklab, var(--plus-orange) 68%, black);
+  --color-orange-800: color-mix(in oklab, var(--plus-orange) 52%, black);
+  --color-orange-900: color-mix(in oklab, var(--plus-orange) 40%, black);
+  --color-orange-950: color-mix(in oklab, var(--plus-orange) 27%, black);
+
+  /* ── Plus Red scale (anchor: 500 = brand red) — also used by rose ── */
+  --color-red-50: color-mix(in oklab, var(--plus-red) 8%, white);
+  --color-red-100: color-mix(in oklab, var(--plus-red) 16%, white);
+  --color-red-200: color-mix(in oklab, var(--plus-red) 32%, white);
+  --color-red-300: color-mix(in oklab, var(--plus-red) 52%, white);
+  --color-red-400: color-mix(in oklab, var(--plus-red) 76%, white);
+  --color-red-500: var(--plus-red);
+  --color-red-600: color-mix(in oklab, var(--plus-red) 88%, black);
+  --color-red-700: color-mix(in oklab, var(--plus-red) 70%, black);
+  --color-red-800: color-mix(in oklab, var(--plus-red) 55%, black);
+  --color-red-900: color-mix(in oklab, var(--plus-red) 42%, black);
+  --color-red-950: color-mix(in oklab, var(--plus-red) 30%, black);
+
+  --color-rose-50: var(--color-red-50);
+  --color-rose-100: var(--color-red-100);
+  --color-rose-200: var(--color-red-200);
+  --color-rose-300: var(--color-red-300);
+  --color-rose-400: var(--color-red-400);
+  --color-rose-500: var(--color-red-500);
+  --color-rose-600: var(--color-red-600);
+  --color-rose-700: var(--color-red-700);
+  --color-rose-800: var(--color-red-800);
+  --color-rose-900: var(--color-red-900);
+  --color-rose-950: var(--color-red-950);
+
+  /* ── Plus Green scale (anchor: 500 = brand green) — also emerald/teal/lime ── */
+  --color-green-50: color-mix(in oklab, var(--plus-green) 9%, white);
+  --color-green-100: color-mix(in oklab, var(--plus-green) 18%, white);
+  --color-green-200: color-mix(in oklab, var(--plus-green) 34%, white);
+  --color-green-300: color-mix(in oklab, var(--plus-green) 54%, white);
+  --color-green-400: color-mix(in oklab, var(--plus-green) 76%, white);
+  --color-green-500: var(--plus-green);
+  --color-green-600: color-mix(in oklab, var(--plus-green) 87%, black);
+  --color-green-700: color-mix(in oklab, var(--plus-green) 70%, black);
+  --color-green-800: color-mix(in oklab, var(--plus-green) 55%, black);
+  --color-green-900: color-mix(in oklab, var(--plus-green) 43%, black);
+  --color-green-950: color-mix(in oklab, var(--plus-green) 30%, black);
+
+  --color-emerald-50: var(--color-green-50);
+  --color-emerald-100: var(--color-green-100);
+  --color-emerald-200: var(--color-green-200);
+  --color-emerald-300: var(--color-green-300);
+  --color-emerald-400: var(--color-green-400);
+  --color-emerald-500: var(--color-green-500);
+  --color-emerald-600: var(--color-green-600);
+  --color-emerald-700: var(--color-green-700);
+  --color-emerald-800: var(--color-green-800);
+  --color-emerald-900: var(--color-green-900);
+  --color-emerald-950: var(--color-green-950);
+
+  --color-teal-50: var(--color-green-50);
+  --color-teal-100: var(--color-green-100);
+  --color-teal-200: var(--color-green-200);
+  --color-teal-300: var(--color-green-300);
+  --color-teal-400: var(--color-green-400);
+  --color-teal-500: var(--color-green-500);
+  --color-teal-600: var(--color-green-600);
+  --color-teal-700: var(--color-green-700);
+  --color-teal-800: var(--color-green-800);
+  --color-teal-900: var(--color-green-900);
+  --color-teal-950: var(--color-green-950);
+
+  --color-lime-50: var(--color-green-50);
+  --color-lime-100: var(--color-green-100);
+  --color-lime-200: var(--color-green-200);
+  --color-lime-300: var(--color-green-300);
+  --color-lime-400: var(--color-green-400);
+  --color-lime-500: var(--color-green-500);
+  --color-lime-600: var(--color-green-600);
+  --color-lime-700: var(--color-green-700);
+  --color-lime-800: var(--color-green-800);
+  --color-lime-900: var(--color-green-900);
+  --color-lime-950: var(--color-green-950);
+
+  /* ── Plus Blue scale (anchors: 200 = light blue, 400 = blue) — also sky/cyan ── */
+  --color-blue-50: color-mix(in oklab, var(--plus-blue) 12%, white);
+  --color-blue-100: color-mix(in oklab, var(--plus-blue) 25%, white);
+  --color-blue-200: var(--plus-light-blue);
+  --color-blue-300: color-mix(in oklab, var(--plus-blue) 72%, white);
+  --color-blue-400: var(--plus-blue);
+  --color-blue-500: color-mix(in oklab, var(--plus-blue) 90%, black);
+  --color-blue-600: color-mix(in oklab, var(--plus-blue) 74%, black);
+  --color-blue-700: color-mix(in oklab, var(--plus-blue) 58%, black);
+  --color-blue-800: color-mix(in oklab, var(--plus-blue) 45%, black);
+  --color-blue-900: color-mix(in oklab, var(--plus-blue) 34%, black);
+  --color-blue-950: color-mix(in oklab, var(--plus-blue) 22%, black);
+
+  --color-sky-50: var(--color-blue-50);
+  --color-sky-100: var(--color-blue-100);
+  --color-sky-200: var(--color-blue-200);
+  --color-sky-300: var(--color-blue-300);
+  --color-sky-400: var(--color-blue-400);
+  --color-sky-500: var(--color-blue-500);
+  --color-sky-600: var(--color-blue-600);
+  --color-sky-700: var(--color-blue-700);
+  --color-sky-800: var(--color-blue-800);
+  --color-sky-900: var(--color-blue-900);
+  --color-sky-950: var(--color-blue-950);
+
+  --color-cyan-50: var(--color-blue-50);
+  --color-cyan-100: var(--color-blue-100);
+  --color-cyan-200: var(--color-blue-200);
+  --color-cyan-300: var(--color-blue-300);
+  --color-cyan-400: var(--color-blue-400);
+  --color-cyan-500: var(--color-blue-500);
+  --color-cyan-600: var(--color-blue-600);
+  --color-cyan-700: var(--color-blue-700);
+  --color-cyan-800: var(--color-blue-800);
+  --color-cyan-900: var(--color-blue-900);
+  --color-cyan-950: var(--color-blue-950);
+
+  /* ── Plus Purple scale (anchor: 600 = brand purple) — also violet/indigo ── */
+  --color-purple-50: color-mix(in oklab, var(--plus-purple) 7%, white);
+  --color-purple-100: color-mix(in oklab, var(--plus-purple) 14%, white);
+  --color-purple-200: color-mix(in oklab, var(--plus-purple) 28%, white);
+  --color-purple-300: color-mix(in oklab, var(--plus-purple) 45%, white);
+  --color-purple-400: color-mix(in oklab, var(--plus-purple) 65%, white);
+  --color-purple-500: color-mix(in oklab, var(--plus-purple) 84%, white);
+  --color-purple-600: var(--plus-purple);
+  --color-purple-700: color-mix(in oklab, var(--plus-purple) 84%, black);
+  --color-purple-800: color-mix(in oklab, var(--plus-purple) 68%, black);
+  --color-purple-900: color-mix(in oklab, var(--plus-purple) 54%, black);
+  --color-purple-950: color-mix(in oklab, var(--plus-purple) 40%, black);
+
+  --color-violet-50: var(--color-purple-50);
+  --color-violet-100: var(--color-purple-100);
+  --color-violet-200: var(--color-purple-200);
+  --color-violet-300: var(--color-purple-300);
+  --color-violet-400: var(--color-purple-400);
+  --color-violet-500: var(--color-purple-500);
+  --color-violet-600: var(--color-purple-600);
+  --color-violet-700: var(--color-purple-700);
+  --color-violet-800: var(--color-purple-800);
+  --color-violet-900: var(--color-purple-900);
+  --color-violet-950: var(--color-purple-950);
+
+  --color-indigo-50: var(--color-purple-50);
+  --color-indigo-100: var(--color-purple-100);
+  --color-indigo-200: var(--color-purple-200);
+  --color-indigo-300: var(--color-purple-300);
+  --color-indigo-400: var(--color-purple-400);
+  --color-indigo-500: var(--color-purple-500);
+  --color-indigo-600: var(--color-purple-600);
+  --color-indigo-700: var(--color-purple-700);
+  --color-indigo-800: var(--color-purple-800);
+  --color-indigo-900: var(--color-purple-900);
+  --color-indigo-950: var(--color-purple-950);
+
+  /* ── Plus Pink scale (anchors: 200 = light pink, 500 = pink) — also fuchsia ── */
+  --color-pink-50: color-mix(in oklab, var(--plus-pink) 10%, white);
+  --color-pink-100: color-mix(in oklab, var(--plus-pink) 20%, white);
+  --color-pink-200: var(--plus-light-pink);
+  --color-pink-300: color-mix(in oklab, var(--plus-pink) 62%, white);
+  --color-pink-400: color-mix(in oklab, var(--plus-pink) 82%, white);
+  --color-pink-500: var(--plus-pink);
+  --color-pink-600: color-mix(in oklab, var(--plus-pink) 86%, black);
+  --color-pink-700: color-mix(in oklab, var(--plus-pink) 68%, black);
+  --color-pink-800: color-mix(in oklab, var(--plus-pink) 52%, black);
+  --color-pink-900: color-mix(in oklab, var(--plus-pink) 40%, black);
+  --color-pink-950: color-mix(in oklab, var(--plus-pink) 28%, black);
+
+  --color-fuchsia-50: var(--color-pink-50);
+  --color-fuchsia-100: var(--color-pink-100);
+  --color-fuchsia-200: var(--color-pink-200);
+  --color-fuchsia-300: var(--color-pink-300);
+  --color-fuchsia-400: var(--color-pink-400);
+  --color-fuchsia-500: var(--color-pink-500);
+  --color-fuchsia-600: var(--color-pink-600);
+  --color-fuchsia-700: var(--color-pink-700);
+  --color-fuchsia-800: var(--color-pink-800);
+  --color-fuchsia-900: var(--color-pink-900);
+  --color-fuchsia-950: var(--color-pink-950);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-urbanist), "Urbanist", "Gellix", Arial, Helvetica,
+    sans-serif;
+}
+
+/* The Plus color pattern (Brand Guidelines p.17) — a signature stripe used as
+   a thin joyful accent (page header hairline, sidebar top bar, login page). */
+.plus-pattern {
+  background-image: linear-gradient(
+    90deg,
+    var(--plus-light-blue) 0 10%,
+    var(--plus-blue) 0 26%,
+    var(--plus-green) 0 36%,
+    var(--plus-purple) 0 54%,
+    var(--plus-red) 0 66%,
+    var(--plus-pink) 0 74%,
+    var(--plus-light-pink) 0 81%,
+    var(--plus-yellow) 0 100%
+  );
 }

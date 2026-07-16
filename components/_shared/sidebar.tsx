@@ -2,7 +2,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import PlusLogo from "./plus-logo";
 
 interface NavItem {
   label: string;
@@ -70,38 +70,31 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
 
   return (
     <aside
-      className={`h-full bg-gray-900 flex flex-col transition-[width] duration-200 ease-in-out ${
+      className={`h-full bg-white border-r border-gray-200 flex flex-col transition-[width] duration-200 ease-in-out ${
         collapsed ? "w-16" : "w-64"
       }`}
     >
+      {/* Signature Plus color stripe */}
+      <div className="plus-pattern h-1.5 w-full flex-shrink-0" />
 
       {/* Logo + collapse / close buttons */}
       <div
-        className={`border-b border-gray-800 flex items-center ${
+        className={`border-b border-gray-100 flex items-center ${
           collapsed ? "flex-col gap-3 px-2 py-5" : "justify-between gap-2 px-4 py-5"
         }`}
       >
         {collapsed ? (
-          <Image
-            src="/plusco_logo.jpeg"
-            alt="PlusCo logo"
-            width={28}
-            height={28}
-            className="rounded-sm flex-shrink-0"
-            priority
-          />
+          <PlusLogo size={28} className="flex-shrink-0" />
         ) : (
-          <span className="flex items-center gap-2.5 min-w-0 text-white font-bold text-lg tracking-tight">
-            <Image
-              src="/plusco_logo.jpeg"
-              alt="PlusCo logo"
-              width={28}
-              height={28}
-              className="rounded-sm flex-shrink-0"
-              priority
-            />
-            <span className="truncate">
-              PlusCo <span className="text-yellow-400">Forecaster</span>
+          <span className="flex items-center gap-2.5 min-w-0">
+            <PlusLogo size={32} className="flex-shrink-0" />
+            <span className="min-w-0 leading-none">
+              <span className="block text-[15px] font-bold tracking-tight text-gray-900 lowercase">
+                plus company
+              </span>
+              <span className="mt-1 inline-block rounded bg-yellow-400 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-900">
+                Forecaster
+              </span>
             </span>
           </span>
         )}
@@ -112,7 +105,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
             onClick={onToggleCollapse}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="hidden lg:flex items-center justify-center text-gray-400 hover:text-white transition-colors flex-shrink-0"
+            className="hidden lg:flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors flex-shrink-0"
           >
             {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </button>
@@ -122,7 +115,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
         {onClose && !collapsed && (
           <button
             onClick={onClose}
-            className="lg:hidden text-gray-400 hover:text-white transition-colors flex-shrink-0"
+            className="lg:hidden text-gray-400 hover:text-gray-900 transition-colors flex-shrink-0"
           >
             <X size={18} />
           </button>
@@ -143,9 +136,9 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
         {adminItems.length > 0 && (
           <>
             {collapsed ? (
-              <div className="my-3 border-t border-gray-800" />
+              <div className="my-3 border-t border-gray-100" />
             ) : (
-              <p className="px-3 pt-6 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <p className="px-3 pt-6 pb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 Admin
               </p>
             )}
@@ -159,7 +152,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
       </nav>
 
       {/* User block */}
-      <div className={`py-4 border-t border-gray-800 ${collapsed ? "px-2" : "px-3"}`}>
+      <div className={`py-4 border-t border-gray-100 ${collapsed ? "px-2" : "px-3"}`}>
         <div
           className={`flex items-center mb-1 ${
             collapsed ? "justify-center py-2" : "gap-3 px-3 py-2"
@@ -171,10 +164,10 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="text-white text-sm font-medium truncate">
+              <p className="text-gray-900 text-sm font-medium truncate">
                 {profile?.displayName ?? user?.email}
               </p>
-              <p className="text-gray-500 text-xs">
+              <p className="text-gray-400 text-xs">
                 {profile?.role === "ADMIN" ? "Admin" : "Business Lead"}
               </p>
             </div>
@@ -184,7 +177,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
         <button
           onClick={signOut}
           title={collapsed ? "Sign out" : undefined}
-          className={`w-full flex items-center py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-colors ${
+          className={`w-full flex items-center py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors ${
             collapsed ? "justify-center px-0" : "gap-3 px-3"
           }`}
         >
@@ -220,8 +213,8 @@ function NavLink({
           flex items-center py-2.5 rounded-lg text-sm font-medium transition-colors
           ${collapsed ? "justify-center px-0" : "gap-3 px-3"}
           ${isActive
-            ? "bg-yellow-400 text-gray-900"
-            : "text-gray-400 hover:bg-gray-800 hover:text-white"
+            ? "bg-yellow-400 text-gray-900 font-semibold"
+            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
           }
         `}
       >

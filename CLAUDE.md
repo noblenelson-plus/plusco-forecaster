@@ -28,6 +28,18 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Firebase
 - Type definitions live in `lib/types/*.types.ts`, most re-exported from `lib/types/index.ts` (note `forecaster.types.ts` is imported directly, not via the barrel).
 - `lib/format/*` holds pure, Firebase-free helpers (money formatting, `distribute()` for splitting a total across weights with exact-cent rounding, CSV (de)serialization, labs-penetration math). Reuse these instead of re-deriving the math in components.
 
+## Design system (Plus Company brand)
+
+The visual identity follows the Plus Company Brand Guidelines 2024. Everything is centralized in `app/globals.css`:
+
+- The brand palette lives in `--plus-*` CSS variables (pink `#f2739e`, light pink `#f7b0c9`, green `#4db04f`, yellow `#ffc929`, red `#f54236`, light blue `#abebf2`, blue `#66d9e5`, purple `#594a99`, black).
+- The Tailwind default color scales are **re-anchored onto the Plus palette** via `@theme` overrides (yellow/amber → Plus Yellow, red/rose → Plus Red, green/emerald/teal/lime → Plus Green, blue/sky/cyan → Plus Blue, purple/violet/indigo → Plus Purple, pink/fuchsia → Plus Pink). Writing `bg-yellow-400` or `text-red-700` anywhere automatically yields on-brand colors — prefer these utilities over raw hex values in components.
+- Typeface is **Urbanist** (the guidelines' approved substitute for Gellix), loaded via `next/font` in `app/layout.tsx` as `--font-urbanist`.
+- `.plus-pattern` is the signature color-stripe accent (sidebar top bar, page-header hairline, login page). Use it sparingly as a thin accent.
+- The logo is an SVG recreation in `components/_shared/plus-logo.tsx` (also `app/icon.svg` for the favicon) — no raster logo assets.
+- Chart colors come from `PLUS`/`CATEGORICAL_COLORS` in `components/dashboard/charts/colors.ts`; raw-hex chart palettes elsewhere should reuse those hexes.
+- Black (`bg-gray-900`) surfaces (drawer headers, totals rows, tooltips) are intentional — Plus Black is part of the palette; black + Plus Yellow is an on-brand pairing.
+
 ## Architecture
 
 ### Auth & access control (entirely client-side)

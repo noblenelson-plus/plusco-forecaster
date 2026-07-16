@@ -1,0 +1,17 @@
+<svg width="125" height="125" viewBox="0 0 125 125" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="125" height="125" fill="#ffffff"/>
+  <path d="M75 0 L25 50 L25 75 L75 25 Z" fill="#f7b0c9"/>
+  <path d="M50 25 L0 75 L0 100 L50 50 Z" fill="#abebf2"/>
+  <path d="M50 50 L75 50 L25 100 L0 100 Z" fill="#ffc929"/>
+  <path d="M75 50 L25 100 L25 125 L75 75 Z" fill="#f2739e" opacity="0.85"/>
+  <path d="M75 75 L100 75 L50 125 L25 125 Z" fill="#f7b0c9"/>
+  <path d="M75 0 L100 0 L75 25 Z" fill="#f2739e"/>
+  <path d="M100 0 L100 25 L75 25 Z" fill="#f54236"/>
+  <rect x="50" y="25" width="25" height="25" fill="#66d9e5"/>
+  <path d="M50 25 L75 25 L75 50 Z" fill="#4db04f"/>
+  <rect x="75" y="25" width="25" height="25" fill="#594a99"/>
+  <rect x="100" y="25" width="25" height="25" fill="#66d9e5"/>
+  <path d="M100 25 L125 25 L100 50 Z" fill="#4db04f"/>
+  <path d="M75 50 L100 50 L75 75 Z" fill="#f54236"/>
+  <path d="M100 50 L100 75 L75 75 Z" fill="#f2739e"/>
+</svg>
