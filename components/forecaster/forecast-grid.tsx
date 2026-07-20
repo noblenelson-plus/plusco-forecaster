@@ -1253,6 +1253,17 @@ function ActualsSection({
   const colCount = showNotes ? 15 : 14;
   // Per-source color: MediaOcean → pink, GAIA → purple, others → grey.
   const theme = actualsTheme(config.actualsLabel);
+  // Unique row "project" annotations (data version / source) — one value when
+  // every row agrees, the deduped list otherwise. Shown in the section header.
+  const projectVersions = useMemo(
+    () =>
+      [
+        ...new Set(
+          actuals.map((r) => (r.project ?? "").trim()).filter(Boolean)
+        ),
+      ],
+    [actuals]
+  );
 
   return (
     <>
@@ -1265,6 +1276,16 @@ function ActualsSection({
               {config.actualsLabel}
             </span>
             {readOnly && <Lock size={10} className={theme.lockIcon} />}
+            {/* Data version(s) — the rows' "project" annotations, deduped: one
+                value when every row agrees (same spot as MediaBox's sync stamp). */}
+            {projectVersions.length > 0 && (
+              <span
+                title={projectVersions.join(" · ")}
+                className={`max-w-md truncate text-[11px] normal-case ${theme.headerMeta}`}
+              >
+                {projectVersions.join(" · ")}
+              </span>
+            )}
             {!readOnly && (
               <AddRowTypeSelect
                 label={config.rowTypeLabel}

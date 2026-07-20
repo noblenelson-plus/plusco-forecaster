@@ -8,6 +8,7 @@
  */
 
 import type { MediaType } from "../../../lib/types/common.types";
+import type { ProductStatus } from "../../../lib/types/product.types";
 
 // Plus Company brand palette.
 export const PLUS = {
@@ -39,6 +40,15 @@ export const REVENUE_STREAM_COLORS: Record<string, string> = {
   commissionOverwrite: PLUS.pink,
   projectFees: PLUS.green,
   productFees: PLUS.blue,
+};
+
+/** Product pipeline statuses — same hues as the Product grid's status chips
+ *  (blue → yellow → green pipeline, red for Rejected). */
+export const PRODUCT_STATUS_COLORS: Record<ProductStatus, string> = {
+  IDENTIFIED_PROSPECT: PLUS.blue,
+  PITCHED_TO_CLIENT: PLUS.yellow,
+  APPROVED: PLUS.green,
+  REJECTED: PLUS.red,
 };
 
 /** Cycling palette for ad-hoc categorical breakdowns (regions, business leads). */

@@ -21,6 +21,8 @@ export interface ActualsTheme {
   headerText: string;
   /** Lock icon color in the header. */
   lockIcon: string;
+  /** Secondary header text (e.g. the data-version annotation). */
+  headerMeta: string;
   /** Data-row background (with group-hover). */
   rowBg: string;
   /** Data-row label text color. */
@@ -34,6 +36,7 @@ const PINK: ActualsTheme = {
   headerRow: "bg-pink-500 border-y border-pink-500",
   headerText: "text-gray-900",
   lockIcon: "text-pink-800",
+  headerMeta: "text-gray-800",
   rowBg: "bg-gray-50 group-hover:bg-gray-100",
   labelClass: "text-pink-700",
   emptyRow: "bg-gray-50 border-b border-gray-100",
@@ -43,6 +46,7 @@ const PURPLE: ActualsTheme = {
   headerRow: "bg-purple-600 border-y border-purple-600",
   headerText: "text-white",
   lockIcon: "text-purple-300",
+  headerMeta: "text-purple-200",
   rowBg: "bg-gray-50 group-hover:bg-gray-100",
   labelClass: "text-purple-700",
   emptyRow: "bg-gray-50 border-b border-gray-100",
@@ -52,6 +56,7 @@ const GRAY: ActualsTheme = {
   headerRow: "bg-gray-100 border-y border-gray-200",
   headerText: "text-gray-600",
   lockIcon: "text-gray-400",
+  headerMeta: "text-gray-500",
   rowBg: "bg-gray-50 group-hover:bg-gray-100",
   labelClass: "text-gray-700",
   emptyRow: "bg-gray-50 border-b border-gray-100",

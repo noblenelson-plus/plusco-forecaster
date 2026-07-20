@@ -122,6 +122,9 @@ export default function ForecastSelectors({
   // ─── Data ───────────────────────────────────────────────────────────────
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [rfqs, setRFQs] = useState<RFQ[]>([]);
+  // Whether the first RFQ snapshot has arrived — before that, `rfqs` is just
+  // the empty initial state and must not be used to invalidate the selection.
+  const [rfqsLoaded, setRFQsLoaded] = useState(false);
 
   const showClient = fields.includes("client");
   const showYear = fields.includes("year");
@@ -192,15 +195,20 @@ export default function ForecastSelectors({
 
   // Subscribe to RFQs (real-time lock status)
   useEffect(() => {
-    const unsubscribe = subscribeToRFQs(setRFQs);
+    const unsubscribe = subscribeToRFQs((list) => {
+      setRFQs(list);
+      setRFQsLoaded(true);
+    });
     return () => unsubscribe();
   }, []);
 
   // Keep the selected RFQ object fresh (status or closed months may change in
   // real-time when an admin edits the RFQ). Follows whichever binding is
   // active, so both primary and comparison pairs stay current.
+  // Waits for the first snapshot — otherwise the localStorage-restored RFQ
+  // would be treated as deleted on every mount and cleared on navigation.
   useEffect(() => {
-    if (!selectedRFQ) return;
+    if (!rfqsLoaded || !selectedRFQ) return;
     const fresh = rfqs.find((r) => r.rfq_id === selectedRFQ.rfq_id);
     if (!fresh) {
       setRFQ(null); // RFQ deleted
@@ -211,7 +219,7 @@ export default function ForecastSelectors({
     ) {
       setRFQ(fresh); // status or closed months updated
     }
-  }, [rfqs, selectedRFQ, setRFQ]);
+  }, [rfqs, rfqsLoaded, selectedRFQ, setRFQ]);
 
   const years = useMemo(() => getRFQYears(rfqs), [rfqs]);
   const rfqsForYear = useMemo(

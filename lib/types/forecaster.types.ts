@@ -71,6 +71,13 @@ export interface ForecastRow {
   /** Optional free-text note attached to the line. Absent when empty. */
   note?: string;
   /**
+   * Optional source annotation (ADMIN_INPUT rows only) — which manual export /
+   * version the numbers came from (e.g. a MediaOcean refresh date). Round-trips
+   * through the bulk sheet's "Project" column (unused for actuals otherwise);
+   * the grid's section header shows the unique values. Absent when empty.
+   */
+  project?: string;
+  /**
    * Optional breakdown lines (ADMIN_INPUT rows only). Shown when the row is
    * expanded in the grid. Absent when none have been added.
    */

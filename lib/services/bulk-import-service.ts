@@ -109,7 +109,8 @@ const AXIS_TABS: { axisId: AxisId; tab: string }[] = [
  * Each axis tab shows only the columns it needs. The type column carries a
  * human label (Media type / stream / partner name) rather than the opaque key;
  * every axis carries a Project column (Revenue BL rows without one land in
- * "General"). `rowType` is intentionally
+ * "General"; on Admin/actuals rows it is the source annotation — the data
+ * version — shown in the grid's section header). `rowType` is intentionally
  * absent from the sheet — it is resolved from the label on import.
  */
 const COMMON_HEAD: BulkColumn[] = [
@@ -340,7 +341,9 @@ function actualsRecordsFromRows(
       year,
       rfq,
       section: "ACTUALS",
-      bucket: "",
+      // Actuals have no bucket — the Project column carries the row's source
+      // annotation (data version) instead, and round-trips on import.
+      bucket: row.project ?? "",
       rowType: row.rowType,
       label: row.label,
       note: row.note ?? "",
@@ -984,6 +987,10 @@ function buildActualsRows(
     // Admin rows always track explicit zeros — a literal 0 in the sheet is a
     // deliberate value (it wins the Revenue BL-Submission priority).
     const row = buildRow(rec, existingByType.get(rec.rowType), labelOf, true);
+    // On actuals the Project column is the row's source annotation (data
+    // version). Like the note, the sheet's value is authoritative per row.
+    const project = rec.bucket.trim();
+    if (project) row.project = project;
     if (importedTypes.has(rec.rowType)) {
       const base = out.get(rec.rowType)!;
       const months: MonthlyMap = { ...base.months };
@@ -993,6 +1000,8 @@ function buildActualsRows(
         .join("\n");
       const zeros = mergedExplicitZeros(base, row, months);
       const merged: ForecastRow = { ...base, months, ...(note ? { note } : {}) };
+      // Merged lines keep the first non-empty project annotation.
+      if (!merged.project && row.project) merged.project = row.project;
       if (zeros.length) merged.explicitZeros = zeros;
       else delete merged.explicitZeros;
       out.set(rec.rowType, merged);

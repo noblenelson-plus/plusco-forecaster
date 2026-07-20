@@ -1,6 +1,6 @@
 // lib/services/product-tracking-service.ts
 
-import { doc, onSnapshot, setDoc, Unsubscribe } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, setDoc, Unsubscribe } from "firebase/firestore";
 import { db } from "../firebase";
 import type {
   ProductTrackingDoc,
@@ -8,6 +8,18 @@ import type {
 } from "../types/product.types";
 
 const COLLECTION = "product_tracking";
+
+/**
+ * One-shot read of a client's product tracking doc. Returns null when the doc
+ * doesn't exist (no product tracked yet). Used by the dashboard, which reads
+ * many clients in parallel and doesn't need real-time updates.
+ */
+export async function fetchProductTracking(
+  clientId: string
+): Promise<ProductTrackingDoc | null> {
+  const snap = await getDoc(doc(db, COLLECTION, clientId));
+  return snap.exists() ? (snap.data() as ProductTrackingDoc) : null;
+}
 
 /**
  * Subscribe to a client's product tracking doc in real time. The doc may not

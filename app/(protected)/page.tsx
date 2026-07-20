@@ -22,11 +22,13 @@ import {
 import MediaSpendTab from "../../components/dashboard/tabs/media-spend-tab";
 import RevenueTab from "../../components/dashboard/tabs/revenue-tab";
 import LabsTab from "../../components/dashboard/tabs/labs-tab";
+import ProductTab from "../../components/dashboard/tabs/product-tab";
 import { useAccessibleClients } from "../../lib/hooks/use-accessible-clients";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
 import { useScopeMediaboxTotals } from "../../lib/dashboard/data/use-scope-mediabox-totals";
+import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
 import { useCurrencyRates } from "../../lib/hooks/use-currency-rates";
 import { getCurrencyRateForYear } from "../../lib/services/currency-service";
 import type { ClientDimensions } from "../../components/dashboard/dimension-breakdown";
@@ -112,6 +114,9 @@ export default function DashboardPage() {
   );
   // MediaBox totals for the same scope — feeds the coverage card (Media tab).
   const mediaboxData = useScopeMediaboxTotals(scope, usdToCad, selMonths);
+  // Product tracking for the same clients (Product tab) — always-on per client,
+  // so it only depends on the filtered scope, not the Year/RFQ or months.
+  const productData = useScopeProductTracking(filteredClientIds);
 
   const clientNameById = useMemo(
     () => Object.fromEntries(clients.map((c) => [c.cl_id, c.CL_Name])),
@@ -193,6 +198,8 @@ export default function DashboardPage() {
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {forecastData.error}
           </div>
+        ) : tab === "product" ? (
+          <ProductTab data={productData} clientNameById={clientNameById} />
         ) : tab === "media" ? (
           <MediaSpendTab
             data={forecastData}
