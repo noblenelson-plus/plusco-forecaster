@@ -23,6 +23,7 @@ import type { BulkReference } from "../../lib/services/bulk-import-service";
 import {
   type ReportResult,
   generateGeneralForecastReport,
+  generateExtendedForecastReport,
 } from "../../lib/services/report-service";
 
 const AXIS_OPTIONS: { value: AxisId; label: string }[] = [
@@ -55,13 +56,68 @@ function Chip({
   );
 }
 
+/**
+ * Two variants share this card:
+ *   • "general"  — the base General Forecast Data report;
+ *   • "extended" — identical scope, plus the per-client columns (Agency, tier,
+ *     currency, leads, GM pod, FO_Value_CAD, status, notes…) appended.
+ */
+type Variant = "general" | "extended";
+
+const VARIANTS: Record<
+  Variant,
+  {
+    title: string;
+    generate: typeof generateGeneralForecastReport;
+    description: React.ReactNode;
+  }
+> = {
+  general: {
+    title: "General Forecast Data",
+    generate: generateGeneralForecastReport,
+    description: (
+      <>
+        The selected axes (Media · Labs · Revenue) flattened into one tab, with
+        a <span className="font-medium text-gray-700">Submission</span> column
+        (e.g. RFQ2-2026), a vertical{" "}
+        <span className="font-medium text-gray-700">Total</span> column, and
+        per-axis{" "}
+        <span className="font-medium text-gray-700">
+          BL Submission (BL+Admin)
+        </span>{" "}
+        rows — the grid&apos;s source-of-truth line, where admin figures win
+        each month over the BL forecast.
+      </>
+    ),
+  },
+  extended: {
+    title: "General Forecast Data (Extended)",
+    generate: generateExtendedForecastReport,
+    description: (
+      <>
+        Same as the General Forecast Data report, plus per-client columns
+        appended to every row —{" "}
+        <span className="font-medium text-gray-700">
+          Agency, tier, currency, fee structure, GAIA number, business &amp;
+          digital leads, region, office, GM pod, FO_Value_CAD (Total → CAD),
+          2026 status and notes
+        </span>
+        . (Product Name is included but left blank for now.)
+      </>
+    ),
+  },
+};
+
 export default function GeneralForecastReport({
   reference,
   connected,
+  variant = "general",
 }: {
   reference: BulkReference;
   connected: boolean;
+  variant?: Variant;
 }) {
+  const config = VARIANTS[variant];
   const years = useMemo(
     () => [...new Set(reference.rfqs.map((r) => r.year))].sort((a, b) => b - a),
     [reference.rfqs]
@@ -102,7 +158,7 @@ export default function GeneralForecastReport({
     setError("");
     setResult(null);
     try {
-      const res = await generateGeneralForecastReport(
+      const res = await config.generate(
         { clientIds, years: selYears, rfqs: selRfqs, axes: selAxes },
         reference
       );
@@ -122,20 +178,9 @@ export default function GeneralForecastReport({
         </span>
         <div>
           <h2 className="text-base font-semibold text-gray-900">
-            General Forecast Data
+            {config.title}
           </h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            The selected axes (Media · Labs · Revenue) flattened into one tab, with
-            a <span className="font-medium text-gray-700">Submission</span>{" "}
-            column (e.g. RFQ2-2026), a vertical{" "}
-            <span className="font-medium text-gray-700">Total</span> column, and
-            per-axis{" "}
-            <span className="font-medium text-gray-700">
-              BL Submission (BL+Admin)
-            </span>{" "}
-            rows — the grid&apos;s source-of-truth line, where admin figures win
-            each month over the BL forecast.
-          </p>
+          <p className="text-sm text-gray-500 mt-0.5">{config.description}</p>
         </div>
       </div>
 

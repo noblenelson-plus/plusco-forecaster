@@ -47,10 +47,13 @@ import {
   REVENUE_COMMISSION_TYPE,
   REVENUE_COMMISSION_OVERWRITE_TYPE,
   REVENUE_GAIA_FORECAST_TYPE,
+  REVENUE_PRODUCT_FEES_TYPE,
   buildLabsAxisConfig,
   type AxisConfig,
   type RevenueStream,
 } from "../types/forecaster.types";
+import type { ProductDefinition } from "../types/product.types";
+import { fetchProducts, revenueDropdownProducts } from "./product-service";
 import {
   type RFQType,
   type RFQ,
@@ -140,6 +143,7 @@ const AXIS_COLUMNS: Record<AxisId, BulkColumn[]> = {
     ...COMMON_HEAD,
     { header: "Project", field: "bucket" },
     { header: "Stream", field: "label", required: true },
+    { header: "Product", field: "product" },
     { header: "Note", field: "note" },
     ...DETAIL_COLS,
   ],
@@ -215,14 +219,21 @@ export interface BulkReference {
   rfqs: RFQ[];
   rfqStatusByKey: Map<string, "LOCKED" | "UNLOCKED">; // key `${year}_${rfq}`
   partnersByYear: Map<number, Map<string, string>>; // year → (partnerId → name)
+  /** DISH Products catalog — drives the Revenue "Product" column. */
+  products: ProductDefinition[];
+  productNameById: Map<string, string>; // productId → name (all products)
+  productIdByName: Map<string, string>; // norm(name) → productId (all products)
+  /** Revenue-Dropdown product names, for the export dropdown values. */
+  revenueProductNames: string[];
 }
 
 /** Loads the reference data needed for both export scoping and import QA. */
 export async function loadBulkReference(): Promise<BulkReference> {
-  const [clientSnap, rfqs, partnerSnap] = await Promise.all([
+  const [clientSnap, rfqs, partnerSnap, products] = await Promise.all([
     getDocs(collection(db, "clients")),
     fetchRFQs(),
     getDocs(collection(db, "labs_partners")),
+    fetchProducts(),
   ]);
 
   const clients = clientSnap.docs
@@ -243,7 +254,34 @@ export async function loadBulkReference(): Promise<BulkReference> {
     partnersByYear.set(p.year, byId);
   });
 
-  return { clients, clientsById, rfqs, rfqStatusByKey, partnersByYear };
+  const productNameById = new Map(products.map((p) => [p.productId, p.name]));
+  const productIdByName = new Map(products.map((p) => [norm(p.name), p.productId]));
+  const revenueProductNames = revenueDropdownProducts(products).map((p) => p.name);
+
+  return {
+    clients,
+    clientsById,
+    rfqs,
+    rfqStatusByKey,
+    partnersByYear,
+    products,
+    productNameById,
+    productIdByName,
+    revenueProductNames,
+  };
+}
+
+/**
+ * Resolves the sheet's Product cell to a productId. Accepts either the product
+ * name (case-insensitive, any product — so re-importing an exported sheet still
+ * resolves even if the product later lost its Revenue Dropdown flag) or a raw
+ * productId. Returns "" when blank or unknown.
+ */
+function resolveProductId(product: string, ref: BulkReference): string {
+  const raw = product.trim();
+  if (!raw) return "";
+  if (ref.productNameById.has(raw)) return raw; // already an id
+  return ref.productIdByName.get(norm(raw)) ?? "";
 }
 
 // ─── Per-axis label + validation helpers ─────────────────────────────────────
@@ -290,7 +328,8 @@ function blRecordsFromAxis(
   client: Client,
   year: number,
   rfq: RFQType,
-  data: AxisData
+  data: AxisData,
+  ref: BulkReference
 ): BulkRecord[] {
   const out: BulkRecord[] = [];
   for (const bucket of data.buckets) {
@@ -305,6 +344,11 @@ function blRecordsFromAxis(
         rowType: row.rowType,
         label: row.label,
         note: row.note ?? "",
+        // Product name for a Product Fees line linked to a catalog product.
+        product:
+          row.rowType === REVENUE_PRODUCT_FEES_TYPE && row.productId
+            ? ref.productNameById.get(row.productId) ?? row.productId
+            : "",
         levels: ["", "", ""],
         months: { ...emptyMonthly(), ...row.months },
         explicitZeros: liveExplicitZeros(row),
@@ -347,6 +391,7 @@ function actualsRecordsFromRows(
       rowType: row.rowType,
       label: row.label,
       note: row.note ?? "",
+      product: "",
       levels: ["", "", ""],
       months: { ...emptyMonthly(), ...row.months },
       explicitZeros: liveExplicitZeros(row),
@@ -362,6 +407,7 @@ function actualsRecordsFromRows(
         rowType: row.rowType,
         label: row.label,
         note: "",
+        product: "",
         levels: [
           detail.levels[0] ?? "",
           detail.levels[1] ?? "",
@@ -403,7 +449,7 @@ export async function fetchExportRecords(
                 const data = entry.axes?.[axisId];
                 if (!data) continue;
                 if (scope.includeBL && Array.isArray(data.buckets)) {
-                  result[axisId].push(...blRecordsFromAxis(client, year, rfq, data));
+                  result[axisId].push(...blRecordsFromAxis(client, year, rfq, data, ref));
                 }
                 if (
                   scope.includeActuals &&
@@ -492,6 +538,10 @@ export async function exportToSheet(
         { sheetId, columnIndex: columnIndexOf(cols, "section"), values: [SECTION_BL, SECTION_ACTUALS, SECTION_DETAIL] },
         { sheetId, columnIndex: columnIndexOf(cols, "rfq"), values: rfqValues },
         { sheetId, columnIndex: columnIndexOf(cols, "label"), values: typeOptions(axisId, ref, scope.years) },
+        // Revenue-only: the Product column lists the Revenue-Dropdown products.
+        ...(axisId === "revenue" && ref.revenueProductNames.length
+          ? [{ sheetId, columnIndex: columnIndexOf(cols, "product"), values: ref.revenueProductNames }]
+          : []),
       ];
     });
     await sheets.applyDataValidations(created.spreadsheetId, dropdowns);
@@ -587,9 +637,12 @@ export async function prepareImport(
       continue;
     }
 
-    // Resolve the canonical rowType from the sheet's human type label.
+    // Resolve the canonical rowType from the sheet's human type label, and (on
+    // Revenue) the Product cell → productId.
     for (const p of parsed) {
       p.record.rowType = resolveRowType(axisId, p.record.label, p.record.year, ref);
+      if (axisId === "revenue" && p.record.product)
+        p.record.productId = resolveProductId(p.record.product, ref);
     }
 
     const annual = isAnnualAxis(axisId);
@@ -605,6 +658,9 @@ export async function prepareImport(
         axisId === "revenue"
           ? new Set([REVENUE_COMMISSION_OVERWRITE_TYPE])
           : new Set<string>(),
+      productColumnRowType:
+        axisId === "revenue" ? REVENUE_PRODUCT_FEES_TYPE : undefined,
+      isKnownProduct: (product: string) => resolveProductId(product, ref) !== "",
     });
     const grouped = groupRecords(validated, annual);
 
@@ -654,6 +710,7 @@ function emptyRecord(): BulkRecord {
     rowType: "",
     label: "",
     note: "",
+    product: "",
     levels: ["", "", ""],
     months: emptyMonthly(),
     explicitZeros: [],
@@ -786,6 +843,10 @@ function buildRow(
     ...(rec.note ? { note: rec.note } : {}),
     ...(keepExplicitZeros && rec.explicitZeros.length
       ? { explicitZeros: [...rec.explicitZeros] }
+      : {}),
+    // Link a Product Fees line to its catalog product (resolved in prepare).
+    ...(rec.rowType === REVENUE_PRODUCT_FEES_TYPE && rec.productId
+      ? { productId: rec.productId }
       : {}),
     // Preserve existing detail lines by default; the actuals builder overrides
     // them when the import provides Detail rows for this parent.

@@ -30,10 +30,13 @@ import {
   type ForecastRow,
 } from "../types/forecaster.types";
 import { type RFQType, RFQ_TYPE_ORDER } from "../types/rfq.types";
+import type { Client } from "../types/client.types";
 import { blSubmissionByMonth } from "../format/revenue-commission";
+import { resolveClientStatus } from "../format/client";
 import { ANNUAL_RFQ_SENTINEL } from "../format/bulk-forecast";
 import { fetchAxisData } from "./data-entry-service";
 import { fetchAnnualActuals } from "./annual-actuals-service";
+import { fetchCurrencyRateForYear } from "./currency-service";
 import type { BulkReference } from "./bulk-import-service";
 import * as sheets from "./google-sheets-service";
 
@@ -56,6 +59,7 @@ export interface ReportResult {
 }
 
 const TAB_TITLE = "General Forecast Data";
+const EXTENDED_TAB_TITLE = "General Forecast Data (Extended)";
 
 const HEADER = [
   "ClientId",
@@ -71,6 +75,31 @@ const HEADER = [
   "Total",
 ];
 
+/**
+ * Extra per-client columns appended (after `Total`) by the extended report.
+ * Order matches the request; `Product Name` is intentionally left blank for
+ * now, and `FO_Value_CAD` is the row's Total converted to CAD (see
+ * `clientColumns`).
+ */
+const CLIENT_COLUMN_HEADERS = [
+  "Agency",
+  "CL_Tier",
+  "FO_Currency",
+  "Product Name",
+  "CL_Fee_Structure",
+  "CL_GAIA_Number",
+  "CL_Business_Lead",
+  "CL_Digital_Lead",
+  "CL_Business_Unit_Region",
+  "CL_Office",
+  "GM_Pod",
+  "FO_Value_CAD",
+  "Client_Status_2026",
+  "Notes",
+];
+
+const EXTENDED_HEADER = [...HEADER, ...CLIENT_COLUMN_HEADERS];
+
 const AXES: { axisId: AxisId; label: string; adminLabel: string }[] = [
   { axisId: "media", label: "Media", adminLabel: "MediaOcean (Admin)" },
   { axisId: "labs", label: "Labs", adminLabel: "MediaOcean (Admin)" },
@@ -80,6 +109,49 @@ const AXES: { axisId: AxisId; label: string; adminLabel: string }[] = [
 const SUMMARY_SECTION = "BL Submission (BL+Admin)";
 
 type ReportRow = (string | number)[];
+
+/**
+ * Builds the extra per-client cells for one row of the extended report, given
+ * the row's Total (for `FO_Value_CAD`). USD clients are converted with the
+ * year's USD→CAD rate (falling back to the raw total when no rate is set);
+ * CAD clients pass through unchanged.
+ */
+type ExtraFn = ((total: number) => (string | number)[]) | null;
+
+function clientColumns(
+  client: Client,
+  year: number,
+  usdToCad: number | undefined
+): (total: number) => (string | number)[] {
+  return (total: number) => {
+    const foValueCad =
+      client.CL_Currency === "USD" ? total * (usdToCad ?? 1) : total;
+    return [
+      client.CL_Agency,
+      client.CL_Tier,
+      client.CL_Currency, // FO_Currency
+      "", // Product Name — intentionally blank for now
+      client.Client_Fee_Structure,
+      (client.CL_GAIA_Number ?? []).join(", "),
+      client.CL_Business_Lead ?? "",
+      client.CL_Digital_Lead ?? "",
+      client.CL_Business_Unit_Region,
+      client.CL_Office,
+      client.GM_Pod,
+      foValueCad,
+      // The column is named for 2026 (matching the CSV convention); resolve
+      // the 2026 status regardless of the row's own year.
+      resolveClientStatus(client, 2026),
+      client.Client_Notes ?? "",
+    ];
+  };
+}
+
+/** Appends the extended report's client columns to a row (no-op when null). */
+function appendExtra(row: ReportRow, extra: ExtraFn): ReportRow {
+  if (!extra) return row;
+  return [...row, ...extra(row[row.length - 1] as number)];
+}
 
 /** The 12 month cells + the vertical total, from a MonthlyMap. */
 function monthCells(map: MonthlyMap): number[] {
@@ -104,49 +176,55 @@ function axisRows(
   data: AxisData,
   adminRows: ForecastRow[],
   blSubmission: MonthlyMap | null,
-  revenueSuffixes = false
+  revenueSuffixes = false,
+  extra: ExtraFn = null
 ): ReportRow[] {
   const rows: ReportRow[] = [];
 
   for (const bucket of data.buckets) {
     for (const row of bucket.rows) {
-      rows.push([
+      rows.push(appendExtra([
         ...baseCells,
         revenueSuffixes ? "" : `${submission}-BL`,
         axisLabel, "BL Input", bucket.name, row.label,
         ...monthCells(row.months),
-      ]);
+      ], extra));
     }
   }
   for (const row of adminRows) {
     const isOfficial =
       revenueSuffixes && row.rowType === REVENUE_GAIA_FORECAST_TYPE;
-    rows.push([
+    rows.push(appendExtra([
       ...baseCells,
       isOfficial ? `${submission}-OF` : "",
       axisLabel, adminSectionLabel, "", row.label,
       ...monthCells(row.months),
-    ]);
+    ], extra));
   }
 
   // Nothing stored for this axis/submission → no block at all (the summary
   // row alone would just be a line of zeros).
   if (rows.length === 0 || blSubmission === null) return rows;
 
-  rows.push([
+  rows.push(appendExtra([
     ...baseCells,
     revenueSuffixes ? `${submission}-BL` : "",
     axisLabel, SUMMARY_SECTION, "", "",
     ...monthCells(blSubmission),
-  ]);
+  ], extra));
   return rows;
 }
 
-/** Builds and pushes the "General Forecast Data" report. Returns the URL. */
-export async function generateGeneralForecastReport(
+/**
+ * Shared row builder for both reports. When `extended` is true, each row gets
+ * the per-client columns appended (see `CLIENT_COLUMN_HEADERS`); this also
+ * fetches the USD→CAD rate once per year for the `FO_Value_CAD` conversion.
+ */
+async function buildReportRows(
   scope: GeneralReportScope,
-  ref: BulkReference
-): Promise<ReportResult> {
+  ref: BulkReference,
+  extended: boolean
+): Promise<ReportRow[]> {
   const clients = ref.clients.filter((c) => scope.clientIds.includes(c.cl_id));
   const years = [...scope.years].sort((a, b) => a - b);
   const rfqs = [...scope.rfqs].sort(
@@ -157,10 +235,23 @@ export async function generateGeneralForecastReport(
   const axes = AXES.filter((a) => scope.axes.includes(a.axisId));
   const annualAxes = axes.filter((a) => a.axisId !== "revenue");
 
+  // USD→CAD rate per selected year — fetched once (extended report only).
+  const rateByYear = new Map<number, number | undefined>();
+  if (extended) {
+    await Promise.all(
+      years.map(async (y) => rateByYear.set(y, await fetchCurrencyRateForYear(y)))
+    );
+  }
+
   const rows: ReportRow[] = [];
 
   for (const client of clients) {
     for (const year of years) {
+      // The per-client column suffix (null for the plain report).
+      const extra: ExtraFn = extended
+        ? clientColumns(client, year, rateByYear.get(year))
+        : null;
+
       // Annual MediaOcean actuals (Media/Labs) are per client+year, shared by
       // every submission of the year — fetched once here, only for the
       // selected axes.
@@ -196,7 +287,7 @@ export async function generateGeneralForecastReport(
               ...axisRows(
                 baseCells, submission, axis.label, axis.adminLabel,
                 data, data.actuals, blSubmissionByMonth(data),
-                true
+                true, extra
               )
             );
           } else {
@@ -207,7 +298,7 @@ export async function generateGeneralForecastReport(
             rows.push(
               ...axisRows(
                 baseCells, submission, axis.label, axis.adminLabel,
-                data, [], null
+                data, [], null, false, extra
               )
             );
           }
@@ -219,21 +310,57 @@ export async function generateGeneralForecastReport(
       // every RFQ of the year, so it belongs to none in particular.
       for (const axis of annualAxes) {
         for (const row of annualByAxis[axis.axisId]) {
-          rows.push([
+          rows.push(appendExtra([
             client.cl_id, client.CL_Name, year, ANNUAL_RFQ_SENTINEL, "",
             axis.label, axis.adminLabel, "", row.label,
             ...monthCells(row.months),
-          ]);
+          ], extra));
         }
       }
     }
   }
+
+  return rows;
+}
+
+/** Builds and pushes the "General Forecast Data" report. Returns the URL. */
+export async function generateGeneralForecastReport(
+  scope: GeneralReportScope,
+  ref: BulkReference
+): Promise<ReportResult> {
+  const rows = await buildReportRows(scope, ref, false);
 
   const title = `PlusCo Forecaster report — General Forecast Data — ${new Date()
     .toISOString()
     .slice(0, 10)}`;
   const created = await sheets.createSpreadsheet(title, [TAB_TITLE]);
   await sheets.writeValues(created.spreadsheetId, TAB_TITLE, [HEADER, ...rows]);
+
+  return {
+    spreadsheetId: created.spreadsheetId,
+    url: created.url,
+    rowCount: rows.length,
+  };
+}
+
+/**
+ * "General Forecast Data (Extended)" — identical to the general report but
+ * with the per-client columns (`CLIENT_COLUMN_HEADERS`) appended to every row.
+ */
+export async function generateExtendedForecastReport(
+  scope: GeneralReportScope,
+  ref: BulkReference
+): Promise<ReportResult> {
+  const rows = await buildReportRows(scope, ref, true);
+
+  const title = `PlusCo Forecaster report — General Forecast Data (Extended) — ${new Date()
+    .toISOString()
+    .slice(0, 10)}`;
+  const created = await sheets.createSpreadsheet(title, [EXTENDED_TAB_TITLE]);
+  await sheets.writeValues(created.spreadsheetId, EXTENDED_TAB_TITLE, [
+    EXTENDED_HEADER,
+    ...rows,
+  ]);
 
   return {
     spreadsheetId: created.spreadsheetId,

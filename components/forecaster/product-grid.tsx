@@ -17,7 +17,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Package, RotateCcw } from "lucide-react";
 import {
-  PRODUCTS,
   PRODUCT_STATUS_LABELS,
   PRODUCT_STATUS_ORDER,
   statusAllowsTiming,
@@ -29,6 +28,8 @@ import {
   saveProductTracking,
   subscribeToProductTracking,
 } from "../../lib/services/product-tracking-service";
+import { pipelineProducts } from "../../lib/services/product-service";
+import { useProducts } from "../../lib/hooks/use-products";
 import { useAutosave } from "../../lib/hooks/use-autosave";
 import SaveStatusIndicator from "./save-status";
 import { NoteCell } from "./forecast-grid";
@@ -78,6 +79,15 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Product catalog (admin-managed). The pipeline axis lists the products
+  // flagged for Pipeline; catalog lookups also resolve names for stale entries.
+  const { products, loading: productsLoading } = useProducts();
+  const pipeline = useMemo(() => pipelineProducts(products), [products]);
+  const productById = useMemo(
+    () => new Map(products.map((p) => [p.productId, p])),
+    [products]
+  );
+
   // Reset when the selected client changes — render-time state adjustment
   // (avoids a setState-in-effect cascade); the effect below resubscribes.
   const [loadedFor, setLoadedFor] = useState(clientId);
@@ -117,6 +127,31 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
     () => (state ? countChangedProducts(state.working, state.snapshot) : 0),
     [state]
   );
+
+  // Rows to render: the Pipeline products, followed by any product this client
+  // already tracks that is no longer a Pipeline product (deleted or unflagged).
+  // Those stale rows are shown greyed and read-only-ish so saved statuses/notes
+  // never silently disappear.
+  const displayProducts = useMemo(() => {
+    const base = pipeline.map((p) => ({
+      productId: p.productId,
+      name: p.name,
+      description: p.description,
+      unavailable: false,
+    }));
+    const pipelineIds = new Set(pipeline.map((p) => p.productId));
+    const extras = state
+      ? Object.keys(state.working)
+          .filter((id) => !pipelineIds.has(id))
+          .map((id) => ({
+            productId: id,
+            name: productById.get(id)?.name ?? id,
+            description: productById.get(id)?.description,
+            unavailable: true,
+          }))
+      : [];
+    return [...base, ...extras];
+  }, [pipeline, productById, state]);
 
   const updateWorking = (
     fn: (working: ProductTrackingMap) => ProductTrackingMap
@@ -176,7 +211,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
 
   // Product whose note dialog is open (null = closed).
   const [noteFor, setNoteFor] = useState<string | null>(null);
-  const noteProduct = PRODUCTS.find((p) => p.productId === noteFor);
+  const noteProduct = displayProducts.find((p) => p.productId === noteFor);
 
   const save = async () => {
     if (!state || !hasChanges) return;
@@ -201,7 +236,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
     save,
   });
 
-  if (state === null && !loadError) {
+  if ((state === null || productsLoading) && !loadError) {
     return (
       <div className="flex items-center justify-center py-24 bg-white border border-gray-200 rounded-xl text-gray-400">
         <Loader2 size={20} className="animate-spin" />
@@ -296,7 +331,18 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
               </tr>
             </thead>
             <tbody>
-              {PRODUCTS.map((product) => {
+              {displayProducts.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-4 py-10 text-center text-sm text-gray-400"
+                  >
+                    No pipeline products configured. An admin can add them in
+                    DISH Products.
+                  </td>
+                </tr>
+              )}
+              {displayProducts.map((product) => {
                 const entry = state.working[product.productId];
                 const timingEnabled = statusAllowsTiming(entry?.status ?? null);
                 return (
@@ -305,7 +351,24 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
                     className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
                   >
                     <td className="px-4 py-2.5 font-medium text-gray-800 whitespace-nowrap">
-                      {product.name}
+                      <span className="flex items-center gap-2">
+                        <span className={product.unavailable ? "text-gray-400" : ""}>
+                          {product.name}
+                        </span>
+                        {product.unavailable && (
+                          <span
+                            className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200"
+                            title="This product is no longer in the pipeline catalog. Its saved tracking is kept but read-only here."
+                          >
+                            Unavailable
+                          </span>
+                        )}
+                      </span>
+                      {product.description && !product.unavailable && (
+                        <span className="block text-xs font-normal text-gray-400">
+                          {product.description}
+                        </span>
+                      )}
                     </td>
                     {PRODUCT_STATUS_ORDER.map((status) => {
                       const selected = entry?.status === status;

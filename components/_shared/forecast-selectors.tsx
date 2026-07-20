@@ -20,12 +20,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  collection,
-  getDocs,
-  query,
-  where,
-} from "firebase/firestore";
-import {
   ChevronDown,
   Search,
   Briefcase,
@@ -34,8 +28,8 @@ import {
   Unlock,
   Check,
 } from "lucide-react";
-import { db } from "../../lib/firebase";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import { fetchAccessibleClients } from "../../lib/services/assignment-service";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import {
   subscribeToRFQs,
@@ -45,17 +39,6 @@ import {
 import type { RFQ } from "../../lib/types/rfq.types";
 import type { ClientSummary } from "../../lib/types/client.types";
 import { isClientHidden } from "../../lib/format/client";
-
-// Firestore limits "in" queries to 30 values — split into batches.
-const IN_QUERY_LIMIT = 30;
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
 
 type Theme = "dark" | "light";
 type Orientation = "vertical" | "horizontal";
@@ -136,41 +119,20 @@ export default function ForecastSelectors({
 
     async function fetchClients() {
       try {
-        let docs;
-        if (isAdmin) {
-          docs = (await getDocs(collection(db, "clients"))).docs;
-        } else {
-          const assigned = profile?.assignedClients ?? [];
-          if (assigned.length === 0) {
-            setClients([]);
-            return;
-          }
-          // Firestore caps "in" queries at 30 values; batch when a BL has more.
-          const snapshots = await Promise.all(
-            chunk(assigned, IN_QUERY_LIMIT).map((ids) =>
-              getDocs(
-                query(collection(db, "clients"), where("__name__", "in", ids))
-              )
-            )
-          );
-          docs = snapshots.flatMap((s) => s.docs);
-        }
+        // Role-scoped fetch (admin = all, BL = assigned clients ∪ agencies).
+        const docs = await fetchAccessibleClients(profile, isAdmin);
         const data: ClientSummary[] = docs
           // Hidden clients are not selectable for forecasting.
-          .filter((d) => !isClientHidden(d.data()))
-          .map((d) => {
-            const c = d.data();
-            return {
-              cl_id: d.id,
-              CL_Name: c.CL_Name ?? d.id,
-              CL_Logo: c.CL_Logo,
-              CL_Agency: c.CL_Agency ?? "",
-              CL_Business_Lead: c.CL_Business_Lead ?? "",
-              Client_Status_By_Year: c.Client_Status_By_Year ?? {},
-              CL_Currency: c.CL_Currency ?? "CAD",
-            };
-          })
-          .sort((a, b) => a.CL_Name.localeCompare(b.CL_Name));
+          .filter((c) => !isClientHidden(c))
+          .map((c) => ({
+            cl_id: c.cl_id,
+            CL_Name: c.CL_Name ?? c.cl_id,
+            CL_Logo: c.CL_Logo,
+            CL_Agency: c.CL_Agency ?? "",
+            CL_Business_Lead: c.CL_Business_Lead ?? "",
+            Client_Status_By_Year: c.Client_Status_By_Year ?? {},
+            CL_Currency: c.CL_Currency ?? "CAD",
+          }));
         setClients(data);
       } catch (err) {
         console.error("Failed to load clients for selector:", err);

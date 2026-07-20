@@ -252,6 +252,16 @@ export interface UseForecasterGridResult {
     rowId: string,
     note: string
   ) => void;
+  /**
+   * Set (or clear, when empty) the catalog product linked to a BL row (Revenue's
+   * "Product Fees" lines). Stores `productId` on the row; the row's label/type
+   * stay the stream. Persisted with the grid's explicit Save.
+   */
+  setRowProduct: (
+    bucketId: string,
+    rowId: string,
+    productId: string
+  ) => void;
   /** Actuals (ADMIN_INPUT) — typed rows, no bucket. */
   addActualsRow: (rowType: string) => void;
   removeActualsRow: (rowId: string) => void;
@@ -919,6 +929,27 @@ export function useForecasterGrid(
     []
   );
 
+  // Row product link (Revenue "Product Fees" lines) — stored on the row,
+  // persisted at Save like a structure change. An empty productId removes the
+  // field (mirrors how an empty note is dropped).
+  const setRowProduct = useCallback(
+    (bucketId: string, rowId: string, productId: string) => {
+      const id = productId.trim();
+      setData((prev) => {
+        const next = clone(prev);
+        const row = next.buckets
+          .find((b) => b.bucketId === bucketId)
+          ?.rows.find((r) => r.rowId === rowId);
+        if (!row) return prev;
+        if (id) row.productId = id;
+        else delete row.productId;
+        return next;
+      });
+      setStructureDirty(true);
+    },
+    []
+  );
+
   // ─── Actuals (ADMIN_INPUT) — typed rows, no bucket ────────────────────────
 
   const addActualsRow = useCallback(
@@ -1169,6 +1200,7 @@ export function useForecasterGrid(
     addRow,
     removeRow,
     setRowNote,
+    setRowProduct,
     addActualsRow,
     removeActualsRow,
     addActualsDetail,

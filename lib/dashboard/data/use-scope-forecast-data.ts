@@ -27,15 +27,20 @@ import {
   computeLabsPenetration,
   type LabsPenetrationResult,
 } from "../../format/labs-penetration";
-import { commissionOverwriteMonths } from "../../format/revenue-commission";
+import {
+  commissionOverwriteMonths,
+  blSubmissionByStream,
+  officialRevenueByMonth,
+} from "../../format/revenue-commission";
 import type { ClientOverwriteMonths } from "./qa-checks";
 import {
   rollUpActuals,
+  emptyMonthly,
   type AxisData,
   type AxisId,
   type DataEntry,
 } from "../../types/forecaster.types";
-import type { MonthlyMap } from "../../types/common.types";
+import { MONTHS, type MonthlyMap } from "../../types/common.types";
 import type { LabsPartner } from "../../types/labs.types";
 import type { Currency } from "../../types/client.types";
 import type { DashboardScope } from "../widgets/widget.types";
@@ -45,11 +50,14 @@ import {
   computeLabsMonthly,
   computeMediaBreakdown,
   computeRevenueBreakdown,
+  revenueBreakdownFromStreams,
+  officialBreakdown,
   labsByPartnerForClient,
   maskAxisDataToMonths,
   mergeAxisData,
   resolveLabsDetail,
   scaleAxisData,
+  OFFICIAL_STREAM_KEY,
   type ClientLabsRaw,
   type ClientMediaBreakdown,
   type ClientMonthlyTotal,
@@ -58,6 +66,15 @@ import {
   type MediaBreakdown,
   type RevenueBreakdown,
 } from "./aggregate";
+
+/** The two revenue definitions the dashboard can show (see revenue-grid.tsx). */
+export type RevenueMode = "blSubmission" | "official";
+
+/** A scope-level revenue breakdown plus its per-client rows, for one mode. */
+export interface RevenueView {
+  breakdown: RevenueBreakdown;
+  byClient: ClientRevenueBreakdown[];
+}
 
 /** Coerce a stored axis into a usable AxisData (tolerates legacy/partial docs). */
 function axisOf(entry: DataEntry | null, axis: AxisId): AxisData {
@@ -93,8 +110,17 @@ export interface ScopeForecastData {
   /** One entry per in-scope client with media spend, for the data table. */
   mediaByClient: ClientMediaBreakdown[];
   revenue: RevenueBreakdown;
-  /** One entry per in-scope client with revenue, for the table and ratios. */
+  /** One entry per in-scope client with revenue, for the table and ratios.
+   *  Raw BL_INPUT by stream — consumed by the QA commission check. */
   revenueByClient: ClientRevenueBreakdown[];
+  /**
+   * Revenue reshaped for each selectable definition — BL Submission (the
+   * forecast grid's mauve two-level-priority figure, per-stream) and Official
+   * Revenue (the emerald hand-entered `gaiaForecast` line, single stream). The
+   * BL Submission mechanic is resolved client by client before summing, so it
+   * cannot be derived from the merged scope. The Revenue tab picks a mode.
+   */
+  revenueByMode: Record<RevenueMode, RevenueView>;
   labs: LabsPenetrationResult;
   labsMonthly: MonthlyMap;
   /** One row per (client × partner) with spend, for the detailed Labs table. */
@@ -235,6 +261,12 @@ export function useScopeForecastData(
     const mediaByClient: ClientMediaBreakdown[] = [];
     const labsByClient: ClientLabsRaw[] = [];
     const revenueByClient: ClientRevenueBreakdown[] = [];
+    // BL Submission / Official Revenue, computed per client (the level decision
+    // is per client × per month) then summed into the scope maps below.
+    const revenueByClientBLSub: ClientRevenueBreakdown[] = [];
+    const revenueByClientOfficial: ClientRevenueBreakdown[] = [];
+    const scopeBLSubByStream: Record<string, MonthlyMap> = {};
+    const scopeOfficialMonthly: MonthlyMap = emptyMonthly();
     const revenueActualsByClient: ClientRevenueBreakdown[] = [];
     const commissionOverwriteMonthsByClient: ClientOverwriteMonths[] = [];
     const mediaActualsByClient: ClientMonthlyTotal[] = [];
@@ -280,6 +312,27 @@ export function useScopeForecastData(
           clientId: rc.clientId,
           byStream: aggregateByType(revenue, "BL_INPUT"),
         });
+
+        // BL Submission per stream (the mauve two-level-priority figure) —
+        // resolved for this client, then folded into the scope sums.
+        const blSubStreams = blSubmissionByStream(revenue);
+        revenueByClientBLSub.push({
+          clientId: rc.clientId,
+          byStream: blSubStreams,
+        });
+        for (const [stream, months] of Object.entries(blSubStreams)) {
+          const target = (scopeBLSubByStream[stream] ??= emptyMonthly());
+          for (const m of MONTHS) target[m] += months[m] ?? 0;
+        }
+
+        // Official Revenue (the emerald hand-entered line) — a single stream.
+        const officialMonthly = officialRevenueByMonth(revenue);
+        revenueByClientOfficial.push({
+          clientId: rc.clientId,
+          byStream: { [OFFICIAL_STREAM_KEY]: officialMonthly },
+        });
+        for (const m of MONTHS) scopeOfficialMonthly[m] += officialMonthly[m] ?? 0;
+
         // Overwrite months come from the raw axis: explicit-zero overwrites
         // (deliberate $0) are invisible in the aggregated streams. A month
         // masked out by the month filter compares 0 vs 0 downstream anyway,
@@ -324,6 +377,10 @@ export function useScopeForecastData(
       mediaByClient,
       labsByClient,
       revenueByClient,
+      revenueByClientBLSub,
+      revenueByClientOfficial,
+      scopeBLSubByStream,
+      scopeOfficialMonthly,
       revenueActualsByClient,
       commissionOverwriteMonthsByClient,
       mediaActualsByClient,
@@ -341,6 +398,24 @@ export function useScopeForecastData(
   const revenue = useMemo(
     () => computeRevenueBreakdown(processed.revenue),
     [processed.revenue]
+  );
+  const revenueByMode = useMemo<Record<RevenueMode, RevenueView>>(
+    () => ({
+      blSubmission: {
+        breakdown: revenueBreakdownFromStreams(processed.scopeBLSubByStream),
+        byClient: processed.revenueByClientBLSub,
+      },
+      official: {
+        breakdown: officialBreakdown(processed.scopeOfficialMonthly),
+        byClient: processed.revenueByClientOfficial,
+      },
+    }),
+    [
+      processed.scopeBLSubByStream,
+      processed.revenueByClientBLSub,
+      processed.scopeOfficialMonthly,
+      processed.revenueByClientOfficial,
+    ]
   );
   const labs = useMemo(
     () => computeLabsPenetration(processed.labs, processed.media, partnersForYear),
@@ -365,6 +440,7 @@ export function useScopeForecastData(
     mediaByClient: processed.mediaByClient,
     revenue,
     revenueByClient: processed.revenueByClient,
+    revenueByMode,
     labs,
     labsMonthly,
     labsDetail,

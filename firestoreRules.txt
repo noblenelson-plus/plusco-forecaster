@@ -18,8 +18,35 @@ service cloud.firestore {
       return isAuthenticated() &&
         clientId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedClients;
     }
+    // Agency-scoped access: the user has `assignedAgencies` and the given
+    // agency is among them. `.get('assignedAgencies', [])` tolerates the
+    // field being absent on pre-migration user docs.
+    function userAssignedAgencies() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid))
+        .data.get('assignedAgencies', []);
+    }
+    function isAssignedToAgency(agency) {
+      return isAuthenticated() && (agency in userAssignedAgencies());
+    }
+    // Agency access resolved from a client id (needs a client-doc lookup to
+    // read its CL_Agency). Used by collections keyed by clientId (data_entries,
+    // product_tracking, …) where the agency isn't on the document itself.
+    function isAgencyAssignedForClient(clientId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/clients/$(clientId)) &&
+        (get(/databases/$(database)/documents/clients/$(clientId)).data.CL_Agency
+          in userAssignedAgencies());
+    }
     function canAccessClient(clientId) {
-      return isAdmin() || isAssignedToClient(clientId);
+      return isAdmin() ||
+        isAssignedToClient(clientId) ||
+        isAgencyAssignedForClient(clientId);
+    }
+    // A Business Lead who reaches this client either directly or via an agency.
+    // Used by the BL write rules (commissions, data_entries, product_tracking).
+    function isBLForClient(clientId) {
+      return isBusinessLead() &&
+        (isAssignedToClient(clientId) || isAgencyAssignedForClient(clientId));
     }
     // Locking lives on the rfqs document, not on data_entries.
     // data_entries carry `year` (int) and `rfq` (e.g. "RFQ0"); the matching
@@ -44,15 +71,15 @@ service cloud.firestore {
                     || isAdmin();
 
       // Admins can update any profile (role changes, client assignments, etc.)
-      // A user can update their own profile ONLY for safe fields —
-      // role and assignedClients are strictly reserved for admins.
+      // A user can update their own profile ONLY for safe fields — role,
+      // assignedClients and assignedAgencies are strictly reserved for admins.
       allow update: if isAdmin() ||
                     (
                       isAuthenticated() &&
                       request.auth.uid == uid &&
                       !request.resource.data.diff(resource.data)
                         .affectedKeys()
-                        .hasAny(['role', 'assignedClients'])
+                        .hasAny(['role', 'assignedClients', 'assignedAgencies'])
                     );
 
       // Nobody can delete user profiles from the client
@@ -60,8 +87,14 @@ service cloud.firestore {
     }
     // ─── clients ────────────────────────────────────────────────────────────
     match /clients/{clientId} {
-      // Admins see all — BLs only see assigned clients
-      allow read: if canAccessClient(clientId);
+      // Admins see all — BLs see assigned clients ∪ every client of an
+      // assigned agency. The agency check reads CL_Agency straight off the
+      // document (works for both single-doc reads and agency `where` queries),
+      // avoiding the extra client lookup canAccessClient would do here.
+      allow read: if isAdmin() ||
+                    isAssignedToClient(clientId) ||
+                    (resource != null &&
+                      resource.data.CL_Agency in userAssignedAgencies());
 
       // Only admins can create or delete clients
       allow create, delete: if isAdmin();
@@ -74,8 +107,7 @@ service cloud.firestore {
       //   ce qui n'affecte que ces deux clés top-level.)
       allow update: if isAdmin() ||
                     (
-                      isBusinessLead() &&
-                      isAssignedToClient(clientId) &&
+                      isBLForClient(clientId) &&
                       request.resource.data.diff(resource.data)
                         .affectedKeys()
                         .hasOnly(['commissionsConfig', 'updatedAt'])
@@ -86,6 +118,22 @@ service cloud.firestore {
       // All authenticated users can read partners (needed to populate LABS rows)
       allow read: if isAuthenticated();
       // Only admins can manage the global partner registry
+      allow create, update, delete: if isAdmin();
+    }
+    // ─── resources ────────────────────────────────────────────────────────────
+    // Shared library of external links (name, description, url).
+    match /resources/{resourceId} {
+      // All authenticated users can read (BLs click through to the link).
+      allow read: if isAuthenticated();
+      // Only admins can add, edit or remove resources.
+      allow create, update, delete: if isAdmin();
+    }
+    // ─── products (DISH Products catalog) ─────────────────────────────────────
+    match /products/{productId} {
+      // All authenticated users can read the catalog (needed to populate the
+      // pipeline axis and the revenue Product Fees dropdown).
+      allow read: if isAuthenticated();
+      // Only admins can manage the global product catalog.
       allow create, update, delete: if isAdmin();
     }
     // ─── currency_rates ───────────────────────────────────────────────────────
@@ -117,8 +165,7 @@ service cloud.firestore {
       // create it — as long as the RFQ is not locked. Admins always may.
       allow create: if isAdmin() ||
         (
-          isBusinessLead() &&
-          isAssignedToClient(request.resource.data.clientId) &&
+          isBLForClient(request.resource.data.clientId) &&
           rfqUnlocked(request.resource.data.year, request.resource.data.rfq)
         ) ||
         // Submission annotations (shared note + ready-month flags) — the first
@@ -126,8 +173,7 @@ service cloud.firestore {
         // an assigned BL even when the RFQ is locked (annotation-only create:
         // nothing but these metadata keys is written).
         (
-          isBusinessLead() &&
-          isAssignedToClient(request.resource.data.clientId) &&
+          isBLForClient(request.resource.data.clientId) &&
           request.resource.data.keys()
             .hasOnly(['clientId', 'year', 'rfq', 'submissionNote',
                       'readyMonths', 'readyMonthsMeta', 'updatedAt'])
@@ -137,8 +183,7 @@ service cloud.firestore {
       // unlocked, and without re-keying the document (clientId stays put).
       allow update: if isAdmin() ||
         (
-          isBusinessLead() &&
-          isAssignedToClient(resource.data.clientId) &&
+          isBLForClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           rfqUnlocked(resource.data.year, resource.data.rfq)
         ) ||
@@ -147,8 +192,7 @@ service cloud.firestore {
         // touches annotation keys (+ updatedAt); every forecast field keeps its
         // value, so this can never alter locked data.
         (
-          isBusinessLead() &&
-          isAssignedToClient(resource.data.clientId) &&
+          isBLForClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['submissionNote', 'readyMonths', 'readyMonthsMeta', 'updatedAt'])
@@ -219,7 +263,7 @@ service cloud.firestore {
       // Create/update: admins, or a BL assigned to the client. The doc must
       // stay keyed to its client (clientId field matches the doc ID).
       allow create, update: if request.resource.data.clientId == clientId &&
-        (isAdmin() || (isBusinessLead() && isAssignedToClient(clientId)));
+        (isAdmin() || isBLForClient(clientId));
       // Delete: admins only — client-deletion cleanup (deleteClient).
       allow delete: if isAdmin();
     }

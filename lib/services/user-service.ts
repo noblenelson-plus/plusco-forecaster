@@ -18,6 +18,9 @@ export interface UserProfile {
   photoURL: string | null;
   role: UserRole;
   assignedClients: string[];
+  // Agency-scoped access — see AppUser.assignedAgencies. Optional: absent on
+  // pre-migration docs, treated as "no agency access".
+  assignedAgencies?: string[];
   createdAt: unknown; // Firestore ServerTimestamp
   lastLoginAt: unknown; // Firestore ServerTimestamp
 }
@@ -40,6 +43,7 @@ export async function ensureUserProfile(user: User): Promise<UserProfile> {
       photoURL: user.photoURL ?? null,
       role: "BUSINESS_LEAD",
       assignedClients: [],
+      assignedAgencies: [],
       createdAt: serverTimestamp(),
       lastLoginAt: serverTimestamp(),
     };

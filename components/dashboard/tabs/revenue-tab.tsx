@@ -10,6 +10,7 @@
  * * Updated to accept `comparisonData` and calculate variance for the StatCards.
  */
 
+import { useState } from "react";
 import {
   DollarSign,
   Layers,
@@ -34,7 +35,16 @@ import DimensionBreakdown, {
 import { POSITIVE_COLOR, NEGATIVE_COLOR } from "../charts/colors";
 import { formatCompactMoney, formatPct } from "../charts/format";
 import { LoadingTab, NoContextNotice, EmptyDataNotice } from "./tab-states";
-import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
+import type {
+  ScopeForecastData,
+  RevenueMode,
+} from "../../../lib/dashboard/data/use-scope-forecast-data";
+
+/** The two selectable revenue definitions, mirroring the forecast grid rows. */
+const REVENUE_MODES: { id: RevenueMode; label: string }[] = [
+  { id: "blSubmission", label: "BL Submission" },
+  { id: "official", label: "Official Revenue" },
+];
 
 const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 0);
 
@@ -85,20 +95,45 @@ export default function RevenueTab({
   clientDimensions: ClientDimensions;
   fileLabel?: string;
 }) {
+  // Which revenue definition to show — BL Submission (mauve, per-stream) or
+  // Official Revenue (emerald, single line). Declared before the early returns
+  // to keep hook order stable.
+  const [mode, setMode] = useState<RevenueMode>("blSubmission");
+  const isOfficial = mode === "official";
+
   if (!data.hasContext) return <NoContextNotice />;
   if (data.loading) return <LoadingTab />;
-  if (data.revenue.totalAnnual === 0) {
+
+  const media = data.media;
+  const view = data.revenueByMode[mode];
+  const revenue = view.breakdown;
+  const revenueByClient = view.byClient;
+
+  const toggle = <RevenueModeToggle mode={mode} onChange={setMode} />;
+
+  if (revenue.totalAnnual === 0) {
     return (
-      <EmptyDataNotice message="No revenue has been entered for the selected clients, year and submission yet." />
+      <div className="space-y-6">
+        {toggle}
+        <EmptyDataNotice
+          message={
+            isOfficial
+              ? "No official revenue has been entered for the selected clients, year and submission yet."
+              : "No BL submission has been entered for the selected clients, year and submission yet."
+          }
+        />
+      </div>
     );
   }
 
-  const { revenue, media } = data;
   const streams = revenue.byStream.filter((s) => s.annual > 0);
   const ratio = media.totalAnnual > 0 ? revenue.totalAnnual / media.totalAnnual : null;
 
-  // Comparison data
-  const compRevenue = comparisonData.hasContext ? comparisonData.revenue : null;
+  // Comparison data — same definition on both sides (variances stay apples-to-apples).
+  const compView = comparisonData.hasContext
+    ? comparisonData.revenueByMode[mode]
+    : null;
+  const compRevenue = compView ? compView.breakdown : null;
   const compMedia = comparisonData.hasContext ? comparisonData.media : null;
   const compRatio = compMedia && compMedia.totalAnnual > 0 && compRevenue 
     ? compRevenue.totalAnnual / compMedia.totalAnnual 
@@ -107,7 +142,7 @@ export default function RevenueTab({
   // Per-client Revenue / Media ratios, for the best/worst lists. Only clients
   // with media spend (a non-zero denominator) qualify.
   const revByClient = new Map(
-    data.revenueByClient.map((r) => [r.clientId, sumAll(r.byStream)])
+    revenueByClient.map((r) => [r.clientId, sumAll(r.byStream)])
   );
   const ratios = data.mediaByClient
     .map((m) => {
@@ -142,7 +177,7 @@ export default function RevenueTab({
     label: s.label,
     color: s.color,
   }));
-  const topClients = data.revenueByClient
+  const topClients = revenueByClient
     .map((cb) => {
       const values: Record<string, number> = {};
       let total = 0;
@@ -158,13 +193,15 @@ export default function RevenueTab({
     .slice(0, 10);
 
   // Annual BL revenue per client, for the Region / Business Lead breakdowns.
-  const clientTotals = data.revenueByClient.map((cb) => ({
+  const clientTotals = revenueByClient.map((cb) => ({
     clientId: cb.clientId,
     total: sumAll(cb.byStream),
   }));
 
   return (
     <div className="space-y-6">
+      {toggle}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <StatCard
           icon={DollarSign}
@@ -190,31 +227,40 @@ export default function RevenueTab({
         />
       </div>
 
-      {/* Asymmetric 5-col grid, like Media Spend: donut 40% / top clients 60%. */}
+      {/* Asymmetric 5-col grid, like Media Spend: donut 40% / top clients 60%.
+          The stream-mix donut only makes sense for BL Submission — Official
+          Revenue is a single line, so it is hidden and the top-clients chart
+          spans the full width. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <ChartCard
-          title="Revenue mix"
-          subtitle="Annual revenue by stream"
-          icon={Layers}
-          className="lg:col-span-2"
-        >
-          <DonutChart
-            segments={streams.map((s) => ({
-              label: s.label,
-              value: s.annual,
-              color: s.color,
-            }))}
-            centerValue={formatCompactMoney(revenue.totalAnnual)}
-            centerLabel="Total"
-            valueFormat={formatCompactMoney}
-          />
-        </ChartCard>
+        {!isOfficial && (
+          <ChartCard
+            title="Revenue mix"
+            subtitle="Annual revenue by stream"
+            icon={Layers}
+            className="lg:col-span-2"
+          >
+            <DonutChart
+              segments={streams.map((s) => ({
+                label: s.label,
+                value: s.annual,
+                color: s.color,
+              }))}
+              centerValue={formatCompactMoney(revenue.totalAnnual)}
+              centerLabel="Total"
+              valueFormat={formatCompactMoney}
+            />
+          </ChartCard>
+        )}
 
         <ChartCard
           title="Top 10 clients by revenue"
-          subtitle="Largest BL revenue, split by stream"
+          subtitle={
+            isOfficial
+              ? "Largest Official Revenue"
+              : "Largest BL revenue, split by stream"
+          }
           icon={Users}
-          className="lg:col-span-3"
+          className={isOfficial ? "lg:col-span-5" : "lg:col-span-3"}
         >
           {topClients.length > 0 ? (
             <HorizontalStackedBar
@@ -237,8 +283,12 @@ export default function RevenueTab({
       />
 
       <ChartCard
-        title="Monthly revenue by stream"
-        subtitle="Each bar is a month's total BL revenue, split by stream"
+        title={isOfficial ? "Monthly official revenue" : "Monthly revenue by stream"}
+        subtitle={
+          isOfficial
+            ? "Each bar is a month's total Official Revenue"
+            : "Each bar is a month's total BL revenue, split by stream"
+        }
         icon={BarChart3}
       >
         <StackedBarChart
@@ -282,10 +332,54 @@ export default function RevenueTab({
       </div>
 
       <RevenueDataTable
-        revenueByClient={data.revenueByClient}
+        revenueByClient={revenueByClient}
         clientNameById={clientNameById}
         fileLabel={fileLabel}
       />
+    </div>
+  );
+}
+
+// ─── Revenue mode toggle (BL Submission vs Official Revenue) ──────────────────
+
+/**
+ * Segmented control mirroring the forecast grid's two revenue rows: BL
+ * Submission (mauve) and Official Revenue (emerald). Flat and square, on-brand.
+ */
+function RevenueModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: RevenueMode;
+  onChange: (mode: RevenueMode) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Revenue basis
+      </span>
+      <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 bg-white">
+        {REVENUE_MODES.map((m) => {
+          const active = m.id === mode;
+          const activeBg =
+            m.id === "official" ? "bg-green-500" : "bg-violet-600";
+          return (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => onChange(m.id)}
+              aria-pressed={active}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                active
+                  ? `${activeBg} text-white`
+                  : "bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              }`}
+            >
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

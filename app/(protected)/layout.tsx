@@ -117,8 +117,12 @@ return (
 );
 }
 if (!user) return null;
-// Access gate — user is authenticated but has no clients and is not admin
-const hasAccess = isAdmin || (profile?.assignedClients?.length ?? 0) > 0;
+// Access gate — user is authenticated but has no clients, no agencies and
+// is not admin. Agency-scoped access counts even with no explicit clients.
+const hasAccess =
+  isAdmin ||
+  (profile?.assignedClients?.length ?? 0) > 0 ||
+  (profile?.assignedAgencies?.length ?? 0) > 0;
 if (!hasAccess) {
 return <AccessPendingScreen />;
 }

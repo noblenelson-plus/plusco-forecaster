@@ -40,6 +40,9 @@ export const REVENUE_STREAM_COLORS: Record<string, string> = {
   commissionOverwrite: PLUS.pink,
   projectFees: PLUS.green,
   productFees: PLUS.blue,
+  accrual: PLUS.lightPink,
+  // Official Revenue single line — the emerald source-of-truth hue.
+  official: PLUS.green,
 };
 
 /** Product pipeline statuses — same hues as the Product grid's status chips

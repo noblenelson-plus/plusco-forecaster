@@ -532,7 +532,11 @@ export default function ClientDrawer({
 
           {/* Section: Access (edit only) */}
           {isEditing && client && (
-            <ClientAccessSection clId={client.cl_id} isAdmin={isAdmin} />
+            <ClientAccessSection
+              clId={client.cl_id}
+              agency={client.CL_Agency}
+              isAdmin={isAdmin}
+            />
           )}
 
           {/* Section: Classification */}

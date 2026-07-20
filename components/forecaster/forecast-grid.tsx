@@ -24,6 +24,7 @@
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus,
   Trash2,
@@ -38,6 +39,8 @@ import {
   Eye,
   EyeOff,
   StickyNote,
+  CalendarRange,
+  X,
 } from "lucide-react";
 import type {
   AxisConfig,
@@ -67,6 +70,7 @@ import { MONTHS } from "../../lib/types/common.types";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import { downloadAxisCSV } from "../../lib/format/forecast-csv";
 import { actualsTheme } from "../../lib/format/actuals-theme";
+import { fetchAnnualActuals } from "../../lib/services/annual-actuals-service";
 import { SpreadsheetCell, TotalCell } from "./editable-cell";
 import SpreadDialog from "./spread-dialog";
 import NoteDialog from "./note-dialog";
@@ -112,6 +116,12 @@ interface ForecastGridProps {
   grid: UseForecasterGridResult;
   /** Optional per-row extras (badge/tooltip/warning), resolved by row type. */
   rowMeta?: (rowType: string) => RowMeta | undefined;
+  /**
+   * Years the reference-year selector may offer (years with an RFQ). Lets the
+   * user view another year's MediaOcean/MediaBox reference data while still
+   * editing the currently selected year's RFQ. Omitted/empty → no selector.
+   */
+  referenceYears?: number[];
 }
 
 /**
@@ -130,19 +140,91 @@ interface OrderedRow {
   hasDetails?: boolean;
 }
 
-export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProps) {
+export default function ForecastGrid({
+  config,
+  grid,
+  rowMeta,
+  referenceYears,
+}: ForecastGridProps) {
   const blReadOnly = grid.locked;
 
   // Client/year drive the read-only MediaBox actuals section under MediaOcean.
   const { selectedClient, selectedYear } = useForecastSelection();
 
+  // ─── Reference-year override ────────────────────────────────────────────
+  // The whole grid edits `selectedYear`'s RFQ, but the reference-data section
+  // (MediaOcean + MediaBox) can be pointed at another year to peek at past
+  // figures. Defaults to `selectedYear`; resets whenever the client or year
+  // changes. When it differs, MediaOcean is fetched fresh and shown read-only.
+  const hasMediabox = axisHasMediabox(config.axisId);
+  const [referenceYear, setReferenceYear] = useState<number | null>(selectedYear);
+  // Reset the peek whenever the edited client/year changes — done during render
+  // (React's "adjust state on prop change" pattern) so it takes effect before
+  // paint without an extra render, and without a setState-in-effect.
+  const selectionKey = `${selectedClient?.cl_id ?? ""}|${selectedYear ?? ""}`;
+  const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
+  if (selectionKey !== prevSelectionKey) {
+    setPrevSelectionKey(selectionKey);
+    setReferenceYear(selectedYear);
+  }
+  const refYear = referenceYear ?? selectedYear;
+  const crossYear = refYear != null && refYear !== selectedYear;
+
+  // Years the selector offers — those with an RFQ, plus the current year, newest
+  // first. Only meaningful on axes that carry a MediaBox/MediaOcean reference.
+  const yearOptions = useMemo(() => {
+    if (!hasMediabox || selectedYear == null) return [];
+    const set = new Set<number>(referenceYears ?? []);
+    set.add(selectedYear);
+    return [...set].sort((a, b) => b - a);
+  }, [hasMediabox, referenceYears, selectedYear]);
+
   // MediaBox totals — owned here (not by the section) so the CSV export can
   // include the same rows. Disabled (undefined client) on axes without a
-  // MediaBox section, e.g. Revenue.
+  // MediaBox section, e.g. Revenue. Always the selected year: the export must
+  // stay aligned with the edited submission regardless of the reference peek.
   const mediabox = useMediaboxTotals(
-    axisHasMediabox(config.axisId) ? selectedClient?.cl_id : undefined,
+    hasMediabox ? selectedClient?.cl_id : undefined,
     selectedYear
   );
+  // Separate subscription for the reference year — only while actually peeking
+  // at another year, so we don't double-subscribe in the common case.
+  const referenceMediabox = useMediaboxTotals(
+    hasMediabox && crossYear ? selectedClient?.cl_id : undefined,
+    refYear
+  );
+  const displayMediabox = crossYear ? referenceMediabox : mediabox;
+
+  // Cross-year MediaOcean rows — read-only, fetched on demand (the grid's own
+  // `data.actuals` is bound to `selectedYear`, so we can't reuse it here).
+  // `loadedKey` tracks which fetch the current `refActuals` belong to, so the
+  // loading flag is derived (no setState in the effect body) and stale rows
+  // never flash under a mismatched year.
+  const fetchKey =
+    hasMediabox && crossYear && selectedClient?.cl_id && refYear != null
+      ? `${selectedClient.cl_id}|${refYear}|${config.axisId}`
+      : null;
+  const [refActuals, setRefActuals] = useState<ForecastRow[]>([]);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const refActualsLoading = fetchKey != null && fetchKey !== loadedKey;
+  useEffect(() => {
+    if (fetchKey == null || !selectedClient?.cl_id || refYear == null) return;
+    let cancelled = false;
+    fetchAnnualActuals(selectedClient.cl_id, refYear, config.axisId)
+      .then((rows) => {
+        if (cancelled) return;
+        setRefActuals(rows);
+        setLoadedKey(fetchKey);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRefActuals([]);
+        setLoadedKey(fetchKey);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchKey, selectedClient?.cl_id, refYear, config.axisId]);
 
   const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
 
@@ -197,29 +279,35 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
         });
       }
     }
-    for (const row of grid.data.actuals) {
-      list.push({
-        key: row.rowId,
-        rowId: row.rowId,
-        category: "ADMIN_INPUT",
-        bucketId: null,
-        hasDetails: (row.details?.length ?? 0) > 0,
-      });
-      // Detail-line budget cells join the grid only while the row is expanded.
-      if (expandedActuals.has(row.rowId)) {
-        for (const detail of row.details ?? []) {
-          list.push({
-            key: detail.detailId,
-            rowId: row.rowId,
-            category: "ADMIN_INPUT",
-            bucketId: null,
-            detailId: detail.detailId,
-          });
+    // Actuals join the selection model only while shown editable (current
+    // year). When peeking at another year the editable MediaOcean rows are
+    // replaced by a read-only snapshot, so they must not be paste/keyboard
+    // targets.
+    if (!crossYear) {
+      for (const row of grid.data.actuals) {
+        list.push({
+          key: row.rowId,
+          rowId: row.rowId,
+          category: "ADMIN_INPUT",
+          bucketId: null,
+          hasDetails: (row.details?.length ?? 0) > 0,
+        });
+        // Detail-line budget cells join the grid only while the row is expanded.
+        if (expandedActuals.has(row.rowId)) {
+          for (const detail of row.details ?? []) {
+            list.push({
+              key: detail.detailId,
+              rowId: row.rowId,
+              category: "ADMIN_INPUT",
+              bucketId: null,
+              detailId: detail.detailId,
+            });
+          }
         }
       }
     }
     return list;
-  }, [grid.data, collapsed, expandedActuals]);
+  }, [grid.data, collapsed, expandedActuals, crossYear]);
 
   const rowIndex = useMemo(
     () => new Map(orderedRows.map((r, i) => [r.key, i])),
@@ -424,27 +512,53 @@ export default function ForecastGrid({ config, grid, rowMeta }: ForecastGridProp
               )}
 
               {/* ─── Section 2 — Reference data (MediaOcean + MediaBox) ─── */}
-              <SectionBand label="Reference Data" colSpan={colCount} gap />
-
-              {/* ─── Actuals (ADMIN_INPUT) — one row per type ─── */}
-              <ActualsSection
-                config={config}
-                grid={grid}
-                rowMeta={rowMeta}
-                sel={sel}
-                rowIndex={rowIndex}
-                draggingRef={draggingRef}
-                showNotes={showNotes}
-                expandedActuals={expandedActuals}
-                onToggleExpand={toggleActualsExpand}
+              <SectionBand
+                label="Reference Data"
+                colSpan={colCount}
+                gap
+                right={
+                  yearOptions.length > 1 && refYear != null ? (
+                    <ReferenceYearSelect
+                      value={refYear}
+                      currentYear={selectedYear}
+                      options={yearOptions}
+                      onChange={setReferenceYear}
+                    />
+                  ) : undefined
+                }
               />
+
+              {/* ─── MediaOcean actuals (ADMIN_INPUT) — one row per type ───
+                  Editable for the selected year; a read-only snapshot when the
+                  reference selector points at another year. */}
+              {crossYear ? (
+                <ReferenceActualsSection
+                  config={config}
+                  rows={refActuals}
+                  loading={refActualsLoading}
+                  year={refYear}
+                  showNotes={showNotes}
+                />
+              ) : (
+                <ActualsSection
+                  config={config}
+                  grid={grid}
+                  rowMeta={rowMeta}
+                  sel={sel}
+                  rowIndex={rowIndex}
+                  draggingRef={draggingRef}
+                  showNotes={showNotes}
+                  expandedActuals={expandedActuals}
+                  onToggleExpand={toggleActualsExpand}
+                />
+              )}
 
               {/* ─── MediaBox actuals (read-only, synced) — under MediaOcean ─── */}
               <MediaboxActualsSection
                 axisId={config.axisId}
-                year={selectedYear}
+                year={refYear}
                 showNotes={showNotes}
-                mediabox={mediabox}
+                mediabox={displayMediabox}
               />
             </tbody>
           </table>
@@ -470,11 +584,14 @@ function SectionBand({
   label,
   colSpan,
   gap = false,
+  right,
 }: {
   label: string;
   colSpan: number;
   /** Thick light top border — visually detaches this section from the previous one. */
   gap?: boolean;
+  /** Optional control pinned next to the label (e.g. the reference-year selector). */
+  right?: React.ReactNode;
 }) {
   return (
     <tr>
@@ -484,13 +601,244 @@ function SectionBand({
           gap ? "border-t-8 border-t-gray-100" : ""
         }`}
       >
-        <div className="sticky left-0 z-10 flex w-fit items-center px-4 py-2">
+        {/* Pinned left (w-fit + sticky) so both the label and its control stay
+            visible while the months scroll horizontally. */}
+        <div className="sticky left-0 z-10 flex w-fit items-center gap-3 px-4 py-2">
           <span className="text-[11px] font-bold uppercase tracking-widest text-white">
             {label}
           </span>
+          {right}
         </div>
       </td>
     </tr>
+  );
+}
+
+// ─── Reference-year selector ─────────────────────────────────────────────────
+
+/**
+ * Compact year picker embedded in the "Reference Data" band. Lets the user view
+ * MediaOcean + MediaBox from a year other than the one being edited. Styled for
+ * the dark band; when pointed at a non-current year it highlights and offers a
+ * one-click reset back to the edited year.
+ */
+function ReferenceYearSelect({
+  value,
+  currentYear,
+  options,
+  onChange,
+}: {
+  value: number;
+  currentYear: number | null;
+  options: number[];
+  onChange: (year: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // Menu anchor, in viewport coordinates — the menu renders in a portal with
+  // fixed positioning so it escapes the table's `overflow` clip and the sticky
+  // cells' stacking contexts (which otherwise paint over an in-flow dropdown).
+  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const active = value !== currentYear;
+
+  function openMenu() {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setAnchor({ left: r.left, top: r.bottom + 4 });
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    // A fixed-positioned menu can't follow the table scroll, so close it.
+    const onScrollOrResize = () => setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("resize", onScrollOrResize);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+    };
+  }, [open]);
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        title="View reference data from another year"
+        className={`flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+          active
+            ? "bg-white text-gray-900 hover:bg-gray-100"
+            : "text-gray-300 border border-gray-700 hover:bg-gray-800"
+        }`}
+      >
+        <CalendarRange size={12} />
+        <span>{value}</span>
+        {active && <span className="normal-case tracking-normal">· viewing</span>}
+        <ChevronDown size={12} />
+      </button>
+
+      {active && currentYear != null && (
+        <button
+          type="button"
+          onClick={() => onChange(currentYear)}
+          title={`Back to ${currentYear} (edited year)`}
+          className="flex items-center justify-center p-1 text-gray-300 hover:bg-gray-800 transition-colors"
+        >
+          <X size={12} />
+        </button>
+      )}
+
+      {open &&
+        anchor &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: "fixed", left: anchor.left, top: anchor.top }}
+            className="z-50 min-w-[9rem] border border-gray-200 bg-white py-1 shadow-lg"
+          >
+            {options.map((y) => (
+              <button
+                key={y}
+                type="button"
+                onClick={() => {
+                  onChange(y);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-100 ${
+                  y === value ? "font-semibold text-gray-900" : "text-gray-600"
+                }`}
+              >
+                <CalendarRange size={12} className="text-gray-400" />
+                {y}
+                {y === currentYear && (
+                  <span className="ml-auto text-[10px] uppercase tracking-wider text-gray-400">
+                    current
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
+
+// ─── Read-only cross-year MediaOcean snapshot ─────────────────────────────────
+
+/**
+ * Renders another year's MediaOcean (ADMIN_INPUT) actuals as read-only rows —
+ * used when the reference-year selector points away from the edited year. Same
+ * pink theming as the editable {@link ActualsSection}, but no selection model,
+ * editing, or detail expansion: it's a plain snapshot fetched on demand.
+ */
+function ReferenceActualsSection({
+  config,
+  rows,
+  loading,
+  year,
+  showNotes,
+}: {
+  config: AxisConfig;
+  rows: ForecastRow[];
+  loading: boolean;
+  year: number;
+  showNotes: boolean;
+}) {
+  const theme = actualsTheme(config.actualsLabel);
+  const colSpan = showNotes ? 15 : 14;
+  const totals = useMemo(() => monthTotals(rows), [rows]);
+  const fmt = (v: number) =>
+    v ? Math.round(v).toLocaleString("en-CA") : "—";
+
+  return (
+    <>
+      {/* Section header — pink band, flagged as a read-only reference year. */}
+      <tr className={theme.headerRow}>
+        <td colSpan={colSpan} className="p-0">
+          <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
+            <span className={`text-xs font-semibold uppercase tracking-wider ${theme.headerText}`}>
+              {config.actualsLabel}
+            </span>
+            <Lock size={10} className={theme.lockIcon} />
+            <span className={`text-[11px] normal-case ${theme.headerMeta}`}>
+              reference · {year}
+            </span>
+          </div>
+        </td>
+      </tr>
+
+      {loading ? (
+        <tr>
+          <td colSpan={colSpan} className={`px-8 py-2.5 text-xs ${theme.labelClass} ${theme.emptyRow}`}>
+            Loading {year} {config.actualsLabel}…
+          </td>
+        </tr>
+      ) : rows.length === 0 ? (
+        <tr>
+          <td colSpan={colSpan} className={`px-8 py-2.5 text-xs ${theme.labelClass} ${theme.emptyRow}`}>
+            No {config.actualsLabel} recorded for {year}.
+          </td>
+        </tr>
+      ) : (
+        <>
+          {rows.map((row) => (
+            <tr
+              key={row.rowId}
+              className={`group border-b border-gray-100 ${theme.rowBg}`}
+            >
+              <td
+                className={`sticky left-0 z-10 px-4 py-2 text-xs ${theme.rowBg} ${theme.labelClass}`}
+              >
+                <span className="truncate">{row.label}</span>
+              </td>
+              {showNotes && <td className={theme.rowBg} />}
+              {MONTHS.map((m) => (
+                <td key={m} className="px-2.5 py-2 text-right align-middle">
+                  <p className="text-sm text-gray-700 tabular-nums">
+                    {fmt(row.months[m] ?? 0)}
+                  </p>
+                </td>
+              ))}
+              <td className="px-2.5 py-2 text-right align-middle bg-gray-100 group-hover:bg-gray-200">
+                <p className="text-sm text-gray-900 tabular-nums">
+                  {fmt(sumMonths(row.months))}
+                </p>
+              </td>
+            </tr>
+          ))}
+
+          {/* Total row — same convention as the other sections. */}
+          <tr className="bg-gray-200 border-y border-gray-300">
+            <td className="sticky left-0 z-10 bg-gray-200 px-4 py-2 text-xs font-bold text-gray-900 uppercase tracking-wider">
+              {config.actualsLabel} total
+            </td>
+            {showNotes && <td className="bg-gray-200" />}
+            {MONTHS.map((m) => (
+              <td key={m} className="px-2.5 py-2 text-right align-middle">
+                <p className="text-sm font-bold text-gray-900 tabular-nums">
+                  {fmt(totals[m] ?? 0)}
+                </p>
+              </td>
+            ))}
+            <td className="px-2.5 py-2 text-right align-middle bg-gray-300">
+              <p className="text-sm font-bold text-gray-900 tabular-nums">
+                {fmt(sumMonths(totals))}
+              </p>
+            </td>
+          </tr>
+        </>
+      )}
+    </>
   );
 }
 

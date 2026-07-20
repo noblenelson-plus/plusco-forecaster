@@ -1,24 +1,33 @@
 // lib/services/assignment-service.ts
 
 import {
+  collection,
   doc,
+  getDocs,
+  query,
   updateDoc,
+  where,
   arrayUnion,
   arrayRemove,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { UserProfile } from "./user-service";
+import type { Client } from "../types/client.types";
 
 /**
- * Service d'assignation utilisateur ↔ client.
+ * User ↔ client assignment service.
  *
- * Source de vérité unique : le champ `assignedClients` (string[]) sur les
- * documents de la collection `users`. Aucune duplication côté `clients`,
- * donc aucun risque de désynchronisation.
+ * Single source of truth: the `assignedClients` (string[]) field on `users`
+ * documents, plus `assignedAgencies` (string[]) for agency-scoped access. No
+ * duplication on the `clients` side, so nothing can desync.
  *
- * La liste des utilisateurs ayant accès à un client se calcule par
- * inversion en mémoire (voir getUsersForClient) — trivial à l'échelle
- * visée (~200 clients, quelques dizaines d'users).
+ * The list of users with access to a client is computed by in-memory
+ * inversion (see getUsersForClient) — trivial at the target scale (~200
+ * clients, a few dozen users).
+ *
+ * A user's *effective* accessible clients = explicitly assigned clients ∪
+ * every client whose CL_Agency is in `assignedAgencies` (auto-including
+ * clients added to those agencies later). See fetchAccessibleClients.
  */
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
@@ -52,8 +61,8 @@ export async function removeClientsFromUser(
 }
 
 /**
- * Remplace entièrement la liste d'assignations d'un utilisateur.
- * Utilisé par le drawer "bulk assign" (un seul Save pour N changements).
+ * Replaces a user's entire assignment list.
+ * Used by the "bulk assign" drawer (a single Save for N changes).
  */
 export async function setUserAssignments(
   uid: string,
@@ -62,6 +71,87 @@ export async function setUserAssignments(
   await updateDoc(doc(db, "users", uid), {
     assignedClients: clIds,
   });
+}
+
+/**
+ * Replaces a user's full access in one write: explicit clients + agencies.
+ * Used by the bulk assignment drawer, which edits both at once.
+ */
+export async function setUserAccess(
+  uid: string,
+  clIds: string[],
+  agencies: string[]
+): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    assignedClients: clIds,
+    assignedAgencies: agencies,
+  });
+}
+
+// ─── Effective accessible clients ─────────────────────────────────────────────
+
+// Firestore caps "in" queries at 30 values — batch when needed.
+const IN_QUERY_LIMIT = 30;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function toClient(d: { id: string; data: () => unknown }): Client {
+  return { cl_id: d.id, ...(d.data() as Omit<Client, "cl_id">) };
+}
+
+/**
+ * Fetches the full client docs a user may access, scoped by role:
+ *   - ADMIN         → every client
+ *   - BUSINESS_LEAD → assignedClients ∪ every client of an assignedAgency
+ *
+ * Returns raw docs (hidden clients included, sorted by name) — callers apply
+ * their own hidden-client filtering, which differs by surface (admins keep
+ * hidden clients on the Clients page). Deduplicates clients reachable through
+ * both an explicit assignment and an agency.
+ *
+ * Centralizes the role-scoped fetch previously hand-rolled in
+ * use-accessible-clients, forecast-selectors and the Clients page.
+ */
+export async function fetchAccessibleClients(
+  profile: Pick<UserProfile, "assignedClients" | "assignedAgencies"> | null,
+  isAdmin: boolean
+): Promise<Client[]> {
+  const byName = (a: Client, b: Client) => a.CL_Name.localeCompare(b.CL_Name);
+
+  if (isAdmin) {
+    const snap = await getDocs(collection(db, "clients"));
+    return snap.docs.map(toClient).sort(byName);
+  }
+
+  if (!profile) return [];
+
+  const assigned = profile.assignedClients ?? [];
+  const agencies = profile.assignedAgencies ?? [];
+
+  const queries = [
+    // Explicitly assigned clients, batched on document id.
+    ...chunk(assigned, IN_QUERY_LIMIT).map((ids) =>
+      getDocs(query(collection(db, "clients"), where("__name__", "in", ids)))
+    ),
+    // Every client belonging to an assigned agency (auto-includes future ones).
+    ...chunk(agencies, IN_QUERY_LIMIT).map((ags) =>
+      getDocs(query(collection(db, "clients"), where("CL_Agency", "in", ags)))
+    ),
+  ];
+
+  if (queries.length === 0) return [];
+
+  const snapshots = await Promise.all(queries);
+  // Dedupe by id — a client can be reached via both paths.
+  const byId = new Map<string, Client>();
+  snapshots.forEach((s) => s.docs.forEach((d) => byId.set(d.id, toClient(d))));
+  return [...byId.values()].sort(byName);
 }
 
 // ─── Lectures / helpers (en mémoire, pas de requête Firestore) ────────────────

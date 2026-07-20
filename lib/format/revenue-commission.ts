@@ -216,6 +216,38 @@ export function blSubmissionByMonth(data: AxisData): MonthlyMap {
   return out;
 }
 
+/**
+ * BL Submission broken down by stream (rowType). Applies the same per-month
+ * two-level priority as `blSubmissionByMonth`, then attributes the winning
+ * level's cells to their stream: the GAIA detail lines when any carries a value
+ * that month, otherwise the BL Input rows. Zero cells are skipped, so summing
+ * every stream's months reproduces `blSubmissionByMonth` exactly.
+ *
+ * This mirrors the grid's per-stream breakdown (revenue-grid.tsx), and is used
+ * by the dashboard to aggregate BL Submission per client before summing the
+ * scope — the level decision must be made client by client.
+ */
+export function blSubmissionByStream(data: AxisData): Record<string, MonthlyMap> {
+  const others = data.actuals.filter(
+    (r) => r.rowType !== REVENUE_GAIA_FORECAST_TYPE
+  );
+  const out: Record<string, MonthlyMap> = {};
+  const add = (stream: string, m: number, v: number) => {
+    if (!v) return;
+    (out[stream] ??= emptyMonthly())[m] += v;
+  };
+  for (const m of MONTHS) {
+    const hasDetail = others.some((r) => actualsMonthEntered(r, m));
+    if (hasDetail) {
+      for (const r of others) add(r.rowType, m, r.months[m] ?? 0);
+    } else {
+      for (const b of data.buckets)
+        for (const r of b.rows) add(r.rowType, m, r.months[m] ?? 0);
+    }
+  }
+  return out;
+}
+
 // ─── Fixed-structure seeding ────────────────────────────────────────────────
 
 /**

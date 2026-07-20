@@ -24,12 +24,13 @@ import {
   Users,
 } from "lucide-react";
 import {
-  PRODUCTS,
   PRODUCT_STATUS_LABELS,
   PRODUCT_STATUS_ORDER,
   statusAllowsTiming,
   type ProductStatus,
 } from "../../../lib/types/product.types";
+import { useProducts } from "../../../lib/hooks/use-products";
+import { pipelineProducts } from "../../../lib/services/product-service";
 import type { ScopeProductData } from "../../../lib/dashboard/data/use-scope-product-tracking";
 import { PRODUCT_STATUS_COLORS } from "../charts/colors";
 import StatCard from "../charts/stat-card";
@@ -74,10 +75,29 @@ export default function ProductTab({
 }) {
   const { entries } = data;
 
+  // Product catalog (admin-managed). Names resolve across all products (so a
+  // revenue-only product referenced by an entry still shows), while the pipeline
+  // chart is driven by the Pipeline-flagged products.
+  const { products, loading: productsLoading } = useProducts();
+  const pipeline = useMemo(() => pipelineProducts(products), [products]);
   const productNameById = useMemo(
-    () => Object.fromEntries(PRODUCTS.map((p) => [p.productId, p.name])),
-    []
+    () => Object.fromEntries(products.map((p) => [p.productId, p.name])),
+    [products]
   );
+
+  // One bar per Pipeline product, plus any tracked product no longer in the
+  // pipeline catalog (kept so its saved data still appears — an empty/labelled
+  // bar is itself information).
+  const chartProducts = useMemo(() => {
+    const ids = new Set(pipeline.map((p) => p.productId));
+    const extras = [...new Set(entries.map((e) => e.productId))]
+      .filter((id) => !ids.has(id))
+      .map((id) => ({ productId: id, name: productNameById[id] ?? id }));
+    return [
+      ...pipeline.map((p) => ({ productId: p.productId, name: p.name })),
+      ...extras,
+    ];
+  }, [pipeline, entries, productNameById]);
 
   // Count per status, plus the distinct clients carrying each status.
   const byStatus = useMemo(() => {
@@ -99,7 +119,7 @@ export default function ProductTab({
   // Products nobody tracks yet are kept — an empty bar is itself information.
   const pipelineRows = useMemo<StackRow[]>(
     () =>
-      PRODUCTS.map((p) => {
+      chartProducts.map((p) => {
         const values: Record<string, number> = {};
         for (const e of entries) {
           if (e.productId !== p.productId || !e.status) continue;
@@ -107,7 +127,7 @@ export default function ProductTab({
         }
         return { label: p.name, values };
       }),
-    [entries]
+    [entries, chartProducts]
   );
 
   const pipelineSeries = useMemo<StackSeries[]>(
@@ -129,7 +149,7 @@ export default function ProductTab({
     [entries]
   );
 
-  if (data.loading) return <LoadingTab />;
+  if (data.loading || productsLoading) return <LoadingTab />;
   if (data.error) {
     return (
       <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">

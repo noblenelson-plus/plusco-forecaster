@@ -83,7 +83,14 @@ export default function ReportCenterPage() {
         )}
 
         {reference && !refLoading && (
-          <GeneralForecastReport reference={reference} connected={connected} />
+          <>
+            <GeneralForecastReport reference={reference} connected={connected} />
+            <GeneralForecastReport
+              reference={reference}
+              connected={connected}
+              variant="extended"
+            />
+          </>
         )}
       </div>
     </div>

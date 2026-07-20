@@ -16,7 +16,7 @@ import { db } from "../../lib/firebase";
 import { Client } from "../../lib/types/client.types";
 import { UserProfile } from "../../lib/services/user-service";
 import {
-  setUserAssignments,
+  setUserAccess,
   diffAssignments,
 } from "../../lib/services/assignment-service";
 import {
@@ -30,8 +30,12 @@ interface UserClientsDrawerProps {
   open: boolean;
   user: UserProfile | null;
   onClose: () => void;
-  /** Callback after a successful Save — returns the new assignments list */
-  onSaved: (uid: string, assignedClients: string[]) => void;
+  /** Callback after a successful Save — returns the new access lists */
+  onSaved: (
+    uid: string,
+    assignedClients: string[],
+    assignedAgencies: string[]
+  ) => void;
 }
 
 type AgencyFilter = "ALL" | string;
@@ -58,12 +62,16 @@ function avatarColor(name: string): string {
 }
 
 /**
- * Bulk assignment drawer: 1 user → N clients.
+ * Bulk access drawer: 1 user → N clients + N agencies.
  *
- * — Search + Agency / Status filters
- * — "Select all (filtered)" / "Clear (filtered)" for batch assignments
- *   (e.g. all clients of an agency)
- * — Single Save: replaces assignedClients at once (setUserAssignments)
+ * — Agency-wide access: toggling an agency grants the user access to ALL its
+ *   clients, including ones added later (stored as assignedAgencies). Those
+ *   clients show as "via agency" in the list and can't be toggled off
+ *   individually — remove the agency to change them.
+ * — Search + Agency / Status filters over the individual clients
+ * — "Select all (filtered)" / "Clear (filtered)" for batch client assignments
+ * — Single Save: replaces assignedClients + assignedAgencies at once
+ *   (setUserAccess)
  * — Diff counter (+X / −Y) before commit
  */
 export default function UserClientsDrawer({
@@ -79,7 +87,12 @@ export default function UserClientsDrawer({
 
   // Selection being edited
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Agency-wide access being edited (ClientAgency values).
+  const [selectedAgencies, setSelectedAgencies] = useState<Set<string>>(
+    new Set()
+  );
   const initialAssignments = user?.assignedClients ?? [];
+  const initialAgencies = user?.assignedAgencies ?? [];
 
   // Filters
   const [search, setSearch] = useState("");
@@ -115,6 +128,8 @@ export default function UserClientsDrawer({
   // Reset the selection when the user changes or the drawer opens
   useEffect(() => {
     setSelected(new Set(user?.assignedClients ?? []));
+    setSelectedAgencies(new Set(user?.assignedAgencies ?? []));
+    setSaving(false);
     setSearch("");
     setAgencyFilter("ALL");
     setStatusFilter("ALL");
@@ -145,9 +160,22 @@ export default function UserClientsDrawer({
     [initialAssignments, selected]
   );
 
+  const agencyDiff = useMemo(
+    () => diffAssignments(initialAgencies, [...selectedAgencies]),
+    [initialAgencies, selectedAgencies]
+  );
+
+  const hasChanges = diff.hasChanges || agencyDiff.hasChanges;
+
+  // A client is covered when its agency is selected — access is granted
+  // through the agency, so the individual toggle is locked.
+  const isCovered = (c: Client) => selectedAgencies.has(c.CL_Agency);
+
+  // Batch actions only operate on the clients that aren't agency-covered.
+  const toggleableFiltered = filteredClients.filter((c) => !isCovered(c));
   const allFilteredSelected =
-    filteredClients.length > 0 &&
-    filteredClients.every((c) => selected.has(c.cl_id));
+    toggleableFiltered.length > 0 &&
+    toggleableFiltered.every((c) => selected.has(c.cl_id));
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -160,10 +188,20 @@ export default function UserClientsDrawer({
     });
   }
 
+  function toggleAgency(agency: string) {
+    setSelectedAgencies((prev) => {
+      const next = new Set(prev);
+      if (next.has(agency)) next.delete(agency);
+      else next.add(agency);
+      return next;
+    });
+  }
+
   function selectAllFiltered() {
     setSelected((prev) => {
       const next = new Set(prev);
-      filteredClients.forEach((c) => next.add(c.cl_id));
+      // Agency-covered clients are skipped — their access is via the agency.
+      toggleableFiltered.forEach((c) => next.add(c.cl_id));
       return next;
     });
   }
@@ -171,7 +209,7 @@ export default function UserClientsDrawer({
   function clearFiltered() {
     setSelected((prev) => {
       const next = new Set(prev);
-      filteredClients.forEach((c) => next.delete(c.cl_id));
+      toggleableFiltered.forEach((c) => next.delete(c.cl_id));
       return next;
     });
   }
@@ -181,11 +219,16 @@ export default function UserClientsDrawer({
     setSaving(true);
     setError("");
     try {
-      const finalList = [...selected];
-      await setUserAssignments(user.uid, finalList);
-      onSaved(user.uid, finalList);
+      const finalClients = [...selected];
+      const finalAgencies = [...selectedAgencies];
+      await setUserAccess(user.uid, finalClients, finalAgencies);
+      onSaved(user.uid, finalClients, finalAgencies);
     } catch (err: any) {
       setError("Failed to save: " + (err?.message ?? "Unknown error"));
+    } finally {
+      // The drawer stays mounted (only `open` toggles), so `saving` must be
+      // reset on every path — otherwise the button spins forever after the
+      // first save, even when reopening for another user.
       setSaving(false);
     }
   }
@@ -224,7 +267,11 @@ export default function UserClientsDrawer({
                 {user.displayName ?? user.email}
               </h2>
               <p className="text-xs text-gray-400 truncate">
-                Assign clients · {selected.size} selected
+                {selectedAgencies.size > 0 &&
+                  `${selectedAgencies.size} agenc${
+                    selectedAgencies.size !== 1 ? "ies" : "y"
+                  } · `}
+                {selected.size} client{selected.size !== 1 ? "s" : ""} selected
               </p>
             </div>
           </div>
@@ -234,6 +281,44 @@ export default function UserClientsDrawer({
           >
             <X size={18} />
           </button>
+        </div>
+
+        {/* Agency-wide access — grants every client of the agency, incl. future ones */}
+        <div className="px-6 py-4 border-b border-gray-100 bg-white">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Briefcase size={13} className="text-gray-400" />
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Agency-wide access
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {CLIENT_AGENCIES.map((a) => {
+              const on = selectedAgencies.has(a.value);
+              return (
+                <button
+                  key={a.value}
+                  type="button"
+                  onClick={() => toggleAgency(a.value)}
+                  className={`
+                    inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border
+                    transition-colors
+                    ${
+                      on
+                        ? "bg-gray-900 border-gray-900 text-yellow-400"
+                        : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                    }
+                  `}
+                >
+                  {on && <Check size={12} strokeWidth={3} />}
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2">
+            Selecting an agency grants access to all its clients — including any
+            added later. This is not admin access.
+          </p>
         </div>
 
         {/* Toolbar — search + filters */}
@@ -300,13 +385,13 @@ export default function UserClientsDrawer({
               <button
                 type="button"
                 onClick={allFilteredSelected ? clearFiltered : selectAllFiltered}
-                disabled={filteredClients.length === 0}
+                disabled={toggleableFiltered.length === 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-yellow-400 bg-yellow-400 text-gray-900 hover:bg-yellow-300 disabled:opacity-40 transition-colors"
               >
                 <Sparkles size={12} />
                 {allFilteredSelected
-                  ? `Clear filtered (${filteredClients.length})`
-                  : `Select all filtered (${filteredClients.length})`}
+                  ? `Clear filtered (${toggleableFiltered.length})`
+                  : `Select all filtered (${toggleableFiltered.length})`}
               </button>
             </div>
             <span className="text-xs text-gray-400">
@@ -338,7 +423,10 @@ export default function UserClientsDrawer({
           ) : (
             <ul className="space-y-1.5">
               {filteredClients.map((c) => {
+                const covered = isCovered(c);
                 const isSelected = selected.has(c.cl_id);
+                // Effective inclusion: explicitly selected OR granted via agency.
+                const included = covered || isSelected;
                 const initials = c.CL_Name.split(" ")
                   .map((w) => w[0])
                   .join("")
@@ -349,14 +437,21 @@ export default function UserClientsDrawer({
                   <li key={c.cl_id}>
                     <button
                       type="button"
-                      onClick={() => toggle(c.cl_id)}
+                      onClick={covered ? undefined : () => toggle(c.cl_id)}
+                      disabled={covered}
+                      title={
+                        covered
+                          ? `Access granted via the ${c.CL_Agency} agency — remove the agency above to change this.`
+                          : undefined
+                      }
                       className={`
                         w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left
                         transition-all duration-100
-                        ${isSelected
+                        ${included
                           ? "border-yellow-400 bg-yellow-400"
                           : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50"
                         }
+                        ${covered ? "cursor-default" : ""}
                       `}
                     >
                       {/* Custom checkbox */}
@@ -364,13 +459,13 @@ export default function UserClientsDrawer({
                         className={`
                           w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0
                           transition-colors
-                          ${isSelected
+                          ${included
                             ? "bg-gray-900 border-gray-900 text-yellow-400"
                             : "bg-white border-gray-300"
                           }
                         `}
                       >
-                        {isSelected && <Check size={13} strokeWidth={3} />}
+                        {included && <Check size={13} strokeWidth={3} />}
                       </span>
 
                       {/* Avatar / logo */}
@@ -397,10 +492,17 @@ export default function UserClientsDrawer({
                         <p className="text-sm font-medium text-gray-900 truncate">
                           {c.CL_Name}
                         </p>
-                        <p className={`text-xs truncate ${isSelected ? "text-gray-800" : "text-gray-400"}`}>
+                        <p className={`text-xs truncate ${included ? "text-gray-800" : "text-gray-400"}`}>
                           {c.CL_Agency}
                         </p>
                       </div>
+
+                      {/* "via agency" badge — access comes from the agency */}
+                      {covered && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-gray-900 text-yellow-400 flex-shrink-0">
+                          via agency
+                        </span>
+                      )}
 
                       {/* Status dot */}
                       {(() => {
@@ -412,7 +514,7 @@ export default function UserClientsDrawer({
                                 STATUS_DOT_COLORS[status] ?? "bg-gray-300"
                               }`}
                             />
-                            <span className={`text-xs hidden sm:inline ${isSelected ? "text-gray-800" : "text-gray-400"}`}>
+                            <span className={`text-xs hidden sm:inline ${included ? "text-gray-800" : "text-gray-400"}`}>
                               {status === "NEW_CLIENT"
                                 ? "New"
                                 : status.charAt(0) + status.slice(1).toLowerCase()}
@@ -430,21 +532,39 @@ export default function UserClientsDrawer({
 
         {/* Footer — diff + Save */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 bg-white">
-          {/* Change counter */}
-          <div className="flex items-center gap-2 text-xs">
-            {diff.added.length > 0 && (
-              <span className="px-2 py-1 rounded-md bg-green-500 text-white border border-green-500 font-medium">
-                +{diff.added.length}
-              </span>
-            )}
-            {diff.removed.length > 0 && (
-              <span className="px-2 py-1 rounded-md bg-red-500 text-white border border-red-500 font-medium">
-                −{diff.removed.length}
-              </span>
-            )}
-            {!diff.hasChanges && (
-              <span className="text-gray-400">No changes</span>
-            )}
+          {/* Change counter — clients and agencies */}
+          <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-center gap-1.5">
+              {(diff.added.length > 0 || diff.removed.length > 0) && (
+                <span className="text-gray-400">Clients</span>
+              )}
+              {diff.added.length > 0 && (
+                <span className="px-2 py-1 rounded-md bg-green-500 text-white border border-green-500 font-medium">
+                  +{diff.added.length}
+                </span>
+              )}
+              {diff.removed.length > 0 && (
+                <span className="px-2 py-1 rounded-md bg-red-500 text-white border border-red-500 font-medium">
+                  −{diff.removed.length}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              {(agencyDiff.added.length > 0 || agencyDiff.removed.length > 0) && (
+                <span className="text-gray-400">Agencies</span>
+              )}
+              {agencyDiff.added.length > 0 && (
+                <span className="px-2 py-1 rounded-md bg-green-500 text-white border border-green-500 font-medium">
+                  +{agencyDiff.added.length}
+                </span>
+              )}
+              {agencyDiff.removed.length > 0 && (
+                <span className="px-2 py-1 rounded-md bg-red-500 text-white border border-red-500 font-medium">
+                  −{agencyDiff.removed.length}
+                </span>
+              )}
+            </div>
+            {!hasChanges && <span className="text-gray-400">No changes</span>}
           </div>
 
           <div className="flex items-center gap-3">
@@ -456,7 +576,7 @@ export default function UserClientsDrawer({
             </button>
             <button
               onClick={handleSave}
-              disabled={saving || !diff.hasChanges}
+              disabled={saving || !hasChanges}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-lg hover:bg-yellow-500 disabled:opacity-50 transition-colors"
             >
               {saving && <Loader2 size={14} className="animate-spin" />}

@@ -83,6 +83,14 @@ export interface ForecastRow {
    */
   details?: RowDetail[];
   /**
+   * Optional link to a catalog product (Revenue BL "Product Fees" lines only) —
+   * the productId of a "Revenue Dropdown" product picked in the grid. The row's
+   * `label`/`rowType` stay the stream ("Product Fees"); this only records which
+   * product the fee is for. Absent when no product is selected. Round-trips
+   * through the bulk sheet's "Product" column.
+   */
+  productId?: string;
+  /**
    * Months (1–12) where a 0 was deliberately entered (ADMIN_INPUT rows only).
    * MonthlyMap can't tell "entered 0" from "never entered" (every month is
    * stored, defaulting to 0), so this set marks the zeros that are real data —
@@ -382,10 +390,24 @@ export function defaultComparisonRef(
   currentRfq: RFQType,
   allRfqs: Pick<RFQ, "year" | "type">[]
 ): ComparisonRef | null {
-  const prev = previousRFQ(allRfqs, currentYear, currentRfq);
-  if (!prev) return null;
   const side: ComparisonSide =
     config.axisId === "revenue" ? "ADMIN_INPUT" : "BL_INPUT";
+
+  // RFQ0 opens a new planning year, so its natural baseline is the previous
+  // year's last full submission — RFQ3, not whatever immediately precedes it
+  // chronologically (which could be the previous year's FINAL). Prefer RFQ3 of
+  // year−1 when it exists; otherwise fall back to the generic "previous" rule.
+  if (currentRfq === "RFQ0") {
+    const prevYearRfq3 = allRfqs.find(
+      (r) => r.year === currentYear - 1 && r.type === "RFQ3"
+    );
+    if (prevYearRfq3) {
+      return { year: currentYear - 1, rfq: "RFQ3", side };
+    }
+  }
+
+  const prev = previousRFQ(allRfqs, currentYear, currentRfq);
+  if (!prev) return null;
   return { year: prev.year, rfq: prev.rfq, side };
 }
 
@@ -621,6 +643,13 @@ export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
 
 /** The Commission BL row is calculated — read-only, never hand-entered. */
 export const REVENUE_COMMISSION_TYPE: RevenueStream = "commission";
+
+/**
+ * Product Fees — the only stream that may carry a `productId` linking the line
+ * to a catalog product (a "Revenue Dropdown" product picked in the grid, and
+ * round-tripped through the bulk sheet's "Product" column).
+ */
+export const REVENUE_PRODUCT_FEES_TYPE: RevenueStream = "productFees";
 
 /**
  * Commission Overwrite — a BL-only hand-entered stream (it has no GAIA

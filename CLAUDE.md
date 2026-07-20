@@ -51,9 +51,13 @@ The chain:
 1. `AuthProvider` (`lib/auth-context.tsx`) wraps the app, exposes `useAuth()`, and on every auth state change calls `ensureUserProfile()` to create/update the Firestore `users/{uid}` doc (new users default to role `BUSINESS_LEAD`).
 2. `useUserProfile()` subscribes in real-time to `users/{uid}` and derives `isAdmin`.
 3. `app/(protected)/layout.tsx` redirects unauthenticated users to `/auth/login`, shows an "Access pending" screen for users with no assigned clients (and not admin), and renders the sidebar shell otherwise.
-4. Two roles only: `ADMIN` and `BUSINESS_LEAD`. `resolvePermissions(role)` in `user.types.ts` is the single source for capability flags — admins can do everything; BLs can edit forecast inputs for assigned clients only.
+4. Two roles only: `ADMIN` and `BUSINESS_LEAD`. `resolvePermissions(role)` in `user.types.ts` is the single source for capability flags — admins can do everything; BLs can edit forecast inputs for accessible clients only.
 
-User↔client assignment is stored **only** as `assignedClients: string[]` on the user doc (`assignment-service.ts`); the reverse mapping is computed in memory. Never duplicate it onto client docs.
+A user's **accessible clients** come from two fields on the user doc, unioned:
+- `assignedClients: string[]` — explicit per-client grants.
+- `assignedAgencies: string[]` — agency-wide access: the user automatically sees **every** client whose `CL_Agency` is listed, *including clients added later*. This is not admin access — it is scoped to those agencies only.
+
+Both are edited together in the admin users drawer (`user-clients-drawer.tsx` → `setUserAccess`). The single place that resolves the effective client list is `fetchAccessibleClients(profile, isAdmin)` in `assignment-service.ts` (admin → all; BL → assigned ∪ agency clients, deduped) — used by `use-accessible-clients.ts`, `forecast-selectors.tsx` and the Clients page. The reverse mapping (who can access a client) is computed in memory. Never duplicate assignments onto client docs. Firestore rules mirror this: `canAccessClient` / `isBLForClient` combine direct and agency access (`isAgencyAssignedForClient` looks up the client's `CL_Agency`).
 
 ### The forecast grid (the core feature)
 

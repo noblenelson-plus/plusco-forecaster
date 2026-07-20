@@ -2,10 +2,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "../../../lib/firebase";
+import { ExternalLink } from "lucide-react";
 import { Client } from "../../../lib/types/client.types";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
+import { fetchAccessibleClients } from "../../../lib/services/assignment-service";
 import ClientGrid from "../../../components/clients/client-grid";
 import ClientFilters from "../../../components/clients/client-filters";
 import ClientDrawer from "../../../components/clients/client-drawer";
@@ -13,17 +13,6 @@ import PageHeader from "../../../components/_shared/page-header";
 import type { ClientStatus } from "../../../lib/constants/client.constants";
 import { resolveClientStatus, isClientHidden } from "../../../lib/format/client";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
-
-// Firestore caps "in" queries at 30 values — split into batches
-const IN_QUERY_LIMIT = 30;
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
 
 export default function ClientsPage() {
   const { profile, isAdmin } = useUserProfile();
@@ -56,38 +45,9 @@ export default function ClientsPage() {
       setLoading(true);
       setError("");
       try {
-        let docs;
-
-        if (isAdmin) {
-          // Admins see all clients
-          const snapshot = await getDocs(collection(db, "clients"));
-          docs = snapshot.docs;
-        } else {
-          // BLs only see assigned clients
-          const assigned = profile?.assignedClients ?? [];
-          if (assigned.length === 0) {
-            setClients([]);
-            setLoading(false);
-            return;
-          }
-
-          // Firestore "in" supports at most 30 values → batched queries
-          // of 30, run in parallel then merged
-          const snapshots = await Promise.all(
-            chunk(assigned, IN_QUERY_LIMIT).map((ids) =>
-              getDocs(
-                query(collection(db, "clients"), where("__name__", "in", ids))
-              )
-            )
-          );
-          docs = snapshots.flatMap((s) => s.docs);
-        }
-
-        const data = docs.map((d) => ({
-          cl_id: d.id,
-          ...(d.data() as Omit<Client, "cl_id">),
-        })).sort((a, b) => a.CL_Name.localeCompare(b.CL_Name)); // Added alphabetical sort
-        
+        // Role-scoped fetch: admins see all; BLs see assigned clients ∪ every
+        // client of an assigned agency. Already sorted by name.
+        const data = await fetchAccessibleClients(profile, isAdmin);
         setClients(data);
       } catch (err: any) {
         setError("Failed to load clients: " + (err?.message ?? "Unknown error"));
@@ -168,6 +128,28 @@ export default function ClientsPage() {
       <PageHeader
         title="Clients"
         description={isAdmin ? "Manage all agency clients." : "Your assigned clients."}
+        actions={
+          <>
+            <a
+              href="https://forms.gle/cpM6WpJJwbipDHf77"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
+            >
+              <ExternalLink size={14} />
+              <span>New Client Request Form</span>
+            </a>
+            <a
+              href="https://forms.gle/qhvSxDesNGHgcnwJ7"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
+            >
+              <ExternalLink size={14} />
+              <span>Client Access Request Form</span>
+            </a>
+          </>
+        }
       />
 
       {/* Page content — the padding lives here, not on the header */}

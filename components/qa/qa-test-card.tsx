@@ -9,7 +9,7 @@
  */
 
 import { useState } from "react";
-import { CheckCircle2, MinusCircle, XCircle } from "lucide-react";
+import { ArrowDownWideNarrow, CheckCircle2, MinusCircle, XCircle } from "lucide-react";
 import {
   Card,
   CardAction,
@@ -31,6 +31,10 @@ const PREVIEW_COUNT = 8;
 
 /** formatMoney renders 0 as "—"; here a zero amount is meaningful ($0). */
 const fmt = (v: number) => (v === 0 ? "$0" : `$${formatMoney(v)}`);
+
+/** Signed dollar gap between the two compared amounts (left − right). */
+const fmtVariance = (v: number) =>
+  v === 0 ? "$0" : `${v > 0 ? "+" : "−"}$${formatMoney(Math.abs(v))}`;
 
 export default function QaTestCard({
   title,
@@ -56,9 +60,17 @@ export default function QaTestCard({
   clientNameById: Record<string, string>;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [sortByVariance, setSortByVariance] = useState(false);
   const { status, checkedCount, violations } = result;
-  const shown = expanded ? violations : violations.slice(0, PREVIEW_COUNT);
-  const hiddenCount = violations.length - shown.length;
+  // Default order comes from the check (client → label → month). When sorting
+  // by variance, the largest absolute dollar gaps float to the top.
+  const ordered = sortByVariance
+    ? [...violations].sort(
+        (a, b) => Math.abs(b.left - b.right) - Math.abs(a.left - a.right)
+      )
+    : violations;
+  const shown = expanded ? ordered : ordered.slice(0, PREVIEW_COUNT);
+  const hiddenCount = ordered.length - shown.length;
 
   return (
     <Card>
@@ -138,8 +150,21 @@ export default function QaTestCard({
                   <th className="py-1.5 pr-3 text-right font-medium">
                     {valueHeaders[0]}
                   </th>
-                  <th className="py-1.5 text-right font-medium">
+                  <th className="py-1.5 pr-3 text-right font-medium">
                     {valueHeaders[1]}
+                  </th>
+                  <th className="py-1.5 text-right font-medium">
+                    <button
+                      onClick={() => setSortByVariance((s) => !s)}
+                      className={`ml-auto flex items-center gap-1 hover:text-foreground ${
+                        sortByVariance ? "text-primary" : ""
+                      }`}
+                      title="Sort by variance"
+                      aria-pressed={sortByVariance}
+                    >
+                      Variance
+                      <ArrowDownWideNarrow size={12} className="flex-shrink-0" />
+                    </button>
                   </th>
                 </tr>
               </thead>
@@ -157,8 +182,11 @@ export default function QaTestCard({
                     <td className="py-1.5 pr-3 text-right font-medium text-red-600 tabular-nums">
                       {fmt(v.left)}
                     </td>
-                    <td className="py-1.5 text-right tabular-nums">
+                    <td className="py-1.5 pr-3 text-right tabular-nums">
                       {fmt(v.right)}
+                    </td>
+                    <td className="py-1.5 text-right font-medium tabular-nums">
+                      {fmtVariance(v.left - v.right)}
                     </td>
                   </tr>
                 ))}

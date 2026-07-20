@@ -38,24 +38,36 @@ export function statusAllowsTiming(status: ProductStatus | null): boolean {
 
 // ─── Product catalog ──────────────────────────────────────────────────────────
 
+/**
+ * The product catalog is admin-managed in the "DISH Products" module
+ * (app/(protected)/admin/products), stored in the Firestore `products`
+ * collection — one doc per product, ID = productId. Each product declares one or
+ * both uses:
+ *   - `pipeline`        → appears in the Product (pipeline) axis on /forecast
+ *   - `revenueDropdown` → selectable on a Revenue "Product Fees" BL line
+ *
+ * The catalog is loaded dynamically (product-service / use-products); there is no
+ * static list. Existing per-client data references products by `productId`, so a
+ * product doc's ID is stable for its lifetime — deleting or unflagging a product
+ * never rewrites the data that references it (such references are shown as
+ * "unavailable" rather than dropped).
+ */
 export interface ProductDefinition {
-  /** Stable slug used as the key in Firestore (never rename). */
+  /** Stable Firestore doc ID — the key referenced by stored data. Never reused. */
   productId: string;
   name: string;
+  /** Optional free-text description shown in the admin module. */
+  description?: string;
+  /** Listed in the Product (pipeline) axis. */
+  pipeline: boolean;
+  /** Selectable on a Revenue "Product Fees" BL line. */
+  revenueDropdown: boolean;
 }
 
-export const PRODUCTS: ProductDefinition[] = [
-  { productId: "analytics-hub", name: "Analytics Hub" },
-  { productId: "smart-persona", name: "Smart Persona" },
-  { productId: "aios", name: "AIOS" },
-  { productId: "social-sonar", name: "Social Sonar" },
-  { productId: "insights-hub", name: "Insights Hub" },
-  { productId: "dco", name: "DCO" },
-  { productId: "radius", name: "Radius" },
-  { productId: "aeo", name: "AEO" },
-  { productId: "mediabox-2", name: "Mediabox 2.0" },
-  { productId: "affiliates-aim", name: "Affiliates (AIM)" },
-];
+/** Stored shape of a `products` doc (the ID lives on the doc, not in the body). */
+export type ProductDoc = Omit<ProductDefinition, "productId"> & {
+  createdAt?: string;
+};
 
 // ─── Stored data ──────────────────────────────────────────────────────────────
 

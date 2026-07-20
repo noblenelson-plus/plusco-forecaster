@@ -7,6 +7,10 @@ export interface AppUser {
   email: string;
   role: UserRole;
   assignedClients: string[]; // Array of CL_ID references
+  // Agency-scoped access: the user automatically sees every client whose
+  // CL_Agency is listed here — including clients added later. Optional so
+  // pre-migration docs (missing the field) read as "no agency access".
+  assignedAgencies?: string[]; // Array of ClientAgency values
   displayName?: string;
   photoURL?: string;
   createdAt?: string;
@@ -24,6 +28,7 @@ export interface UserFormData {
   email: string;
   role: UserRole;
   assignedClients: string[];
+  assignedAgencies?: string[];
   displayName?: string;
 }
 

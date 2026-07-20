@@ -25,14 +25,11 @@ import {
 } from "../../lib/dashboard/data/qa-checks";
 import type { ScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
 
-/**
- * One slider per check — session-only state, deliberately not persisted.
- * The GAIA vs Official Revenue check is absent: it must always run strict
- * (an equality, no acceptable gap), so its card has no slider.
- */
+/** One slider per check — session-only state, deliberately not persisted. */
 type CheckId =
   | "commissionVsMedia"
   | "labsVsMedia"
+  | "revenueVsOfficial"
   | "mediaOceanMedia"
   | "mediaOceanLabs"
   | "mediaForecastAbove"
@@ -41,6 +38,7 @@ type CheckId =
 const CHECK_IDS: CheckId[] = [
   "commissionVsMedia",
   "labsVsMedia",
+  "revenueVsOfficial",
   "mediaOceanMedia",
   "mediaOceanLabs",
   "mediaForecastAbove",
@@ -86,11 +84,9 @@ export default function QaChecksPanel({
     data.labsDetail,
     tolerances.labsVsMedia
   );
-  // Always strict — the GAIA lines must exactly equal the Official Revenue
-  // (only the sub-dollar float-noise floor applies).
   const revenueVsOfficial = checkRevenueActualsMatchOfficial(
     data.revenueActualsByClient,
-    0
+    tolerances.revenueVsOfficial
   );
   // Media / Labs forecast vs MediaOcean, both directions: the forecast totals
   // are derived once and shared by the "within" and "above" checks.
@@ -183,6 +179,8 @@ export default function QaChecksPanel({
           title="GAIA lines match Official Revenue"
           description="For each month where both are entered, the sum of the GAIA admin lines must equal the Official Revenue."
           result={revenueVsOfficial}
+          tolerance={tolerances.revenueVsOfficial}
+          onToleranceChange={setTolerance("revenueVsOfficial")}
           valueHeaders={["GAIA lines sum", "Official Revenue"]}
           clientNameById={clientNameById}
         />

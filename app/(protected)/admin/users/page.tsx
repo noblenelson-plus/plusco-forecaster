@@ -75,10 +75,16 @@ export default function AdminUsersPage() {
     }
   }
 
-  // After the drawer saves — update the counter locally
-  function handleAssignmentsSaved(uid: string, assignedClients: string[]) {
+  // After the drawer saves — update the counters locally
+  function handleAssignmentsSaved(
+    uid: string,
+    assignedClients: string[],
+    assignedAgencies: string[]
+  ) {
     setUsers((prev) =>
-      prev.map((u) => (u.uid === uid ? { ...u, assignedClients } : u))
+      prev.map((u) =>
+        u.uid === uid ? { ...u, assignedClients, assignedAgencies } : u
+      )
     );
     setAssignUser(null);
   }
@@ -249,15 +255,24 @@ function UserRow({
         </div>
       </td>
 
-      {/* Assigned clients count — clickable, opens the assignment drawer */}
+      {/* Assigned access — clickable, opens the assignment drawer */}
       <td className="px-4 py-3 hidden sm:table-cell">
         <button
           type="button"
           onClick={onAssignClients}
-          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800 border border-transparent transition-colors cursor-pointer"
-          title="Manage client assignments"
+          className="inline-flex items-center gap-2 px-2.5 py-1 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800 border border-transparent transition-colors cursor-pointer"
+          title="Manage client & agency access"
         >
-          {user.assignedClients?.length ?? 0} client{(user.assignedClients?.length ?? 0) !== 1 ? "s" : ""}
+          {(user.assignedAgencies?.length ?? 0) > 0 && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-900 text-yellow-400 font-semibold">
+              {user.assignedAgencies!.length} agenc
+              {user.assignedAgencies!.length !== 1 ? "ies" : "y"}
+            </span>
+          )}
+          <span>
+            {user.assignedClients?.length ?? 0} client
+            {(user.assignedClients?.length ?? 0) !== 1 ? "s" : ""}
+          </span>
         </button>
       </td>
     </tr>

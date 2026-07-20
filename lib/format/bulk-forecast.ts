@@ -75,6 +75,18 @@ export interface BulkRecord {
   /** Human label shown in the sheet's type column. */
   label: string;
   note: string;
+  /**
+   * Product name shown in the Revenue "Product" column — links a Product Fees
+   * line to a catalog product. "" when none. The service resolves it to/from a
+   * productId (only meaningful on the Revenue axis's Product Fees rows).
+   */
+  product: string;
+  /**
+   * Resolved catalog productId — populated by the service after parse (like
+   * `rowType`), from the `product` name. Absent on export/parse; the row builder
+   * writes it onto the ForecastRow for Product Fees lines.
+   */
+  productId?: string;
   /** The 3 free-text detail levels — only meaningful for DETAIL rows. */
   levels: string[];
   months: MonthlyMap;
@@ -100,6 +112,7 @@ export type BulkField =
   | "rowType"
   | "label"
   | "note"
+  | "product"
   | "level1"
   | "level2"
   | "level3";
@@ -147,6 +160,7 @@ function cellForField(rec: BulkRecord, field: BulkField): string | number {
     case "rowType": return rec.rowType;
     case "label": return rec.label;
     case "note": return rec.note;
+    case "product": return rec.product;
     case "level1": return rec.levels[0] ?? "";
     case "level2": return rec.levels[1] ?? "";
     case "level3": return rec.levels[2] ?? "";
@@ -291,6 +305,7 @@ export function parseMatrix(matrix: unknown[][], columns: BulkColumn[]): ParseRe
         rowType: read(row, "rowType"),
         label: read(row, "label"),
         note: read(row, "note"),
+        product: read(row, "product"),
         levels,
         months,
         explicitZeros,
@@ -336,6 +351,14 @@ export interface BulkValidationContext {
    * is a blocking error.
    */
   blOnlyRowTypes: Set<string>;
+  /**
+   * The only rowType that may carry a value in the "Product" column (Revenue's
+   * Product Fees). A non-blank Product on any other row is a blocking error.
+   * Absent on axes without a Product column.
+   */
+  productColumnRowType?: string;
+  /** Whether a non-blank Product cell resolves to a known catalog product. */
+  isKnownProduct?: (product: string) => boolean;
 }
 
 /**
@@ -394,6 +417,17 @@ export function validateRecords(
       const status = ctx.rfqStatus(record.year, record.rfq);
       if (status === "MISSING")
         return err(`RFQ ${record.year}/${record.rfq} does not exist — create it first.`);
+    }
+
+    // Product column: only valid on the Product Fees stream, and must resolve to
+    // a known catalog product. Blank is always fine (the link is optional).
+    if (record.product) {
+      if (record.rowType !== ctx.productColumnRowType)
+        return err(
+          `Product "${record.product}" is only valid on a Product Fees line.`
+        );
+      if (ctx.isKnownProduct && !ctx.isKnownProduct(record.product))
+        return err(`Unknown product "${record.product}".`);
     }
 
     // Month values must be finite numbers.

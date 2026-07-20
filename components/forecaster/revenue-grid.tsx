@@ -69,6 +69,7 @@ import {
   REVENUE_COMMISSION_OVERWRITE_TYPE,
   REVENUE_ACCRUAL_TYPE,
   REVENUE_GAIA_FORECAST_TYPE,
+  REVENUE_PRODUCT_FEES_TYPE,
   REVENUE_BL_ADDABLE_STREAMS,
   REVENUE_STREAM_LABELS,
   GENERAL_PROJECT_NAME,
@@ -88,6 +89,9 @@ import {
 } from "../../lib/hooks/use-grid-selection";
 import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
+import { useProducts } from "../../lib/hooks/use-products";
+import { revenueDropdownProducts } from "../../lib/services/product-service";
+import type { ProductDefinition } from "../../lib/types/product.types";
 import { downloadAxisCSV } from "../../lib/format/forecast-csv";
 import type { CommissionBreakdown } from "../../lib/format/revenue-commission";
 import {
@@ -144,6 +148,11 @@ interface RevenueGridProps {
   commission: CommissionBreakdown;
   /** The client has no commission rates configured for the selected year. */
   noRates?: boolean;
+  /**
+   * Hide the GAIA (ADMIN_INPUT) section entirely. Used for RFQ0, which opens a
+   * new planning year before any GAIA actuals exist.
+   */
+  hideGaia?: boolean;
 }
 
 /**
@@ -162,9 +171,20 @@ interface OrderedRow {
   hasDetails?: boolean;
 }
 
-export default function RevenueGrid({ grid, commission, noRates }: RevenueGridProps) {
+export default function RevenueGrid({ grid, commission, noRates, hideGaia }: RevenueGridProps) {
   const config = REVENUE_AXIS_CONFIG;
   const blReadOnly = grid.locked;
+
+  // Catalog products selectable on a "Product Fees" line (Revenue Dropdown).
+  const { products } = useProducts();
+  const dropdownProducts = useMemo(
+    () => revenueDropdownProducts(products),
+    [products]
+  );
+  const productById = useMemo(
+    () => new Map(products.map((p) => [p.productId, p])),
+    [products]
+  );
 
   // Notes column visibility — shares the key with the other axes so the choice
   // is unified across Media/Revenue/Labs and persists across reloads.
@@ -541,6 +561,21 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                             draggingRef={draggingRef}
                             rowBg="bg-white group-hover:bg-gray-50"
                             showNotes={showNotes}
+                            productDropdown={
+                              row.rowType === REVENUE_PRODUCT_FEES_TYPE
+                                ? {
+                                    products: dropdownProducts,
+                                    productById,
+                                    readOnly: blReadOnly,
+                                    onSelect: (pid) =>
+                                      grid.setRowProduct(
+                                        b.bucketId,
+                                        row.rowId,
+                                        pid
+                                      ),
+                                  }
+                                : undefined
+                            }
                             onSpread={() =>
                               setSpreadRow({
                                 category: "BL_INPUT",
@@ -565,6 +600,9 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
               />
 
               {/* ─── GAIA (ADMIN_INPUT) ─── */}
+              {/* Hidden on RFQ0: a new planning year has no GAIA actuals yet. */}
+              {!hideGaia && (
+              <>
               <tr className="bg-gray-100 border-y border-gray-200">
                 <td colSpan={showNotes ? 15 : 14} className="p-0">
                   <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
@@ -657,6 +695,8 @@ export default function RevenueGrid({ grid, commission, noRates }: RevenueGridPr
                 totals={otherActualsTotals}
                 showNotes={showNotes}
               />
+              </>
+              )}
 
               {/* ─── BL Submission (GAIA detail lines over BL Input) ─── */}
               <tr className="bg-violet-600 border-t-2 border-violet-700">
@@ -1340,6 +1380,56 @@ function InfoTooltipPopover({ text, anchor }: { text: string; anchor: DOMRect })
   );
 }
 
+// ─── Product selector (Revenue "Product Fees" BL lines) ──────────────────────
+// A compact dropdown under the row label to link the fee to a catalog product
+// (a "Revenue Dropdown" product). Optional — the blank option clears it. A
+// previously-picked product that is no longer in the dropdown catalog stays
+// visible as a disabled "(unavailable)" option so the selection never vanishes.
+
+function ProductSelect({
+  value,
+  products,
+  productById,
+  readOnly,
+  onSelect,
+}: {
+  value?: string;
+  products: ProductDefinition[];
+  productById: Map<string, ProductDefinition>;
+  readOnly: boolean;
+  onSelect: (productId: string) => void;
+}) {
+  // Is the current selection missing from the dropdown list (deleted/unflagged)?
+  const stale = !!value && !products.some((p) => p.productId === value);
+  const staleName = stale ? productById.get(value!)?.name ?? value : "";
+
+  return (
+    <div className="mt-1 pl-2">
+      <select
+        value={value ?? ""}
+        disabled={readOnly}
+        onChange={(e) => onSelect(e.target.value)}
+        title="Link this Product Fees line to a product (optional)"
+        className={`w-full max-w-[220px] px-2 py-1 text-xs border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 disabled:bg-gray-50 disabled:text-gray-400 ${
+          stale ? "border-yellow-400 text-gray-500" : "border-gray-200 text-gray-600"
+        }`}
+      >
+        <option value="">— Product (optional) —</option>
+        {stale && (
+          <option value={value} disabled>
+            {staleName} (unavailable)
+          </option>
+        )}
+        {products.map((p) => (
+          <option key={p.productId} value={p.productId}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function RevenueDataRow({
   row,
   category,
@@ -1358,6 +1448,7 @@ function RevenueDataRow({
   onSpread,
   expand,
   labelTooltip,
+  productDropdown,
 }: {
   row: ForecastRow;
   category: InputCategory;
@@ -1383,6 +1474,13 @@ function RevenueDataRow({
   expand?: { expanded: boolean; onToggle: () => void; count: number };
   /** Optional help text shown via an info icon next to the row label. */
   labelTooltip?: string;
+  /** Product selector for "Product Fees" BL lines (rendered under the label). */
+  productDropdown?: {
+    products: ProductDefinition[];
+    productById: Map<string, ProductDefinition>;
+    readOnly: boolean;
+    onSelect: (productId: string) => void;
+  };
 }) {
   const r = rowIndex.get(row.rowId)!;
   // Closed periods only lock BL cells, and only for users who can't edit them.
@@ -1436,6 +1534,15 @@ function RevenueDataRow({
               );
             })()}
         </div>
+        {productDropdown && (
+          <ProductSelect
+            value={row.productId}
+            products={productDropdown.products}
+            productById={productDropdown.productById}
+            readOnly={productDropdown.readOnly}
+            onSelect={productDropdown.onSelect}
+          />
+        )}
         {noteOpen && (
           <NoteDialog
             rowLabel={row.label}

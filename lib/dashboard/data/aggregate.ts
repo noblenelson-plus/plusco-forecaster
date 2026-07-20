@@ -26,6 +26,7 @@ import {
 import {
   MEDIA_TYPE_COLORS,
   REVENUE_STREAM_COLORS,
+  PLUS,
 } from "../../../components/dashboard/charts/colors";
 import type { LabsPartner } from "../../types/labs.types";
 
@@ -229,12 +230,17 @@ const REVENUE_STREAMS: { key: string; label: string }[] = [
   { key: "commissionOverwrite", label: "Commission Overwrite" },
   { key: "projectFees", label: "Project Fees" },
   { key: "productFees", label: "Product Fees" },
+  { key: "accrual", label: "Accrual" },
 ];
 
+/** Synthetic single-stream key for the Official Revenue line (no real stream). */
+export const OFFICIAL_STREAM_KEY = "official";
+
 /** Stream key → display label (known streams; unknown keys fall back to the key). */
-export const REVENUE_STREAM_LABELS: Record<string, string> = Object.fromEntries(
-  REVENUE_STREAMS.map((s) => [s.key, s.label])
-);
+export const REVENUE_STREAM_LABELS: Record<string, string> = {
+  ...Object.fromEntries(REVENUE_STREAMS.map((s) => [s.key, s.label])),
+  [OFFICIAL_STREAM_KEY]: "Official Revenue",
+};
 
 export interface StreamSlice {
   key: string;
@@ -257,25 +263,75 @@ export interface ClientRevenueBreakdown {
   byStream: Record<string, MonthlyMap>;
 }
 
-export function computeRevenueBreakdown(revenue: AxisData): RevenueBreakdown {
-  const byType = aggregateByType(revenue, "BL_INPUT");
+/**
+ * Build a RevenueBreakdown from an already-summed per-stream map (stream key →
+ * MonthlyMap). Known streams come first in canonical order; any unknown stored
+ * key is appended last so nothing is silently dropped. Reused for both the raw
+ * BL_INPUT breakdown and the scope-level BL Submission aggregate (whose per-
+ * stream sums are computed client by client upstream).
+ */
+export function revenueBreakdownFromStreams(
+  byStream: Record<string, MonthlyMap>
+): RevenueBreakdown {
   const monthly = emptyMonthly();
-  // Sum every stored stream (known or not) into the monthly total.
-  for (const months of Object.values(byType)) addInto(monthly, months);
+  for (const months of Object.values(byStream)) addInto(monthly, months);
 
-  const monthlyByStream = {} as Record<string, MonthlyMap>;
-  const byStream: StreamSlice[] = REVENUE_STREAMS.map((s, i) => {
-    const months = byType[s.key] ?? emptyMonthly();
+  const monthlyByStream: Record<string, MonthlyMap> = {};
+  const slices: StreamSlice[] = [];
+  REVENUE_STREAMS.forEach((s, i) => {
+    const months = byStream[s.key] ?? emptyMonthly();
     monthlyByStream[s.key] = months;
-    return {
+    slices.push({
       key: s.key,
       label: s.label,
       color: REVENUE_STREAM_COLORS[s.key] ?? `hsl(${i * 70}, 60%, 55%)`,
       annual: sumMonthlyMap(months),
-    };
+    });
   });
+  for (const [key, months] of Object.entries(byStream)) {
+    if (key in monthlyByStream) continue;
+    monthlyByStream[key] = months;
+    slices.push({
+      key,
+      label: REVENUE_STREAM_LABELS[key] ?? key,
+      color: REVENUE_STREAM_COLORS[key] ?? "#cbd5e1",
+      annual: sumMonthlyMap(months),
+    });
+  }
 
-  return { byStream, monthlyByStream, monthly, totalAnnual: sumMonthlyMap(monthly) };
+  return {
+    byStream: slices,
+    monthlyByStream,
+    monthly,
+    totalAnnual: sumMonthlyMap(monthly),
+  };
+}
+
+export function computeRevenueBreakdown(revenue: AxisData): RevenueBreakdown {
+  return revenueBreakdownFromStreams(aggregateByType(revenue, "BL_INPUT"));
+}
+
+/**
+ * Official Revenue as a RevenueBreakdown with a single synthetic stream — the
+ * hand-entered `gaiaForecast` line has no per-stream dimension, so charts render
+ * it as one green series (and the mix donut is hidden by the tab).
+ */
+export function officialBreakdown(monthly: MonthlyMap): RevenueBreakdown {
+  const months = { ...emptyMonthly(), ...monthly };
+  const annual = sumMonthlyMap(months);
+  return {
+    byStream: [
+      {
+        key: OFFICIAL_STREAM_KEY,
+        label: REVENUE_STREAM_LABELS[OFFICIAL_STREAM_KEY],
+        color: REVENUE_STREAM_COLORS[OFFICIAL_STREAM_KEY] ?? PLUS.green,
+        annual,
+      },
+    ],
+    monthlyByStream: { [OFFICIAL_STREAM_KEY]: months },
+    monthly: months,
+    totalAnnual: annual,
+  };
 }
 
 // ─── Labs ────────────────────────────────────────────────────────────────────

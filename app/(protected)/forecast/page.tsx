@@ -78,7 +78,7 @@ import {
   computeLabsPenetration,
   type LabsPenetrationResult,
 } from "../../../lib/format/labs-penetration";
-import { subscribeToRFQs } from "../../../lib/services/rfq-service";
+import { subscribeToRFQs, getRFQYears } from "../../../lib/services/rfq-service";
 import {
   subscribeToLabsPartners,
   getLabsPartnersForYear,
@@ -410,6 +410,10 @@ function ForecastPageContent() {
     [rfqs]
   );
 
+  // Years with at least one RFQ — offered by the grid's reference-year selector
+  // so a user can peek at another year's MediaOcean/MediaBox while editing.
+  const referenceYears = useMemo(() => getRFQYears(rfqs), [rfqs]);
+
   // Timeline periods of the selected RFQ — resolved from the live `rfqs`
   // subscription (not the store's snapshot) so admin edits reflect instantly.
   const timelinePeriods = useMemo(() => {
@@ -626,12 +630,14 @@ function ForecastPageContent() {
                   grid={revenueGrid}
                   commission={commission}
                   noRates={revenueNoRates}
+                  hideGaia={selectedRFQ?.type === "RFQ0"}
                 />
               ) : (
                 <ForecastGrid
                   config={activeConfig}
                   grid={activeGrid}
                   rowMeta={tab === "labs" ? labsRowMeta : undefined}
+                  referenceYears={referenceYears}
                 />
               )}
             </div>
@@ -814,7 +820,10 @@ function ActualsOverBLBanner({
   const fmt = (n: number) => Math.round(n).toLocaleString("en-CA");
   return (
     <div className="rounded-lg border border-yellow-400 bg-yellow-400 px-4 py-3 text-sm text-gray-900">
-      <div className="flex items-center gap-2 font-semibold">
+      <div className="text-[11px] font-bold uppercase tracking-wide text-gray-800">
+        ALERT: UNDER-FORECASTING
+      </div>
+      <div className="mt-0.5 flex items-center gap-2 font-semibold">
         <AlertTriangle size={16} className="flex-shrink-0 text-gray-800" />
         {actualsLabel} booked spend exceeds the BL Input forecast
       </div>

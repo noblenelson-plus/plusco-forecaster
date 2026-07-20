@@ -16,6 +16,8 @@ import {
 interface ClientAccessSectionProps {
   /** ID of the client being edited — null when creating (section hidden) */
   clId: string | null;
+  /** The client's agency — used to surface users with agency-wide access. */
+  agency?: string;
   /**
    * Admin → full controls (add / remove access).
    * BL → read-only list (see who else has access to the client).
@@ -26,14 +28,19 @@ interface ClientAccessSectionProps {
 /**
  * "Access" section embedded in the ClientDrawer (edit mode).
  *
- * — Lists the users who have access to the client (assignedClients ∋ clId)
- * — Admin only: search combobox to add someone, × button to remove access
+ * — Lists the users with access to the client, from two sources:
+ *     · direct assignment (assignedClients ∋ clId) — removable by an admin
+ *     · agency-wide access (assignedAgencies ∋ the client's agency) — shown
+ *       read-only with a "via agency" badge; not removable here (remove the
+ *       agency from the user's access instead)
+ * — Admin only: search combobox to add someone, × button to remove direct access
  *
  * Writes are immediate (arrayUnion / arrayRemove on users/{uid}),
  * independent of the client form's Save.
  */
 export default function ClientAccessSection({
   clId,
+  agency,
   isAdmin,
 }: ClientAccessSectionProps) {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -86,9 +93,24 @@ export default function ClientAccessSection({
     [users, clId]
   );
 
+  // Users who reach this client through agency-wide access (and aren't already
+  // listed via a direct assignment). Read-only here.
+  const agencyUsers = useMemo(() => {
+    if (!clId || !agency) return [];
+    const directIds = new Set(assignedUsers.map((u) => u.uid));
+    return users.filter(
+      (u) =>
+        (u.assignedAgencies ?? []).includes(agency) && !directIds.has(u.uid)
+    );
+  }, [users, clId, agency, assignedUsers]);
+
   const candidates = useMemo(() => {
     if (!clId) return [];
-    const pool = getUsersNotOnClient(users, clId);
+    // Exclude users who already have access via their agency.
+    const agencyIds = new Set(agencyUsers.map((u) => u.uid));
+    const pool = getUsersNotOnClient(users, clId).filter(
+      (u) => !agencyIds.has(u.uid)
+    );
     const q = search.toLowerCase();
     if (!q) return pool;
     return pool.filter(
@@ -96,7 +118,7 @@ export default function ClientAccessSection({
         u.email.toLowerCase().includes(q) ||
         (u.displayName ?? "").toLowerCase().includes(q)
     );
-  }, [users, clId, search]);
+  }, [users, clId, search, agencyUsers]);
 
   async function handleAdd(uid: string) {
     if (!clId) return;
@@ -168,21 +190,33 @@ export default function ClientAccessSection({
         </div>
       ) : (
         <div className="space-y-2">
-          {/* Assigned users list */}
-          {assignedUsers.length === 0 ? (
+          {/* Assigned users list — direct assignments, then agency-wide */}
+          {assignedUsers.length === 0 && agencyUsers.length === 0 ? (
             <p className="text-sm text-gray-400 py-1">
               No one has access to this client yet.
             </p>
           ) : (
-            assignedUsers.map((u) => (
-              <AccessRow
-                key={u.uid}
-                user={u}
-                busy={busyUid === u.uid}
-                canRemove={isAdmin}
-                onRemove={() => handleRemove(u.uid)}
-              />
-            ))
+            <>
+              {assignedUsers.map((u) => (
+                <AccessRow
+                  key={u.uid}
+                  user={u}
+                  busy={busyUid === u.uid}
+                  canRemove={isAdmin}
+                  onRemove={() => handleRemove(u.uid)}
+                />
+              ))}
+              {agencyUsers.map((u) => (
+                <AccessRow
+                  key={u.uid}
+                  user={u}
+                  busy={false}
+                  canRemove={false}
+                  viaAgency={agency}
+                  onRemove={() => {}}
+                />
+              ))}
+            </>
           )}
 
           {/* Add person — combobox, admin only */}
@@ -262,11 +296,14 @@ function AccessRow({
   user,
   busy,
   canRemove,
+  viaAgency,
   onRemove,
 }: {
   user: UserProfile;
   busy: boolean;
   canRemove: boolean;
+  /** When set, this row's access comes from agency-wide access (read-only). */
+  viaAgency?: string;
   onRemove: () => void;
 }) {
   return (
@@ -278,6 +315,16 @@ function AccessRow({
         </p>
         <p className="text-xs text-gray-400 truncate">{user.email}</p>
       </div>
+
+      {/* Agency-access badge */}
+      {viaAgency && (
+        <span
+          className="inline-flex items-center px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-gray-900 text-yellow-400 flex-shrink-0"
+          title={`Access via the ${viaAgency} agency`}
+        >
+          via agency
+        </span>
+      )}
 
       {/* Role badge */}
       <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-white border border-gray-200 text-gray-500 flex-shrink-0">
