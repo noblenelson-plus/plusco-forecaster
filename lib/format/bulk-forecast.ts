@@ -326,6 +326,12 @@ export interface ValidatedRecord {
   status: RowStatus;
   /** Reason for an error or an ignore. */
   message?: string;
+  /**
+   * A non-blocking advisory on an otherwise-valid (`ok`) row — the row is still
+   * imported, but the review UI surfaces this so the user can fix it. Used when
+   * a BL Product Fees line has no linked product.
+   */
+  warning?: string;
 }
 
 export interface BulkValidationContext {
@@ -353,8 +359,10 @@ export interface BulkValidationContext {
   blOnlyRowTypes: Set<string>;
   /**
    * The only rowType that may carry a value in the "Product" column (Revenue's
-   * Product Fees). A non-blank Product on any other row is a blocking error.
-   * Absent on axes without a Product column.
+   * Product Fees). On that stream a blank Product on a BL line imports with a
+   * non-blocking warning (it stays optional on the Admin/GAIA actuals); a
+   * non-blank Product on any other row is a blocking error. Absent on axes
+   * without a Product column.
    */
   productColumnRowType?: string;
   /** Whether a non-blank Product cell resolves to a known catalog product. */
@@ -377,6 +385,9 @@ export function validateRecords(
       status: "error",
       message,
     });
+    // Non-blocking advisories accumulated as the row passes; attached to the
+    // final `ok` result so the row still imports.
+    let warning: string | undefined;
 
     if (!record.clientId) return err("Missing ClientId.");
     if (!ctx.knownClientIds.has(record.clientId))
@@ -419,15 +430,19 @@ export function validateRecords(
         return err(`RFQ ${record.year}/${record.rfq} does not exist — create it first.`);
     }
 
-    // Product column: only valid on the Product Fees stream, and must resolve to
-    // a known catalog product. Blank is always fine (the link is optional).
-    if (record.product) {
-      if (record.rowType !== ctx.productColumnRowType)
-        return err(
-          `Product "${record.product}" is only valid on a Product Fees line.`
-        );
-      if (ctx.isKnownProduct && !ctx.isKnownProduct(record.product))
+    // Product column: on the Product Fees stream a Product is expected on BL
+    // lines (a blank one imports with a warning, not an error) and, when
+    // present, must resolve to a known catalog product. On the Admin/GAIA
+    // actuals it stays optional. A Product on any other stream is forbidden.
+    if (ctx.productColumnRowType && record.rowType === ctx.productColumnRowType) {
+      if (record.section === "BL" && !record.product)
+        warning = "Product Fees line with no linked product.";
+      if (record.product && ctx.isKnownProduct && !ctx.isKnownProduct(record.product))
         return err(`Unknown product "${record.product}".`);
+    } else if (record.product) {
+      return err(
+        `Product "${record.product}" is only valid on a Product Fees line.`
+      );
     }
 
     // Month values must be finite numbers.
@@ -435,7 +450,7 @@ export function validateRecords(
     if (badMonth !== undefined)
       return err(`Non-numeric value in month ${badMonth}.`);
 
-    return { rowNumber, record, status: "ok" };
+    return { rowNumber, record, status: "ok", ...(warning ? { warning } : {}) };
   });
 }
 

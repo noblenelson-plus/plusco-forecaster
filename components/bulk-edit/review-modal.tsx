@@ -101,6 +101,15 @@ export default function ReviewModal({
                 {summary.ignoredRows} skipped (computed)
               </Pill>
             )}
+            {summary.warningRows > 0 && (
+              <Pill
+                color="amber"
+                icon={<AlertTriangle size={14} />}
+                title="Rows that will be written but need attention (e.g. a Product Fees line with no linked product). Details below."
+              >
+                {summary.warningRows} warning{summary.warningRows !== 1 ? "s" : ""}
+              </Pill>
+            )}
             {summary.errorRows > 0 && (
               <Pill
                 color="red"
@@ -174,6 +183,13 @@ export default function ReviewModal({
                     ))}
                   </Section>
                 )}
+                {summary.warnings.length > 0 && (
+                  <Section title="Warnings — these rows are still imported">
+                    {summary.warnings.map((e, i) => (
+                      <ErrorRow key={i} axis={e.axisId} rowNumber={e.rowNumber} message={e.message} tone="amber" />
+                    ))}
+                  </Section>
+                )}
                 {summary.ignored.length > 0 && (
                   <Section title="Ignored — computed rows">
                     {summary.ignored.map((e, i) => (
@@ -181,7 +197,9 @@ export default function ReviewModal({
                     ))}
                   </Section>
                 )}
-                {summary.errors.length === 0 && summary.ignored.length === 0 && (
+                {summary.errors.length === 0 &&
+                  summary.ignored.length === 0 &&
+                  summary.warnings.length === 0 && (
                   <div className="flex flex-col items-center text-center py-6">
                     <CheckCircle2 size={32} className="text-emerald-500 mb-3" />
                     <p className="text-sm font-medium text-gray-900">All rows are valid</p>

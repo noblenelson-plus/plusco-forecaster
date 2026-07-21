@@ -57,6 +57,7 @@ import {
   ChevronRight,
   FolderPlus,
   Info,
+  AlertTriangle,
 } from "lucide-react";
 import type {
   ForecastBucket,
@@ -202,6 +203,21 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
 
   const buckets = grid.data.buckets;
   const actuals = grid.data.actuals;
+
+  // A Product Fees line must be linked to a product — count the BL rows that
+  // aren't, to flag them and block Save until they're fixed.
+  const missingProductRows = useMemo(
+    () =>
+      buckets.reduce(
+        (n, b) =>
+          n +
+          b.rows.filter(
+            (r) => r.rowType === REVENUE_PRODUCT_FEES_TYPE && !r.productId
+          ).length,
+        0
+      ),
+    [buckets]
+  );
 
   // Collapsed projects — hidden rows also leave the selection model below so
   // keyboard navigation / paste never reach rows you can't see.
@@ -443,6 +459,17 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
         </div>
       )}
 
+      {!grid.locked && missingProductRows > 0 && (
+        <div className="flex items-start gap-2.5 bg-yellow-400 border border-yellow-400 text-gray-900 px-4 py-3 rounded-lg text-sm">
+          <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" />
+          <span>
+            {missingProductRows === 1
+              ? "1 Product Fees line has no product linked. It can still be saved, but linking a product is recommended."
+              : `${missingProductRows} Product Fees lines have no product linked. They can still be saved, but linking a product is recommended.`}
+          </span>
+        </div>
+      )}
+
       {!grid.loading && <SourceOfTruthLegend />}
 
       {grid.loading ? (
@@ -607,7 +634,7 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
                 <td colSpan={showNotes ? 15 : 14} className="p-0">
                   <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
                     <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      {config.actualsLabel}
+                      Actuals ({config.actualsLabel})
                     </span>
                     {!grid.canEditActuals && <Lock size={10} className="text-gray-400" />}
                   </div>
@@ -689,9 +716,9 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
                 );
               })}
 
-              {/* GAIA detail subtotal (the level-2 detail lines, informational) */}
+              {/* Actuals (GAIA) subtotal (the level-2 detail lines, informational) */}
               <SubtotalRow
-                label={`${config.actualsLabel} detail total`}
+                label={`Actuals (${config.actualsLabel}) total`}
                 totals={otherActualsTotals}
                 showNotes={showNotes}
               />
@@ -735,17 +762,17 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
                 </td>
               </tr>
 
-              {/* Per-stream breakdown of the counted (pink) cells. */}
+              {/* Per-stream breakdown of the counted (mauve) cells. */}
               {submissionExpanded &&
                 submissionStreamRows.map((row) => (
                   <tr
                     key={row.stream}
-                    className="bg-pink-200 border-b border-pink-300"
+                    className="bg-purple-200 border-b border-purple-300"
                   >
-                    <td className="sticky left-0 z-10 bg-pink-200 py-2 pl-10 pr-4 text-xs text-gray-900">
+                    <td className="sticky left-0 z-10 bg-purple-200 py-2 pl-10 pr-4 text-xs text-gray-900">
                       {row.label}
                     </td>
-                    {showNotes && <td className="bg-pink-200" />}
+                    {showNotes && <td className="bg-purple-200" />}
                     {MONTHS.map((m) => (
                       <td
                         key={m}
@@ -758,7 +785,7 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
                         </p>
                       </td>
                     ))}
-                    <td className="px-2.5 py-2 text-right align-middle bg-pink-200">
+                    <td className="px-2.5 py-2 text-right align-middle bg-purple-200">
                       <p className="text-sm font-medium tabular-nums text-gray-900">
                         {Math.round(sumMonths(row.months)).toLocaleString("en-CA")}
                       </p>
@@ -1183,7 +1210,7 @@ function SourceOfTruthLegend() {
         Official Revenue (hand-entered, the source of truth)
       </span>
       <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block h-3 w-4 rounded-sm bg-pink-200 ring-1 ring-inset ring-pink-300" />
+        <span className="inline-block h-3 w-4 rounded-sm bg-purple-200 ring-1 ring-inset ring-purple-300" />
         Counted in BL Submission
       </span>
       <span className="inline-flex items-center gap-1.5">
@@ -1382,7 +1409,8 @@ function InfoTooltipPopover({ text, anchor }: { text: string; anchor: DOMRect })
 
 // ─── Product selector (Revenue "Product Fees" BL lines) ──────────────────────
 // A compact dropdown under the row label to link the fee to a catalog product
-// (a "Revenue Dropdown" product). Optional — the blank option clears it. A
+// (a "Revenue Dropdown" product). Expected on Product Fees lines — an empty
+// selection is flagged in yellow (a non-blocking warning; Save still works). A
 // previously-picked product that is no longer in the dropdown catalog stays
 // visible as a disabled "(unavailable)" option so the selection never vanishes.
 
@@ -1402,6 +1430,9 @@ function ProductSelect({
   // Is the current selection missing from the dropdown list (deleted/unflagged)?
   const stale = !!value && !products.some((p) => p.productId === value);
   const staleName = stale ? productById.get(value!)?.name ?? value : "";
+  // A Product Fees line should be linked to a product — flag an empty pick as a
+  // non-blocking warning (yellow), not an error.
+  const missing = !readOnly && !value;
 
   return (
     <div className="mt-1 pl-2">
@@ -1409,12 +1440,14 @@ function ProductSelect({
         value={value ?? ""}
         disabled={readOnly}
         onChange={(e) => onSelect(e.target.value)}
-        title="Link this Product Fees line to a product (optional)"
+        title="Link this Product Fees line to a product (recommended)"
         className={`w-full max-w-[220px] px-2 py-1 text-xs border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 disabled:bg-gray-50 disabled:text-gray-400 ${
-          stale ? "border-yellow-400 text-gray-500" : "border-gray-200 text-gray-600"
+          missing || stale
+            ? "border-yellow-400 text-gray-500"
+            : "border-gray-200 text-gray-600"
         }`}
       >
-        <option value="">— Product (optional) —</option>
+        <option value="">— Select a product —</option>
         {stale && (
           <option value={value} disabled>
             {staleName} (unavailable)
@@ -1803,7 +1836,7 @@ function CommissionCell({
   month: number;
   value: number;
   lines: CommissionBreakdown["byMonth"][number];
-  /** Counted in BL Submission for its month — highlighted pink. */
+  /** Counted in BL Submission for its month — highlighted mauve. */
   counted: boolean;
   /** Overridden by the GAIA detail lines — struck through. */
   overridden: boolean;
@@ -1819,7 +1852,7 @@ function CommissionCell({
   const bg = anchor
     ? "ring-1 ring-inset ring-indigo-300 bg-gray-100"
     : counted
-    ? "bg-pink-200"
+    ? "bg-purple-200"
     : "";
   const text =
     value === 0

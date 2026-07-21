@@ -174,7 +174,7 @@ export function SpreadsheetCell({
                 : "text-white"
             }`
       }`
-    : `${selected ? "bg-yellow-200" : closed ? "bg-gray-100" : official ? "bg-blue-200 hover:bg-blue-200" : counted ? "bg-pink-200 hover:bg-pink-200" : muted ? "bg-gray-100" : value < 0 ? "bg-red-500 hover:bg-red-500" : "hover:bg-gray-50"}
+    : `${selected ? "bg-yellow-200" : closed ? "bg-gray-100" : official ? "bg-blue-200 hover:bg-blue-200" : counted ? "bg-purple-200 hover:bg-purple-200" : muted ? "bg-gray-100" : value < 0 ? "bg-red-500 hover:bg-red-500" : "hover:bg-gray-50"}
        ${closed ? "text-gray-300" : overridden ? "text-gray-400 line-through decoration-gray-400" : official ? "text-gray-900 font-semibold" : counted ? "text-gray-900 font-semibold" : dirty ? "text-gray-900 font-medium" : muted ? "text-gray-400 line-through decoration-gray-400" : value < 0 ? "text-white" : empty ? "text-gray-300" : "text-gray-700"}`;
 
   return (

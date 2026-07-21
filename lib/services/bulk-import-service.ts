@@ -723,12 +723,16 @@ export interface ImportSummary {
   readyRows: number;
   errorRows: number;
   ignoredRows: number;
+  /** `ok` rows carrying a non-blocking advisory (still written). */
+  warningRows: number;
   /** Distinct {client,year,rfq} or {client,year} write targets. */
   affectedTargets: number;
   diff: RowDiff;
   /** Errors for the review list (axis-tagged). */
   errors: { axisId: AxisId; rowNumber: number; message: string }[];
   ignored: { axisId: AxisId; rowNumber: number; message: string }[];
+  /** Non-blocking warnings for the review list (axis-tagged). */
+  warnings: { axisId: AxisId; rowNumber: number; message: string }[];
 }
 
 /**
@@ -767,15 +771,22 @@ export function summarizeImport(
   let readyRows = 0;
   let errorRows = 0;
   let ignoredRows = 0;
+  let warningRows = 0;
   let diff = emptyDiff();
   const errors: ImportSummary["errors"] = [];
   const ignored: ImportSummary["ignored"] = [];
+  const warnings: ImportSummary["warnings"] = [];
   const targets = new Set<string>();
 
   for (const axis of prepared.axes) {
     for (const v of axis.validated) {
-      if (v.status === "ok") readyRows++;
-      else if (v.status === "ignored") {
+      if (v.status === "ok") {
+        readyRows++;
+        if (v.warning) {
+          warningRows++;
+          warnings.push({ axisId: axis.axisId, rowNumber: v.rowNumber, message: v.warning });
+        }
+      } else if (v.status === "ignored") {
         ignoredRows++;
         ignored.push({ axisId: axis.axisId, rowNumber: v.rowNumber, message: v.message ?? "" });
       } else {
@@ -818,10 +829,12 @@ export function summarizeImport(
     readyRows,
     errorRows,
     ignoredRows,
+    warningRows,
     affectedTargets: targets.size,
     diff,
     errors,
     ignored,
+    warnings,
   };
 }
 

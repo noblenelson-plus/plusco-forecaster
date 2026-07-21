@@ -265,6 +265,7 @@ export function ensureRevenueShape(data: AxisData): AxisData {
   // (rows are real revenue types, never renamed). The note is preserved, and
   // so are BL explicit zeros (Commission Overwrite) — dropping any month whose
   // stored value is no longer 0 (a later non-zero entry supersedes the flag).
+  // A Product Fees line's product link is preserved too.
   const normalize = (row: ForecastRow): ForecastRow => {
     const months = { ...emptyMonthly(), ...row.months };
     const explicitZeros = (row.explicitZeros ?? []).filter(
@@ -277,6 +278,7 @@ export function ensureRevenueShape(data: AxisData): AxisData {
       months,
       ...(row.note ? { note: row.note } : {}),
       ...(explicitZeros.length ? { explicitZeros } : {}),
+      ...(row.productId ? { productId: row.productId } : {}),
     };
   };
 
