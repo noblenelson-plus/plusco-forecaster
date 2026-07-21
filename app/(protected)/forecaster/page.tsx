@@ -3,8 +3,10 @@
 
 /**
  * Forecaster — read-only comparison dashboard (Looker replica).
- * Shared header + filters + 3 tabs. Media & Labs is live; Revenue and Product
- * remain placeholders until their sections are built.
+ * A CAD/USD view toggle sits in the header: CAD keeps every client (converted
+ * to CAD, the default). USD narrows the scope to USD clients and shows their
+ * native FO_Value (no conversion) by passing a rate of 1 — so the whole
+ * dashboard reports in pure USD for the USD-client review meeting.
  */
 
 import { useMemo, useState } from "react";
@@ -34,27 +36,12 @@ export default function ForecasterPage() {
   const { selectedYear, selectedRFQ } = useForecastSelection();
   const { comparisonYear, comparisonRFQ } = useComparisonSelection();
 
+  // View currency: CAD (default) or USD (USD clients only, native values).
+  const [viewCurrency, setViewCurrency] = useState<Currency>("CAD");
+
   const { facetViews, filteredClientIds, totalAccessible, hasActiveFilters, reset } =
     useDashboardFilters(clients, usersMap, selectedYear ?? new Date().getFullYear());
 
-  const scope = useMemo<DashboardScope>(
-    () => ({ clientIds: filteredClientIds, year: selectedYear, rfq: selectedRFQ }),
-    [filteredClientIds, selectedYear, selectedRFQ]
-  );
-  const comparisonScope = useMemo<DashboardScope>(
-    () => ({ clientIds: filteredClientIds, year: comparisonYear, rfq: comparisonRFQ }),
-    [filteredClientIds, comparisonYear, comparisonRFQ]
-  );
-
-  const rates = useCurrencyRates();
-  const usdToCad = useMemo(
-    () => (selectedYear ? getCurrencyRateForYear(rates, selectedYear) : undefined),
-    [rates, selectedYear]
-  );
-  const comparisonUsdToCad = useMemo(
-    () => (comparisonYear ? getCurrencyRateForYear(rates, comparisonYear) : undefined),
-    [rates, comparisonYear]
-  );
   const currencyByClient = useMemo(
     () =>
       Object.fromEntries(
@@ -63,32 +50,77 @@ export default function ForecasterPage() {
     [clients]
   );
 
+  // In USD mode, narrow the scope to USD clients only.
+  const scopedClientIds = useMemo(
+    () =>
+      viewCurrency === "USD"
+        ? filteredClientIds.filter((id) => currencyByClient[id] === "USD")
+        : filteredClientIds,
+    [viewCurrency, filteredClientIds, currencyByClient]
+  );
+
+  const scope = useMemo<DashboardScope>(
+    () => ({ clientIds: scopedClientIds, year: selectedYear, rfq: selectedRFQ }),
+    [scopedClientIds, selectedYear, selectedRFQ]
+  );
+  const comparisonScope = useMemo<DashboardScope>(
+    () => ({ clientIds: scopedClientIds, year: comparisonYear, rfq: comparisonRFQ }),
+    [scopedClientIds, comparisonYear, comparisonRFQ]
+  );
+
+  const rates = useCurrencyRates();
+  // USD mode: rate = 1 (no conversion → native USD). CAD mode: the year's rate.
+  const usdToCad = useMemo(
+    () => (viewCurrency === "USD" ? 1 : selectedYear ? getCurrencyRateForYear(rates, selectedYear) : undefined),
+    [viewCurrency, rates, selectedYear]
+  );
+  const comparisonUsdToCad = useMemo(
+    () => (viewCurrency === "USD" ? 1 : comparisonYear ? getCurrencyRateForYear(rates, comparisonYear) : undefined),
+    [viewCurrency, rates, comparisonYear]
+  );
+
   const [selMonths, setSelMonths] = useState<number[]>([]);
   const [tab, setTab] = useState<ForecasterTab>("media-labs");
 
   const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad, selMonths);
-  const comparisonData = useScopeForecastData(
-    comparisonScope,
-    currencyByClient,
-    comparisonUsdToCad,
-    selMonths
-  );
+  const comparisonData = useScopeForecastData(comparisonScope, currencyByClient, comparisonUsdToCad, selMonths);
 
   const activeLabel = FORECASTER_TABS.find((t) => t.id === tab)?.label ?? "";
 
   return (
     <div className="flex min-h-screen flex-col bg-muted">
       <header className="sticky top-0 z-20 flex flex-col bg-white">
-        <DashboardContextBar
-          usdToCad={usdToCad}
-          usdClientCount={forecastData.usdClientCount}
-          missingRate={forecastData.missingRate}
-          months={selMonths}
-          onMonthsChange={setSelMonths}
-        />
+        <div className="relative">
+          <DashboardContextBar
+            usdToCad={usdToCad}
+            usdClientCount={forecastData.usdClientCount}
+            missingRate={forecastData.missingRate}
+            months={selMonths}
+            onMonthsChange={setSelMonths}
+          />
+          {/* Forecaster-only CAD / USD view toggle. */}
+          <div className="absolute right-4 top-1/2 -translate-y-1/2">
+            <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs font-semibold">
+              {(["CAD", "USD"] as Currency[]).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setViewCurrency(c)}
+                  className={`px-3 py-1.5 transition-colors ${
+                    viewCurrency === c
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-card text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <DashboardFilterBar
           facetViews={facetViews}
-          filteredCount={filteredClientIds.length}
+          filteredCount={scopedClientIds.length}
           totalAccessible={totalAccessible}
           hasActiveFilters={hasActiveFilters}
           onReset={reset}
@@ -125,9 +157,11 @@ export default function ForecasterPage() {
           <div className="flex h-64 items-center justify-center text-gray-400">
             <Loader2 size={20} className="animate-spin" />
           </div>
-        ) : totalAccessible === 0 ? (
+        ) : scopedClientIds.length === 0 ? (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
-            No clients are available for your account yet.
+            {viewCurrency === "USD"
+              ? "No USD clients are in scope for this selection."
+              : "No clients are available for your account yet."}
           </div>
         ) : forecastData.error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
