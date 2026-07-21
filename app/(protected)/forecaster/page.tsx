@@ -3,8 +3,8 @@
 
 /**
  * Forecaster — read-only comparison dashboard (Looker replica).
- * Step-2 shell: shared header + filters + 3 tabs with placeholder content.
- * Tab bodies (Media & Labs, Revenue, Product) are built in later steps.
+ * Shared header + filters + 3 tabs. Media & Labs is live; Revenue and Product
+ * remain placeholders until their sections are built.
  */
 
 import { useMemo, useState } from "react";
@@ -15,6 +15,7 @@ import {
   FORECASTER_TABS,
   type ForecasterTab,
 } from "../../../components/forecaster/forecaster-tabs.config";
+import MediaLabsTab from "../../../components/forecaster/tabs/media-labs-tab";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../../lib/dashboard/filters/use-dashboard-filters";
@@ -22,6 +23,7 @@ import { useScopeForecastData } from "../../../lib/dashboard/data/use-scope-fore
 import { useCurrencyRates } from "../../../lib/hooks/use-currency-rates";
 import { getCurrencyRateForYear } from "../../../lib/services/currency-service";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
+import { useComparisonSelection } from "../../../lib/stores/comparison-selection.store";
 import type { DashboardScope } from "../../../lib/dashboard/widgets/widget.types";
 import type { Currency } from "../../../lib/types/client.types";
 
@@ -30,6 +32,7 @@ export default function ForecasterPage() {
   const usersMap = useUsersMap();
 
   const { selectedYear, selectedRFQ } = useForecastSelection();
+  const { comparisonYear, comparisonRFQ } = useComparisonSelection();
 
   const { facetViews, filteredClientIds, totalAccessible, hasActiveFilters, reset } =
     useDashboardFilters(clients, usersMap, selectedYear ?? new Date().getFullYear());
@@ -38,13 +41,21 @@ export default function ForecasterPage() {
     () => ({ clientIds: filteredClientIds, year: selectedYear, rfq: selectedRFQ }),
     [filteredClientIds, selectedYear, selectedRFQ]
   );
+  const comparisonScope = useMemo<DashboardScope>(
+    () => ({ clientIds: filteredClientIds, year: comparisonYear, rfq: comparisonRFQ }),
+    [filteredClientIds, comparisonYear, comparisonRFQ]
+  );
 
   const rates = useCurrencyRates();
   const usdToCad = useMemo(
     () => (selectedYear ? getCurrencyRateForYear(rates, selectedYear) : undefined),
     [rates, selectedYear]
   );
- const currencyByClient = useMemo(
+  const comparisonUsdToCad = useMemo(
+    () => (comparisonYear ? getCurrencyRateForYear(rates, comparisonYear) : undefined),
+    [rates, comparisonYear]
+  );
+  const currencyByClient = useMemo(
     () =>
       Object.fromEntries(
         clients.map((c) => [c.cl_id, c.CL_Currency ?? "CAD"])
@@ -55,9 +66,13 @@ export default function ForecasterPage() {
   const [selMonths, setSelMonths] = useState<number[]>([]);
   const [tab, setTab] = useState<ForecasterTab>("media-labs");
 
-  // Primary scope data only — feeds the context bar and gating. Comparison,
-  // mediabox and product data are added when the tab bodies need them.
   const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad, selMonths);
+  const comparisonData = useScopeForecastData(
+    comparisonScope,
+    currencyByClient,
+    comparisonUsdToCad,
+    selMonths
+  );
 
   const activeLabel = FORECASTER_TABS.find((t) => t.id === tab)?.label ?? "";
 
@@ -79,7 +94,6 @@ export default function ForecasterPage() {
           onReset={reset}
         />
 
-        {/* Analysis tabs — sit directly under the filters. */}
         <div className="flex items-center gap-1 border-b border-gray-200 px-6">
           {FORECASTER_TABS.map((t) => {
             const Icon = t.icon;
@@ -119,6 +133,8 @@ export default function ForecasterPage() {
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {forecastData.error}
           </div>
+        ) : tab === "media-labs" ? (
+          <MediaLabsTab data={forecastData} comparisonData={comparisonData} />
         ) : (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
             {activeLabel} — coming soon
