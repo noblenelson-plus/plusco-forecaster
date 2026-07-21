@@ -1,12 +1,12 @@
 // lib/hooks/use-submission-ready-months.ts
 
 /**
- * Hook for the per-submission "ready months" — the set of months (1–12) flagged
- * as complete/ready for one {client, year, rfq}. Shared across the Media,
- * Revenue and Labs tabs (stored top-level on the data_entries doc), purely
- * indicative (no locking effect).
+ * Hook for the per-submission "BL Forecast Validation" — the set of milestone
+ * steps (see lib/constants/confirmation-steps.ts) ticked as complete for one
+ * {client, year, rfq}. Shared across the Media, Revenue and Labs tabs (stored
+ * top-level on the data_entries doc), purely indicative (no locking effect).
  *
- * Toggling a month writes immediately (these are discrete flags, no debounce);
+ * Toggling a step writes immediately (these are discrete flags, no debounce);
  * an incoming snapshot reflects edits by other users live. Always writable for a
  * user with access — including on a LOCKED RFQ.
  */
@@ -20,6 +20,7 @@ import {
   subscribeToReadyMonths,
   saveReadyMonths,
 } from "../services/data-entry-service";
+import { CONFIRMATION_STEP_IDS } from "../constants/confirmation-steps";
 import type { RFQType } from "../types/rfq.types";
 
 export type ReadySaveStatus = "idle" | "saving" | "saved" | "error";
@@ -33,11 +34,11 @@ interface ReadyCtx {
 export interface UseReadyMonthsResult {
   ready: boolean;
   loading: boolean;
-  /** Months (1–12) flagged ready. */
-  months: Set<number>;
-  /** Toggle one month — persists immediately. */
-  toggle: (month: number) => void;
-  /** Mark all 12 months ready. */
+  /** Ids of the confirmation steps ticked complete. */
+  confirmed: Set<string>;
+  /** Toggle one step — persists immediately. */
+  toggle: (stepId: string) => void;
+  /** Tick every step. */
   selectAll: () => void;
   /** Clear every flag. */
   clear: () => void;
@@ -49,7 +50,7 @@ export function useSubmissionReadyMonths(): UseReadyMonthsResult {
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const ready = !!selectedClient && !!selectedYear && !!selectedRFQ;
 
-  const [months, setMonths] = useState<Set<number>>(new Set());
+  const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<ReadySaveStatus>("idle");
 
@@ -62,7 +63,7 @@ export function useSubmissionReadyMonths(): UseReadyMonthsResult {
   // ─── Live subscription to the selected submission's ready months ─────────
   useEffect(() => {
     if (!ready) {
-      setMonths(new Set());
+      setConfirmed(new Set());
       ctxRef.current = null;
       setStatus("idle");
       return;
@@ -82,15 +83,15 @@ export function useSubmissionReadyMonths(): UseReadyMonthsResult {
       ctx.rfq,
       (next) => {
         setLoading(false);
-        setMonths(new Set(next));
+        setConfirmed(new Set(next));
       }
     );
     return () => unsubscribe();
   }, [ready, selectedClient?.cl_id, selectedYear, selectedRFQ?.type]);
 
-  // Persist a new month set immediately (optimistic — the subscription will
+  // Persist a new step set immediately (optimistic — the subscription will
   // confirm). Writes target the context the set belongs to.
-  const persist = useCallback((ctx: ReadyCtx, next: Set<number>) => {
+  const persist = useCallback((ctx: ReadyCtx, next: Set<string>) => {
     setStatus("saving");
     saveReadyMonths(ctx.clientId, ctx.year, ctx.rfq, [...next], uidRef.current)
       .then(() => {
@@ -102,13 +103,13 @@ export function useSubmissionReadyMonths(): UseReadyMonthsResult {
   }, []);
 
   const toggle = useCallback(
-    (month: number) => {
+    (stepId: string) => {
       const ctx = ctxRef.current;
       if (!ctx) return;
-      setMonths((prev) => {
+      setConfirmed((prev) => {
         const next = new Set(prev);
-        if (next.has(month)) next.delete(month);
-        else next.add(month);
+        if (next.has(stepId)) next.delete(stepId);
+        else next.add(stepId);
         persist(ctx, next);
         return next;
       });
@@ -119,18 +120,18 @@ export function useSubmissionReadyMonths(): UseReadyMonthsResult {
   const selectAll = useCallback(() => {
     const ctx = ctxRef.current;
     if (!ctx) return;
-    const next = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-    setMonths(next);
+    const next = new Set(CONFIRMATION_STEP_IDS);
+    setConfirmed(next);
     persist(ctx, next);
   }, [persist]);
 
   const clear = useCallback(() => {
     const ctx = ctxRef.current;
     if (!ctx) return;
-    const next = new Set<number>();
-    setMonths(next);
+    const next = new Set<string>();
+    setConfirmed(next);
     persist(ctx, next);
   }, [persist]);
 
-  return { ready, loading, months, toggle, selectAll, clear, status };
+  return { ready, loading, confirmed, toggle, selectAll, clear, status };
 }

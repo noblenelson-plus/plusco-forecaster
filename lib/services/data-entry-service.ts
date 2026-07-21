@@ -41,6 +41,7 @@ import {
   computeCommission,
   ensureRevenueShape,
 } from "../format/revenue-commission";
+import type { FlagReviewMap } from "../types/flag.types";
 
 const COLLECTION = "data_entries";
 
@@ -342,55 +343,58 @@ export async function saveSubmissionNote(
   );
 }
 
-// ─── Ready months (data-readiness flags, shared across the 3 axes) ───────────
+// ─── BL Forecast Validation (completion flags, shared across the 3 axes) ─────
 
 /**
- * Subscribes in real time to a submission's "ready months" — the set of months
- * (1–12) a user has flagged as complete/ready, stored top-level on the
- * data_entries doc so it is shared by the Media, Revenue and Labs tabs. Calls
- * back with a sorted, de-duplicated array (empty when none/absent).
+ * Subscribes in real time to a submission's confirmed steps — the milestones a
+ * user has ticked as complete (see lib/constants/confirmation-steps.ts), stored
+ * top-level on the data_entries doc so they are shared by the Media, Revenue and
+ * Labs tabs. Calls back with a sorted, de-duplicated array of step ids (empty
+ * when none/absent).
+ *
+ * Stored under the legacy `readyMonths` field name (kept so the annotation
+ * carve-out in firestoreRules.txt doesn't change) — it now holds step-id
+ * strings, not month numbers.
  */
 export function subscribeToReadyMonths(
   clientId: string,
   year: number,
   rfq: RFQType,
-  callback: (months: number[]) => void
+  callback: (steps: string[]) => void
 ): Unsubscribe {
   const entryId = buildDataEntryId(clientId, year, rfq);
   return onSnapshot(
     doc(db, COLLECTION, entryId),
     (snapshot) => {
       const raw = snapshot.data()?.readyMonths;
-      const months = Array.isArray(raw)
-        ? [...new Set(raw.filter((m) => typeof m === "number" && m >= 1 && m <= 12))].sort(
-            (a, b) => a - b
-          )
+      const steps = Array.isArray(raw)
+        ? [...new Set(raw.filter((s): s is string => typeof s === "string"))].sort()
         : [];
-      callback(months);
+      callback(steps);
     },
     (err) => {
-      console.error("Ready months subscription failed:", err);
+      console.error("Confirmed steps subscription failed:", err);
       callback([]);
     }
   );
 }
 
 /**
- * Writes the submission's "ready months" — creates the data_entries doc on first
- * write (setDoc + merge). The array is stored sorted; on an existing doc the
- * write touches only `readyMonths` and `updatedAt`, which the security rules
+ * Writes the submission's confirmed steps — creates the data_entries doc on
+ * first write (setDoc + merge). The array is stored sorted; on an existing doc
+ * the write touches only `readyMonths` and `updatedAt`, which the security rules
  * allow regardless of the RFQ lock (these flags are an annotation, not data).
  */
 export async function saveReadyMonths(
   clientId: string,
   year: number,
   rfq: RFQType,
-  months: number[],
+  steps: string[],
   userUid?: string
 ): Promise<void> {
   const entryId = buildDataEntryId(clientId, year, rfq);
   const now = new Date().toISOString();
-  const sorted = [...new Set(months)].sort((a, b) => a - b);
+  const sorted = [...new Set(steps)].sort();
   await setDoc(
     doc(db, COLLECTION, entryId),
     {
@@ -399,6 +403,74 @@ export async function saveReadyMonths(
       rfq,
       readyMonths: sorted,
       readyMonthsMeta: { updatedAt: now, ...(userUid ? { updatedBy: userUid } : {}) },
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+}
+
+// ─── Flag reviews (justifications for auto-raised flags, per submission) ─────
+
+/**
+ * Subscribes in real time to a submission's flag reviews — the per-flag
+ * justifications (note + acknowledged mark) keyed by the flag's stable key,
+ * stored top-level on the data_entries doc so they are shared by the Media,
+ * Revenue and Labs tabs (a flag can concern any axis). Calls back with an empty
+ * map when the doc (or the field) does not exist yet.
+ */
+export function subscribeToFlagReviews(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  callback: (reviews: FlagReviewMap) => void
+): Unsubscribe {
+  const entryId = buildDataEntryId(clientId, year, rfq);
+  return onSnapshot(
+    doc(db, COLLECTION, entryId),
+    (snapshot) => {
+      const raw = snapshot.data()?.flagReviews as FlagReviewMap | undefined;
+      callback(raw ?? {});
+    },
+    (err) => {
+      console.error("Flag reviews subscription failed:", err);
+      callback({});
+    }
+  );
+}
+
+/**
+ * Writes one flag's review — creates the data_entries doc on first write
+ * (setDoc + merge). Only `flagReviews.{key}` (+ updatedAt) is touched: the
+ * nested map deep-merges, so the other flags' reviews keep their values and no
+ * forecast field is affected. The security rules allow this annotation-only
+ * write for an assigned BL even when the RFQ is locked. Reviews are never
+ * deleted (acknowledging or clearing a note updates the entry in place), so the
+ * deep merge never leaves a stale key.
+ */
+export async function saveFlagReview(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  flagKey: string,
+  review: { note: string; acknowledged: boolean },
+  userUid?: string
+): Promise<void> {
+  const entryId = buildDataEntryId(clientId, year, rfq);
+  const now = new Date().toISOString();
+  await setDoc(
+    doc(db, COLLECTION, entryId),
+    {
+      clientId,
+      year,
+      rfq,
+      flagReviews: {
+        [flagKey]: {
+          note: review.note,
+          acknowledged: review.acknowledged,
+          updatedAt: now,
+          ...(userUid ? { updatedBy: userUid } : {}),
+        },
+      },
       updatedAt: now,
     },
     { merge: true }

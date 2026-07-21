@@ -29,15 +29,18 @@ import {
   GitCompare,
   StickyNote,
   Package,
+  Flag,
 } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import SubmissionNote from "../../../components/forecaster/submission-note";
+import SubmissionReadyMonths from "../../../components/forecaster/submission-ready-months";
 import ForecastGrid, { type RowMeta } from "../../../components/forecaster/forecast-grid";
 import CopyToast from "../../../components/forecaster/copy-toast";
 import RevenueGrid from "../../../components/forecaster/revenue-grid";
 import ProductGrid from "../../../components/forecaster/product-grid";
 import ComparisonPanel from "../../../components/forecaster/comparison-panel";
 import LabsPenetrationPanel from "../../../components/forecaster/labs-penetration-panel";
+import FlagsDrawer from "../../../components/forecaster/flags-drawer";
 import RFQTimelineBar from "../../../components/forecaster/rfq-timeline-bar";
 import LabsCoverageSplitDialog, {
   type ProjectShareTarget,
@@ -78,6 +81,7 @@ import {
   computeLabsPenetration,
   type LabsPenetrationResult,
 } from "../../../lib/format/labs-penetration";
+import { useFlags } from "../../../lib/hooks/use-flags";
 import { subscribeToRFQs, getRFQYears } from "../../../lib/services/rfq-service";
 import {
   subscribeToLabsPartners,
@@ -120,6 +124,8 @@ function ForecastPageContent() {
   const [compareOpen, setCompareOpen] = useState(true);
   // Submission notes card — shared per submission, open by default, toggleable.
   const [notesOpen, setNotesOpen] = useState(true);
+  // Flags drawer — opened from the top-bar flag button, closed by default.
+  const [flagsOpen, setFlagsOpen] = useState(false);
 
   // Lab partners (global, all years) — drive the Labs grid's row types. The
   // grid for the Labs axis lists the partners configured for the selected year
@@ -241,6 +247,13 @@ function ForecastPageContent() {
     for (const p of labsPartners) map.set(p.partnerId, p);
     return map;
   }, [labsPartners]);
+
+  // Stable partner-name resolver for the Flags engine (a previous-RFQ partner
+  // may belong to another year, so we look it up across every partner).
+  const partnerLabel = useCallback(
+    (partnerId: string) => partnerById.get(partnerId)?.name ?? partnerId,
+    [partnerById]
+  );
 
   // Labs penetration — per media type, what the partners cover of the planned
   // Media BL budget (same submission), plus the global Labs/Media ratio.
@@ -410,6 +423,18 @@ function ForecastPageContent() {
     [rfqs]
   );
 
+  // Flags — auto-raised warnings vs the previous RFQ across all three axes for
+  // the selected submission. Computed live from the grid working copies (all
+  // three engines are mounted regardless of the active tab) and surfaced by the
+  // floating flag button + drawer below.
+  const flags = useFlags({
+    media: mediaGrid.data,
+    labs: labsGrid.data,
+    revenue: revenueGrid.data,
+    allRfqs,
+    partnerLabel,
+  });
+
   // Years with at least one RFQ — offered by the grid's reference-year selector
   // so a user can peek at another year's MediaOcean/MediaBox while editing.
   const referenceYears = useMemo(() => getRFQYears(rfqs), [rfqs]);
@@ -548,6 +573,41 @@ function ForecastPageContent() {
               Compare
             </button>
           )}
+
+          {/* Right-aligned pair — BL Forecast Validation (green) then Flags (red
+              when the submission has flags still to review). All three axes are
+              considered together. */}
+          {tab !== "product" && flags.ready && (
+            <div className="ml-auto flex items-center gap-3">
+              <SubmissionReadyMonths
+                blocked={flags.unacknowledgedCount > 0}
+                blockedCount={flags.unacknowledgedCount}
+              />
+              <button
+                type="button"
+                onClick={() => setFlagsOpen(true)}
+                aria-label={`Open flags (${flags.flags.length})`}
+                title={
+                  flags.unacknowledgedCount > 0
+                    ? `${flags.unacknowledgedCount} flag(s) to review`
+                    : "Flags"
+                }
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                  flags.unacknowledgedCount > 0
+                    ? "border-red-500 bg-red-500 text-white hover:bg-red-600"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <Flag size={14} />
+                Flags
+                {flags.unacknowledgedCount > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center bg-white px-1.5 text-xs font-bold text-red-600">
+                    {flags.unacknowledgedCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ─── Tabs ─── */}
@@ -680,6 +740,24 @@ function ForecastPageContent() {
           globally selected RFQ (empty selection → no periods → nothing). */}
       {(tab === "product" || activeGrid.selectionReady) && (
         <RFQTimelineBar periods={timelinePeriods} />
+      )}
+
+      {/* Flags drawer (trigger lives in the top bar) — all three axes for the
+          selected submission. Grid tabs only (Product has no year/RFQ). */}
+      {tab !== "product" && flags.ready && (
+        <FlagsDrawer
+          // Remount on submission change so local note drafts never bleed
+          // across clients/RFQs (flag keys are identical across submissions).
+          key={`${selectedClient?.cl_id}_${selectedYear}_${selectedRFQ?.type}`}
+          open={flagsOpen}
+          onClose={() => setFlagsOpen(false)}
+          flags={flags.flags}
+          reviews={flags.reviews}
+          unacknowledgedCount={flags.unacknowledgedCount}
+          loadingReference={flags.loadingReference}
+          currency={selectedClient?.CL_Currency ?? "CAD"}
+          saveReview={flags.saveReview}
+        />
       )}
 
       {/* Coverage split — partner present in several projects */}

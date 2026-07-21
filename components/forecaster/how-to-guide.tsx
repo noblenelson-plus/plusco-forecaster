@@ -412,7 +412,7 @@ const GROUPS: ChapterGroup[] = [
         id: "notes",
         label: "Notes & readiness",
         icon: StickyNote,
-        keywords: "notes column row note submission note comment shared ready months readiness flag complete",
+        keywords: "notes column row note submission note comment shared bl forecast validation monthly confirmation ready months readiness flag complete justify",
         body: () => (
           <>
             <Lead>
@@ -435,9 +435,12 @@ const GROUPS: ChapterGroup[] = [
                 stays editable even on a locked RFQ.
               </Step>
               <Step n={3}>
-                <strong>Ready months</strong> — next to the submission note, tick
-                the months whose data is complete. Purely indicative: it locks
-                nothing, it just signals readiness to the team.
+                <strong>BL Forecast Validation</strong> — the green button in the
+                top bar (left of Flags). Confirm each milestone step (RFQ BL
+                deadlines and Mid-Quarter Validations) as it&apos;s complete.
+                Purely indicative: it locks nothing, it just signals completion
+                to the team. A step can&apos;t be confirmed while the submission
+                has unjustified flags — justify them in the Flags drawer first.
               </Step>
             </Steps>
           </>
@@ -829,7 +832,7 @@ const TOPICS: Topic[] = [
   { label: "Save or discard changes", chapterId: "save", keywords: "unsaved revert force" },
   { label: "Row notes & the Notes column", chapterId: "notes", keywords: "comment annotate cell" },
   { label: "Submission note (shared)", chapterId: "notes", keywords: "card team comment locked" },
-  { label: "Ready months", chapterId: "notes", keywords: "readiness complete flag tick" },
+  { label: "BL Forecast Validation", chapterId: "notes", keywords: "readiness complete confirm tick flags justify monthly milestone rfq mid-quarter" },
   { label: "Commission is zero / set rates", chapterId: "revenue", keywords: "no rates rate calculated" },
   { label: "Why commission can't be edited", chapterId: "revenue", keywords: "calculated derived media" },
   { label: "Accrual line (revenue missed by GAIA)", chapterId: "revenue", keywords: "closed months commission catch up" },

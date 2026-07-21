@@ -168,15 +168,15 @@ service cloud.firestore {
           isBLForClient(request.resource.data.clientId) &&
           rfqUnlocked(request.resource.data.year, request.resource.data.rfq)
         ) ||
-        // Submission annotations (shared note + ready-month flags) — the first
-        // write may annotate a submission that has no grid data yet. Allowed for
-        // an assigned BL even when the RFQ is locked (annotation-only create:
-        // nothing but these metadata keys is written).
+        // Submission annotations (shared note, ready-month flags, flag reviews)
+        // — the first write may annotate a submission that has no grid data yet.
+        // Allowed for an assigned BL even when the RFQ is locked (annotation-only
+        // create: nothing but these metadata keys is written).
         (
           isBLForClient(request.resource.data.clientId) &&
           request.resource.data.keys()
             .hasOnly(['clientId', 'year', 'rfq', 'submissionNote',
-                      'readyMonths', 'readyMonthsMeta', 'updatedAt'])
+                      'readyMonths', 'readyMonthsMeta', 'flagReviews', 'updatedAt'])
         );
 
       // Update: admin always — BL only for an assigned client while the RFQ is
@@ -187,15 +187,15 @@ service cloud.firestore {
           request.resource.data.clientId == resource.data.clientId &&
           rfqUnlocked(resource.data.year, resource.data.rfq)
         ) ||
-        // Submission annotations (shared note + ready-month flags) — an assigned
-        // BL may add/edit these even when the RFQ is locked. The write only
-        // touches annotation keys (+ updatedAt); every forecast field keeps its
-        // value, so this can never alter locked data.
+        // Submission annotations (shared note, ready-month flags, flag reviews)
+        // — an assigned BL may add/edit these even when the RFQ is locked. The
+        // write only touches annotation keys (+ updatedAt); every forecast field
+        // keeps its value, so this can never alter locked data.
         (
           isBLForClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['submissionNote', 'readyMonths', 'readyMonthsMeta', 'updatedAt'])
+            .hasOnly(['submissionNote', 'readyMonths', 'readyMonthsMeta', 'flagReviews', 'updatedAt'])
         );
 
       // BLs cannot update actuals or gaiaAdjustment fields

@@ -14,7 +14,6 @@
 import { StickyNote, Check, Loader2, AlertCircle } from "lucide-react";
 import { useSubmissionNote } from "../../lib/hooks/use-submission-note";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
-import SubmissionReadyMonths from "./submission-ready-months";
 
 /** ISO → "Jun 10, 2026, 2:45 p.m." (en-CA); empty when never saved. */
 function formatStamp(iso?: string): string {
@@ -83,8 +82,6 @@ export default function SubmissionNote() {
         </div>
         <div className="flex items-center gap-3">
           <StatusIndicator status={status} />
-          {/* Ready-months picker lives beside the notes — same submission scope. */}
-          <SubmissionReadyMonths />
         </div>
       </div>
 

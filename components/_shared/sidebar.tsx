@@ -16,6 +16,7 @@ import {
   BookOpen,
   Library,
   FileSpreadsheet,
+  ClipboardCheck,
   ShieldCheck,
   LogOut,
   X,
@@ -37,6 +38,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard",    href: "/",            icon: <LayoutDashboard size={18} />, section: "main" },
   { label: "Forecast",     href: "/forecast",    icon: <TrendingUp size={18} />,      section: "main" },
+  { label: "BL Forecast Validation - Flags", href: "/progression-recap", icon: <ClipboardCheck size={18} />, section: "main" },
   { label: "Bulk Edits",   href: "/bulk-edits",  icon: <Upload size={18} />,          section: "main", adminOnly: true },
   { label: "Report Center", href: "/report-center", icon: <FileSpreadsheet size={18} />, section: "main", adminOnly: true },
   { label: "Clients",      href: "/clients",     icon: <Briefcase size={18} />,       section: "main" },
