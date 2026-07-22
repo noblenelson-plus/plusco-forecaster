@@ -83,6 +83,11 @@ export default function LabsSection({
             label="Labs spend"
             value={money(result.totalLabs)}
             variance={hasComparison ? moneyVariance(grand.absolute, grand.relative) : null}
+            sub={
+              hasComparison
+                ? `${grand.absolute >= 0 ? "+" : "−"}${money(Math.abs(grand.absolute))} vs ${variantLabel}`
+                : undefined
+            }
           />
           <ChartCard title="Labs Media Investment ($)" icon={PieChart}>
             <ForecasterPieChart segments={result.segments} valueFormat={money} />

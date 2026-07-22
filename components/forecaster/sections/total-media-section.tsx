@@ -28,9 +28,9 @@ function toVariance(absolute: number, relative: number | null): StatVariance | n
   return {
     pillLabel: `${relative >= 0 ? "+" : "−"}${Math.abs(relative).toFixed(1)}%`,
     isFavorable: absolute >= 0,
-    absoluteLabel: `${absolute >= 0 ? "+" : "−"}${money(Math.abs(absolute))}`,
   };
 }
+
 
 export default function TotalMediaSection({
   data,
@@ -75,12 +75,17 @@ export default function TotalMediaSection({
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
-          <StatCard
+         <StatCard
             icon={TrendingUp}
             label="Total media spend"
             value={money(media.totalAnnual)}
             variance={hasComparison ? toVariance(grand.absolute, grand.relative) : null}
-          />
+            sub={
+              hasComparison
+                ? `${grand.absolute >= 0 ? "+" : "−"}${money(Math.abs(grand.absolute))} vs ${variantLabel}`
+                : undefined
+            }
+          /> 
 
           <ChartCard title="Total Media Investment ($)" icon={PieChart}>
             <ForecasterPieChart segments={segments} valueFormat={money} />

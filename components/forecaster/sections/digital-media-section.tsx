@@ -95,6 +95,11 @@ export default function DigitalMediaSection({
             label="Digital media spend"
             value={money(media.digitalAnnual)}
             variance={hasComparison ? toVariance(grand.absolute, grand.relative) : null}
+            sub={
+              hasComparison
+                ? `${grand.absolute >= 0 ? "+" : "−"}${money(Math.abs(grand.absolute))} vs ${variantLabel}`
+                : undefined
+            }
           />
 
           <ChartCard title="Digital Media Investment ($)" icon={PieChart}>
