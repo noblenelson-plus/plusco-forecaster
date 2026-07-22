@@ -111,7 +111,8 @@ export function computeClientTable(
   comparisonData: ScopeForecastData,
   clients: Client[],
   usersMap: Map<string, string>,
-  year: number
+  year: number,
+  scopedClientIds: string[]
 ): ClientTableRow[] {
   const meta = data.media.byChannel.map((c) => ({
     mediaType: c.mediaType as unknown as string,
@@ -125,7 +126,9 @@ export function computeClientTable(
   const labs = labsByClient(data.labsDetail);
   const compLabs = labsByClient(comparisonData.labsDetail);
 
-  const ids = new Set<string>([...media.keys(), ...labs.keys()]);
+  // Every in-scope client gets a row — including those with no spend ($0),
+  // so the roster is complete (Adriana's "entire picture").
+  const ids = scopedClientIds;
 
   const rows: ClientTableRow[] = [];
   for (const id of ids) {

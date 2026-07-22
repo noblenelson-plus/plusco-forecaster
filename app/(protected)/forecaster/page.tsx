@@ -168,7 +168,7 @@ export default function ForecasterPage() {
             {forecastData.error}
           </div>
         ) : tab === "media-labs" ? (
-          <MediaLabsTab data={forecastData} comparisonData={comparisonData} />
+        <MediaLabsTab data={forecastData} comparisonData={comparisonData} scopedClientIds={scopedClientIds} />  
         ) : (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
             {activeLabel} — coming soon

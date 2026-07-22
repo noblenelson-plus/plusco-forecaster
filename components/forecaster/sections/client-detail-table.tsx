@@ -56,9 +56,11 @@ type MetricCell = string | { share: number | null };
 export default function ClientDetailTable({
   data,
   comparisonData,
+  scopedClientIds,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
+  scopedClientIds: string[];
 }) {
   const [view, setView] = useState<View>("media");
   const hasComparison = comparisonData.hasContext;
@@ -66,9 +68,9 @@ export default function ClientDetailTable({
   const usersMap = useUsersMap();
   const { clients } = useAccessibleClients();
 
-  const rows = useMemo(
-    () => computeClientTable(data, comparisonData, clients, usersMap, selectedYear ?? new Date().getFullYear()),
-    [data, comparisonData, clients, usersMap, selectedYear]
+ const rows = useMemo(
+    () => computeClientTable(data, comparisonData, clients, usersMap, selectedYear ?? new Date().getFullYear(), scopedClientIds),
+    [data, comparisonData, clients, usersMap, selectedYear, scopedClientIds]
   );
 
   const totals = useMemo(() => {
