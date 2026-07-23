@@ -3,13 +3,15 @@
 
 /**
  * DIGITAL MEDIA section — Total Media restricted to digital channels, plus the
- * Digital Share KPI. Restyled to Tristan's StatCard / ChartCard system.
+ * Digital Share KPI. Restyled to Tristan's StatCard / ChartCard system. The
+ * channel table is the shared sortable/exportable VarianceTable.
  */
 
 import { Monitor, Percent, PieChart, Table } from "lucide-react";
 import ForecasterPieChart from "../charts/pie-chart";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
+import VarianceTable from "../table/variance-table";
 import { formatMoney } from "../../../lib/format/money";
 import { computeVariance } from "../../../lib/types/forecaster.types";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
@@ -20,14 +22,12 @@ const money = (v: number) => {
   const s = formatMoney(v);
   return s === "—" ? s : `$${s}`;
 };
-const pct = (rel: number | null) => (rel === null ? "—" : `${rel.toFixed(1)}%`);
 
 function toVariance(absolute: number, relative: number | null): StatVariance | null {
   if (relative === null) return null;
   return {
     pillLabel: `${relative >= 0 ? "+" : "−"}${Math.abs(relative).toFixed(1)}%`,
     isFavorable: absolute >= 0,
-    absoluteLabel: `${absolute >= 0 ? "+" : "−"}${money(Math.abs(absolute))}`,
   };
 }
 
@@ -115,37 +115,23 @@ export default function DigitalMediaSection({
             variance={shareVariance}
           />
 
-          <ChartCard title="Digital Channels" icon={Table}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="py-2 text-left font-medium">Channel</th>
-                  <th className="py-2 text-right font-medium">{primaryLabel}</th>
-                  <th className="py-2 text-right font-medium">{variantLabel}</th>
-                  <th className="py-2 text-right font-medium">Variance $</th>
-                  <th className="py-2 text-right font-medium">Variance %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.label} className="border-b border-border/60">
-                    <td className="py-2 text-left text-foreground">{r.label}</td>
-                    <td className="py-2 text-right tabular-nums text-foreground">{money(r.primary)}</td>
-                    <td className="py-2 text-right tabular-nums text-muted-foreground">{hasComparison ? money(r.variant) : "—"}</td>
-                    <td className="py-2 text-right tabular-nums text-muted-foreground">{hasComparison ? money(r.absolute) : "—"}</td>
-                    <td className="py-2 text-right tabular-nums text-muted-foreground">{hasComparison ? pct(r.relative) : "—"}</td>
-                  </tr>
-                ))}
-                <tr className="border-t-2 border-border font-semibold">
-                  <td className="py-2 text-left text-foreground">Grand total</td>
-                  <td className="py-2 text-right tabular-nums text-foreground">{money(media.digitalAnnual)}</td>
-                  <td className="py-2 text-right tabular-nums text-foreground">{hasComparison ? money(comparisonData.media.digitalAnnual) : "—"}</td>
-                  <td className="py-2 text-right tabular-nums text-foreground">{hasComparison ? money(grand.absolute) : "—"}</td>
-                  <td className="py-2 text-right tabular-nums text-foreground">{hasComparison ? pct(grand.relative) : "—"}</td>
-                </tr>
-              </tbody>
-            </table>
-          </ChartCard>
+          <VarianceTable
+            title="Digital Channels"
+            icon={Table}
+            rows={rows}
+            totals={{
+              primary: media.digitalAnnual,
+              variant: comparisonData.media.digitalAnnual,
+              absolute: grand.absolute,
+              relative: grand.relative,
+            }}
+            getLabel={(r) => r.label}
+            labelHeader="Channel"
+            primaryLabel={primaryLabel}
+            variantLabel={variantLabel}
+            hasComparison={hasComparison}
+            exportTitle={`Digital Channels — ${primaryLabel}`}
+          />
         </div>
       </div>
     </section>

@@ -6,6 +6,8 @@
  * stacked bars by Agency (vertical) and top-15 Clients (horizontal), both using
  * the Forecaster StackedBarChart (filled height, data labels, zero-free
  * tooltips). Every tracked product (any status). Current snapshot.
+ *
+ * The detail table is the shared sortable/exportable TextTable.
  */
 
 import { useMemo } from "react";
@@ -14,12 +16,21 @@ import ChartCard from "../../dashboard/charts/chart-card";
 import StatCard from "../../dashboard/charts/stat-card";
 import ForecasterPieChart from "../charts/pie-chart";
 import StackedBarChart from "../charts/stacked-bar-chart";
+import TextTable, { type TextColumnSpec } from "../table/text-table";
 import { computeProductAdoption, PRODUCT_PALETTE } from "./product-adoption-data";
 import { PRODUCT_STATUS_LABELS } from "../../../lib/types/product.types";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import type { ScopeProductData } from "../../../lib/dashboard/data/use-scope-product-tracking";
 import type { ProductDefinition } from "../../../lib/types/product.types";
+
+interface ProductDetailRow {
+  key: string;
+  businessLead: string;
+  clientName: string;
+  productName: string;
+  status: string;
+}
 
 export default function ProductOverviewSection({
   productData,
@@ -56,7 +67,7 @@ export default function ProductOverviewSection({
 
   const nameById = useMemo(() => new Map(products.map((p) => [p.productId, p.name])), [products]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.cl_id, c])), [clients]);
-  const detailRows = useMemo(
+  const detailRows = useMemo<ProductDetailRow[]>(
     () =>
       entries
         .filter((e) => e.status)
@@ -72,6 +83,16 @@ export default function ProductOverviewSection({
         })
         .sort((a, b) => a.clientName.localeCompare(b.clientName)),
     [entries, clientById, nameById, usersMap]
+  );
+
+  const detailColumns = useMemo<TextColumnSpec<ProductDetailRow>[]>(
+    () => [
+      { id: "business-lead", label: "Business Lead", get: (r) => r.businessLead, muted: true, maxWidth: 180 },
+      { id: "client", label: "Client", get: (r) => r.clientName, maxWidth: 160 },
+      { id: "product", label: "Product", get: (r) => r.productName },
+      { id: "status", label: "Status", get: (r) => r.status, muted: true },
+    ],
+    []
   );
 
   const topClients = useMemo(() => cut.byClient.slice(0, 10), [cut.byClient]);
@@ -96,30 +117,13 @@ export default function ProductOverviewSection({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <ChartCard title="Products" icon={Table}>
-          <div className="max-h-[360px] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-card">
-                <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="py-2 pr-3 text-left font-medium">Business Lead</th>
-                  <th className="py-2 px-3 text-left font-medium">Client</th>
-                  <th className="py-2 px-3 text-left font-medium">Product</th>
-                  <th className="py-2 pl-3 text-left font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detailRows.map((r) => (
-                  <tr key={r.key} className="border-b border-border/60">
-                    <td className="max-w-[180px] truncate py-2 pr-3 text-left text-muted-foreground" title={r.businessLead}>{r.businessLead || "—"}</td>
-                    <td className="max-w-[160px] truncate py-2 px-3 text-left text-foreground" title={r.clientName}>{r.clientName}</td>
-                    <td className="py-2 px-3 text-left text-foreground">{r.productName}</td>
-                    <td className="py-2 pl-3 text-left text-muted-foreground">{r.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </ChartCard>
+        <TextTable
+          title="Products"
+          icon={Table}
+          rows={detailRows}
+          columns={detailColumns}
+          exportTitle="Product Overview — Products"
+        />
 
         <ChartCard title="Product Mix" icon={PieChart} subtitle={`${cut.totalEntries} product entries · ${cut.totalClients} clients`}>
           <ForecasterPieChart segments={pieSegments} valueFormat={(v) => String(Math.round(v))} />

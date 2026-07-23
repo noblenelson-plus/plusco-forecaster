@@ -4,13 +4,15 @@
 /**
  * TOTAL MEDIA section (Looker replica) — restyled to Tristan's design system:
  * StatCard for the hero figure (with his variance pill) and ChartCard for the
- * pie and channel table. Numbers/logic unchanged; presentation matches the app.
+ * pie. The channel table is the shared sortable/exportable VarianceTable.
+ * Numbers/logic unchanged; presentation matches the app.
  */
 
 import { TrendingUp, PieChart, Table } from "lucide-react";
 import ForecasterPieChart from "../charts/pie-chart";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
+import VarianceTable from "../table/variance-table";
 import { formatMoney } from "../../../lib/format/money";
 import { computeVariance } from "../../../lib/types/forecaster.types";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
@@ -21,7 +23,6 @@ const money = (v: number) => {
   const s = formatMoney(v);
   return s === "—" ? s : `$${s}`;
 };
-const pct = (rel: number | null) => (rel === null ? "—" : `${rel.toFixed(1)}%`);
 
 function toVariance(absolute: number, relative: number | null): StatVariance | null {
   if (relative === null) return null;
@@ -30,7 +31,6 @@ function toVariance(absolute: number, relative: number | null): StatVariance | n
     isFavorable: absolute >= 0,
   };
 }
-
 
 export default function TotalMediaSection({
   data,
@@ -75,7 +75,7 @@ export default function TotalMediaSection({
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
-         <StatCard
+          <StatCard
             icon={TrendingUp}
             label="Total media spend"
             value={money(media.totalAnnual)}
@@ -85,44 +85,30 @@ export default function TotalMediaSection({
                 ? `${grand.absolute >= 0 ? "+" : "−"}${money(Math.abs(grand.absolute))} vs ${variantLabel}`
                 : undefined
             }
-          /> 
+          />
 
           <ChartCard title="Total Media Investment ($)" icon={PieChart}>
             <ForecasterPieChart segments={segments} valueFormat={money} />
           </ChartCard>
         </div>
 
-        <ChartCard title="Media Channels" icon={Table}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="py-2 text-left font-medium">Channel</th>
-                <th className="py-2 text-right font-medium">{primaryLabel}</th>
-                <th className="py-2 text-right font-medium">{variantLabel}</th>
-                <th className="py-2 text-right font-medium">Variance $</th>
-                <th className="py-2 text-right font-medium">Variance %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.label} className="border-b border-border/60">
-                  <td className="py-2 text-left text-foreground">{r.label}</td>
-                  <td className="py-2 text-right tabular-nums text-foreground">{money(r.primary)}</td>
-                  <td className="py-2 text-right tabular-nums text-muted-foreground">{hasComparison ? money(r.variant) : "—"}</td>
-                  <td className="py-2 text-right tabular-nums text-muted-foreground">{hasComparison ? money(r.absolute) : "—"}</td>
-                  <td className="py-2 text-right tabular-nums text-muted-foreground">{hasComparison ? pct(r.relative) : "—"}</td>
-                </tr>
-              ))}
-              <tr className="border-t-2 border-border font-semibold">
-                <td className="py-2 text-left text-foreground">Grand total</td>
-                <td className="py-2 text-right tabular-nums text-foreground">{money(media.totalAnnual)}</td>
-                <td className="py-2 text-right tabular-nums text-foreground">{hasComparison ? money(comparisonData.media.totalAnnual) : "—"}</td>
-                <td className="py-2 text-right tabular-nums text-foreground">{hasComparison ? money(grand.absolute) : "—"}</td>
-                <td className="py-2 text-right tabular-nums text-foreground">{hasComparison ? pct(grand.relative) : "—"}</td>
-              </tr>
-            </tbody>
-          </table>
-        </ChartCard>
+        <VarianceTable
+          title="Media Channels"
+          icon={Table}
+          rows={rows}
+          totals={{
+            primary: media.totalAnnual,
+            variant: comparisonData.media.totalAnnual,
+            absolute: grand.absolute,
+            relative: grand.relative,
+          }}
+          getLabel={(r) => r.label}
+          labelHeader="Channel"
+          primaryLabel={primaryLabel}
+          variantLabel={variantLabel}
+          hasComparison={hasComparison}
+          exportTitle={`Media Channels — ${primaryLabel}`}
+        />
       </div>
     </section>
   );
