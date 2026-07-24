@@ -8,13 +8,17 @@
  * over one merged list, so a Labs metric can be shown alongside Media ones.
  * Switching view re-applies that view's preset, discarding manual changes.
  *
+ * Clicking a row focuses the page on that client; clicking it again clears the
+ * focus. Every row stays visible either way — the table is how you switch
+ * between clients, so it must never filter itself down to one.
+ *
  * The Grand total is computed from the unsorted rows so it never depends on
  * display order, and stays a whole-scope total regardless of which columns
- * are on screen.
+ * are on screen or which client is focused.
  */
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, X } from "lucide-react";
 import {
   buildClientTableColumns,
   clientTablePresets,
@@ -38,6 +42,12 @@ import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-fo
 type View = "media" | "labs";
 
 /**
+ * Opaque, not a translucent tint — the frozen columns are sticky, so a
+ * see-through background would let scrolled cells show underneath.
+ */
+const FOCUS_BG = "bg-yellow-50";
+
+/**
  * Default column ids for a view. Column ids do not depend on the comparison
  * state, so the flag passed here is irrelevant to the result.
  */
@@ -59,10 +69,14 @@ export default function ClientDetailTable({
   data,
   comparisonData,
   scopedClientIds,
+  focusedClientId,
+  onFocusChange,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
   scopedClientIds: string[];
+  focusedClientId: string | null;
+  onFocusChange: (clientId: string | null) => void;
 }) {
   const [view, setView] = useState<View>("media");
   const [visibleIds, setVisibleIds] = useState<Set<string>>(() =>
@@ -71,9 +85,9 @@ export default function ClientDetailTable({
 
   const hasComparison = comparisonData.hasContext;
   const { selectedYear } = useForecastSelection();
+  const { primary, comparison } = useSubmissionLabels();
   const usersMap = useUsersMap();
   const { clients } = useAccessibleClients();
-  const { primary, comparison } = useSubmissionLabels();
 
   const rows = useMemo(
     () =>
@@ -108,10 +122,20 @@ export default function ClientDetailTable({
   const { directionFor, toggle: toggleSort, sortRows } = useTableSort(visible);
   const sortedRows = useMemo(() => sortRows(rows), [sortRows, rows]);
 
+  const focusedName = useMemo(
+    () => rows.find((r) => r.clientId === focusedClientId)?.name ?? null,
+    [rows, focusedClientId]
+  );
+
   /** Switching view re-applies its preset, discarding manual selections. */
   const selectView = (next: View) => {
     setView(next);
     setVisibleIds(presetIdsFor(next));
+  };
+
+  /** Clicking the focused row again clears the focus. */
+  const toggleFocus = (clientId: string) => {
+    onFocusChange(focusedClientId === clientId ? null : clientId);
   };
 
   if (rows.length === 0) return null;
@@ -160,14 +184,21 @@ export default function ClientDetailTable({
     );
   };
 
-  const bodyCell = (column: ClientColumn, row: ClientTableRow, index: number) => {
+  const bodyCell = (
+    column: ClientColumn,
+    row: ClientTableRow,
+    index: number,
+    focused: boolean
+  ) => {
     if (column.pinned) {
       const text = column.display(row);
       return (
         <td
           key={column.id}
           title={text === "—" ? undefined : text}
-          className="sticky z-10 overflow-hidden text-ellipsis whitespace-nowrap bg-card px-3 py-2 text-left text-foreground"
+          className={`sticky z-10 overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-left text-foreground ${
+            focused ? FOCUS_BG : "bg-card"
+          }`}
           style={stickyStyle(index, column)}
         >
           {text}
@@ -279,6 +310,21 @@ export default function ClientDetailTable({
         </div>
       </div>
 
+      {focusedName && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Charts below show</span>
+          <button
+            onClick={() => onFocusChange(null)}
+            title="Clear focus"
+            className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-2 py-1 font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            {focusedName}
+            <X size={12} />
+          </button>
+          <span>only. The table still lists every client.</span>
+        </div>
+      )}
+
       <div className="max-h-[520px] overflow-auto rounded-xl border border-border bg-card shadow-sm">
         <table className="border-collapse text-sm">
           <thead className="sticky top-0 z-20">
@@ -287,18 +333,37 @@ export default function ClientDetailTable({
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map((row) => (
-              <tr key={row.clientId} className="border-b border-border/60">
-                {visible.map((column, index) => bodyCell(column, row, index))}
-              </tr>
-            ))}
+            {sortedRows.map((row) => {
+              const focused = row.clientId === focusedClientId;
+              return (
+                <tr
+                  key={row.clientId}
+                  onClick={() => toggleFocus(row.clientId)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      toggleFocus(row.clientId);
+                    }
+                  }}
+                  tabIndex={0}
+                  title={focused ? "Click to clear focus" : `Focus on ${row.name}`}
+                  className={`cursor-pointer border-b border-border/60 transition-colors ${
+                    focused ? FOCUS_BG : "hover:bg-muted/60"
+                  }`}
+                >
+                  {visible.map((column, index) =>
+                    bodyCell(column, row, index, focused)
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot className="sticky bottom-0 z-20">
             <tr className="border-t-2 border-border bg-muted font-semibold text-foreground">
               {visible.map((column, index) => footerCell(column, totals, index))}
             </tr>
           </tfoot>
-       </table>
+        </table>
       </div>
 
       <ComparisonNote />

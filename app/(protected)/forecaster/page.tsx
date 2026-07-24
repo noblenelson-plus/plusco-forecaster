@@ -7,10 +7,15 @@
  * Revenue/Product also expose two BL/OF "Type" dropdowns: the primary Type
  * applies to the primary Year/RFQ, the secondary Type to the comparison (VS)
  * Year/RFQ. These are Forecaster-local (Tristan's context bar is untouched).
+ *
+ * Clicking a client row focuses the page on that client: the charts and KPIs
+ * re-read from a single-client scope while the tables keep every row, with the
+ * focused one highlighted. Focus is shared across tabs and cleared by clicking
+ * the same row again or the header chip.
  */
 
 import { useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import DashboardContextBar from "../../../components/dashboard/dashboard-context-bar";
 import DashboardFilterBar from "../../../components/dashboard/filters/dashboard-filter-bar";
 import {
@@ -51,8 +56,9 @@ export default function ForecasterPage() {
   // BL/OF Type per side (Revenue/Product only). Defaults match the common case.
   const [primaryMode, setPrimaryMode] = useState<RevenueMode>("blSubmission");
   const [secondaryMode, setSecondaryMode] = useState<RevenueMode>("official");
+  const [focusedClientId, setFocusedClientId] = useState<string | null>(null);
 
- const currencyByClient = useMemo(
+  const currencyByClient = useMemo(
     () =>
       Object.fromEntries(
         clients.map((c) => [c.cl_id, c.CL_Currency ?? "CAD"])
@@ -73,6 +79,16 @@ export default function ForecasterPage() {
   // Filters already run on the currency-scoped set, so this IS the final scope.
   const scopedClientIds = filteredClientIds;
 
+  // A focused client that leaves the scope (filter change, CAD→USD) is ignored
+  // rather than cleared, so the focus returns if the scope widens again.
+  const activeFocusId = useMemo(
+    () =>
+      focusedClientId && scopedClientIds.includes(focusedClientId)
+        ? focusedClientId
+        : null,
+    [focusedClientId, scopedClientIds]
+  );
+
   const scope = useMemo<DashboardScope>(
     () => ({ clientIds: scopedClientIds, year: selectedYear, rfq: selectedRFQ }),
     [scopedClientIds, selectedYear, selectedRFQ]
@@ -80,6 +96,25 @@ export default function ForecasterPage() {
   const comparisonScope = useMemo<DashboardScope>(
     () => ({ clientIds: scopedClientIds, year: comparisonYear, rfq: comparisonRFQ }),
     [scopedClientIds, comparisonYear, comparisonRFQ]
+  );
+
+  // Single-client scopes. Empty while nothing is focused, which disables the
+  // hook entirely — no reads until a row is actually clicked.
+  const focusScope = useMemo<DashboardScope>(
+    () => ({
+      clientIds: activeFocusId ? [activeFocusId] : [],
+      year: selectedYear,
+      rfq: selectedRFQ,
+    }),
+    [activeFocusId, selectedYear, selectedRFQ]
+  );
+  const focusComparisonScope = useMemo<DashboardScope>(
+    () => ({
+      clientIds: activeFocusId ? [activeFocusId] : [],
+      year: comparisonYear,
+      rfq: comparisonRFQ,
+    }),
+    [activeFocusId, comparisonYear, comparisonRFQ]
   );
 
   const rates = useCurrencyRates();
@@ -97,8 +132,23 @@ export default function ForecasterPage() {
 
   const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad, selMonths);
   const comparisonData = useScopeForecastData(comparisonScope, currencyByClient, comparisonUsdToCad, selMonths);
+  const focusData = useScopeForecastData(focusScope, currencyByClient, usdToCad, selMonths);
+  const focusComparisonData = useScopeForecastData(
+    focusComparisonScope,
+    currencyByClient,
+    comparisonUsdToCad,
+    selMonths
+  );
   const productData = useScopeProductTracking(scopedClientIds);
   const { products, loading: productsLoading } = useProducts();
+
+  const focusLoading = activeFocusId
+    ? focusData.loading || focusComparisonData.loading
+    : false;
+  const focusedClientName = useMemo(
+    () => clients.find((c) => c.cl_id === activeFocusId)?.CL_Name ?? activeFocusId ?? "",
+    [clients, activeFocusId]
+  );
 
   const activeLabel = FORECASTER_TABS.find((t) => t.id === tab)?.label ?? "";
   const showTypeControls = tab === "revenue";
@@ -173,6 +223,26 @@ export default function ForecasterPage() {
           onReset={reset}
         />
 
+        {activeFocusId && (
+          <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50/60 px-6 py-2 text-xs">
+            <span className="font-semibold uppercase tracking-wide text-gray-400">
+              Focused
+            </span>
+            <button
+              onClick={() => setFocusedClientId(null)}
+              title="Clear focus"
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-2 py-1 font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              {focusedClientName}
+              <X size={12} />
+            </button>
+            <span className="text-gray-500">
+              Charts and KPIs show this client only.
+            </span>
+            {focusLoading && <Loader2 size={12} className="animate-spin text-gray-400" />}
+          </div>
+        )}
+
         <div className="flex items-center gap-1 border-b border-gray-200 px-6">
           {FORECASTER_TABS.map((t) => {
             const Icon = t.icon;
@@ -215,7 +285,16 @@ export default function ForecasterPage() {
             {forecastData.error}
           </div>
         ) : tab === "media-labs" ? (
-          <MediaLabsTab data={forecastData} comparisonData={comparisonData} scopedClientIds={scopedClientIds} />
+          <MediaLabsTab
+            data={forecastData}
+            comparisonData={comparisonData}
+            scopedClientIds={scopedClientIds}
+            focusData={focusData}
+            focusComparisonData={focusComparisonData}
+            focusedClientId={activeFocusId}
+            focusLoading={focusLoading}
+            onFocusChange={setFocusedClientId}
+          />
         ) : tab === "revenue" ? (
           <RevenueTab
             data={forecastData}
@@ -223,6 +302,8 @@ export default function ForecasterPage() {
             scopedClientIds={scopedClientIds}
             primaryMode={primaryMode}
             secondaryMode={secondaryMode}
+            focusedClientId={activeFocusId}
+            onFocusChange={setFocusedClientId}
           />
         ) : tab === "product" ? (
           <ProductTab

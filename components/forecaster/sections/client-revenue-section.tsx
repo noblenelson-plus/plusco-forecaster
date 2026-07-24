@@ -9,6 +9,10 @@
  * The Grand-total row is pinned to the bottom and computed from the unsorted
  * rows, so display order never affects it. Column headers reflect the live
  * submission + Type selection.
+ *
+ * Clicking a row sets the page-wide focus. There are no charts under this
+ * table, so the effect here is the highlight — the selection carries to the
+ * Media & Labs tab, where it drives the charts.
  */
 
 import { useMemo } from "react";
@@ -33,18 +37,25 @@ import type {
 
 const modeLabel = (mode: RevenueMode) => (mode === "official" ? "OF" : "BL");
 
+/** Matches the client detail table's focus highlight. */
+const FOCUS_BG = "bg-yellow-50";
+
 export default function ClientRevenueSection({
   data,
   comparisonData,
   scopedClientIds,
   primaryMode,
   secondaryMode,
+  focusedClientId,
+  onFocusChange,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
   scopedClientIds: string[];
   primaryMode: RevenueMode;
   secondaryMode: RevenueMode;
+  focusedClientId: string | null;
+  onFocusChange: (clientId: string | null) => void;
 }) {
   const { selectedYear, selectedRFQ } = useForecastSelection();
   const { comparisonYear, comparisonRFQ } = useComparisonSelection();
@@ -116,6 +127,11 @@ export default function ClientRevenueSection({
 
   const { directionFor, toggle: toggleSort, sortRows } = useTableSort(columns);
   const sortedRows = useMemo(() => sortRows(result.rows), [sortRows, result.rows]);
+
+  /** Clicking the focused row again clears the focus. */
+  const toggleFocus = (clientId: string) => {
+    onFocusChange(focusedClientId === clientId ? null : clientId);
+  };
 
   if (result.rows.length === 0) return null;
 
@@ -222,11 +238,28 @@ export default function ClientRevenueSection({
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((row) => (
-                <tr key={row.clientId} className="border-b border-border/60">
-                  {columns.map((column) => bodyCell(column, row))}
-                </tr>
-              ))}
+              {sortedRows.map((row) => {
+                const focused = row.clientId === focusedClientId;
+                return (
+                  <tr
+                    key={row.clientId}
+                    onClick={() => toggleFocus(row.clientId)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggleFocus(row.clientId);
+                      }
+                    }}
+                    tabIndex={0}
+                    title={focused ? "Click to clear focus" : `Focus on ${row.name}`}
+                    className={`cursor-pointer border-b border-border/60 transition-colors ${
+                      focused ? FOCUS_BG : "hover:bg-muted/60"
+                    }`}
+                  >
+                    {columns.map((column) => bodyCell(column, row))}
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot className="sticky bottom-0 z-10">
               <tr className="border-t-2 border-border bg-muted font-semibold text-foreground">
