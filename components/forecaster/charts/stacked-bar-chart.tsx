@@ -6,12 +6,20 @@
  * stay consistent across bars. Supports vertical or horizontal layout, fills
  * its container height, prints a total at the end of each bar plus per-segment
  * values inside, and hides zero-value segments from the tooltip.
+ *
+ * Row totals are drawn in a single Customized layer that reads the chart's own
+ * axis scales, rather than from a LabelList attached to one of the series.
+ * Deriving the position from a segment's rect requires knowing which segment
+ * ends (or starts) the stack, and Recharts does not draw them in the order the
+ * series are declared — so any such guess misplaces the label on rows whose
+ * order differs. Asking the scale for the pixel of the total value is exact.
  */
 
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Customized,
   LabelList,
   Legend,
   ResponsiveContainer,
@@ -69,7 +77,6 @@ export default function StackedBarChart({
   const totals = new Map<string, number>();
   for (const r of rows) for (const s of r.segments) totals.set(s.label, (totals.get(s.label) ?? 0) + s.value);
   const labels = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([l]) => l);
-  const lastLabel = labels[labels.length - 1];
 
   const data = rows.map((r) => {
     const row: Record<string, string | number> = { name: r.name, [TOTAL_KEY]: r.total };
@@ -79,6 +86,49 @@ export default function StackedBarChart({
   });
 
   const horizontal = layout === "horizontal";
+
+  /**
+   * Total for each bar, positioned from the chart's own scales: the value axis
+   * gives the pixel where the stack ends, the category axis gives the band to
+   * centre against.
+   */
+  const renderTotals = (props: any) => {
+    const xAxis: any = props.xAxisMap ? Object.values(props.xAxisMap)[0] : null;
+    const yAxis: any = props.yAxisMap ? Object.values(props.yAxisMap)[0] : null;
+    if (typeof xAxis?.scale !== "function" || typeof yAxis?.scale !== "function") return null;
+
+    const valueAxis = horizontal ? xAxis : yAxis;
+    const categoryAxis = horizontal ? yAxis : xAxis;
+    const band = categoryAxis.scale.bandwidth ? categoryAxis.scale.bandwidth() : 0;
+
+    return (
+      <g>
+        {data.map((row, index) => {
+          const total = Number(row[TOTAL_KEY]);
+          if (!total) return null;
+
+          const start = categoryAxis.scale(String(row.name));
+          const end = valueAxis.scale(total);
+          if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+
+          return (
+            <text
+              key={index}
+              x={horizontal ? end + 14 : start + band / 2}
+              y={horizontal ? start + band / 2 : end - 8}
+              textAnchor={horizontal ? "start" : "middle"}
+              dominantBaseline="central"
+              fontSize={11}
+              fontWeight={600}
+              fill="#374151"
+            >
+              {Math.round(total)}
+            </text>
+          );
+        })}
+      </g>
+    );
+  };
 
   return (
     <div className="h-full w-full" style={{ minHeight: horizontal ? rows.length * 34 + 60 : 300 }}>
@@ -121,33 +171,10 @@ export default function StackedBarChart({
                   fontSize={10}
                   fill="#fff"
                 />
-                {isLast && (
-                  <LabelList
-                    dataKey={TOTAL_KEY}
-                    content={(props: any) => {
-                      const { x, y, width, height, value } = props;
-                      if (value == null) return null;
-                      const tx = horizontal ? Number(x) + Number(width) + 14 : Number(x) + Number(width) / 2;
-                      const ty = horizontal ? Number(y) + Number(height) / 2 : Number(y) - 6;
-                      return (
-                        <text
-                          x={tx}
-                          y={ty}
-                          textAnchor={horizontal ? "start" : "middle"}
-                          dominantBaseline="central"
-                          fontSize={11}
-                          fontWeight={600}
-                          fill="#374151"
-                        >
-                          {Math.round(Number(value))}
-                        </text>
-                      );
-                    }}
-                  />
-                )}
               </Bar>
             );
           })}
+          <Customized component={renderTotals} />
         </BarChart>
       </ResponsiveContainer>
     </div>
