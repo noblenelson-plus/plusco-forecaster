@@ -1,24 +1,27 @@
-// components/forecaster/sections/client-revenue-section.tsx
+// components/forecaster/sections/product-revenue-section.tsx
 "use client";
 
 /**
- * Client Revenue section — per-client Primary vs Secondary submission table
- * with variance, rendered from the descriptors in client-revenue-columns.ts.
+ * Product Revenue section — the Product Fees stream, per client, with Primary
+ * vs Secondary submission and variance. Reuses the Client Revenue column
+ * descriptors and rendering wholesale (ProductRevenueRow is structurally the
+ * same as ClientRevenueRow), so sort, export, the red→green variance gradient
+ * and the dynamic headers all behave identically.
  *
- * Every header sorts; the whole table exports to Sheets in the order shown.
- * The Grand-total row is pinned to the bottom and computed from the unsorted
- * rows, so display order never affects it. Column headers reflect the live
- * submission + Type selection.
- *
- * Clicking a row sets the page-wide focus. There are no charts under this
- * table, so the effect here is the highlight — the selection carries to the
- * Media & Labs tab, where it drives the charts.
+ * Client-grain only: there is no per-product (Product Name) breakdown yet — the
+ * scope hook sums every Product Fees line per client. The pie and product bars
+ * from Adriana's mock need per-row product data (a `revenueDetail` on
+ * ScopeForecastData), which is the pending Tristan item.
  */
 
 import { useMemo } from "react";
-import { ArrowDown, ArrowUp, Table } from "lucide-react";
+import { ArrowDown, ArrowUp, Package } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
-import { computeClientRevenue, type ClientRevenueRow } from "./client-revenue-data";
+import {
+  computeProductRevenue,
+  type ProductRevenueRow,
+} from "./product-revenue-data";
+import type { ClientRevenueRow } from "./client-revenue-data";
 import {
   buildClientRevenueColumns,
   type ClientRevenueTotals,
@@ -37,10 +40,10 @@ import type {
 
 const modeLabel = (mode: RevenueMode) => (mode === "official" ? "OF" : "BL");
 
-/** Matches the client detail table's focus highlight. */
+/** Matches the Client Revenue focus highlight. */
 const FOCUS_BG = "bg-yellow-50";
 
-export default function ClientRevenueSection({
+export default function ProductRevenueSection({
   data,
   comparisonData,
   scopedClientIds,
@@ -55,7 +58,7 @@ export default function ClientRevenueSection({
   scopedClientIds: string[];
   primaryMode: RevenueMode;
   secondaryMode: RevenueMode;
-  focusedClientId: string | null;
+ focusedClientId: string | null;
   onFocusChange: (clientId: string | null) => void;
   selectedStreams: ReadonlySet<string>;
 }) {
@@ -68,14 +71,14 @@ export default function ClientRevenueSection({
 
   const result = useMemo(
     () =>
-      computeClientRevenue(
+      computeProductRevenue(
         data,
         comparisonData,
         clients,
         usersMap,
         selectedYear ?? new Date().getFullYear(),
         scopedClientIds,
-        primaryMode,
+       primaryMode,
         secondaryMode,
         hasComparison,
         selectedStreams
@@ -101,7 +104,6 @@ export default function ClientRevenueSection({
     ? `${comparisonRFQ.type}-${modeLabel(secondaryMode)} · ${comparisonYear}`
     : "Secondary";
 
-  // The gradient scale spans the whole table, so it comes from the full row set.
   const maxAbs = useMemo(
     () => result.rows.reduce((max, row) => Math.max(max, Math.abs(row.variance)), 0),
     [result.rows]
@@ -129,15 +131,30 @@ export default function ClientRevenueSection({
     [hasComparison, maxAbs, primaryLabel, secondaryLabel]
   );
 
-  const { directionFor, toggle: toggleSort, sortRows } = useTableSort(columns);
-  const sortedRows = useMemo(() => sortRows(result.rows), [sortRows, result.rows]);
+  // ProductRevenueRow and ClientRevenueRow are the same shape; the descriptors
+  // read only their shared fields, so product rows are safe here.
+  const rowsAsRevenue = result.rows as unknown as ClientRevenueRow[];
 
-  /** Clicking the focused row again clears the focus. */
+  const { directionFor, toggle: toggleSort, sortRows } = useTableSort(columns);
+  const sortedRows = useMemo(
+    () => sortRows(rowsAsRevenue),
+    [sortRows, rowsAsRevenue]
+  );
+
   const toggleFocus = (clientId: string) => {
     onFocusChange(focusedClientId === clientId ? null : clientId);
   };
 
-  if (result.rows.length === 0) return null;
+  if (result.rows.length === 0) {
+    return (
+      <section className="space-y-4">
+        <h2 className="text-base font-semibold text-foreground">Product Revenue</h2>
+        <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
+          No product fees for this selection.
+        </div>
+      </section>
+    );
+  }
 
   const headerCell = (column: RevenueColumn) => {
     const direction = directionFor(column.id);
@@ -221,19 +238,24 @@ export default function ClientRevenueSection({
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-foreground">Client Revenue</h2>
+        <h2 className="text-base font-semibold text-foreground">Product Revenue</h2>
         <ExportSheetButton
           columns={columns}
           rows={sortedRows}
           totals={totals}
-          title={`Client Revenue — ${primaryLabel}${
+          title={`Product Revenue — ${primaryLabel}${
             hasComparison ? ` vs ${secondaryLabel}` : ""
           }`}
-          sheetTitle="Client Revenue"
+          sheetTitle="Product Revenue"
         />
       </div>
 
-      <ChartCard title="Client Revenue" icon={Table}>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        Product Fees per client. Per-product detail is coming once the product
+        breakdown is available.
+      </p>
+
+      <ChartCard title="Product Revenue" icon={Package}>
         <div className="max-h-[560px] overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-card">

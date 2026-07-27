@@ -2,18 +2,30 @@
 "use client";
 
 /**
- * Revenue tab for the Forecaster dashboard. Composes the Client Revenue section
- * (Product Revenue will stack below it later). Receives the scope data, the
- * in-scope client ids, and the primary/secondary BL/OF modes chosen in the
- * header — passing them through to the section.
+ * Revenue tab — Client Revenue, Revenue Types, then Product Revenue, with a
+ * revenue-types filter at the top that narrows the whole page.
  *
- * Focus is shared page state: clicking a row here highlights it and carries the
- * selection to the other tabs. There are no charts under this table yet, so the
- * scope data itself is not narrowed.
+ * Two shared page states drive this tab:
+ *  - selectedStreams: the revenue-types filter. Threaded into every section, so
+ *    deselecting a type lowers the client tables and the Revenue Types split.
+ *  - focusedClientId: the clicked client. The Revenue Types section (charts +
+ *    totals) reads the single-client scope when focused; the client tables keep
+ *    every row and just highlight the focused one, so they stay navigable.
+ *
+ * Order: main revenue table, the revenue-types breakdown, then product revenue
+ * last (per Adriana's layout).
  */
 
+import { Loader2 } from "lucide-react";
 import ClientRevenueSection from "../sections/client-revenue-section";
-import type { ScopeForecastData, RevenueMode } from "../../../lib/dashboard/data/use-scope-forecast-data";
+import RevenueTypesSection from "../sections/revenue-types-section";
+import ProductRevenueSection from "../sections/product-revenue-section";
+import RevenueTypesFilter from "../sections/revenue-types-filter";
+import type { StreamSlice } from "../../../lib/dashboard/data/aggregate";
+import type {
+  ScopeForecastData,
+  RevenueMode,
+} from "../../../lib/dashboard/data/use-scope-forecast-data";
 
 export default function RevenueTab({
   data,
@@ -21,19 +33,44 @@ export default function RevenueTab({
   scopedClientIds,
   primaryMode,
   secondaryMode,
+  focusData,
+  focusComparisonData,
   focusedClientId,
   onFocusChange,
+  streamSlices,
+  selectedStreams,
+  onStreamsChange,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
   scopedClientIds: string[];
   primaryMode: RevenueMode;
   secondaryMode: RevenueMode;
+  /** Single-client scope data. Empty unless a client is focused. */
+  focusData: ScopeForecastData;
+  focusComparisonData: ScopeForecastData;
   focusedClientId: string | null;
   onFocusChange: (clientId: string | null) => void;
+  /** Raw primary stream slices, for the filter's pill list. */
+  streamSlices: StreamSlice[];
+  selectedStreams: ReadonlySet<string>;
+  onStreamsChange: (next: Set<string>) => void;
 }) {
+  // The Revenue Types section (charts + totals) follows the focus; the client
+  // tables never do — they stay full so you can switch between clients.
+  const shown = focusedClientId ? focusData : data;
+  const shownComparison = focusedClientId ? focusComparisonData : comparisonData;
+  const focusLoading =
+    !!focusedClientId && (focusData.loading || focusComparisonData.loading);
+
   return (
     <div className="space-y-8">
+      <RevenueTypesFilter
+        slices={streamSlices}
+        selected={selectedStreams}
+        onChange={onStreamsChange}
+      />
+
       <ClientRevenueSection
         data={data}
         comparisonData={comparisonData}
@@ -42,8 +79,34 @@ export default function RevenueTab({
         secondaryMode={secondaryMode}
         focusedClientId={focusedClientId}
         onFocusChange={onFocusChange}
+        selectedStreams={selectedStreams}
       />
-      {/* Product Revenue section will stack here next. */}
+
+      <div className="relative">
+        <RevenueTypesSection
+          data={shown}
+          comparisonData={shownComparison}
+          primaryMode={primaryMode}
+          secondaryMode={secondaryMode}
+          selectedStreams={selectedStreams}
+        />
+        {focusLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/60">
+            <Loader2 size={20} className="animate-spin text-muted-foreground" />
+          </div>
+        )}
+      </div>
+
+      <ProductRevenueSection
+        data={data}
+        comparisonData={comparisonData}
+        scopedClientIds={scopedClientIds}
+        primaryMode={primaryMode}
+        secondaryMode={secondaryMode}
+        focusedClientId={focusedClientId}
+        onFocusChange={onFocusChange}
+        selectedStreams={selectedStreams}
+      />
     </div>
   );
 }

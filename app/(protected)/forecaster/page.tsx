@@ -38,6 +38,7 @@ import { useComparisonSelection } from "../../../lib/stores/comparison-selection
 import type { DashboardScope } from "../../../lib/dashboard/widgets/widget.types";
 import type { Currency } from "../../../lib/types/client.types";
 import type { RevenueMode } from "../../../lib/dashboard/data/use-scope-forecast-data";
+import { allStreamKeys } from "../../../components/forecaster/sections/revenue-types-data";
 
 // Header Type options → the hook's RevenueMode.
 const MODE_OPTIONS: { label: string; value: RevenueMode }[] = [
@@ -57,6 +58,9 @@ export default function ForecasterPage() {
   const [primaryMode, setPrimaryMode] = useState<RevenueMode>("blSubmission");
   const [secondaryMode, setSecondaryMode] = useState<RevenueMode>("official");
   const [focusedClientId, setFocusedClientId] = useState<string | null>(null);
+  // Revenue-types filter selection (merged-commission keys). null until seeded
+  // from the primary breakdown, then "all on".
+  const [selectedStreams, setSelectedStreams] = useState<Set<string> | null>(null);
 
   const currencyByClient = useMemo(
     () =>
@@ -132,6 +136,11 @@ export default function ForecasterPage() {
 
   const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad, selMonths);
   const comparisonData = useScopeForecastData(comparisonScope, currencyByClient, comparisonUsdToCad, selMonths);
+  // Default the revenue-types filter to every stream. Derived, not an effect:
+  // until the user changes it, the selection IS the full set for current data.
+  const primaryStreamSlices = forecastData.revenueByMode.blSubmission.breakdown.byStream;
+  const allStreams = useMemo(() => allStreamKeys(primaryStreamSlices), [primaryStreamSlices]);
+  const activeStreams = selectedStreams ?? allStreams;
   const focusData = useScopeForecastData(focusScope, currencyByClient, usdToCad, selMonths);
   const focusComparisonData = useScopeForecastData(
     focusComparisonScope,
@@ -302,8 +311,13 @@ export default function ForecasterPage() {
             scopedClientIds={scopedClientIds}
             primaryMode={primaryMode}
             secondaryMode={secondaryMode}
+            focusData={focusData}
+            focusComparisonData={focusComparisonData}
             focusedClientId={activeFocusId}
             onFocusChange={setFocusedClientId}
+            streamSlices={primaryStreamSlices}
+            selectedStreams={activeStreams}
+            onStreamsChange={setSelectedStreams}
           />
         ) : tab === "product" ? (
           <ProductTab
