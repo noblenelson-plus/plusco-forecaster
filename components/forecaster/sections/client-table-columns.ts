@@ -148,7 +148,6 @@ export function buildClientTableColumns({
     dimension("agency", "Agency", 120, (r) => r.agency),
     dimension("bu-region", "BU Region", 90, (r) => r.region),
     dimension("status", "Status", 100, (r) => r.status),
-    dimension("notes", "Notes", 160, (r) => r.notes),
   ];
 
   // ── Media ─────────────────────────────────────────────────────────────────

@@ -90,7 +90,6 @@ export function buildClientRevenueColumns({
     text("business-lead", "Business Lead", (row) => row.businessLead),
     text("fee-structure", "Fee Structure", (row) => row.feeStructure),
     text("status", "Status", (row) => row.status),
-    text("notes", "Notes", (row) => row.notes),
 
     {
       id: "primary",

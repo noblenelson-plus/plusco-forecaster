@@ -14,7 +14,7 @@
  * the same row again or the header chip.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import DashboardContextBar from "../../../components/dashboard/dashboard-context-bar";
 import DashboardFilterBar from "../../../components/dashboard/filters/dashboard-filter-bar";
@@ -35,6 +35,9 @@ import { useCurrencyRates } from "../../../lib/hooks/use-currency-rates";
 import { getCurrencyRateForYear } from "../../../lib/services/currency-service";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../../lib/stores/comparison-selection.store";
+import { subscribeToRFQs } from "../../../lib/services/rfq-service";
+import { pickDefaultSubmissions } from "../../../lib/dashboard/default-submissions";
+import type { RFQ } from "../../../lib/types/rfq.types";
 import type { DashboardScope } from "../../../lib/dashboard/widgets/widget.types";
 import type { Currency } from "../../../lib/types/client.types";
 import type { RevenueMode } from "../../../lib/dashboard/data/use-scope-forecast-data";
@@ -46,12 +49,38 @@ const MODE_OPTIONS: { label: string; value: RevenueMode }[] = [
   { label: "OF", value: "official" },
 ];
 
+/**
+ * Test clients are excluded from the Forecaster dashboard only — they remain
+ * available in the Forecast editing grid. A client counts as a test client when
+ * the word "TEST" appears in its name as a standalone token, which catches
+ * names like "1_TEST CLIENT" and "TEST CLIENT" while leaving real names such as
+ * "Contest" or "Latest" untouched. Adjust TEST_CLIENT_PATTERN if the naming
+ * convention differs.
+ */
+const TEST_CLIENT_PATTERN = /(^|[^a-z])test([^a-z]|$)/i;
+
+function isTestClient(name: string | undefined | null): boolean {
+  return !!name && TEST_CLIENT_PATTERN.test(name);
+}
+
 export default function ForecasterPage() {
-  const { clients, loading, error } = useAccessibleClients();
+  const { clients: allClients, loading, error } = useAccessibleClients();
+  // Test clients are hidden from the dashboard only (they stay in the editing
+  // grid). Filtering here removes them from every tab, chart, KPI and table,
+  // since the whole dashboard scope derives from this list.
+  const clients = useMemo(
+    () => allClients.filter((c) => !isTestClient(c.CL_Name)),
+    [allClients]
+  );
   const usersMap = useUsersMap();
 
-  const { selectedYear, selectedRFQ } = useForecastSelection();
-  const { comparisonYear, comparisonRFQ } = useComparisonSelection();
+  const { selectedYear, selectedRFQ, setRFQ } = useForecastSelection();
+  const {
+    comparisonYear,
+    comparisonRFQ,
+    setComparisonYear,
+    setComparisonRFQ,
+  } = useComparisonSelection();
 
   const [viewCurrency, setViewCurrency] = useState<Currency>("CAD");
   // BL/OF Type per side (Revenue/Product only). Defaults match the common case.
@@ -61,6 +90,43 @@ export default function ForecasterPage() {
   // Revenue-types filter selection (merged-commission keys). null until seeded
   // from the primary breakdown, then "all on".
   const [selectedStreams, setSelectedStreams] = useState<Set<string> | null>(null);
+
+  // ─── Default Time & Context to the current submission ─────────────────────
+  // Subscribe to the RFQ list (the same source the selectors use) so the
+  // default can be derived from whichever submissions actually exist.
+  const [rfqs, setRFQs] = useState<RFQ[]>([]);
+  useEffect(() => {
+    const unsubscribe = subscribeToRFQs(setRFQs);
+    return () => unsubscribe();
+  }, []);
+
+  // Set the default Time & Context once the RFQ list has arrived. A reporting
+  // dashboard should open on the latest submission, so we FORCE the current
+  // submission on each mount rather than only filling an empty selection —
+  // otherwise a previously-persisted (localStorage) primary would pin an older
+  // round. Primary → current submission (latest year + highest round);
+  // comparison → the round immediately before it. A manual change made after
+  // mount still sticks, because the ref stops this from running again.
+  const seededDefaultsRef = useRef(false);
+  useEffect(() => {
+    if (seededDefaultsRef.current || rfqs.length === 0) return;
+
+    const { primary: current, comparison } = pickDefaultSubmissions(rfqs);
+
+    if (current) {
+      setRFQ(current); // also aligns the primary year
+    }
+
+    if (comparison) {
+      setComparisonYear(comparison.year);
+      setComparisonRFQ(comparison);
+    } else {
+      // No earlier round exists — clear any stale comparison.
+      setComparisonYear(null);
+    }
+
+    seededDefaultsRef.current = true;
+  }, [rfqs, setRFQ, setComparisonYear, setComparisonRFQ]);
 
   const currencyByClient = useMemo(
     () =>
