@@ -67,8 +67,12 @@ export default function MediaLabsTab({
       <div className="relative space-y-8">
         <TotalMediaSection data={shown} comparisonData={shownComparison} />
         <DigitalMediaSection data={shown} comparisonData={shownComparison} />
-        <LabsSection data={shown} comparisonData={shownComparison} />
-        {focusLoading && (
+<LabsSection
+          data={shown}
+          comparisonData={shownComparison}
+          scopedClientIds={scopedClientIds}
+          focusedClientId={focusedClientId}
+        />        {focusLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/60">
             <Loader2 size={20} className="animate-spin text-muted-foreground" />
           </div>

@@ -16,6 +16,7 @@ import { computeLabsKpis } from "./labs-kpis";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
 import VarianceTable from "../table/variance-table";
+import LabsEligibilityTable from "./labs-eligibility-table";
 import { formatMoney } from "../../../lib/format/money";
 import { formatCompactMoney } from "../../dashboard/charts/format";
 import { computeVariance } from "../../../lib/types/forecaster.types";
@@ -47,9 +48,13 @@ function ptsVariance(v: number | null): StatVariance | null {
 export default function LabsSection({
   data,
   comparisonData,
+  scopedClientIds,
+  focusedClientId,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
+  scopedClientIds: string[];
+  focusedClientId: string | null;
 }) {
   const { selectedYear, selectedRFQ } = useForecastSelection();
   const { comparisonYear, comparisonRFQ } = useComparisonSelection();
@@ -92,6 +97,11 @@ export default function LabsSection({
           <ChartCard title="Labs Media Investment ($)" icon={PieChart}>
             <ForecasterPieChart segments={result.segments} valueFormat={money} />
           </ChartCard>
+          <LabsEligibilityTable
+            year={selectedYear}
+            scopedClientIds={scopedClientIds}
+            focusedClientId={focusedClientId}
+          />
         </div>
 
         {/* Right: KPI grid + partner table */}
