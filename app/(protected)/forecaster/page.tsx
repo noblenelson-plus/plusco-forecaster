@@ -25,7 +25,7 @@ import {
 import MediaLabsTab from "../../../components/forecaster/tabs/media-labs-tab";
 import RevenueTab from "../../../components/forecaster/tabs/revenue-tab";
 import ProductTab from "../../../components/forecaster/tabs/product-tab";
-import { useScopeProductTracking } from "../../../lib/dashboard/data/use-scope-product-tracking";
+import ClientNoteCard from "../../../components/forecaster/sections/client-note-card";import { useScopeProductTracking } from "../../../lib/dashboard/data/use-scope-product-tracking";
 import { useProducts } from "../../../lib/hooks/use-products";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
@@ -341,6 +341,21 @@ export default function ForecasterPage() {
       </header>
 
       <main className="mx-auto w-full max-w-[1700px] flex-1 p-6 md:p-8">
+        {/* Focused-client notes — the same submission note BLs edit on the
+            Forecast page, shown for the primary Year/RFQ on Media & Labs and
+            Revenue. Appears when a client is focused; closing clears focus. */}
+        {activeFocusId &&
+          selectedYear !== null &&
+          selectedRFQ !== null &&
+          (tab === "media-labs" || tab === "revenue") && (
+            <ClientNoteCard
+              clientId={activeFocusId}
+              clientName={focusedClientName}
+              year={selectedYear}
+              rfq={selectedRFQ.type}
+              onClose={() => setFocusedClientId(null)}
+            />
+          )}
         {error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {error}
