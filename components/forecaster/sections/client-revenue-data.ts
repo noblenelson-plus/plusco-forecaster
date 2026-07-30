@@ -60,7 +60,13 @@ export function computeClientRevenue(
     hasComparison
       ? comparisonData.revenueByMode[secondaryMode].byClient.map((r) => [
           r.clientId,
-          sumSelectedStreams(r.byStream, selectedStreams),
+          // Official (OF) revenue is a single reported figure, not broken out
+          // by stream, so it must NOT be filtered by the BL revenue-type
+          // selection — its "official" key is never in that set, which would
+          // zero it out. Sum it whole. BL secondary still respects the filter.
+          secondaryMode === "official"
+            ? sumSelectedStreams(r.byStream, null)
+            : sumSelectedStreams(r.byStream, selectedStreams),
         ])
       : []
   );
