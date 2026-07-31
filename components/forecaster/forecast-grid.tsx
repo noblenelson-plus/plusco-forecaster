@@ -1468,6 +1468,7 @@ export function DetailRow({
   rowIndex,
   draggingRef,
   showNotes,
+  productSlot,
 }: {
   parentRowId: string;
   detail: RowDetail;
@@ -1477,6 +1478,9 @@ export function DetailRow({
   rowIndex: Map<string, number>;
   draggingRef: React.MutableRefObject<boolean>;
   showNotes: boolean;
+  /** Optional control rendered under the detail's info fields — Revenue uses it
+   *  for the "Product Fees" product selector. */
+  productSlot?: React.ReactNode;
 }) {
   const r = rowIndex.get(detail.detailId)!;
 
@@ -1540,6 +1544,7 @@ export function DetailRow({
             </button>
           )}
         </div>
+        {productSlot && <div className="pl-8">{productSlot}</div>}
       </td>
       {showNotes && <td className="bg-white border-b border-gray-100" />}
       {MONTHS.map((m, ci) => {
@@ -1601,8 +1606,9 @@ function ActualsSection({
   const colCount = showNotes ? 15 : 14;
   // Per-source color: MediaOcean → pink, GAIA → purple, others → grey.
   const theme = actualsTheme(config.actualsLabel);
-  // Unique row "project" annotations (data version / source) — one value when
-  // every row agrees, the deduped list otherwise. Shown in the section header.
+  // Project name(s) shown next to the MediaOcean label — the "project"
+  // annotation on the ADMIN_INPUT (actuals) rows, deduped: one value when every
+  // row agrees, the list otherwise. Written by the bulk-import Project column.
   const projectVersions = useMemo(
     () =>
       [

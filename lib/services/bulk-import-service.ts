@@ -375,8 +375,14 @@ function actualsRecordsFromRows(
   client: Client,
   year: number,
   rfq: RFQType | null,
-  rows: ForecastRow[]
+  rows: ForecastRow[],
+  ref: BulkReference
 ): BulkRecord[] {
+  // Product name for a Product Fees actuals row/detail linked to a catalog
+  // product — same rule as the BL export (name, falling back to the id).
+  const productName = (productId?: string) => (productId
+    ? ref.productNameById.get(productId) ?? productId
+    : "");
   const out: BulkRecord[] = [];
   for (const row of rows) {
     out.push({
@@ -391,7 +397,9 @@ function actualsRecordsFromRows(
       rowType: row.rowType,
       label: row.label,
       note: row.note ?? "",
-      product: "",
+      // The roll-up (no-details) Product Fees actuals row carries the product.
+      product:
+        row.rowType === REVENUE_PRODUCT_FEES_TYPE ? productName(row.productId) : "",
       levels: ["", "", ""],
       months: { ...emptyMonthly(), ...row.months },
       explicitZeros: liveExplicitZeros(row),
@@ -407,7 +415,11 @@ function actualsRecordsFromRows(
         rowType: row.rowType,
         label: row.label,
         note: "",
-        product: "",
+        // Each Product Fees detail line carries its own product link.
+        product:
+          row.rowType === REVENUE_PRODUCT_FEES_TYPE
+            ? productName(detail.productId)
+            : "",
         levels: [
           detail.levels[0] ?? "",
           detail.levels[1] ?? "",
@@ -457,7 +469,7 @@ export async function fetchExportRecords(
                   Array.isArray(data.actuals)
                 ) {
                   result.revenue.push(
-                    ...actualsRecordsFromRows(client, year, rfq, data.actuals)
+                    ...actualsRecordsFromRows(client, year, rfq, data.actuals, ref)
                   );
                 }
               }
@@ -482,7 +494,7 @@ export async function fetchExportRecords(
               const rows = axes[axisId];
               if (Array.isArray(rows) && rows.length) {
                 result[axisId].push(
-                  ...actualsRecordsFromRows(client, year, null, rows)
+                  ...actualsRecordsFromRows(client, year, null, rows, ref)
                 );
               }
             }
@@ -877,6 +889,11 @@ function buildDetail(rec: BulkRecord): RowDetail {
     ...(rec.explicitZeros.length
       ? { explicitZeros: [...rec.explicitZeros] }
       : {}),
+    // Link a Product Fees detail line to its catalog product (resolved in
+    // prepare) — mirrors the roll-up product link on buildRow.
+    ...(rec.rowType === REVENUE_PRODUCT_FEES_TYPE && rec.productId
+      ? { productId: rec.productId }
+      : {}),
   };
 }
 
@@ -1088,12 +1105,20 @@ function buildActualsRows(
   for (const t of detailsByType.keys()) {
     if (out.has(t)) continue;
     const prev = existingByType.get(t);
-    out.set(
-      t,
-      prev
-        ? { ...prev, months: { ...prev.months } }
-        : { rowId: newRow(t, "").rowId, rowType: t, label: labelOf(t, year) || t, months: emptyMonthly() }
-    );
+    const parent: ForecastRow = prev
+      ? { ...prev, months: { ...prev.months } }
+      : { rowId: newRow(t, "").rowId, rowType: t, label: labelOf(t, year) || t, months: emptyMonthly() };
+    // The Project column is the row's source annotation. When the type has no
+    // parent line of its own (every sheet row is a Detail — Level columns
+    // filled), the annotation still travels on those Detail rows' Project
+    // column, so read it from there. Otherwise a `{ ...prev }` parent would
+    // silently keep its stale project instead of the freshly imported one.
+    const project = (detailsByType.get(t) ?? [])
+      .map((d) => d.bucket.trim())
+      .find(Boolean);
+    if (project) parent.project = project;
+    else if (mode === "REPLACE") delete parent.project;
+    out.set(t, parent);
   }
   // Attach details.
   for (const [t, row] of out) {

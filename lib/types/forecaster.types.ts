@@ -54,6 +54,13 @@ export interface RowDetail {
   /** Months (1–12) where a 0 was deliberately entered on this detail line —
    *  same semantics as ForecastRow.explicitZeros. Absent when empty. */
   explicitZeros?: number[];
+  /**
+   * Optional link to a catalog product — Revenue GAIA "Product Fees" detail
+   * lines only. Mirrors ForecastRow.productId: records which product this
+   * breakdown line's actuals are for, without changing the parent row's stream.
+   * Absent when no product is selected.
+   */
+  productId?: string;
 }
 
 /**
@@ -165,6 +172,18 @@ export interface DataEntry {
   /** Per-axis, per-side last-save timestamps (BL for every axis; actuals for
    *  per-submission axes like Revenue). */
   axisMeta?: Partial<Record<AxisId, AxisMeta>>;
+  /**
+   * Persisted forecast flags (cat 3 swings + cat 4 under-target), keyed by the
+   * flag's stable key — see lib/types/forecast-flags.types.ts. Created/updated/
+   * deleted only by a validation run, never on plain edits.
+   */
+  flags?: Record<string, unknown>;
+  /**
+   * Timestamp of the last forecast-data write (BL Save or actuals write) on
+   * this submission. Bumped only by forecast writes — NOT by flag/note/
+   * validation writes — so a validation can tell whether the data changed since.
+   */
+  forecastEditedAt?: string;
   createdAt?: string;
   updatedAt?: string;
   lastModifiedBy?: string; // User UID
@@ -637,7 +656,7 @@ export const REVENUE_STREAM_LABELS: Record<RevenueStream, string> = {
   projectFees: "Project Fees",
   productFees: "Product Fees",
   unallocated: "Unallocated",
-  accrual: "Accrual",
+  accrual: "Accrual/Adjustment",
   gaiaForecast: "Official Revenue",
 };
 

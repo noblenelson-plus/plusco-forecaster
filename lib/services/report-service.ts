@@ -4,38 +4,52 @@
  * Report Center — builders that push read-only Google Sheet reports.
  *
  * Unlike Bulk Edit (whose sheets round-trip back into the app), reports are
- * one-way snapshots shaped for analysis. First report:
+ * one-way snapshots shaped for analysis.
  *
- * "General Forecast Data" — the selected axes flattened into ONE tab:
+ * "General Forecast Data (Extended)" — the selected axes flattened into ONE tab:
  *   • `Year` and `RFQ` columns, plus a `Submission` marker column: on Revenue
- *     it flags the two key rows ("RFQ2-2026-OF" / "RFQ2-2026-BL"); on
- *     Media/Labs every BL Input row gets "RFQ2-2026-BL" and admin rows stay
- *     empty;
- *   • one row per BL line (project × type) and per Admin line — GAIA rows
- *     ride with their submission; annual MediaOcean rows (Media/Labs) appear
- *     ONCE per client × year with RFQ = "ANNUAL", since they are shared by
- *     every RFQ of the year;
- *   • on Revenue only, a "BL Submission (BL+Admin)" summary row reproducing
- *     the forecast grid's mauve source-of-truth line: for each month the GAIA
- *     detail figures win when any carries a value, otherwise the BL Input
- *     total is used;
- *   • a vertical `Total` column (Jan..Dec summed) on every row.
+ *     every line feeding BL Submission gets "RFQ2-2026-BL" and the independent
+ *     Official Revenue line gets "RFQ2-2026-OF"; on Media/Labs every BL Input
+ *     row gets "RFQ2-2026-BL" and admin rows stay empty;
+ *   • one row per BL line (project × type) and per Admin line; an Admin row
+ *     carrying detail lines is EXPLODED into them (the roll-up parent is not
+ *     emitted, so figures are never double-counted). GAIA rows ride with their
+ *     submission; annual MediaOcean rows (Media/Labs) appear ONCE per
+ *     client × year with RFQ = "ANNUAL", since they are shared by every RFQ;
+ *   • on Revenue, every cell is masked to the months it is "counted" in BL
+ *     Submission (the grid's mauve source-of-truth priority: GAIA detail
+ *     figures win a month when any carries a value, otherwise the BL Input),
+ *     so summing a month column across the section equals the BL Submission
+ *     total — no separate summary row. Official Revenue is independent and
+ *     kept unmasked;
+ *   • a vertical `Total` column (Jan..Dec summed) on every row;
+ *   • a `Product Name` column — the catalog name of a Revenue "Product Fees"
+ *     line's (or GAIA detail's) `productId` (blank on every other row);
+ *   • the per-client columns (see CLIENT_COLUMN_HEADERS) appended before the
+ *     final `Last checked status` column — the furthest-along BL Forecast
+ *     Validation milestone ticked for the row's client × year.
  */
 
 import { MONTHS, type MonthlyMap } from "../types/common.types";
 import {
   REVENUE_GAIA_FORECAST_TYPE,
+  emptyMonthly,
   type AxisData,
   type AxisId,
   type ForecastRow,
 } from "../types/forecaster.types";
 import { type RFQType, RFQ_TYPE_ORDER } from "../types/rfq.types";
 import type { Client } from "../types/client.types";
-import { blSubmissionByMonth } from "../format/revenue-commission";
+import {
+  blSubmissionLevelByMonth,
+  type BlSubmissionLevel,
+} from "../format/revenue-commission";
 import { resolveClientStatus } from "../format/client";
 import { ANNUAL_RFQ_SENTINEL } from "../format/bulk-forecast";
+import { lastCheckedStepLabel } from "../constants/confirmation-steps";
 import { fetchAxisData } from "./data-entry-service";
 import { fetchAnnualActuals } from "./annual-actuals-service";
+import { fetchForecastValidation } from "./forecast-validation-service";
 import { fetchCurrencyRateForYear } from "./currency-service";
 import type { BulkReference } from "./bulk-import-service";
 import * as sheets from "./google-sheets-service";
@@ -58,34 +72,40 @@ export interface ReportResult {
   rowCount: number;
 }
 
-const TAB_TITLE = "General Forecast Data";
 const EXTENDED_TAB_TITLE = "General Forecast Data (Extended)";
 
-const HEADER = [
+/** Final column of the report — the per-client+year BL Forecast Validation. */
+const LAST_CHECKED_HEADER = "Last checked status";
+
+/**
+ * Leading columns of the report. `Product Name` is resolved from a Revenue
+ * "Product Fees" line's `productId` via the catalog (blank on every other row);
+ * `Project` keeps its meaning (the BL bucket name, or a GAIA detail line's
+ * joined level text).
+ */
+const BASE_COLS = [
   "ClientId",
   "Client",
   "Year",
   "RFQ",
-  "Submission", // Revenue: RFQ2-2026-OF / RFQ2-2026-BL on the key rows; Media/Labs: RFQ2-2026-BL on BL Input rows
+  "Submission", // Revenue: RFQ2-2026-BL on every BL-Submission line, RFQ2-2026-OF on Official Revenue; Media/Labs: RFQ2-2026-BL on BL Input rows
   "Axis",
   "Section",
   "Project",
   "Type",
+  "Product Name",
   ...MONTH_LABELS,
   "Total",
 ];
 
 /**
- * Extra per-client columns appended (after `Total`) by the extended report.
- * Order matches the request; `Product Name` is intentionally left blank for
- * now, and `FO_Value_CAD` is the row's Total converted to CAD (see
- * `clientColumns`).
+ * Extra per-client columns appended (after `Total`).
+ * `FO_Value_CAD` is the row's Total converted to CAD (see `clientColumns`).
  */
 const CLIENT_COLUMN_HEADERS = [
   "Agency",
   "CL_Tier",
   "FO_Currency",
-  "Product Name",
   "CL_Fee_Structure",
   "CL_GAIA_Number",
   "CL_Business_Lead",
@@ -98,15 +118,14 @@ const CLIENT_COLUMN_HEADERS = [
   "Notes",
 ];
 
-const EXTENDED_HEADER = [...HEADER, ...CLIENT_COLUMN_HEADERS];
+// Full header: base + per-client columns, with "Last checked status" last.
+const EXTENDED_HEADER = [...BASE_COLS, ...CLIENT_COLUMN_HEADERS, LAST_CHECKED_HEADER];
 
 const AXES: { axisId: AxisId; label: string; adminLabel: string }[] = [
   { axisId: "media", label: "Media", adminLabel: "MediaOcean (Admin)" },
   { axisId: "labs", label: "Labs", adminLabel: "MediaOcean (Admin)" },
   { axisId: "revenue", label: "Revenue", adminLabel: "GAIA (Admin)" },
 ];
-
-const SUMMARY_SECTION = "BL Submission (BL+Admin)";
 
 type ReportRow = (string | number)[];
 
@@ -130,7 +149,6 @@ function clientColumns(
       client.CL_Agency,
       client.CL_Tier,
       client.CL_Currency, // FO_Currency
-      "", // Product Name — intentionally blank for now
       client.Client_Fee_Structure,
       (client.CL_GAIA_Number ?? []).join(", "),
       client.CL_Business_Lead ?? "",
@@ -160,13 +178,44 @@ function monthCells(map: MonthlyMap): number[] {
 }
 
 /**
- * Rows of one axis of one submission: BL lines, Admin lines, and — when
- * `blSubmission` is given (Revenue only) — the "BL Submission (BL+Admin)"
- * summary line. Year and RFQ live in their own columns; the Submission column
- * differs per axis: with `revenueSuffixes` the Official Revenue admin row gets
- * "RFQ2-2026-OF" and the summary row gets "RFQ2-2026-BL" (BL Input rows stay
- * empty); without it (Media/Labs) every BL Input row gets "RFQ2-2026-BL" and
- * admin rows stay empty.
+ * A single admin (ADMIN_INPUT) line to emit in the report. An admin row is
+ * exploded into its detail lines when it has any — the roll-up parent is then
+ * NOT emitted, so the detail figures are never double-counted; a row without
+ * details emits once as itself. `project` carries the detail's joined level
+ * text (row identity), "" for a roll-up row.
+ */
+interface AdminLeaf {
+  months: MonthlyMap;
+  project: string;
+  productId?: string;
+}
+
+function adminLeaves(row: ForecastRow): AdminLeaf[] {
+  const details = row.details ?? [];
+  if (details.length === 0)
+    return [{ months: row.months, project: "", productId: row.productId }];
+  return details.map((d) => ({
+    months: d.months,
+    project: d.levels.filter((l) => (l ?? "").trim() !== "").join(" / "),
+    productId: d.productId,
+  }));
+}
+
+/**
+ * Rows of one axis of one submission: BL lines then Admin lines. Year and RFQ
+ * live in their own columns.
+ *
+ * On Revenue (`blLevelByMonth` given) the report reproduces the grid's BL
+ * Submission source-of-truth: every cell is masked to the months it is
+ * "counted" — a BL Input cell survives only where the BL Input wins the month,
+ * a GAIA detail cell only where the GAIA lines win — so summing any month
+ * column across the section equals the BL Submission total (no separate summary
+ * row). Every line feeding the submission (BL Input rows + GAIA detail lines)
+ * gets the "RFQ2-2026-BL" Submission marker; the independent Official Revenue
+ * line keeps its real (unmasked) values and the "RFQ2-2026-OF" marker.
+ *
+ * On Media/Labs (`blLevelByMonth` null) nothing is masked and BL rows simply
+ * get the "-BL" marker (admin rows are emitted separately as annual actuals).
  */
 function axisRows(
   baseCells: (string | number)[], // ClientId, Client, Year, RFQ
@@ -175,55 +224,86 @@ function axisRows(
   adminSectionLabel: string,
   data: AxisData,
   adminRows: ForecastRow[],
-  blSubmission: MonthlyMap | null,
-  revenueSuffixes = false,
+  productNameById: Map<string, string>,
+  lastChecked: string,
+  blLevelByMonth: Record<number, BlSubmissionLevel> | null,
   extra: ExtraFn = null
 ): ReportRow[] {
   const rows: ReportRow[] = [];
 
+  // A product name resolved from its productId (Revenue "Product Fees" lines
+  // only). Falls back to the raw id for a since-deleted product; "" when none.
+  const productName = (productId?: string): string =>
+    productId ? productNameById.get(productId) ?? productId : "";
+
+  // Mask a row's months to the ones whose winning level matches `level` — the
+  // "counted" cells. A no-op when `blLevelByMonth` is null (Media/Labs).
+  const maskToLevel = (
+    map: MonthlyMap,
+    level: "BL" | "DETAIL"
+  ): MonthlyMap => {
+    if (!blLevelByMonth) return map;
+    const out = emptyMonthly();
+    for (const m of MONTHS)
+      out[m] = blLevelByMonth[m] === level ? map[m] ?? 0 : 0;
+    return out;
+  };
+
+  // Finalize a row: append the extended report's per-client cells (no-op for
+  // the plain report), then the per-client+year "Last checked status" as the
+  // final column. `appendExtra` still sees Total as the last cell, so its
+  // FO_Value_CAD conversion stays correct.
+  const finish = (cells: ReportRow): ReportRow => [
+    ...appendExtra(cells, extra),
+    lastChecked,
+  ];
+
   for (const bucket of data.buckets) {
     for (const row of bucket.rows) {
-      rows.push(appendExtra([
+      rows.push(finish([
         ...baseCells,
-        revenueSuffixes ? "" : `${submission}-BL`,
-        axisLabel, "BL Input", bucket.name, row.label,
-        ...monthCells(row.months),
-      ], extra));
+        `${submission}-BL`,
+        axisLabel, "BL Input", bucket.name, row.label, productName(row.productId),
+        ...monthCells(maskToLevel(row.months, "BL")),
+      ]));
     }
   }
   for (const row of adminRows) {
-    const isOfficial =
-      revenueSuffixes && row.rowType === REVENUE_GAIA_FORECAST_TYPE;
-    rows.push(appendExtra([
-      ...baseCells,
-      isOfficial ? `${submission}-OF` : "",
-      axisLabel, adminSectionLabel, "", row.label,
-      ...monthCells(row.months),
-    ], extra));
+    // Official Revenue is independent of BL Submission — kept as-is (unmasked)
+    // with the "-OF" marker; it is never exploded into detail lines here.
+    if (row.rowType === REVENUE_GAIA_FORECAST_TYPE) {
+      rows.push(finish([
+        ...baseCells,
+        `${submission}-OF`,
+        axisLabel, adminSectionLabel, "", row.label, productName(row.productId),
+        ...monthCells(row.months),
+      ]));
+      continue;
+    }
+    // Every GAIA line feeding the submission — one row per detail line (no
+    // roll-up parent) — masked to its counted months and marked "-BL".
+    for (const leaf of adminLeaves(row)) {
+      rows.push(finish([
+        ...baseCells,
+        `${submission}-BL`,
+        axisLabel, adminSectionLabel, leaf.project, row.label,
+        productName(leaf.productId),
+        ...monthCells(maskToLevel(leaf.months, "DETAIL")),
+      ]));
+    }
   }
 
-  // Nothing stored for this axis/submission → no block at all (the summary
-  // row alone would just be a line of zeros).
-  if (rows.length === 0 || blSubmission === null) return rows;
-
-  rows.push(appendExtra([
-    ...baseCells,
-    revenueSuffixes ? `${submission}-BL` : "",
-    axisLabel, SUMMARY_SECTION, "", "",
-    ...monthCells(blSubmission),
-  ], extra));
   return rows;
 }
 
 /**
- * Shared row builder for both reports. When `extended` is true, each row gets
- * the per-client columns appended (see `CLIENT_COLUMN_HEADERS`); this also
- * fetches the USD→CAD rate once per year for the `FO_Value_CAD` conversion.
+ * Row builder for the report. Every row gets the per-client columns appended
+ * (see `CLIENT_COLUMN_HEADERS`); the USD→CAD rate is fetched once per year for
+ * the `FO_Value_CAD` conversion.
  */
 async function buildReportRows(
   scope: GeneralReportScope,
-  ref: BulkReference,
-  extended: boolean
+  ref: BulkReference
 ): Promise<ReportRow[]> {
   const clients = ref.clients.filter((c) => scope.clientIds.includes(c.cl_id));
   const years = [...scope.years].sort((a, b) => a - b);
@@ -235,34 +315,35 @@ async function buildReportRows(
   const axes = AXES.filter((a) => scope.axes.includes(a.axisId));
   const annualAxes = axes.filter((a) => a.axisId !== "revenue");
 
-  // USD→CAD rate per selected year — fetched once (extended report only).
+  // USD→CAD rate per selected year — fetched once for the FO_Value_CAD column.
   const rateByYear = new Map<number, number | undefined>();
-  if (extended) {
-    await Promise.all(
-      years.map(async (y) => rateByYear.set(y, await fetchCurrencyRateForYear(y)))
-    );
-  }
+  await Promise.all(
+    years.map(async (y) => rateByYear.set(y, await fetchCurrencyRateForYear(y)))
+  );
 
   const rows: ReportRow[] = [];
 
   for (const client of clients) {
     for (const year of years) {
-      // The per-client column suffix (null for the plain report).
-      const extra: ExtraFn = extended
-        ? clientColumns(client, year, rateByYear.get(year))
-        : null;
+      // The per-client columns appended to every row of this client × year.
+      const extra: ExtraFn = clientColumns(client, year, rateByYear.get(year));
 
       // Annual MediaOcean actuals (Media/Labs) are per client+year, shared by
       // every submission of the year — fetched once here, only for the
-      // selected axes.
-      const annualByAxis: Record<string, ForecastRow[]> = Object.fromEntries(
-        await Promise.all(
+      // selected axes. The BL Forecast Validation is also per client+year:
+      // "Last checked status" is the furthest-along ticked milestone.
+      const [annualEntries, validationSteps] = await Promise.all([
+        Promise.all(
           annualAxes.map(async (axis) => [
             axis.axisId,
             await fetchAnnualActuals(client.cl_id, year, axis.axisId),
-          ])
-        )
-      );
+          ] as const)
+        ),
+        fetchForecastValidation(client.cl_id, year),
+      ]);
+      const annualByAxis: Record<string, ForecastRow[]> =
+        Object.fromEntries(annualEntries);
+      const lastChecked = lastCheckedStepLabel(validationSteps);
 
       for (const rfq of rfqs) {
         const dataByAxis: Record<string, AxisData> = Object.fromEntries(
@@ -280,25 +361,24 @@ async function buildReportRows(
         for (const axis of axes) {
           const data = dataByAxis[axis.axisId];
           if (axis.axisId === "revenue") {
-            // GAIA rides in the same doc; the mauve-row helper owns the
-            // per-month "detail wins over BL" priority. Revenue rows carry
-            // the -OF / -BL Submission suffixes.
+            // GAIA rides in the same doc; the level helper owns the per-month
+            // "detail wins over BL" priority used to mask each cell to its
+            // counted months. Revenue rows carry the -OF / -BL markers.
             rows.push(
               ...axisRows(
                 baseCells, submission, axis.label, axis.adminLabel,
-                data, data.actuals, blSubmissionByMonth(data),
-                true, extra
+                data, data.actuals, ref.productNameById, lastChecked,
+                blSubmissionLevelByMonth(data), extra
               )
             );
           } else {
-            // Media/Labs: BL lines only — no summary row, and the annual
-            // MediaOcean rows are emitted once per client × year below (they
-            // are shared by every RFQ, so echoing them per submission would
-            // duplicate the figures).
+            // Media/Labs: BL lines only (no masking) — the annual MediaOcean
+            // rows are emitted once per client × year below (they are shared by
+            // every RFQ, so echoing them per submission would duplicate them).
             rows.push(
               ...axisRows(
                 baseCells, submission, axis.label, axis.adminLabel,
-                data, [], null, false, extra
+                data, [], ref.productNameById, lastChecked, null, extra
               )
             );
           }
@@ -307,14 +387,25 @@ async function buildReportRows(
 
       // Annual MediaOcean rows — once per client × year, RFQ = "ANNUAL"
       // (matching the Bulk Edit sheets' sentinel): the data is shared by
-      // every RFQ of the year, so it belongs to none in particular.
+      // every RFQ of the year, so it belongs to none in particular. A row with
+      // detail lines is exploded into them (no roll-up parent) to avoid
+      // double-counting, like the Revenue admin lines.
       for (const axis of annualAxes) {
         for (const row of annualByAxis[axis.axisId]) {
-          rows.push(appendExtra([
-            client.cl_id, client.CL_Name, year, ANNUAL_RFQ_SENTINEL, "",
-            axis.label, axis.adminLabel, "", row.label,
-            ...monthCells(row.months),
-          ], extra));
+          for (const leaf of adminLeaves(row)) {
+            // Annual MediaOcean actuals carry no product; Product Name stays "".
+            const product = leaf.productId
+              ? ref.productNameById.get(leaf.productId) ?? leaf.productId
+              : "";
+            rows.push([
+              ...appendExtra([
+                client.cl_id, client.CL_Name, year, ANNUAL_RFQ_SENTINEL, "",
+                axis.label, axis.adminLabel, leaf.project, row.label, product,
+                ...monthCells(leaf.months),
+              ], extra),
+              lastChecked,
+            ]);
+          }
         }
       }
     }
@@ -323,35 +414,16 @@ async function buildReportRows(
   return rows;
 }
 
-/** Builds and pushes the "General Forecast Data" report. Returns the URL. */
-export async function generateGeneralForecastReport(
-  scope: GeneralReportScope,
-  ref: BulkReference
-): Promise<ReportResult> {
-  const rows = await buildReportRows(scope, ref, false);
-
-  const title = `PlusCo Forecaster report — General Forecast Data — ${new Date()
-    .toISOString()
-    .slice(0, 10)}`;
-  const created = await sheets.createSpreadsheet(title, [TAB_TITLE]);
-  await sheets.writeValues(created.spreadsheetId, TAB_TITLE, [HEADER, ...rows]);
-
-  return {
-    spreadsheetId: created.spreadsheetId,
-    url: created.url,
-    rowCount: rows.length,
-  };
-}
-
 /**
- * "General Forecast Data (Extended)" — identical to the general report but
- * with the per-client columns (`CLIENT_COLUMN_HEADERS`) appended to every row.
+ * "General Forecast Data (Extended)" — the selected axes flattened into one
+ * tab with the per-client columns (`CLIENT_COLUMN_HEADERS`) appended to every
+ * row.
  */
 export async function generateExtendedForecastReport(
   scope: GeneralReportScope,
   ref: BulkReference
 ): Promise<ReportResult> {
-  const rows = await buildReportRows(scope, ref, true);
+  const rows = await buildReportRows(scope, ref);
 
   const title = `PlusCo Forecaster report — General Forecast Data (Extended) — ${new Date()
     .toISOString()

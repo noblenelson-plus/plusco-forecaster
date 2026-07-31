@@ -146,6 +146,14 @@ service cloud.firestore {
       // Only admins can set or remove conversion rates
       allow create, update, delete: if isAdmin();
     }
+    // ─── config ─────────────────────────────────────────────────────────────
+    // Global app configuration docs, e.g. config/flag_validation (the per-step
+    // month windows the cat-4 under-target flags analyze). Everyone reads;
+    // admins write.
+    match /config/{configId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
     // ─── data_entries ────────────────────────────────────────────────────────
     // Document ID format: {cl_id}_{year}_{rfq} e.g. CL_001_2026_RFQ0
     // We extract the clientId from the document's clientId field
@@ -168,15 +176,16 @@ service cloud.firestore {
           isBLForClient(request.resource.data.clientId) &&
           rfqUnlocked(request.resource.data.year, request.resource.data.rfq)
         ) ||
-        // Submission annotations (shared note, ready-month flags, flag reviews)
-        // — the first write may annotate a submission that has no grid data yet.
-        // Allowed for an assigned BL even when the RFQ is locked (annotation-only
-        // create: nothing but these metadata keys is written).
+        // Submission annotations (shared note, flag reviews) — the first write
+        // may annotate a submission that has no grid data yet. Allowed for an
+        // assigned BL even when the RFQ is locked (annotation-only create:
+        // nothing but these metadata keys is written).
         (
           isBLForClient(request.resource.data.clientId) &&
           request.resource.data.keys()
             .hasOnly(['clientId', 'year', 'rfq', 'submissionNote',
-                      'readyMonths', 'readyMonthsMeta', 'flagReviews', 'updatedAt'])
+                      'flagReviews', 'flags', 'createdAt', 'lastModifiedBy',
+                      'updatedAt'])
         );
 
       // Update: admin always — BL only for an assigned client while the RFQ is
@@ -187,15 +196,16 @@ service cloud.firestore {
           request.resource.data.clientId == resource.data.clientId &&
           rfqUnlocked(resource.data.year, resource.data.rfq)
         ) ||
-        // Submission annotations (shared note, ready-month flags, flag reviews)
-        // — an assigned BL may add/edit these even when the RFQ is locked. The
-        // write only touches annotation keys (+ updatedAt); every forecast field
-        // keeps its value, so this can never alter locked data.
+        // Submission annotations (shared note, flag reviews) — an assigned BL
+        // may add/edit these even when the RFQ is locked. The write only touches
+        // annotation keys (+ updatedAt); every forecast field keeps its value,
+        // so this can never alter locked data.
         (
           isBLForClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['submissionNote', 'readyMonths', 'readyMonthsMeta', 'flagReviews', 'updatedAt'])
+            .hasOnly(['submissionNote', 'flagReviews', 'flags',
+                      'lastModifiedBy', 'updatedAt'])
         );
 
       // BLs cannot update actuals or gaiaAdjustment fields
@@ -204,6 +214,40 @@ service cloud.firestore {
       // Delete: admins only — used by the client-deletion cleanup
       // (deleteClient in client-service.ts), which removes every submission
       // of the deleted client. BLs can never delete entries.
+      allow delete: if isAdmin();
+    }
+    // ─── forecast_validations ───────────────────────────────────────────────────
+    // Document ID format: {cl_id}_{year} e.g. CL_001_2026
+    // The "BL Forecast Validation" — the milestone steps (confirmation-steps.ts)
+    // a Business Lead ticks as complete. The milestones span the whole year, so
+    // the set lives at the {client, year} level, shared across every RFQ. Purely
+    // indicative (no locking effect): an assigned BL (or admin) may write anytime,
+    // independent of any RFQ lock. Only these annotation keys are ever written.
+    match /forecast_validations/{entryId} {
+      // A non-existent doc (resource == null) is a normal empty case — the recap
+      // reads one per in-scope client and many have none yet. Allow it; reading
+      // absent data leaks nothing (mirrors data_entries / annual_actuals).
+      allow read: if isAuthenticated() &&
+        (resource == null || canAccessClient(resource.data.clientId));
+
+      // Create/update: admin always; an assigned BL may write the annotation keys
+      // for their client (no RFQ lock applies — these flags are not forecast data).
+      allow create: if isAdmin() ||
+        (
+          isBLForClient(request.resource.data.clientId) &&
+          request.resource.data.keys()
+            .hasOnly(['clientId', 'year', 'steps', 'stepValidations', 'meta',
+                      'createdAt', 'updatedAt'])
+        );
+      allow update: if isAdmin() ||
+        (
+          isBLForClient(resource.data.clientId) &&
+          request.resource.data.clientId == resource.data.clientId &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['steps', 'stepValidations', 'meta', 'createdAt', 'updatedAt'])
+        );
+
+      // Delete: admins only — client-deletion cleanup (deleteClient).
       allow delete: if isAdmin();
     }
     // ─── annual_actuals ───────────────────────────────────────────────────────

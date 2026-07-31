@@ -1,98 +1,72 @@
 // lib/hooks/use-progression-recap.ts
 
 /**
- * Fetches, for every in-scope client, the data needed by the "Progression and
- * flag recap" table: which confirmation steps are ticked, and which flags are
- * raised (with their justifications) for the selected Year + RFQ.
+ * Fetches, for every in-scope client, the validation status of each milestone
+ * step for the selected year. A step's status mirrors the live forecast control
+ * (deriveStepStatus): not validated / validated / failed / BL data changed /
+ * MediaOcean changed.
  *
- * One read per client for the current submission plus one for the previous RFQ
- * (needed by the flag engine), run in parallel — mirrors the dashboard's
- * per-client fetch pattern (use-scope-forecast-data.ts). A stale request
- * (scope/context changed mid-flight) is discarded via a cancellation flag.
- *
- * Pure flag logic lives in lib/flags/flag-rules.ts; this hook only gathers the
- * raw per-client axes and runs it.
+ * Per client we read in parallel: the {client, year} step-validation records,
+ * one data_entries doc per distinct target RFQ (for `forecastEditedAt` and the
+ * stored flags), and the annual MediaOcean actuals (to detect MO drift) — the
+ * same inputs the live status uses. A stale request (scope/year changed
+ * mid-flight) is discarded via a cancellation flag.
  */
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { fetchStepValidations } from "../services/forecast-validation-service";
 import { fetchDataEntry } from "../services/data-entry-service";
-import { computeFlags } from "../flags/flag-rules";
-import {
-  previousRFQ,
-  type AxisData,
-  type AxisId,
-  type DataEntry,
-} from "../types/forecaster.types";
-import type { Flag, FlagReviewMap } from "../types/flag.types";
-import type { RFQ, RFQType } from "../types/rfq.types";
-
-/** data_entries docs also carry these annotation fields (not on the DataEntry type). */
-type EntryWithAnnotations = DataEntry & {
-  readyMonths?: unknown;
-  flagReviews?: FlagReviewMap;
-};
-
-/** Coerce a raw stored axis into a usable AxisData (mirrors the service normalizer). */
-function axisOf(
-  entry: { axes?: Partial<Record<AxisId, Partial<AxisData>>> } | null,
-  axisId: AxisId
-): AxisData {
-  const raw = entry?.axes?.[axisId];
-  return {
-    buckets: Array.isArray(raw?.buckets) ? raw!.buckets! : [],
-    actuals: Array.isArray(raw?.actuals) ? raw!.actuals! : [],
-  };
-}
+import { fetchAnnualActualsEntry } from "../services/annual-actuals-service";
+import { CONFIRMATION_STEPS } from "../constants/confirmation-steps";
+import { deriveStepStatus, flagsMoDrift } from "../flags/status";
+import { emptyMonthly, type ForecastRow } from "../types/forecaster.types";
+import { MONTHS, type MonthlyMap } from "../types/common.types";
+import type { RFQType } from "../types/rfq.types";
+import type { RfqValidationStatus, StoredFlagMap } from "../types/forecast-flags.types";
 
 export interface RecapRow {
   clientId: string;
-  /** Ids of the confirmation steps ticked complete for this submission. */
-  confirmed: Set<string>;
-  /** Flags raised for this client's submission vs the previous RFQ. */
-  flags: Flag[];
-  /** Per-flag justification (note + acknowledged), keyed by flag.key. */
-  reviews: FlagReviewMap;
+  /** Status of each confirmation step, keyed by step id. */
+  statusByStep: Record<string, RfqValidationStatus>;
 }
 
 export interface UseProgressionRecapParams {
   clientIds: string[];
   year: number | null;
-  rfq: RFQ | null;
-  allRfqs: { year: number; type: RFQType }[];
-  partnerLabel: (partnerId: string) => string;
 }
 
 export interface UseProgressionRecapResult {
-  /** One entry per in-scope client (keyed by clientId via the array). */
   rows: RecapRow[];
   loading: boolean;
   error: string | null;
 }
 
+/** Distinct target RFQs across all milestone steps (RFQ0…RFQ3). */
+const TARGET_RFQS: RFQType[] = [
+  ...new Set(CONFIRMATION_STEPS.map((s) => s.targetRfq)),
+];
+
+/** Sum a set of actuals rows into a monthly total. */
+function rowsToMonthly(rows: ForecastRow[] | undefined): MonthlyMap {
+  const out = emptyMonthly();
+  for (const r of rows ?? []) for (const m of MONTHS) out[m] += r.months[m] ?? 0;
+  return out;
+}
+
 export function useProgressionRecap({
   clientIds,
   year,
-  rfq,
-  allRfqs,
-  partnerLabel,
 }: UseProgressionRecapParams): UseProgressionRecapResult {
   const [rows, setRows] = useState<RecapRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // The previous submission (same for every client) — null when none precedes.
-  const prev = useMemo(
-    () => (year && rfq ? previousRFQ(allRfqs, year, rfq.type) : null),
-    [allRfqs, year, rfq?.type]
-  );
-
-  // Stable primitive dependency for the client set (arrays change identity).
   const clientKey = clientIds.join(",");
 
   useEffect(() => {
-    if (!year || !rfq || clientIds.length === 0) {
+    if (!year || clientIds.length === 0) {
       setRows([]);
       setLoading(false);
       setError(null);
@@ -105,33 +79,38 @@ export function useProgressionRecap({
 
     Promise.all(
       clientIds.map(async (clientId): Promise<RecapRow> => {
-        const [curEntry, prevEntry] = await Promise.all([
-          fetchDataEntry(clientId, year, rfq.type),
-          prev ? fetchDataEntry(clientId, prev.year, prev.rfq) : Promise.resolve(null),
+        const [validations, annual, ...entries] = await Promise.all([
+          fetchStepValidations(clientId, year),
+          fetchAnnualActualsEntry(clientId, year),
+          ...TARGET_RFQS.map((rfq) => fetchDataEntry(clientId, year, rfq)),
         ]);
-        const cur = curEntry as EntryWithAnnotations | null;
 
-        const current = {
-          media: axisOf(cur, "media"),
-          labs: axisOf(cur, "labs"),
-          revenue: axisOf(cur, "revenue"),
+        // Per-target-RFQ: forecastEditedAt + stored flags.
+        const byRfq = new Map<RFQType, { forecastEditedAt?: string; flags: StoredFlagMap }>();
+        TARGET_RFQS.forEach((rfq, i) => {
+          const entry = entries[i];
+          byRfq.set(rfq, {
+            forecastEditedAt: entry?.forecastEditedAt,
+            flags: (entry?.flags as StoredFlagMap | undefined) ?? {},
+          });
+        });
+
+        const currentMo = {
+          media: rowsToMonthly(annual.media),
+          labs: rowsToMonthly(annual.labs),
         };
-        const previous = prev
-          ? {
-              media: axisOf(prevEntry, "media"),
-              labs: axisOf(prevEntry, "labs"),
-              revenue: axisOf(prevEntry, "revenue"),
-            }
-          : null;
 
-        const flags = computeFlags({ current, previous, partnerLabel });
-        const rawSteps = cur?.readyMonths;
-        const confirmed = new Set(
-          Array.isArray(rawSteps) ? rawSteps.filter((s): s is string => typeof s === "string") : []
-        );
-        const reviews = cur?.flagReviews ?? {};
-
-        return { clientId, confirmed, flags, reviews };
+        const statusByStep: Record<string, RfqValidationStatus> = {};
+        for (const step of CONFIRMATION_STEPS) {
+          const rfqData = byRfq.get(step.targetRfq);
+          const flags = rfqData ? Object.values(rfqData.flags) : [];
+          statusByStep[step.id] = deriveStepStatus({
+            validation: validations[step.id],
+            forecastEditedAt: rfqData?.forecastEditedAt,
+            moDrift: flagsMoDrift(flags, currentMo),
+          });
+        }
+        return { clientId, statusByStep };
       })
     )
       .then((result) => {
@@ -141,15 +120,15 @@ export function useProgressionRecap({
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error("Progression recap fetch failed:", err);
-        setError("Failed to load the progression recap.");
+        console.error("Milestones recap fetch failed:", err);
+        setError("Failed to load the milestones recap.");
         setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [clientKey, year, rfq?.type, prev?.year, prev?.rfq, partnerLabel]);
+  }, [clientKey, year]);
 
   return { rows, loading, error };
 }

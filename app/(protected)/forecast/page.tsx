@@ -18,13 +18,12 @@
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   TrendingUp,
   DollarSign,
   FlaskConical,
   MousePointerClick,
-  AlertTriangle,
   Percent,
   GitCompare,
   StickyNote,
@@ -33,23 +32,19 @@ import {
 } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import SubmissionNote from "../../../components/forecaster/submission-note";
-import SubmissionReadyMonths from "../../../components/forecaster/submission-ready-months";
+import ValidationControl from "../../../components/forecaster/validation-control";
 import ForecastGrid, { type RowMeta } from "../../../components/forecaster/forecast-grid";
 import CopyToast from "../../../components/forecaster/copy-toast";
 import RevenueGrid from "../../../components/forecaster/revenue-grid";
 import ProductGrid from "../../../components/forecaster/product-grid";
 import ComparisonPanel from "../../../components/forecaster/comparison-panel";
 import LabsPenetrationPanel from "../../../components/forecaster/labs-penetration-panel";
-import FlagsDrawer from "../../../components/forecaster/flags-drawer";
+import BlAlertBanner from "../../../components/flags/bl-alert-banner";
 import RFQTimelineBar from "../../../components/forecaster/rfq-timeline-bar";
 import LabsCoverageSplitDialog, {
   type ProjectShareTarget,
 } from "../../../components/forecaster/labs-coverage-split-dialog";
-import {
-  useForecasterGrid,
-  monthTotals,
-  grandMonthTotals,
-} from "../../../lib/hooks/use-forecaster-grid";
+import { useForecasterGrid } from "../../../lib/hooks/use-forecaster-grid";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { subscribeToClient } from "../../../lib/services/client-service";
 import { syncRevenueCommission } from "../../../lib/services/data-entry-service";
@@ -75,13 +70,12 @@ import type {
   ComparisonRef,
   CellCoord,
 } from "../../../lib/types/forecaster.types";
-import { MONTHS, type MonthlyMap } from "../../../lib/types/common.types";
+import { MONTHS, type MediaType, type MonthlyMap } from "../../../lib/types/common.types";
 import { distribute } from "../../../lib/format/distribute";
-import {
-  computeLabsPenetration,
-  type LabsPenetrationResult,
-} from "../../../lib/format/labs-penetration";
-import { useFlags } from "../../../lib/hooks/use-flags";
+import { computeLabsPenetration } from "../../../lib/format/labs-penetration";
+import { useForecastValidation } from "../../../lib/hooks/use-forecast-validation";
+import { computeBlAlerts } from "../../../lib/flags/bl-alerts";
+import { stepsForRfq } from "../../../lib/constants/confirmation-steps";
 import { subscribeToRFQs, getRFQYears } from "../../../lib/services/rfq-service";
 import {
   subscribeToLabsPartners,
@@ -124,8 +118,7 @@ function ForecastPageContent() {
   const [compareOpen, setCompareOpen] = useState(true);
   // Submission notes card — shared per submission, open by default, toggleable.
   const [notesOpen, setNotesOpen] = useState(true);
-  // Flags drawer — opened from the top-bar flag button, closed by default.
-  const [flagsOpen, setFlagsOpen] = useState(false);
+  const router = useRouter();
 
   // Lab partners (global, all years) — drive the Labs grid's row types. The
   // grid for the Labs axis lists the partners configured for the selected year
@@ -262,15 +255,18 @@ function ForecastPageContent() {
     [labsGrid.data, mediaGrid.data, partnersForYear]
   );
 
-  // MediaOcean vs BL — months where the booked actuals total exceeds the BL
-  // Input total, flagged with a banner on the Media and Labs tabs.
-  const mediaOverBooked = useMemo(
-    () => actualsOverBLMonths(mediaGrid.data),
-    [mediaGrid.data]
+  // Resolve a Labs partnerId to its configured media type (for the cat-2
+  // Labs-over-media alert).
+  const partnerMediaType = useCallback(
+    (partnerId: string): MediaType | undefined => partnerById.get(partnerId)?.mediaType,
+    [partnerById]
   );
-  const labsOverBooked = useMemo(
-    () => actualsOverBLMonths(labsGrid.data),
-    [labsGrid.data]
+
+  // Cat-2 "QA BL" alerts — live, frontend-only (Labs > media, MediaOcean >
+  // forecast). Recomputed from the working copies; shown as banners per tab.
+  const blAlerts = useMemo(
+    () => computeBlAlerts({ media: mediaGrid.data, labs: labsGrid.data, partnerMediaType }),
+    [mediaGrid.data, labsGrid.data, partnerMediaType]
   );
 
   // Per-row extras for the Labs grid: media type chip + inline description.
@@ -423,17 +419,40 @@ function ForecastPageContent() {
     [rfqs]
   );
 
-  // Flags — auto-raised warnings vs the previous RFQ across all three axes for
-  // the selected submission. Computed live from the grid working copies (all
-  // three engines are mounted regardless of the active tab) and surfaced by the
-  // floating flag button + drawer below.
-  const flags = useFlags({
+  // Force-save every axis with unsaved changes — the first step of a validation
+  // run so the analysis reads the saved truth. No-op on a locked RFQ (save()
+  // returns early), which matches "locked has no impact on validation".
+  const hasUnsavedEdits =
+    mediaGrid.hasChanges || labsGrid.hasChanges || revenueGrid.hasChanges;
+  const persistDirty = useCallback(async () => {
+    await Promise.all([
+      mediaGrid.hasChanges ? mediaGrid.save() : Promise.resolve(),
+      labsGrid.hasChanges ? labsGrid.save() : Promise.resolve(),
+      revenueGrid.hasChanges ? revenueGrid.save() : Promise.resolve(),
+    ]);
+  }, [mediaGrid, labsGrid, revenueGrid]);
+
+  // Forecast validation — persisted swing (cat 3) + under-target (cat 4) flags
+  // for the selected submission, (re)computed only when a milestone is validated
+  // from the control below. All three grid engines are mounted regardless of the
+  // active tab, so the analysis sees every axis.
+  const validation = useForecastValidation({
     media: mediaGrid.data,
     labs: labsGrid.data,
     revenue: revenueGrid.data,
     allRfqs,
     partnerLabel,
+    partnerMediaType,
+    persistDirty,
+    hasUnsavedEdits,
   });
+
+  // Milestone steps that validate the selected RFQ (its own step + the following
+  // MQV) — the ones the validation control offers.
+  const validationSteps = useMemo(
+    () => (selectedRFQ ? stepsForRfq(selectedRFQ.type) : []),
+    [selectedRFQ?.type]
+  );
 
   // Years with at least one RFQ — offered by the grid's reference-year selector
   // so a user can peek at another year's MediaOcean/MediaBox while editing.
@@ -574,38 +593,46 @@ function ForecastPageContent() {
             </button>
           )}
 
-          {/* Right-aligned pair — BL Forecast Validation (green) then Flags (red
-              when the submission has flags still to review). All three axes are
-              considered together. */}
-          {tab !== "product" && flags.ready && (
+          {/* Right-aligned pair — BL Forecast Validation control, then a Flags
+              button that appears only once a validation has produced flags and
+              links to the Flags page (no more drawer). All three axes together. */}
+          {tab !== "product" && validation.ready && (
             <div className="ml-auto flex items-center gap-3">
-              <SubmissionReadyMonths
-                blocked={flags.unacknowledgedCount > 0}
-                blockedCount={flags.unacknowledgedCount}
+              <ValidationControl
+                steps={validationSteps}
+                stepStatus={validation.stepStatus}
+                runningStep={validation.runningStep}
+                onValidate={validation.runValidation}
+                onUnvalidate={validation.unvalidate}
+                onOpenFlags={() => router.push("/flags")}
+                unjustifiedCount={validation.unjustifiedCount}
+                locked={selectedRFQ?.status === "LOCKED"}
               />
-              <button
-                type="button"
-                onClick={() => setFlagsOpen(true)}
-                aria-label={`Open flags (${flags.flags.length})`}
-                title={
-                  flags.unacknowledgedCount > 0
-                    ? `${flags.unacknowledgedCount} flag(s) to review`
-                    : "Flags"
-                }
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                  flags.unacknowledgedCount > 0
-                    ? "border-red-500 bg-red-500 text-white hover:bg-red-600"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                <Flag size={14} />
-                Flags
-                {flags.unacknowledgedCount > 0 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center bg-white px-1.5 text-xs font-bold text-red-600">
-                    {flags.unacknowledgedCount}
-                  </span>
-                )}
-              </button>
+              {validation.flags.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/flags")}
+                  aria-label={`Open flags (${validation.flags.length})`}
+                  title={
+                    validation.unjustifiedCount > 0
+                      ? `${validation.unjustifiedCount} flag(s) to justify`
+                      : "Flags"
+                  }
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border transition-colors ${
+                    validation.unjustifiedCount > 0
+                      ? "border-yellow-400 bg-yellow-400 text-gray-900 hover:bg-yellow-300"
+                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <Flag size={14} />
+                  Flags
+                  {validation.unjustifiedCount > 0 && (
+                    <span className="flex h-5 min-w-5 items-center justify-center bg-gray-900 px-1.5 text-xs font-bold text-white">
+                      {validation.unjustifiedCount}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -660,30 +687,24 @@ function ForecastPageContent() {
                 partnersLoaded &&
                 partnersForYear.length === 0 && <NoPartnersBanner year={selectedYear} />}
 
-              {/* Labs over-cap — partners exceed 100% of a planned media type. */}
-              {tab === "labs" && penetration.hasOver && (
-                <LabsOverCapBanner result={penetration} />
-              )}
-
-              {/* MediaOcean booked total exceeds the BL forecast in ≥1 month.
-                  Hidden when the RFQ is locked: the submission is frozen, so
-                  there is nothing left to act on. */}
-              {tab === "media" &&
-                selectedRFQ?.status !== "LOCKED" &&
-                mediaOverBooked.length > 0 && (
-                  <ActualsOverBLBanner
-                    months={mediaOverBooked}
-                    actualsLabel={MEDIA_AXIS_CONFIG.actualsLabel}
+              {/* Cat-2 "QA BL" alerts — live, per-month warnings for the active
+                  axis: Labs > media and MediaOcean > forecast. Shown even on a
+                  locked RFQ (MediaOcean keeps arriving after the lock). */}
+              {blAlerts
+                .filter((a) =>
+                  tab === "media"
+                    ? a.id === "mediaocean-over-media"
+                    : tab === "labs"
+                      ? a.id === "mediaocean-over-labs" || a.id === "labs-over-media"
+                      : false
+                )
+                .map((a) => (
+                  <BlAlertBanner
+                    key={a.id}
+                    alert={a}
+                    currency={selectedClient?.CL_Currency ?? "CAD"}
                   />
-                )}
-              {tab === "labs" &&
-                selectedRFQ?.status !== "LOCKED" &&
-                labsOverBooked.length > 0 && (
-                  <ActualsOverBLBanner
-                    months={labsOverBooked}
-                    actualsLabel={labsConfig.actualsLabel}
-                  />
-                )}
+                ))}
 
               {tab === "revenue" ? (
                 <RevenueGrid
@@ -740,24 +761,6 @@ function ForecastPageContent() {
           globally selected RFQ (empty selection → no periods → nothing). */}
       {(tab === "product" || activeGrid.selectionReady) && (
         <RFQTimelineBar periods={timelinePeriods} />
-      )}
-
-      {/* Flags drawer (trigger lives in the top bar) — all three axes for the
-          selected submission. Grid tabs only (Product has no year/RFQ). */}
-      {tab !== "product" && flags.ready && (
-        <FlagsDrawer
-          // Remount on submission change so local note drafts never bleed
-          // across clients/RFQs (flag keys are identical across submissions).
-          key={`${selectedClient?.cl_id}_${selectedYear}_${selectedRFQ?.type}`}
-          open={flagsOpen}
-          onClose={() => setFlagsOpen(false)}
-          flags={flags.flags}
-          reviews={flags.reviews}
-          unacknowledgedCount={flags.unacknowledgedCount}
-          loadingReference={flags.loadingReference}
-          currency={selectedClient?.CL_Currency ?? "CAD"}
-          saveReview={flags.saveReview}
-        />
       )}
 
       {/* Coverage split — partner present in several projects */}
@@ -859,100 +862,3 @@ function NoPartnersBanner({ year }: { year: number | null }) {
   );
 }
 
-// ─── MediaOcean booked total > BL forecast ───────────────────────────────────
-// Per-month check on the Media and Labs axes: any month whose MediaOcean
-// (admin) total exceeds the BL Input total means the booked spend has outgrown
-// the forecast — surfaced as a top-of-grid banner, like the Labs over-cap one.
-
-const MONTH_SHORT = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-interface OverBookedMonth {
-  month: number;
-  booked: number;
-  planned: number;
-}
-
-/** Months (1-12) where the actuals total exceeds the BL Input total. */
-function actualsOverBLMonths(data: AxisData): OverBookedMonth[] {
-  const planned = grandMonthTotals(data);
-  const booked = monthTotals(data.actuals);
-  const out: OverBookedMonth[] = [];
-  for (const m of MONTHS) {
-    const b = Math.round(booked[m] ?? 0);
-    const p = Math.round(planned[m] ?? 0);
-    if (b > 0 && b > p) out.push({ month: m, booked: b, planned: p });
-  }
-  return out;
-}
-
-function ActualsOverBLBanner({
-  months,
-  actualsLabel,
-}: {
-  months: OverBookedMonth[];
-  actualsLabel: string;
-}) {
-  const fmt = (n: number) => Math.round(n).toLocaleString("en-CA");
-  return (
-    <div className="rounded-lg border border-yellow-400 bg-yellow-400 px-4 py-3 text-sm text-gray-900">
-      <div className="text-[11px] font-bold uppercase tracking-wide text-gray-800">
-        ALERT: UNDER-FORECASTING
-      </div>
-      <div className="mt-0.5 flex items-center gap-2 font-semibold">
-        <AlertTriangle size={16} className="flex-shrink-0 text-gray-800" />
-        {actualsLabel} booked spend exceeds the BL Input forecast
-      </div>
-      <ul className="mt-1.5 space-y-0.5 pl-7 text-[13px]">
-        {months.map((m) => (
-          <li key={m.month}>
-            <span className="font-semibold">{MONTH_SHORT[m.month - 1]}</span>
-            {" — "}
-            <span className="font-semibold tabular-nums">{fmt(m.booked)}</span>
-            {" booked vs "}
-            <span className="tabular-nums">{fmt(m.planned)}</span>
-            {" planned"}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-// ─── Labs: media-type over 100% ──────────────────────────────────────────────
-// Surfaces every media type whose Labs partners together cover more than the
-// planned media budget in the same submission. Details (per partner) live in
-// the penetration panel; this is the top-of-grid summary.
-
-function LabsOverCapBanner({ result }: { result: LabsPenetrationResult }) {
-  const fmt = (n: number) => Math.round(n).toLocaleString("en-CA");
-  const over = result.byType.filter((t) => t.over);
-  return (
-    <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
-      <div className="flex items-center gap-2 font-semibold">
-        <AlertTriangle size={16} className="flex-shrink-0 text-white" />
-        Labs investment exceeds the planned media budget
-      </div>
-      <ul className="mt-1.5 space-y-0.5 pl-7 text-[13px]">
-        {over.map((t) => (
-          <li key={t.mediaType}>
-            <span className="font-semibold">{MEDIA_TYPE_LABELS[t.mediaType]}</span>
-            {" — "}
-            <span className="font-semibold tabular-nums">
-              {t.coverage !== null && isFinite(t.coverage)
-                ? `${Math.round(t.coverage * 100)}%`
-                : ">100%"}
-            </span>
-            {" of planned ("}
-            <span className="tabular-nums">{fmt(t.labsAnnual)}</span>
-            {" vs "}
-            <span className="tabular-nums">{fmt(t.plannedAnnual)}</span>
-            {")"}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}

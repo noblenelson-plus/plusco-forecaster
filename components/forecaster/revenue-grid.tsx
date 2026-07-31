@@ -681,6 +681,21 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
                       showNotes={showNotes}
                       onSpread={onSpread}
                       expand={expand}
+                      // Product Fees roll-up (no detail breakdown yet) carries
+                      // the product link on the row itself; once details exist,
+                      // each detail line carries its own instead.
+                      productDropdown={
+                        row.rowType === REVENUE_PRODUCT_FEES_TYPE &&
+                        details.length === 0
+                          ? {
+                              products: dropdownProducts,
+                              productById,
+                              readOnly: !grid.canEditActuals,
+                              onSelect: (pid) =>
+                                grid.setActualsRowProduct(row.rowId, pid),
+                            }
+                          : undefined
+                      }
                     />
                     {expanded &&
                       details.map((detail) => (
@@ -694,6 +709,23 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
                           rowIndex={rowIndex}
                           draggingRef={draggingRef}
                           showNotes={showNotes}
+                          productSlot={
+                            row.rowType === REVENUE_PRODUCT_FEES_TYPE ? (
+                              <ProductSelect
+                                value={detail.productId}
+                                products={dropdownProducts}
+                                productById={productById}
+                                readOnly={!grid.canEditActuals}
+                                onSelect={(pid) =>
+                                  grid.setActualsDetailProduct(
+                                    row.rowId,
+                                    detail.detailId,
+                                    pid
+                                  )
+                                }
+                              />
+                            ) : undefined
+                          }
                         />
                       ))}
                     {expanded && grid.canEditActuals && (

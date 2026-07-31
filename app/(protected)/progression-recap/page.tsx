@@ -2,17 +2,17 @@
 "use client";
 
 /**
- * Progression and flag recap — a per-client table (one row per client) showing,
- * for the globally-selected Year + RFQ: the Business Lead, a ticked column for
- * each confirmation step, and the raised flags with their justifications.
- * Downloadable as CSV.
+ * BL Forecast Validation — a per-client table (one row per client) showing, for
+ * the globally-selected Year, the Business Lead and a ticked column for each
+ * confirmation step. Validation lives at the {client, year} level (no RFQ
+ * dimension). Downloadable as CSV.
  *
  * Reuses the dashboard's client scope: the same accessible-clients set, the same
- * faceted filter bar, and the same global Year + RFQ selectors. Accessible to
- * every authenticated user (no admin guard).
+ * faceted filter bar, and the same global Year selector. Accessible to every
+ * authenticated user (no admin guard).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Loader2, ClipboardCheck, MousePointerClick } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import DashboardFilterBar from "../../../components/dashboard/filters/dashboard-filter-bar";
@@ -24,15 +24,11 @@ import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../../lib/dashboard/filters/use-dashboard-filters";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useProgressionRecap } from "../../../lib/hooks/use-progression-recap";
-import { subscribeToRFQs } from "../../../lib/services/rfq-service";
-import { subscribeToLabsPartners } from "../../../lib/services/labs-partner-service";
-import type { RFQ } from "../../../lib/types/rfq.types";
-import type { LabsPartner } from "../../../lib/types/labs.types";
 
 export default function ProgressionRecapPage() {
   const { clients, loading: clientsLoading, error: clientsError } = useAccessibleClients();
   const usersMap = useUsersMap();
-  const { selectedYear, selectedRFQ } = useForecastSelection();
+  const { selectedYear } = useForecastSelection();
 
   // Same faceted filters as the dashboard.
   const {
@@ -44,35 +40,9 @@ export default function ProgressionRecapPage() {
     reset,
   } = useDashboardFilters(clients, usersMap, selectedYear ?? new Date().getFullYear());
 
-  // All RFQs — needed to resolve the previous submission for the flag engine.
-  const [rfqs, setRFQs] = useState<RFQ[]>([]);
-  useEffect(() => {
-    const unsubscribe = subscribeToRFQs(setRFQs);
-    return () => unsubscribe();
-  }, []);
-  const allRfqs = useMemo(
-    () => rfqs.map((r) => ({ year: r.year, type: r.type })),
-    [rfqs]
-  );
-
-  // Lab partners — resolve a labs flag's partnerId to a display name.
-  const [labsPartners, setLabsPartners] = useState<LabsPartner[]>([]);
-  useEffect(() => {
-    const unsubscribe = subscribeToLabsPartners(setLabsPartners);
-    return () => unsubscribe();
-  }, []);
-  const partnerLabel = useCallback(
-    (partnerId: string) =>
-      labsPartners.find((p) => p.partnerId === partnerId)?.name ?? partnerId,
-    [labsPartners]
-  );
-
   const recap = useProgressionRecap({
     clientIds: filteredClientIds,
     year: selectedYear,
-    rfq: selectedRFQ,
-    allRfqs,
-    partnerLabel,
   });
 
   const recapByClient = useMemo(() => {
@@ -92,29 +62,26 @@ export default function ProgressionRecapPage() {
             ? usersMap.get(c.CL_Business_Lead) ?? c.CL_Business_Lead
             : "Unassigned",
           currency: c.CL_Currency ?? "CAD",
-          confirmed: r?.confirmed ?? new Set<string>(),
-          flags: r?.flags ?? [],
-          reviews: r?.reviews ?? {},
+          statusByStep: r?.statusByStep ?? {},
         };
       }),
     [filteredClients, recapByClient, usersMap]
   );
 
-  const fileLabel =
-    selectedYear && selectedRFQ ? `${selectedYear}-${selectedRFQ.type}` : undefined;
-  const contextReady = !!selectedYear && !!selectedRFQ;
+  const fileLabel = selectedYear ? String(selectedYear) : undefined;
+  const contextReady = !!selectedYear;
 
   return (
     <div className="flex min-h-screen flex-col">
-      {/* Header — title + global Year/RFQ selectors */}
+      {/* Header — title + global Year selector */}
       <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
         <div className="flex flex-wrap items-center gap-3 px-6 py-3">
           <span className="flex items-center gap-2 text-base font-semibold text-gray-900">
             <ClipboardCheck size={18} className="text-yellow-500" />
-            BL Forecast Validation - Flags
+            Milestones
           </span>
           <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
-          <ForecastSelectors orientation="horizontal" theme="light" fields={["year", "rfq"]} />
+          <ForecastSelectors orientation="horizontal" theme="light" fields={["year"]} />
         </div>
 
         {/* Same faceted filter bar as the dashboard */}
@@ -134,10 +101,10 @@ export default function ProgressionRecapPage() {
           </div>
         ) : !contextReady ? (
           <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 text-gray-400">
-            <p className="mb-1 text-sm font-medium text-gray-500">Select a Year and RFQ</p>
+            <p className="mb-1 text-sm font-medium text-gray-500">Select a Year</p>
             <p className="flex items-center gap-1 text-xs">
               <MousePointerClick size={12} />
-              Use the selectors at the top of the page to load the recap.
+              Use the selector at the top of the page to load the recap.
             </p>
           </div>
         ) : clientsLoading || recap.loading ? (

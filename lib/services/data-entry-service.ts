@@ -41,7 +41,7 @@ import {
   computeCommission,
   ensureRevenueShape,
 } from "../format/revenue-commission";
-import type { FlagReviewMap } from "../types/flag.types";
+import type { StoredFlag, StoredFlagMap } from "../types/forecast-flags.types";
 
 const COLLECTION = "data_entries";
 
@@ -163,6 +163,8 @@ export async function saveAxisData(
       rfq,
       axes: { [axisId]: data },
       updatedAt: now,
+      // Forecast-data write — bump so a later validation detects the change.
+      forecastEditedAt: now,
       ...(Object.keys(meta).length ? { axisMeta: { [axisId]: meta } } : {}),
       ...(userUid ? { lastModifiedBy: userUid } : {}),
     },
@@ -343,138 +345,106 @@ export async function saveSubmissionNote(
   );
 }
 
-// ─── BL Forecast Validation (completion flags, shared across the 3 axes) ─────
+// Note: the "BL Forecast Validation" confirmed steps used to live here (the
+// per-triplet `readyMonths` field). They now live at the {client, year} level
+// in the forecast_validations collection — see forecast-validation-service.ts.
+
+// ─── Forecast flags (persisted cat-3 swings + cat-4 under-target) ────────────
+
+/** A submission's persisted flags plus the timestamps needed for staleness. */
+export interface SubmissionFlagsSnapshot {
+  flags: StoredFlagMap;
+  /** Last forecast-data write — compared against a step's validatedAt. */
+  forecastEditedAt?: string;
+}
 
 /**
- * Subscribes in real time to a submission's confirmed steps — the milestones a
- * user has ticked as complete (see lib/constants/confirmation-steps.ts), stored
- * top-level on the data_entries doc so they are shared by the Media, Revenue and
- * Labs tabs. Calls back with a sorted, de-duplicated array of step ids (empty
- * when none/absent).
- *
- * Stored under the legacy `readyMonths` field name (kept so the annotation
- * carve-out in firestoreRules.txt doesn't change) — it now holds step-id
- * strings, not month numbers.
+ * Subscribes in real time to a submission's persisted flags (keyed by the flag's
+ * stable key) and its `forecastEditedAt` stamp, both stored on the data_entries
+ * doc. Calls back with an empty snapshot when the doc does not exist yet. Flags
+ * are written only by a validation run — see reconcile.ts + writeReconciledFlags.
  */
-export function subscribeToReadyMonths(
+export function subscribeToFlags(
   clientId: string,
   year: number,
   rfq: RFQType,
-  callback: (steps: string[]) => void
+  callback: (snapshot: SubmissionFlagsSnapshot) => void
 ): Unsubscribe {
   const entryId = buildDataEntryId(clientId, year, rfq);
   return onSnapshot(
     doc(db, COLLECTION, entryId),
     (snapshot) => {
-      const raw = snapshot.data()?.readyMonths;
-      const steps = Array.isArray(raw)
-        ? [...new Set(raw.filter((s): s is string => typeof s === "string"))].sort()
-        : [];
-      callback(steps);
+      const data = snapshot.data();
+      callback({
+        flags: (data?.flags as StoredFlagMap | undefined) ?? {},
+        forecastEditedAt: data?.forecastEditedAt as string | undefined,
+      });
     },
     (err) => {
-      console.error("Confirmed steps subscription failed:", err);
-      callback([]);
+      console.error("Forecast flags subscription failed:", err);
+      callback({ flags: {} });
     }
   );
 }
 
-/**
- * Writes the submission's confirmed steps — creates the data_entries doc on
- * first write (setDoc + merge). The array is stored sorted; on an existing doc
- * the write touches only `readyMonths` and `updatedAt`, which the security rules
- * allow regardless of the RFQ lock (these flags are an annotation, not data).
- */
-export async function saveReadyMonths(
+/** One-shot read of a submission's persisted flags (empty map when absent). */
+export async function fetchStoredFlags(
   clientId: string,
   year: number,
-  rfq: RFQType,
-  steps: string[],
-  userUid?: string
-): Promise<void> {
-  const entryId = buildDataEntryId(clientId, year, rfq);
-  const now = new Date().toISOString();
-  const sorted = [...new Set(steps)].sort();
-  await setDoc(
-    doc(db, COLLECTION, entryId),
-    {
-      clientId,
-      year,
-      rfq,
-      readyMonths: sorted,
-      readyMonthsMeta: { updatedAt: now, ...(userUid ? { updatedBy: userUid } : {}) },
-      updatedAt: now,
-    },
-    { merge: true }
-  );
-}
-
-// ─── Flag reviews (justifications for auto-raised flags, per submission) ─────
-
-/**
- * Subscribes in real time to a submission's flag reviews — the per-flag
- * justifications (note + acknowledged mark) keyed by the flag's stable key,
- * stored top-level on the data_entries doc so they are shared by the Media,
- * Revenue and Labs tabs (a flag can concern any axis). Calls back with an empty
- * map when the doc (or the field) does not exist yet.
- */
-export function subscribeToFlagReviews(
-  clientId: string,
-  year: number,
-  rfq: RFQType,
-  callback: (reviews: FlagReviewMap) => void
-): Unsubscribe {
-  const entryId = buildDataEntryId(clientId, year, rfq);
-  return onSnapshot(
-    doc(db, COLLECTION, entryId),
-    (snapshot) => {
-      const raw = snapshot.data()?.flagReviews as FlagReviewMap | undefined;
-      callback(raw ?? {});
-    },
-    (err) => {
-      console.error("Flag reviews subscription failed:", err);
-      callback({});
-    }
-  );
+  rfq: RFQType
+): Promise<StoredFlagMap> {
+  const entry = await fetchDataEntry(clientId, year, rfq);
+  return (entry?.flags as StoredFlagMap | undefined) ?? {};
 }
 
 /**
- * Writes one flag's review — creates the data_entries doc on first write
- * (setDoc + merge). Only `flagReviews.{key}` (+ updatedAt) is touched: the
- * nested map deep-merges, so the other flags' reviews keep their values and no
- * forecast field is affected. The security rules allow this annotation-only
- * write for an assigned BL even when the RFQ is locked. Reviews are never
- * deleted (acknowledging or clearing a note updates the entry in place), so the
- * deep merge never leaves a stale key.
+ * Replaces the whole `flags` map on a submission — the output of a validation
+ * reconciliation. `updateDoc` assigns the field wholesale (unlike a merged
+ * setDoc, which would deep-merge and leave deleted keys behind), so flags that
+ * no longer apply disappear. The doc is expected to exist (a validation force-
+ * saves the axes first); it is created defensively if not.
  */
-export async function saveFlagReview(
+export async function writeReconciledFlags(
   clientId: string,
   year: number,
   rfq: RFQType,
-  flagKey: string,
-  review: { note: string; acknowledged: boolean },
+  flags: StoredFlagMap,
   userUid?: string
 ): Promise<void> {
   const entryId = buildDataEntryId(clientId, year, rfq);
+  const ref = doc(db, COLLECTION, entryId);
   const now = new Date().toISOString();
-  await setDoc(
-    doc(db, COLLECTION, entryId),
-    {
-      clientId,
-      year,
-      rfq,
-      flagReviews: {
-        [flagKey]: {
-          note: review.note,
-          acknowledged: review.acknowledged,
-          updatedAt: now,
-          ...(userUid ? { updatedBy: userUid } : {}),
-        },
-      },
-      updatedAt: now,
-    },
-    { merge: true }
-  );
+  const snapshot = await getDoc(ref);
+  if (!snapshot.exists()) {
+    await setDoc(ref, { clientId, year, rfq, createdAt: now });
+  }
+  await updateDoc(ref, {
+    flags,
+    updatedAt: now,
+    ...(userUid ? { lastModifiedBy: userUid } : {}),
+  });
+}
+
+/**
+ * Writes one flag's justification in place (dot-path set of `flags.{key}`),
+ * leaving the other flags and every forecast field untouched — and NOT bumping
+ * `forecastEditedAt`, so justifying a flag never marks the submission stale. The
+ * caller passes the already-justified StoredFlag (see justifyStoredFlag). The
+ * security rules allow this annotation-only write for an assigned BL even on a
+ * locked RFQ.
+ */
+export async function writeFlagJustification(
+  clientId: string,
+  year: number,
+  rfq: RFQType,
+  flag: StoredFlag
+): Promise<void> {
+  const entryId = buildDataEntryId(clientId, year, rfq);
+  const now = new Date().toISOString();
+  await updateDoc(doc(db, COLLECTION, entryId), {
+    [`flags.${flag.key}`]: flag,
+    updatedAt: now,
+  });
 }
 
 /**
@@ -500,6 +470,8 @@ export async function saveAxisActuals(
       rfq,
       axes: { [axisId]: { actuals } },
       updatedAt: now,
+      // Forecast-data write — bump so a later validation detects the change.
+      forecastEditedAt: now,
       axisMeta: { [axisId]: { actualsUpdatedAt: now } },
       ...(userUid ? { lastModifiedBy: userUid } : {}),
     },

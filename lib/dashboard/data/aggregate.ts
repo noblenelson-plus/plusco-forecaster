@@ -230,7 +230,7 @@ const REVENUE_STREAMS: { key: string; label: string }[] = [
   { key: "commissionOverwrite", label: "Commission Overwrite" },
   { key: "projectFees", label: "Project Fees" },
   { key: "productFees", label: "Product Fees" },
-  { key: "accrual", label: "Accrual" },
+  { key: "accrual", label: "Accrual/Adjustment" },
 ];
 
 /** Synthetic single-stream key for the Official Revenue line (no real stream). */

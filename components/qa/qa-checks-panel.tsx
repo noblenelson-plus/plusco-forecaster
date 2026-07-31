@@ -2,10 +2,11 @@
 "use client";
 
 /**
- * QA checks panel — data-consistency checks run against the in-scope forecast
- * data. Each rule is a card that passes or fails, listing the offending
- * client × month combinations. Rendered by the standalone Admin → QA page;
- * the caller owns the scope (clients, Year + RFQ) via the data it passes in.
+ * QA checks panel — admin data-consistency checks over the in-scope forecast
+ * data. Since the flags refonte, only two checks live here (the MediaOcean and
+ * Labs-vs-media checks moved to the per-BL cat-2 alerts on the forecast/Flags
+ * pages): Commission-matches-media and GAIA-lines-match-Official-Revenue. Each
+ * is a card that passes or fails, listing the offending client × month combos.
  */
 
 import { useState } from "react";
@@ -13,37 +14,17 @@ import { CheckCircle2, XCircle } from "lucide-react";
 import QaTestCard from "./qa-test-card";
 import { LoadingTab, NoContextNotice } from "../dashboard/tabs/tab-states";
 import {
-  checkActualsWithinForecast,
   checkCommissionMatchesMedia,
-  checkForecastWithinActuals,
-  checkLabsWithinChannelForecast,
   checkRevenueActualsMatchOfficial,
   DEFAULT_QA_TOLERANCE,
-  labsForecastMonthlyByClient,
-  mediaForecastMonthlyByClient,
   type YearCommissionRates,
 } from "../../lib/dashboard/data/qa-checks";
 import type { ScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
 
 /** One slider per check — session-only state, deliberately not persisted. */
-type CheckId =
-  | "commissionVsMedia"
-  | "labsVsMedia"
-  | "revenueVsOfficial"
-  | "mediaOceanMedia"
-  | "mediaOceanLabs"
-  | "mediaForecastAbove"
-  | "labsForecastAbove";
+type CheckId = "commissionVsMedia" | "revenueVsOfficial";
 
-const CHECK_IDS: CheckId[] = [
-  "commissionVsMedia",
-  "labsVsMedia",
-  "revenueVsOfficial",
-  "mediaOceanMedia",
-  "mediaOceanLabs",
-  "mediaForecastAbove",
-  "labsForecastAbove",
-];
+const CHECK_IDS: CheckId[] = ["commissionVsMedia", "revenueVsOfficial"];
 
 export default function QaChecksPanel({
   data,
@@ -79,56 +60,19 @@ export default function QaChecksPanel({
     commissionRatesByClient,
     tolerances.commissionVsMedia
   );
-  const labsVsMedia = checkLabsWithinChannelForecast(
-    data.mediaByClient,
-    data.labsDetail,
-    tolerances.labsVsMedia
-  );
   const revenueVsOfficial = checkRevenueActualsMatchOfficial(
     data.revenueActualsByClient,
     tolerances.revenueVsOfficial
   );
-  // Media / Labs forecast vs MediaOcean, both directions: the forecast totals
-  // are derived once and shared by the "within" and "above" checks.
-  const mediaForecastByClient = mediaForecastMonthlyByClient(data.mediaByClient);
-  const labsForecastByClient = labsForecastMonthlyByClient(data.labsDetail);
-  const mediaOceanMedia = checkActualsWithinForecast(
-    mediaForecastByClient,
-    data.mediaActualsByClient,
-    tolerances.mediaOceanMedia
-  );
-  const mediaOceanLabs = checkActualsWithinForecast(
-    labsForecastByClient,
-    data.labsActualsByClient,
-    tolerances.mediaOceanLabs
-  );
-  const mediaForecastAbove = checkForecastWithinActuals(
-    mediaForecastByClient,
-    data.mediaActualsByClient,
-    tolerances.mediaForecastAbove
-  );
-  const labsForecastAbove = checkForecastWithinActuals(
-    labsForecastByClient,
-    data.labsActualsByClient,
-    tolerances.labsForecastAbove
-  );
 
-  const results = [
-    commissionVsMedia,
-    labsVsMedia,
-    revenueVsOfficial,
-    mediaOceanMedia,
-    mediaOceanLabs,
-    mediaForecastAbove,
-    labsForecastAbove,
-  ];
+  const results = [commissionVsMedia, revenueVsOfficial];
   const failing = results.filter((r) => r.status === "fail").length;
   const allPass = failing === 0;
 
   return (
     <div className="space-y-6">
       <div
-        className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
+        className={`flex items-center gap-3 border px-4 py-3 text-sm ${
           allPass
             ? "border-green-500 bg-green-500 text-white"
             : "border-red-500 bg-red-500 text-white"
@@ -166,58 +110,12 @@ export default function QaChecksPanel({
           clientNameById={clientNameById}
         />
         <QaTestCard
-          title="Labs within media forecast"
-          description="Labs spend on a media channel must not exceed the forecasted media spend for the same client, channel and month."
-          result={labsVsMedia}
-          tolerance={tolerances.labsVsMedia}
-          onToleranceChange={setTolerance("labsVsMedia")}
-          labelHeader="Channel"
-          valueHeaders={["Labs", "Media forecast"]}
-          clientNameById={clientNameById}
-        />
-        <QaTestCard
           title="GAIA lines match Official Revenue"
           description="For each month where both are entered, the sum of the GAIA admin lines must equal the Official Revenue."
           result={revenueVsOfficial}
           tolerance={tolerances.revenueVsOfficial}
           onToleranceChange={setTolerance("revenueVsOfficial")}
           valueHeaders={["GAIA lines sum", "Official Revenue"]}
-          clientNameById={clientNameById}
-        />
-        <QaTestCard
-          title="MediaOcean within media forecast"
-          description="MediaOcean media actuals must not exceed the total forecasted media spend for the same client and month."
-          result={mediaOceanMedia}
-          tolerance={tolerances.mediaOceanMedia}
-          onToleranceChange={setTolerance("mediaOceanMedia")}
-          valueHeaders={["MediaOcean", "Media forecast"]}
-          clientNameById={clientNameById}
-        />
-        <QaTestCard
-          title="MediaOcean within Labs forecast"
-          description="MediaOcean Labs actuals must not exceed the total forecasted Labs spend for the same client and month."
-          result={mediaOceanLabs}
-          tolerance={tolerances.mediaOceanLabs}
-          onToleranceChange={setTolerance("mediaOceanLabs")}
-          valueHeaders={["MediaOcean", "Labs forecast"]}
-          clientNameById={clientNameById}
-        />
-        <QaTestCard
-          title="Media forecast above MediaOcean"
-          description="For months with MediaOcean media actuals, the total forecasted media spend must not exceed them."
-          result={mediaForecastAbove}
-          tolerance={tolerances.mediaForecastAbove}
-          onToleranceChange={setTolerance("mediaForecastAbove")}
-          valueHeaders={["Media forecast", "MediaOcean"]}
-          clientNameById={clientNameById}
-        />
-        <QaTestCard
-          title="Labs forecast above MediaOcean"
-          description="For months with MediaOcean Labs actuals, the total forecasted Labs spend must not exceed them."
-          result={labsForecastAbove}
-          tolerance={tolerances.labsForecastAbove}
-          onToleranceChange={setTolerance("labsForecastAbove")}
-          valueHeaders={["Labs forecast", "MediaOcean"]}
           clientNameById={clientNameById}
         />
       </div>

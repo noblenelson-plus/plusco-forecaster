@@ -8,6 +8,11 @@
  * line per forecast row, with the 12 months and a row total. The file is built
  * and downloaded entirely client-side via a Blob; nothing is sent to the
  * server.
+ *
+ * MediaOcean breakdown: when an actuals row carries detail lines, the parent
+ * row is NOT emitted — one line per detail is exported instead (its own months,
+ * with the parent's type and the detail's free-text `levels` in the three
+ * `Detail N` columns). Actuals rows without details export as a single line.
  */
 
 import { MONTHS, type MonthlyMap } from "../types/common.types";
@@ -65,13 +70,16 @@ export function buildAxisCSV(
     config.bucketLabel,
     config.rowTypeLabel,
     "Label",
+    "Detail 1",
+    "Detail 2",
+    "Detail 3",
     ...MONTH_LABELS,
     "Total",
   ];
 
   const rows: string[][] = [];
 
-  // BL_INPUT — buckets → rows.
+  // BL_INPUT — buckets → rows. No breakdown lines here (details are ADMIN only).
   for (const bucket of data.buckets) {
     for (const row of bucket.rows) {
       rows.push([
@@ -79,22 +87,44 @@ export function buildAxisCSV(
         bucket.name,
         row.rowType,
         row.label,
+        "", "", "",
         ...monthValues(row.months),
         String(sumMonths(row.months)),
       ]);
     }
   }
 
-  // ADMIN_INPUT — actuals have no bucket.
+  // ADMIN_INPUT — actuals have no bucket. When a row carries detail (breakdown)
+  // lines, emit one line per detail INSTEAD of the parent: the detail's own
+  // months, with the parent's type and the detail's free-text `levels` spread
+  // across the three Detail columns. Rows without details export as one line.
   for (const row of data.actuals) {
-    rows.push([
-      config.actualsLabel,
-      "",
-      row.rowType,
-      row.label,
-      ...monthValues(row.months),
-      String(sumMonths(row.months)),
-    ]);
+    const details = row.details ?? [];
+    if (details.length > 0) {
+      for (const detail of details) {
+        rows.push([
+          config.actualsLabel,
+          "",
+          row.rowType,
+          "",
+          detail.levels[0] ?? "",
+          detail.levels[1] ?? "",
+          detail.levels[2] ?? "",
+          ...monthValues(detail.months),
+          String(sumMonths(detail.months)),
+        ]);
+      }
+    } else {
+      rows.push([
+        config.actualsLabel,
+        "",
+        row.rowType,
+        row.label,
+        "", "", "",
+        ...monthValues(row.months),
+        String(sumMonths(row.months)),
+      ]);
+    }
   }
 
   // MediaBox — one line per type × campaign, in CAD. The campaign takes the
@@ -107,6 +137,7 @@ export function buildAxisCSV(
         "",
         type.label,
         "",
+        "", "", "",
         ...monthValues(type.byMonth),
         String(type.total),
       ]);
@@ -118,6 +149,7 @@ export function buildAxisCSV(
         campaign.name,
         type.label,
         "",
+        "", "", "",
         ...monthValues(campaign.byMonth),
         String(campaign.total),
       ]);

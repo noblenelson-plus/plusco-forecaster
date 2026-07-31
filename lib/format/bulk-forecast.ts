@@ -197,6 +197,12 @@ export interface ParsedRecord {
   /** 1-based row number in the sheet (header is row 1, first data row is 2). */
   rowNumber: number;
   record: BulkRecord;
+  /**
+   * The raw Section cell when it is non-empty but not a recognized token
+   * (BL / Admin+aliases / Detail). Such a row would otherwise fall through to
+   * BL silently; validateRecords turns this into a blocking error instead.
+   */
+  unknownSection?: string;
 }
 
 export interface ParseResult {
@@ -276,15 +282,24 @@ export function parseMatrix(matrix: unknown[][], columns: BulkColumn[]): ParseRe
     // Section resolution. An Admin row carrying text in any Level column is a
     // breakdown (Detail) line — no need to write "Detail" in the sheet; the
     // explicit "Detail" value is still accepted (exports and older sheets).
-    const sectionU = read(row, "section").toUpperCase();
-    const section: BulkSection =
-      sectionU === SECTION_DETAIL.toUpperCase()
+    const sectionRaw = read(row, "section");
+    const sectionU = sectionRaw.toUpperCase();
+    const isDetailToken = sectionU === SECTION_DETAIL.toUpperCase();
+    const isAdminToken = ADMIN_SECTION_ALIASES.has(sectionU);
+    // Blank stays a lenient BL default; only "BL" is the explicit BL token.
+    const isBLToken = sectionU === "" || sectionU === SECTION_BL.toUpperCase();
+    const section: BulkSection = isDetailToken
+      ? "DETAIL"
+      : isAdminToken
+      ? levels.some((l) => l !== "")
         ? "DETAIL"
-        : ADMIN_SECTION_ALIASES.has(sectionU)
-        ? levels.some((l) => l !== "")
-          ? "DETAIL"
-          : "ACTUALS"
-        : "BL";
+        : "ACTUALS"
+      : "BL";
+    // A non-empty, unrecognized Section value would silently fall through to BL
+    // above (misrouting an Admin/MediaOcean line into a BL bucket). Flag it so
+    // validateRecords can block the row with a visible error instead.
+    const unknownSection =
+      !isDetailToken && !isAdminToken && !isBLToken ? sectionRaw : undefined;
 
     const rfqRaw = read(row, "rfq");
     const rfq: RFQType | null =
@@ -310,6 +325,7 @@ export function parseMatrix(matrix: unknown[][], columns: BulkColumn[]): ParseRe
         months,
         explicitZeros,
       },
+      ...(unknownSection ? { unknownSection } : {}),
     });
   }
 
@@ -378,7 +394,7 @@ export function validateRecords(
   parsed: ParsedRecord[],
   ctx: BulkValidationContext
 ): ValidatedRecord[] {
-  return parsed.map(({ rowNumber, record }) => {
+  return parsed.map(({ rowNumber, record, unknownSection }) => {
     const err = (message: string): ValidatedRecord => ({
       rowNumber,
       record,
@@ -388,6 +404,13 @@ export function validateRecords(
     // Non-blocking advisories accumulated as the row passes; attached to the
     // final `ok` result so the row still imports.
     let warning: string | undefined;
+
+    // An unrecognized Section value would otherwise be silently routed to BL,
+    // dropping an intended Admin/MediaOcean line. Block it with a clear message.
+    if (unknownSection)
+      return err(
+        `Unknown Section "${unknownSection}" — expected "${SECTION_BL}", "${SECTION_ACTUALS}", or "${SECTION_DETAIL}".`
+      );
 
     if (!record.clientId) return err("Missing ClientId.");
     if (!ctx.knownClientIds.has(record.clientId))

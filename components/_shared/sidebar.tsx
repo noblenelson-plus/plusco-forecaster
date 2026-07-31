@@ -18,6 +18,7 @@ import {
   FileSpreadsheet,
   ClipboardCheck,
   ShieldCheck,
+  Flag,
   LogOut,
   X,
   PanelLeftClose,
@@ -38,7 +39,8 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard",    href: "/",            icon: <LayoutDashboard size={18} />, section: "main" },
   { label: "Forecast",     href: "/forecast",    icon: <TrendingUp size={18} />,      section: "main" },
-  { label: "BL Forecast Validation - Flags", href: "/progression-recap", icon: <ClipboardCheck size={18} />, section: "main" },
+  { label: "Flags",        href: "/flags",       icon: <Flag size={18} />,            section: "main" },
+  { label: "Milestones",  href: "/progression-recap", icon: <ClipboardCheck size={18} />, section: "main" },
   { label: "Bulk Edits",   href: "/bulk-edits",  icon: <Upload size={18} />,          section: "main", adminOnly: true },
   { label: "Report Center", href: "/report-center", icon: <FileSpreadsheet size={18} />, section: "main", adminOnly: true },
   { label: "Clients",      href: "/clients",     icon: <Briefcase size={18} />,       section: "main" },
@@ -50,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "DISH Products", href: "/admin/products", icon: <Package size={18} />,     section: "admin", adminOnly: true },
   { label: "Currency",     href: "/admin/currency", icon: <DollarSign size={18} />,   section: "admin", adminOnly: true },
   { label: "QA",           href: "/admin/qa",    icon: <ShieldCheck size={18} />,     section: "admin", adminOnly: true },
+  { label: "Flags config", href: "/admin/flags", icon: <Flag size={18} />,            section: "admin", adminOnly: true },
 ];
 
 interface SidebarProps {

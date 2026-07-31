@@ -180,10 +180,10 @@ export async function saveClient(
  * Deletes a client AND everything keyed to it, so no orphaned data lingers:
  * forecast submissions (data_entries), annual MediaOcean actuals
  * (annual_actuals), synced MediaBox totals (mediabox_totals), product tracking
- * (product_tracking), and the client's id in every user's assignedClients
- * list. Admin-only (enforced by the Firestore rules). The client doc itself
- * is deleted LAST, so a partial failure leaves the client visible and the
- * deletion retryable.
+ * (product_tracking), BL Forecast Validations (forecast_validations), and the
+ * client's id in every user's assignedClients list. Admin-only (enforced by the
+ * Firestore rules). The client doc itself is deleted LAST, so a partial failure
+ * leaves the client visible and the deletion retryable.
  */
 export async function deleteClient(cl_id: string): Promise<void> {
   // Related docs all carry a `clientId` field (see firestoreRules.txt).
@@ -192,6 +192,7 @@ export async function deleteClient(cl_id: string): Promise<void> {
     "annual_actuals",
     "mediabox_totals",
     "product_tracking",
+    "forecast_validations",
   ];
   const refs = (
     await Promise.all(

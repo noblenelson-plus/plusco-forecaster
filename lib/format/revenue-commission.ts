@@ -248,6 +248,36 @@ export function blSubmissionByStream(data: AxisData): Record<string, MonthlyMap>
   return out;
 }
 
+/**
+ * Winning BL Submission level for each month — the same two-level priority as
+ * `blSubmissionByMonth`, exposed as the decision itself so callers can mask a
+ * row's cells to the months it actually feeds the submission ("counted"):
+ *   "DETAIL" — the GAIA detail lines win (any of them carries a value that
+ *              month); "BL" — the BL Input wins; "NONE" — neither has data.
+ * The Official Revenue line (`gaiaForecast`) is independent and never part of
+ * this. Mirrors the grid's per-month `blLevel`.
+ */
+export type BlSubmissionLevel = "NONE" | "BL" | "DETAIL";
+
+export function blSubmissionLevelByMonth(
+  data: AxisData
+): Record<number, BlSubmissionLevel> {
+  const others = data.actuals.filter(
+    (r) => r.rowType !== REVENUE_GAIA_FORECAST_TYPE
+  );
+  const map: Record<number, BlSubmissionLevel> = {};
+  for (const m of MONTHS) {
+    if (others.some((r) => actualsMonthEntered(r, m))) {
+      map[m] = "DETAIL";
+      continue;
+    }
+    let bl = 0;
+    for (const b of data.buckets) for (const r of b.rows) bl += r.months[m] ?? 0;
+    map[m] = bl !== 0 ? "BL" : "NONE";
+  }
+  return map;
+}
+
 // ─── Fixed-structure seeding ────────────────────────────────────────────────
 
 /**
@@ -359,9 +389,13 @@ export function ensureRevenueShape(data: AxisData): AxisData {
         months,
         ...(prev.note ? { note: prev.note } : {}),
         // Detail lines ride along — the grid hook derives the parent's months
-        // from them (row = Σ details) after this normalization.
+        // from them (row = Σ details) after this normalization. A detail line's
+        // own product link (Product Fees) rides along inside them.
         ...(prev.details?.length ? { details: prev.details } : {}),
         ...(explicitZeros.length ? { explicitZeros } : {}),
+        // The roll-up (no-details) Product Fees actuals row keeps its product
+        // link, mirroring the BL rows.
+        ...(prev.productId ? { productId: prev.productId } : {}),
       };
     }
     return newRow(stream, REVENUE_STREAM_LABELS[stream]);

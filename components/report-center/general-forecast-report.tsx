@@ -2,11 +2,12 @@
 "use client";
 
 /**
- * "General Forecast Data" report card — the first Report Center report. Picks
- * a scope (clients × years × RFQs × axes) and generates a one-tab Google Sheet
- * with the selected axes flattened together, a Submission column (RFQ2-2026), a vertical
- * Total column, and per-axis "BL Submission (BL+Admin)" summary rows (the
- * forecast grid's mauve source-of-truth line). See report-service.ts.
+ * "General Forecast Data (Extended)" report card — the Report Center report.
+ * Picks a scope (clients × years × RFQs × axes) and generates a one-tab Google
+ * Sheet with the selected axes flattened together, a Submission column
+ * (RFQ2-2026-BL / -OF), a vertical Total column, the per-client columns, and —
+ * on Revenue — every cell masked to what it feeds the grid's BL Submission
+ * source-of-truth. See report-service.ts.
  */
 
 import { useMemo, useState } from "react";
@@ -22,7 +23,6 @@ import type { AxisId } from "../../lib/types/forecaster.types";
 import type { BulkReference } from "../../lib/services/bulk-import-service";
 import {
   type ReportResult,
-  generateGeneralForecastReport,
   generateExtendedForecastReport,
 } from "../../lib/services/report-service";
 
@@ -56,68 +56,41 @@ function Chip({
   );
 }
 
-/**
- * Two variants share this card:
- *   • "general"  — the base General Forecast Data report;
- *   • "extended" — identical scope, plus the per-client columns (Agency, tier,
- *     currency, leads, GM pod, FO_Value_CAD, status, notes…) appended.
- */
-type Variant = "general" | "extended";
-
-const VARIANTS: Record<
-  Variant,
-  {
-    title: string;
-    generate: typeof generateGeneralForecastReport;
-    description: React.ReactNode;
-  }
-> = {
-  general: {
-    title: "General Forecast Data",
-    generate: generateGeneralForecastReport,
-    description: (
-      <>
-        The selected axes (Media · Labs · Revenue) flattened into one tab, with
-        a <span className="font-medium text-gray-700">Submission</span> column
-        (e.g. RFQ2-2026), a vertical{" "}
-        <span className="font-medium text-gray-700">Total</span> column, and
-        per-axis{" "}
-        <span className="font-medium text-gray-700">
-          BL Submission (BL+Admin)
-        </span>{" "}
-        rows — the grid&apos;s source-of-truth line, where admin figures win
-        each month over the BL forecast.
-      </>
-    ),
-  },
-  extended: {
-    title: "General Forecast Data (Extended)",
-    generate: generateExtendedForecastReport,
-    description: (
-      <>
-        Same as the General Forecast Data report, plus per-client columns
-        appended to every row —{" "}
-        <span className="font-medium text-gray-700">
-          Agency, tier, currency, fee structure, GAIA number, business &amp;
-          digital leads, region, office, GM pod, FO_Value_CAD (Total → CAD),
-          2026 status and notes
-        </span>
-        . (Product Name is included but left blank for now.)
-      </>
-    ),
-  },
+const REPORT = {
+  title: "General Forecast Data (Extended)",
+  generate: generateExtendedForecastReport,
+  description: (
+    <>
+      The selected axes (Media · Labs · Revenue) flattened into one tab, with a{" "}
+      <span className="font-medium text-gray-700">Submission</span> column
+      (RFQ2-2026-BL on every BL-Submission line, -OF on Official Revenue), a
+      vertical <span className="font-medium text-gray-700">Total</span> column
+      and a <span className="font-medium text-gray-700">Product Name</span>{" "}
+      column (Revenue Product Fees / GAIA detail lines). On Revenue every cell is
+      masked to what it feeds the grid&apos;s{" "}
+      <span className="font-medium text-gray-700">BL Submission</span>{" "}
+      source-of-truth (admin detail figures win each month over the BL forecast),
+      and GAIA rows are exploded into their detail lines. Per-client columns —{" "}
+      <span className="font-medium text-gray-700">
+        Agency, tier, currency, fee structure, GAIA number, business &amp;
+        digital leads, region, office, GM pod, FO_Value_CAD (Total → CAD), 2026
+        status and notes
+      </span>{" "}
+      — plus a{" "}
+      <span className="font-medium text-gray-700">Last checked status</span>{" "}
+      column are appended to every row.
+    </>
+  ),
 };
 
 export default function GeneralForecastReport({
   reference,
   connected,
-  variant = "general",
 }: {
   reference: BulkReference;
   connected: boolean;
-  variant?: Variant;
 }) {
-  const config = VARIANTS[variant];
+  const config = REPORT;
   const years = useMemo(
     () => [...new Set(reference.rfqs.map((r) => r.year))].sort((a, b) => b - a),
     [reference.rfqs]

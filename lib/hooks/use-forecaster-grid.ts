@@ -274,6 +274,17 @@ export interface UseForecasterGridResult {
     index: number,
     value: string
   ) => void;
+  /**
+   * Set (or clear, when empty) the catalog product linked to an actuals row
+   * (Revenue GAIA "Product Fees" roll-up) or one of its detail lines. Mirrors
+   * setRowProduct for the ADMIN_INPUT side.
+   */
+  setActualsRowProduct: (rowId: string, productId: string) => void;
+  setActualsDetailProduct: (
+    rowId: string,
+    detailId: string,
+    productId: string
+  ) => void;
 
   // Comparison — fixed base = the current RFQ's BL
   compareRef: ComparisonRef | null;
@@ -1007,9 +1018,17 @@ export function useForecasterGrid(
                 ...(r.explicitZeros?.length
                   ? { explicitZeros: [...r.explicitZeros] }
                   : {}),
+                // Carry the parent's product link (Revenue Product Fees) onto
+                // the first detail, so the roll-up's product survives the
+                // switch to a detail breakdown.
+                ...(r.productId ? { productId: r.productId } : {}),
               }
             : newDetail();
-        return { ...r, details: [...details, detail] };
+        // The product link now lives on the detail line(s); drop it from the
+        // parent (each detail carries its own).
+        const next = { ...r, details: [...details, detail] };
+        if (details.length === 0) delete next.productId;
+        return next;
       }),
     }));
     setStructureDirty(true);
@@ -1059,6 +1078,44 @@ export function useForecasterGrid(
         const detail = row?.details?.find((d) => d.detailId === detailId);
         if (!detail) return prev;
         detail.levels[index] = value;
+        return next;
+      });
+      setStructureDirty(true);
+    },
+    []
+  );
+
+  // Product link on an actuals row itself (Revenue Product Fees roll-up — used
+  // only while the row has no detail breakdown). Mirrors setRowProduct; an empty
+  // productId removes the field.
+  const setActualsRowProduct = useCallback(
+    (rowId: string, productId: string) => {
+      const id = productId.trim();
+      setData((prev) => {
+        const next = clone(prev);
+        const row = next.actuals.find((r) => r.rowId === rowId);
+        if (!row) return prev;
+        if (id) row.productId = id;
+        else delete row.productId;
+        return next;
+      });
+      setStructureDirty(true);
+    },
+    []
+  );
+
+  // Product link on an actuals detail line (Revenue Product Fees breakdown).
+  const setActualsDetailProduct = useCallback(
+    (rowId: string, detailId: string, productId: string) => {
+      const id = productId.trim();
+      setData((prev) => {
+        const next = clone(prev);
+        const detail = next.actuals
+          .find((r) => r.rowId === rowId)
+          ?.details?.find((d) => d.detailId === detailId);
+        if (!detail) return prev;
+        if (id) detail.productId = id;
+        else delete detail.productId;
         return next;
       });
       setStructureDirty(true);
@@ -1206,6 +1263,8 @@ export function useForecasterGrid(
     addActualsDetail,
     removeActualsDetail,
     setActualsDetailLevel,
+    setActualsRowProduct,
+    setActualsDetailProduct,
     compareRef,
     setCompareRef,
     referenceData,

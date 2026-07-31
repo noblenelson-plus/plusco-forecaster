@@ -435,12 +435,12 @@ const GROUPS: ChapterGroup[] = [
                 stays editable even on a locked RFQ.
               </Step>
               <Step n={3}>
-                <strong>BL Forecast Validation</strong> — the green button in the
-                top bar (left of Flags). Confirm each milestone step (RFQ BL
-                deadlines and Mid-Quarter Validations) as it&apos;s complete.
-                Purely indicative: it locks nothing, it just signals completion
-                to the team. A step can&apos;t be confirmed while the submission
-                has unjustified flags — justify them in the Flags drawer first.
+                <strong>Milestones</strong> — the validation control in the top
+                bar (left of Flags). Validate each milestone (RFQ deadlines and
+                Prelim RFQs) to (re)run its flag analysis. Validation succeeds
+                only when every flag is justified; otherwise justify or fix the
+                data on the Flags page and re-validate. It locks nothing — it
+                signals completion to the team.
               </Step>
             </Steps>
           </>
@@ -832,7 +832,7 @@ const TOPICS: Topic[] = [
   { label: "Save or discard changes", chapterId: "save", keywords: "unsaved revert force" },
   { label: "Row notes & the Notes column", chapterId: "notes", keywords: "comment annotate cell" },
   { label: "Submission note (shared)", chapterId: "notes", keywords: "card team comment locked" },
-  { label: "BL Forecast Validation", chapterId: "notes", keywords: "readiness complete confirm tick flags justify monthly milestone rfq mid-quarter" },
+  { label: "Milestones", chapterId: "notes", keywords: "readiness complete confirm tick flags justify monthly milestone rfq prelim preliminary validation bl forecast" },
   { label: "Commission is zero / set rates", chapterId: "revenue", keywords: "no rates rate calculated" },
   { label: "Why commission can't be edited", chapterId: "revenue", keywords: "calculated derived media" },
   { label: "Accrual line (revenue missed by GAIA)", chapterId: "revenue", keywords: "closed months commission catch up" },
