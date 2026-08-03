@@ -19,6 +19,7 @@ import {
   ClipboardCheck,
   ShieldCheck,
   Flag,
+  LineChart,
   LogOut,
   X,
   PanelLeftClose,
@@ -34,10 +35,14 @@ interface NavItem {
   icon: React.ReactNode;
   adminOnly?: boolean;
   section?: "main" | "admin";
+  // When true, the item renders indented, as a child of the item above it.
+  isSubItem?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard",    href: "/",            icon: <LayoutDashboard size={18} />, section: "main" },
+  // Forecaster: comparison dashboard, nested under Dashboard (Dashboard stays its own link).
+  { label: "Forecaster",   href: "/forecaster",  icon: <LineChart size={16} />,       section: "main", isSubItem: true },
   { label: "Forecast",     href: "/forecast",    icon: <TrendingUp size={18} />,      section: "main" },
   { label: "Flags",        href: "/flags",       icon: <Flag size={18} />,            section: "main" },
   { label: "Milestones",  href: "/progression-recap", icon: <ClipboardCheck size={18} />, section: "main" },
@@ -212,6 +217,14 @@ function NavLink({
 }) {
   const isActive = pathname === item.href;
 
+  // Sub-items get extra left padding so they read as nested under the item above.
+  // Indentation only applies in the expanded state; collapsed shows icons only.
+  const paddingClass = collapsed
+    ? "justify-center px-0"
+    : item.isSubItem
+    ? "gap-3 pl-9 pr-3"
+    : "gap-3 px-3";
+
   return (
     <li>
       <Link
@@ -220,7 +233,7 @@ function NavLink({
         title={collapsed ? item.label : undefined}
         className={`
           flex items-center py-2.5 rounded-lg text-sm font-medium transition-colors
-          ${collapsed ? "justify-center px-0" : "gap-3 px-3"}
+          ${paddingClass}
           ${isActive
             ? "bg-yellow-400 text-gray-900 font-semibold"
             : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
