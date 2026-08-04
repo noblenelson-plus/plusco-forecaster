@@ -1,15 +1,27 @@
 // lib/hooks/use-user-profile.ts
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../auth-context";
 import { UserProfile } from "../services/user-service";
+import {
+  resolvePermissions,
+  type UserPermissions,
+  type UserRole,
+} from "../types/user.types";
+
+// Permissions for a signed-out / still-loading user: everything denied.
+const NO_PERMISSIONS = resolvePermissions("VIEWER");
 
 interface UseUserProfileResult {
   profile: UserProfile | null;
   loading: boolean;
+  role: UserRole | null;
   isAdmin: boolean;
+  isExec: boolean;
+  isViewer: boolean;
+  permissions: UserPermissions;
 }
 
 /**
@@ -53,9 +65,19 @@ export function useUserProfile(): UseUserProfileResult {
     return () => unsubscribe();
   }, [user]);
 
+  const role = profile?.role ?? null;
+  const permissions = useMemo(
+    () => (role ? resolvePermissions(role) : NO_PERMISSIONS),
+    [role]
+  );
+
   return {
     profile,
     loading,
-    isAdmin: profile?.role === "ADMIN",
+    role,
+    isAdmin: role === "ADMIN",
+    isExec: role === "EXEC",
+    isViewer: role === "VIEWER",
+    permissions,
   };
 }

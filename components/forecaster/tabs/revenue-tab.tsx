@@ -22,6 +22,7 @@ import RevenueTypesSection from "../sections/revenue-types-section";
 import ProductRevenueSection from "../sections/product-revenue-section";
 import RevenueTypesFilter from "../sections/revenue-types-filter";
 import type { StreamSlice } from "../../../lib/dashboard/data/aggregate";
+import type { Currency } from "../../../lib/types/client.types";
 import type {
   ScopeForecastData,
   RevenueMode,
@@ -40,6 +41,10 @@ export default function RevenueTab({
   streamSlices,
   selectedStreams,
   onStreamsChange,
+  currencyByClient,
+  usdToCad,
+  comparisonUsdToCad,
+  selMonths,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -55,6 +60,10 @@ export default function RevenueTab({
   streamSlices: StreamSlice[];
   selectedStreams: ReadonlySet<string>;
   onStreamsChange: (next: Set<string>) => void;
+  currencyByClient: Record<string, Currency>;
+  usdToCad?: number;
+  comparisonUsdToCad?: number;
+  selMonths: number[];
 }) {
   // The Revenue Types section (charts + totals) follows the focus; the client
   // tables never do — they stay full so you can switch between clients.
@@ -98,14 +107,16 @@ export default function RevenueTab({
       </div>
 
       <ProductRevenueSection
-        data={data}
-        comparisonData={comparisonData}
         scopedClientIds={scopedClientIds}
         primaryMode={primaryMode}
         secondaryMode={secondaryMode}
         focusedClientId={focusedClientId}
         onFocusChange={onFocusChange}
         selectedStreams={selectedStreams}
+        currencyByClient={currencyByClient}
+        usdToCad={usdToCad}
+        comparisonUsdToCad={comparisonUsdToCad}
+        selMonths={selMonths}
       />
     </div>
   );

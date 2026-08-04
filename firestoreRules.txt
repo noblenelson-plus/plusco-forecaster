@@ -42,11 +42,23 @@ service cloud.firestore {
         isAssignedToClient(clientId) ||
         isAgencyAssignedForClient(clientId);
     }
-    // A Business Lead who reaches this client either directly or via an agency.
-    // Used by the BL write rules (commissions, data_entries, product_tracking).
-    function isBLForClient(clientId) {
-      return isBusinessLead() &&
-        (isAssignedToClient(clientId) || isAgencyAssignedForClient(clientId));
+    function isExec() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "EXEC";
+    }
+    // Write access to a client's data (forecast, milestones, product tracking,
+    // commissions):
+    //   - Admin → every client.
+    //   - Exec  → every client of an assigned agency (agency-wide; Execs get no
+    //             per-client grants, their scope comes from their email domain).
+    //   - BL    → only explicitly assigned clients (never agency-wide — reading
+    //             the whole agency is fine, but a BL edits just their clients).
+    // Agency Viewers match none of these, so they stay read-only.
+    function canWriteClient(clientId) {
+      return isAdmin() ||
+        (isExec() &&
+          (isAssignedToClient(clientId) || isAgencyAssignedForClient(clientId))) ||
+        (isBusinessLead() && isAssignedToClient(clientId));
     }
     // Locking lives on the rfqs document, not on data_entries.
     // data_entries carry `year` (int) and `rfq` (e.g. "RFQ0"); the matching
@@ -58,11 +70,10 @@ service cloud.firestore {
     }
     // ─── users ──────────────────────────────────────────────────────────────
     match /users/{uid} {
-      // Tous les utilisateurs authentifiés peuvent lire les profils.
-      // Nécessaire pour que les BLs voient qui a accès à leurs clients
-      // (ClientAccessSection fait une lecture liste de la collection).
-      // Trade-off assumé : emails / rôles / assignations visibles par
-      // tout employé connecté — outil interne, domaine restreint.
+      // Any authenticated user can read profiles. Needed so BLs can see who
+      // has access to their clients (ClientAccessSection does a list read of the
+      // collection). Accepted trade-off: emails / roles / assignments are
+      // visible to every signed-in employee — internal tool, restricted domain.
       allow read: if isAuthenticated();
 
       // A user can create their own profile document on first login (bootstrap)
@@ -72,14 +83,16 @@ service cloud.firestore {
 
       // Admins can update any profile (role changes, client assignments, etc.)
       // A user can update their own profile ONLY for safe fields — role,
-      // assignedClients and assignedAgencies are strictly reserved for admins.
+      // assignedClients, assignedAgencies and disabled are strictly reserved for
+      // admins (a disabled user must not be able to re-enable themselves).
       allow update: if isAdmin() ||
                     (
                       isAuthenticated() &&
                       request.auth.uid == uid &&
                       !request.resource.data.diff(resource.data)
                         .affectedKeys()
-                        .hasAny(['role', 'assignedClients', 'assignedAgencies'])
+                        .hasAny(['role', 'assignedClients', 'assignedAgencies',
+                                 'disabled'])
                     );
 
       // Nobody can delete user profiles from the client
@@ -87,10 +100,11 @@ service cloud.firestore {
     }
     // ─── clients ────────────────────────────────────────────────────────────
     match /clients/{clientId} {
-      // Admins see all — BLs see assigned clients ∪ every client of an
-      // assigned agency. The agency check reads CL_Agency straight off the
-      // document (works for both single-doc reads and agency `where` queries),
-      // avoiding the extra client lookup canAccessClient would do here.
+      // Admins see all — everyone else sees assigned clients ∪ every client of
+      // an assigned agency (Viewers, BLs and Execs alike). The agency check
+      // reads CL_Agency straight off the document (works for both single-doc
+      // reads and agency `where` queries), avoiding the extra client lookup
+      // canAccessClient would do here.
       allow read: if isAdmin() ||
                     isAssignedToClient(clientId) ||
                     (resource != null &&
@@ -99,19 +113,42 @@ service cloud.firestore {
       // Only admins can create or delete clients
       allow create, delete: if isAdmin();
 
-      // Update :
-      // — Admins : sans restriction.
-      // — BLs assignés au client : SEULEMENT commissionsConfig (+ updatedAt).
-      //   Toute écriture touchant une autre clé du document est refusée.
-      //   (Le CommissionsDrawer écrit via dot-path "commissionsConfig.{year}",
-      //   ce qui n'affecte que ces deux clés top-level.)
+      // Update:
+      // — Admins: no restriction.
+      // — Writers for this client (Exec agency-wide, BL on assigned clients):
+      //   ONLY commissionsConfig (+ updatedAt). Any write touching another key
+      //   of the document is denied. (CommissionsDrawer writes via the dot-path
+      //   "commissionsConfig.{year}", which only affects those two top-level
+      //   keys.)
       allow update: if isAdmin() ||
                     (
-                      isBLForClient(clientId) &&
+                      canWriteClient(clientId) &&
                       request.resource.data.diff(resource.data)
                         .affectedKeys()
                         .hasOnly(['commissionsConfig', 'updatedAt'])
                     );
+    }
+    // ─── agencies ─────────────────────────────────────────────────────────────
+    // Document ID = the agency name (a ClientAgency value). Holds the email
+    // domains that map to the agency. Read by every authenticated user (the
+    // sign-in flow matches the caller's email domain to grant automatic
+    // agency-employee access); only admins manage the mapping.
+    match /agencies/{agencyId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+    // ─── invites ──────────────────────────────────────────────────────────────
+    // Document ID = the invited person's lowercased email. Pre-provisions a role
+    // (+ client assignments) before their first sign-in. Admins manage them; a
+    // signing-in user may read and delete (consume) the invite addressed to
+    // their own verified email — nothing else.
+    match /invites/{email} {
+      allow get: if isAdmin() ||
+                 (isAuthenticated() && request.auth.token.email.lower() == email);
+      allow list: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin() ||
+                    (isAuthenticated() && request.auth.token.email.lower() == email);
     }
     // ─── labs_partners ──────────────────────────────────────────────────────
     match /labs_partners/{partnerId} {
@@ -173,7 +210,7 @@ service cloud.firestore {
       // create it — as long as the RFQ is not locked. Admins always may.
       allow create: if isAdmin() ||
         (
-          isBLForClient(request.resource.data.clientId) &&
+          canWriteClient(request.resource.data.clientId) &&
           rfqUnlocked(request.resource.data.year, request.resource.data.rfq)
         ) ||
         // Submission annotations (shared note, flag reviews) — the first write
@@ -181,7 +218,7 @@ service cloud.firestore {
         // assigned BL even when the RFQ is locked (annotation-only create:
         // nothing but these metadata keys is written).
         (
-          isBLForClient(request.resource.data.clientId) &&
+          canWriteClient(request.resource.data.clientId) &&
           request.resource.data.keys()
             .hasOnly(['clientId', 'year', 'rfq', 'submissionNote',
                       'flagReviews', 'flags', 'createdAt', 'lastModifiedBy',
@@ -192,7 +229,7 @@ service cloud.firestore {
       // unlocked, and without re-keying the document (clientId stays put).
       allow update: if isAdmin() ||
         (
-          isBLForClient(resource.data.clientId) &&
+          canWriteClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           rfqUnlocked(resource.data.year, resource.data.rfq)
         ) ||
@@ -201,7 +238,7 @@ service cloud.firestore {
         // annotation keys (+ updatedAt); every forecast field keeps its value,
         // so this can never alter locked data.
         (
-          isBLForClient(resource.data.clientId) &&
+          canWriteClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['submissionNote', 'flagReviews', 'flags',
@@ -234,14 +271,14 @@ service cloud.firestore {
       // for their client (no RFQ lock applies — these flags are not forecast data).
       allow create: if isAdmin() ||
         (
-          isBLForClient(request.resource.data.clientId) &&
+          canWriteClient(request.resource.data.clientId) &&
           request.resource.data.keys()
             .hasOnly(['clientId', 'year', 'steps', 'stepValidations', 'meta',
                       'createdAt', 'updatedAt'])
         );
       allow update: if isAdmin() ||
         (
-          isBLForClient(resource.data.clientId) &&
+          canWriteClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['steps', 'stepValidations', 'meta', 'createdAt', 'updatedAt'])
@@ -307,7 +344,7 @@ service cloud.firestore {
       // Create/update: admins, or a BL assigned to the client. The doc must
       // stay keyed to its client (clientId field matches the doc ID).
       allow create, update: if request.resource.data.clientId == clientId &&
-        (isAdmin() || isBLForClient(clientId));
+        (isAdmin() || canWriteClient(clientId));
       // Delete: admins only — client-deletion cleanup (deleteClient).
       allow delete: if isAdmin();
     }
@@ -322,7 +359,7 @@ match /rfqs/{rfqId} {
   allow read: if isAuthenticated();
 
   // Only admins can create, lock/unlock, set closed months, edit timeline
-  // periods (échéancier), or delete RFQs
+  // periods (timeline), or delete RFQs
   allow create, update, delete: if isAdmin();
 }
   }

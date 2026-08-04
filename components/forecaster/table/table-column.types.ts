@@ -76,8 +76,14 @@ export interface TableColumn<Row, Totals> {
    * Cells carrying a style are rendered inside a padded span, like `share`.
    */
   cellStyle?: (row: Row) => CSSProperties | undefined;
-  /** Inline style for the grand-total cell. */
+ /** Inline style for the grand-total cell. */
   totalCellStyle?: (totals: Totals) => CSSProperties | undefined;
+  /**
+   * Optional native hover tooltip for the body cell. Return `undefined` for no
+   * tooltip on a given row. Used, for example, to surface a client's
+   * forecasting-type setting on a $0 total.
+   */
+  tooltip?: (row: Row) => string | undefined;
 }
 
 /** Convenience alias when a table's columns are handled generically. */

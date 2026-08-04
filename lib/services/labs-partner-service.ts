@@ -63,6 +63,18 @@ export function subscribeToLabsPartners(
   );
 }
 
+/**
+ * One-shot read of every LABS partner (no subscription). Used by batch jobs
+ * such as the Report Center, which need the partner → media-type mapping once.
+ */
+export async function fetchLabsPartners(): Promise<LabsPartner[]> {
+  const snap = await getDocs(collection(db, COLLECTION));
+  return snap.docs.map((d) => ({
+    partnerId: d.id,
+    ...(d.data() as Omit<LabsPartner, "partnerId">),
+  }));
+}
+
 // ─── Writes ───────────────────────────────────────────────────────────────────
 
 export interface CreateLabsPartnerInput {

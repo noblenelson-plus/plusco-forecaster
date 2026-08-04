@@ -48,10 +48,18 @@ const TARGET_RFQS: RFQType[] = [
   ...new Set(CONFIRMATION_STEPS.map((s) => s.targetRfq)),
 ];
 
-/** Sum a set of actuals rows into a monthly total. */
-function rowsToMonthly(rows: ForecastRow[] | undefined): MonthlyMap {
-  const out = emptyMonthly();
-  for (const r of rows ?? []) for (const m of MONTHS) out[m] += r.months[m] ?? 0;
+/**
+ * Group actuals rows into per-subject (rowType) monthly totals — media type for
+ * Media, partner id for Labs — matching the per-subject under-target flags.
+ */
+function rowsToMonthlyByType(
+  rows: ForecastRow[] | undefined
+): Record<string, MonthlyMap> {
+  const out: Record<string, MonthlyMap> = {};
+  for (const r of rows ?? []) {
+    const acc = (out[r.rowType] ??= emptyMonthly());
+    for (const m of MONTHS) acc[m] += r.months[m] ?? 0;
+  }
   return out;
 }
 
@@ -96,8 +104,8 @@ export function useProgressionRecap({
         });
 
         const currentMo = {
-          media: rowsToMonthly(annual.media),
-          labs: rowsToMonthly(annual.labs),
+          media: rowsToMonthlyByType(annual.media),
+          labs: rowsToMonthlyByType(annual.labs),
         };
 
         const statusByStep: Record<string, RfqValidationStatus> = {};

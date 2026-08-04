@@ -30,7 +30,7 @@
  *     Validation milestone ticked for the row's client × year.
  */
 
-import { MONTHS, type MonthlyMap } from "../types/common.types";
+import { MONTHS, type MediaType, type MonthlyMap } from "../types/common.types";
 import {
   REVENUE_GAIA_FORECAST_TYPE,
   emptyMonthly,
@@ -47,10 +47,22 @@ import {
 import { resolveClientStatus } from "../format/client";
 import { ANNUAL_RFQ_SENTINEL } from "../format/bulk-forecast";
 import { lastCheckedStepLabel } from "../constants/confirmation-steps";
-import { fetchAxisData } from "./data-entry-service";
-import { fetchAnnualActuals } from "./annual-actuals-service";
+import {
+  type FlagCategory,
+  type FlagRuleId,
+  type StoredFlag,
+  type StoredFlagMap,
+  flagContextLabel,
+} from "../types/forecast-flags.types";
+import { computeBlAlerts, type BlAlert } from "../flags/bl-alerts";
+import { fetchAxisData, fetchDataEntry } from "./data-entry-service";
+import {
+  fetchAnnualActuals,
+  fetchAnnualActualsEntry,
+} from "./annual-actuals-service";
 import { fetchForecastValidation } from "./forecast-validation-service";
 import { fetchCurrencyRateForYear } from "./currency-service";
+import { fetchLabsPartners } from "./labs-partner-service";
 import type { BulkReference } from "./bulk-import-service";
 import * as sheets from "./google-sheets-service";
 
@@ -431,6 +443,233 @@ export async function generateExtendedForecastReport(
   const created = await sheets.createSpreadsheet(title, [EXTENDED_TAB_TITLE]);
   await sheets.writeValues(created.spreadsheetId, EXTENDED_TAB_TITLE, [
     EXTENDED_HEADER,
+    ...rows,
+  ]);
+
+  return {
+    spreadsheetId: created.spreadsheetId,
+    url: created.url,
+    rowCount: rows.length,
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ALL FLAGS REPORT
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * "All Flags" — every flag of every type, for every client, flattened into one
+ * tab. It joins the three flag categories the Flags page shows per submission:
+ *   • QA checks (cat 2)     — transient, never persisted; recomputed live here
+ *                             from each submission's Media/Labs figures.
+ *   • Big swings (cat 3)    — persisted on the submission's data_entries doc.
+ *   • Under target (cat 4)  — persisted on the submission's data_entries doc.
+ *
+ * Every amount is in the client's own currency (no FX) — the Currency column
+ * disambiguates. Persisted flags carry their justification (context / note);
+ * QA rows are one per violating month and carry no justification.
+ */
+
+const ALL_FLAGS_TAB_TITLE = "All Flags";
+
+const ALL_FLAGS_HEADER = [
+  "ClientId",
+  "Client",
+  "Agency",
+  "CL_Tier",
+  "Currency",
+  "Year",
+  "RFQ",
+  "Category",
+  "Type",
+  "Axis",
+  "Subject",
+  "Month", // QA checks only (the violating month); blank on swing/under-target
+  "Current",
+  "Reference",
+  "Delta",
+  "Threshold", // persisted flags only; blank on QA checks
+  "Justified", // persisted flags only ("Yes"/"No"); blank on QA checks
+  "Context",
+  "Note",
+  "Analyzed Months", // under-target only
+];
+
+/** Human labels for the persisted-flag rules (the "Type" column). */
+const FLAG_RULE_LABELS: Record<FlagRuleId, string> = {
+  "revenue-swing": "Revenue swing",
+  "media-swing": "Media swing",
+  "labs-swing": "Labs swing",
+  "media-under-target": "Media under target",
+  "labs-under-target": "Labs under target",
+};
+
+/** Human labels for the persisted-flag categories (the "Category" column). */
+const FLAG_CATEGORY_LABELS: Record<FlagCategory, string> = {
+  swing: "Big swing",
+  under_target: "Under target",
+};
+
+/**
+ * The leading client + submission cells shared by every flag row of one
+ * submission: ClientId, Client, Agency, CL_Tier, Currency, Year, RFQ.
+ */
+function flagBaseCells(
+  client: Client,
+  year: number,
+  rfq: RFQType
+): (string | number)[] {
+  return [
+    client.cl_id,
+    client.CL_Name,
+    client.CL_Agency,
+    client.CL_Tier,
+    client.CL_Currency,
+    year,
+    rfq,
+  ];
+}
+
+/** One row for a persisted swing / under-target flag. */
+function storedFlagRow(base: (string | number)[], flag: StoredFlag): ReportRow {
+  return [
+    ...base,
+    FLAG_CATEGORY_LABELS[flag.category],
+    FLAG_RULE_LABELS[flag.ruleId] ?? flag.ruleId,
+    flag.axis,
+    flag.title,
+    "", // Month — n/a (swing is annual, under-target spans a window)
+    flag.current,
+    flag.reference,
+    flag.delta,
+    flag.threshold,
+    flag.justified ? "Yes" : "No",
+    flag.context ? flagContextLabel(flag.context) : "",
+    flag.note ?? "",
+    (flag.analyzedMonths ?? []).map((m) => MONTH_LABELS[m - 1]).join(", "),
+  ];
+}
+
+/** One row per violating month of each live QA (cat-2) alert. */
+function blAlertRows(base: (string | number)[], alerts: BlAlert[]): ReportRow[] {
+  const rows: ReportRow[] = [];
+  for (const alert of alerts) {
+    for (const r of alert.rows) {
+      rows.push([
+        ...base,
+        "QA check",
+        alert.title,
+        alert.axis,
+        // The Labs-over-media alert names a media type per row; the others
+        // describe the whole axis, so fall back to the alert title.
+        r.label ?? alert.title,
+        MONTH_LABELS[r.month - 1],
+        r.left, // Current — the amount that is too high
+        r.right, // Reference — the forecast it exceeds
+        r.variance, // Delta — left − right
+        "", // Threshold — n/a
+        "", // Justified — n/a (QA checks clear on their own, never justified)
+        "", // Context
+        "", // Note
+        "", // Analyzed Months
+      ]);
+    }
+  }
+  return rows;
+}
+
+/**
+ * Every flag of every type across every client × submission. Reads one
+ * data_entries doc per submission (its persisted flags + Media/Labs BL) and one
+ * annual-actuals doc per client × year (the MediaOcean actuals the QA checks
+ * compare against, shared by every RFQ of the year).
+ */
+async function buildAllFlagsRows(ref: BulkReference): Promise<ReportRow[]> {
+  // Partner → media type, needed by the Labs-over-media QA check.
+  const partners = await fetchLabsPartners();
+  const mediaTypeById = new Map<string, MediaType>(
+    partners.map((p) => [p.partnerId, p.mediaType])
+  );
+  const partnerMediaType = (id: string): MediaType | undefined =>
+    mediaTypeById.get(id);
+
+  // The RFQ types that actually exist, grouped by year (avoids fetching
+  // submissions for year/RFQ combinations that were never created).
+  const rfqTypesByYear = new Map<number, RFQType[]>();
+  for (const r of ref.rfqs) {
+    const list = rfqTypesByYear.get(r.year) ?? [];
+    list.push(r.type);
+    rfqTypesByYear.set(r.year, list);
+  }
+  const years = [...rfqTypesByYear.keys()].sort((a, b) => a - b);
+
+  const rows: ReportRow[] = [];
+
+  for (const client of ref.clients) {
+    for (const year of years) {
+      const rfqTypes = [...(rfqTypesByYear.get(year) ?? [])].sort(
+        (a, b) => RFQ_TYPE_ORDER[a] - RFQ_TYPE_ORDER[b]
+      );
+
+      // Annual MediaOcean actuals are per client × year — shared by every RFQ.
+      const annual = await fetchAnnualActualsEntry(client.cl_id, year);
+      const mediaActuals = annual.media ?? [];
+      const labsActuals = annual.labs ?? [];
+
+      // One read per submission, in parallel; flatten in RFQ order.
+      const perRfq = await Promise.all(
+        rfqTypes.map(async (rfq): Promise<ReportRow[]> => {
+          const entry = await fetchDataEntry(client.cl_id, year, rfq);
+          if (!entry) return [];
+          const base = flagBaseCells(client, year, rfq);
+          const out: ReportRow[] = [];
+
+          // Persisted swing (cat 3) + under-target (cat 4) flags.
+          const flags = (entry.flags as StoredFlagMap | undefined) ?? {};
+          for (const flag of Object.values(flags))
+            out.push(storedFlagRow(base, flag));
+
+          // Live QA checks (cat 2) — recomputed from this submission's Media/Labs
+          // BL and the year's shared MediaOcean actuals (as the Flags page does).
+          const media: AxisData = {
+            buckets: entry.axes?.media?.buckets ?? [],
+            actuals: mediaActuals,
+          };
+          const labs: AxisData = {
+            buckets: entry.axes?.labs?.buckets ?? [],
+            actuals: labsActuals,
+          };
+          out.push(
+            ...blAlertRows(base, computeBlAlerts({ media, labs, partnerMediaType }))
+          );
+
+          return out;
+        })
+      );
+
+      for (const arr of perRfq) rows.push(...arr);
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * "All Flags" — every flag (QA checks, big swings, under-target) for every
+ * client, flattened into one tab. Takes no scope: it always covers every client
+ * and every existing submission.
+ */
+export async function generateAllFlagsReport(
+  ref: BulkReference
+): Promise<ReportResult> {
+  const rows = await buildAllFlagsRows(ref);
+
+  const title = `PlusCo Forecaster report — All Flags — ${new Date()
+    .toISOString()
+    .slice(0, 10)}`;
+  const created = await sheets.createSpreadsheet(title, [ALL_FLAGS_TAB_TITLE]);
+  await sheets.writeValues(created.spreadsheetId, ALL_FLAGS_TAB_TITLE, [
+    ALL_FLAGS_HEADER,
     ...rows,
   ]);
 

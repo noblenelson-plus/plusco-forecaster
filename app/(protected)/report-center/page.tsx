@@ -14,6 +14,7 @@ import { Loader2 } from "lucide-react";
 import PageHeader from "../../../components/_shared/page-header";
 import GoogleConnect from "../../../components/bulk-edit/google-connect";
 import GeneralForecastReport from "../../../components/report-center/general-forecast-report";
+import AllFlagsReport from "../../../components/report-center/all-flags-report";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import {
   type BulkReference,
@@ -83,7 +84,10 @@ export default function ReportCenterPage() {
         )}
 
         {reference && !refLoading && (
-          <GeneralForecastReport reference={reference} connected={connected} />
+          <>
+            <GeneralForecastReport reference={reference} connected={connected} />
+            <AllFlagsReport reference={reference} connected={connected} />
+          </>
         )}
       </div>
     </div>

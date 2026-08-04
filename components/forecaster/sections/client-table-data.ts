@@ -46,6 +46,9 @@ export interface ClientTableRow {
   region: string;
   status: string;
   notes: string;
+  // Forecasting-type toggles, surfaced as a hover on a $0 Media/Labs total.
+  mediaForecast: boolean;
+  labsForecast: boolean;
   // Media
   totalMedia: number;
   totalMediaVar: number;
@@ -155,6 +158,8 @@ export function computeClientTable(
       region: client?.CL_Business_Unit_Region ?? "",
       status: client?.Client_Status_By_Year?.[year] ?? client?.Client_Status_2026 ?? "",
       notes: client?.Client_Notes ?? "",
+      mediaForecast: client?.Forecasting_Type?.mediaSpend ?? false,
+      labsForecast: client?.Forecasting_Type?.labs ?? false,
 
       totalMedia: m.total,
       totalMediaVar: m.total - (cm?.total ?? 0),

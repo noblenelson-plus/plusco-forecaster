@@ -19,7 +19,6 @@ import {
   ClipboardCheck,
   ShieldCheck,
   Flag,
-  LineChart,
   LogOut,
   X,
   PanelLeftClose,
@@ -27,6 +26,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import { ROLE_LABELS } from "../../lib/types/user.types";
 import PlusLogo from "./plus-logo";
 
 interface NavItem {
@@ -34,15 +34,16 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  // Agency Viewers are limited to the Dashboard; only items flagged here show
+  // for them. Everyone above Viewer sees the full (non-admin) set.
+  viewerVisible?: boolean;
   section?: "main" | "admin";
   // When true, the item renders indented, as a child of the item above it.
   isSubItem?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard",    href: "/",            icon: <LayoutDashboard size={18} />, section: "main" },
-  // Forecaster: comparison dashboard, nested under Dashboard (Dashboard stays its own link).
-  { label: "Forecaster",   href: "/forecaster",  icon: <LineChart size={16} />,       section: "main", isSubItem: true },
+  { label: "Dashboard",    href: "/",            icon: <LayoutDashboard size={18} />, section: "main", viewerVisible: true },
   { label: "Forecast",     href: "/forecast",    icon: <TrendingUp size={18} />,      section: "main" },
   { label: "Flags",        href: "/flags",       icon: <Flag size={18} />,            section: "main" },
   { label: "Milestones",  href: "/progression-recap", icon: <ClipboardCheck size={18} />, section: "main" },
@@ -51,7 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Clients",      href: "/clients",     icon: <Briefcase size={18} />,       section: "main" },
   { label: "How to",       href: "/how-to",      icon: <BookOpen size={18} />,        section: "main" },
   { label: "Resources",    href: "/resources",   icon: <Library size={18} />,         section: "main" },
-  { label: "Users",        href: "/admin/users", icon: <Users size={18} />,           section: "admin", adminOnly: true },
+  { label: "Access",       href: "/admin/users", icon: <Users size={18} />,           section: "admin", adminOnly: true },
   { label: "RFQs",         href: "/admin/rfqs",  icon: <CalendarRange size={18} />,   section: "admin", adminOnly: true },
   { label: "LABS",         href: "/admin/labs",  icon: <FlaskConical size={18} />,    section: "admin", adminOnly: true },
   { label: "DISH Products", href: "/admin/products", icon: <Package size={18} />,     section: "admin", adminOnly: true },
@@ -69,10 +70,13 @@ interface SidebarProps {
 export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
-  const { profile, isAdmin } = useUserProfile();
+  const { profile, isAdmin, isViewer } = useUserProfile();
 
   const mainItems = NAV_ITEMS.filter(
-    (item) => item.section === "main" && (!item.adminOnly || isAdmin)
+    (item) =>
+      item.section === "main" &&
+      (!item.adminOnly || isAdmin) &&
+      (!isViewer || item.viewerVisible)
   );
   const adminItems = NAV_ITEMS.filter(
     (item) => item.section === "admin" && (!item.adminOnly || isAdmin)
@@ -182,7 +186,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
                 {profile?.displayName ?? user?.email}
               </p>
               <p className="text-gray-400 text-xs">
-                {profile?.role === "ADMIN" ? "Admin" : "Business Lead"}
+                {profile?.role ? ROLE_LABELS[profile.role] : "—"}
               </p>
             </div>
           )}

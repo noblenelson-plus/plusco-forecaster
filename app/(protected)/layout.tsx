@@ -2,13 +2,13 @@
 // app/(protected)/layout.tsx
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Menu, LogOut } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import Sidebar from "../../components/_shared/sidebar";
 import PlusLogo from "../../components/_shared/plus-logo";
-function AccessPendingScreen() {
+function AccessPendingScreen({ revoked = false }: { revoked?: boolean }) {
 const { user, signOut } = useAuth();
 const { profile } = useUserProfile();
 const initials = profile?.displayName
@@ -45,11 +45,12 @@ return (
 
       {/* Message */}
       <h1 className="text-lg font-semibold text-gray-900 mb-2">
-        Access pending
+        {revoked ? "Access revoked" : "Access pending"}
       </h1>
       <p className="text-sm text-gray-500 leading-relaxed mb-2">
-        Your account has been created but no clients have been assigned to
-        you yet. Please contact:
+        {revoked
+          ? "Your access to Forecaster has been revoked. If you think this is a mistake, please contact:"
+          : "Your account has been created but no clients have been assigned to you yet. Please contact:"}
       </p>
       <a
         href="mailto:adriana.novoa@pluscompany.com"
@@ -75,8 +76,9 @@ return (
 }
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
 const { user, loading: authLoading } = useAuth();
-const { profile, isAdmin, loading: profileLoading } = useUserProfile();
+const { profile, isAdmin, isViewer, loading: profileLoading } = useUserProfile();
 const router = useRouter();
+const pathname = usePathname();
 const [sidebarOpen, setSidebarOpen] = useState(false);
 const [collapsed, setCollapsed] = useState(false);
 const [isDesktop, setIsDesktop] = useState(false);
@@ -106,6 +108,13 @@ if (!authLoading && !user) {
 router.replace("/auth/login");
 }
 }, [user, authLoading, router]);
+// Agency Viewers are confined to the Dashboard. Hiding the nav is only
+// cosmetic — a direct URL would still load an edit page — so bounce them back.
+useEffect(() => {
+if (!profileLoading && isViewer && pathname !== "/") {
+router.replace("/");
+}
+}, [profileLoading, isViewer, pathname, router]);
 if (loading) {
 return (
 <main className="flex min-h-screen items-center justify-center bg-gray-50">
@@ -117,6 +126,11 @@ return (
 );
 }
 if (!user) return null;
+// Revoked access — an admin disabled this account. Blocks even domain-granted
+// agency access, and survives re-login (the flag lives on the profile).
+if (profile?.disabled) {
+return <AccessPendingScreen revoked />;
+}
 // Access gate — user is authenticated but has no clients, no agencies and
 // is not admin. Agency-scoped access counts even with no explicit clients.
 const hasAccess =

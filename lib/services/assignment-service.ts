@@ -61,8 +61,9 @@ export async function removeClientsFromUser(
 }
 
 /**
- * Replaces a user's entire assignment list.
- * Used by the "bulk assign" drawer (a single Save for N changes).
+ * Replaces a user's explicit client assignments (write grants for a Business
+ * Lead). `assignedAgencies` is intentionally left untouched — it is derived
+ * from the user's email domain at sign-in, not edited by hand.
  */
 export async function setUserAssignments(
   uid: string,
@@ -70,21 +71,6 @@ export async function setUserAssignments(
 ): Promise<void> {
   await updateDoc(doc(db, "users", uid), {
     assignedClients: clIds,
-  });
-}
-
-/**
- * Replaces a user's full access in one write: explicit clients + agencies.
- * Used by the bulk assignment drawer, which edits both at once.
- */
-export async function setUserAccess(
-  uid: string,
-  clIds: string[],
-  agencies: string[]
-): Promise<void> {
-  await updateDoc(doc(db, "users", uid), {
-    assignedClients: clIds,
-    assignedAgencies: agencies,
   });
 }
 

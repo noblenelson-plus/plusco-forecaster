@@ -71,16 +71,19 @@ export default function ClientDetailTable({
   scopedClientIds,
   focusedClientId,
   onFocusChange,
+  defaultView = "media",
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
   scopedClientIds: string[];
   focusedClientId: string | null;
   onFocusChange: (clientId: string | null) => void;
+  /** Which preset the table opens on (still user-toggleable). Defaults to media. */
+  defaultView?: View;
 }) {
-  const [view, setView] = useState<View>("media");
+  const [view, setView] = useState<View>(defaultView);
   const [visibleIds, setVisibleIds] = useState<Set<string>>(() =>
-    presetIdsFor("media")
+    presetIdsFor(defaultView)
   );
 
   const hasComparison = comparisonData.hasContext;
@@ -219,9 +222,10 @@ export default function ClientDetailTable({
       );
     }
 
-    return (
+   return (
       <td
         key={column.id}
+        title={column.tooltip?.(row)}
         className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground"
       >
         {column.display(row)}

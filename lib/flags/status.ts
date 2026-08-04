@@ -8,6 +8,7 @@
  */
 
 import type { MonthlyMap } from "../types/common.types";
+import { emptyMonthly } from "../types/forecaster.types";
 import type {
   RfqValidationStatus,
   StepValidation,
@@ -42,22 +43,28 @@ export function deriveStepStatus(input: StepStatusInput): RfqValidationStatus {
 
 /**
  * Whether any under-target flag's stored MediaOcean total no longer matches the
- * current MediaOcean total over its analyzed window. `currentMoByAxis` holds the
- * live per-axis monthly MediaOcean totals (media / labs).
+ * current MediaOcean total over its analyzed window. Under-target flags are
+ * per-subject (media type / partner), so drift is checked against that subject's
+ * MediaOcean total: `currentMoByAxis` holds the live per-subject monthly
+ * MediaOcean totals for each axis (keyed by rowType, matching `flag.subject`).
  */
 export function flagsMoDrift(
   flags: StoredFlag[],
-  currentMoByAxis: { media: MonthlyMap; labs: MonthlyMap }
+  currentMoByAxis: {
+    media: Record<string, MonthlyMap>;
+    labs: Record<string, MonthlyMap>;
+  }
 ): boolean {
   return flags.some((f) => {
     if (f.category !== "under_target" || f.moTotal === undefined) return false;
-    const map =
+    const bySubject =
       f.axis === "media"
         ? currentMoByAxis.media
         : f.axis === "labs"
           ? currentMoByAxis.labs
           : null;
-    if (!map) return false;
+    if (!bySubject) return false;
+    const map = bySubject[f.subject] ?? emptyMonthly();
     const current = sumOverMonths(map, f.analyzedMonths ?? []);
     return Math.round(current) !== Math.round(f.moTotal);
   });

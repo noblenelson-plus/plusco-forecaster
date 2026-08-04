@@ -153,8 +153,15 @@ export function buildClientTableColumns({
   // ── Media ─────────────────────────────────────────────────────────────────
 
   const media: ClientColumn[] = [
-    moneyColumn("total-media", "Total Media", GROUP_MEDIA,
-      (r) => r.totalMedia, (t) => t.totalMedia),
+    {
+      ...moneyColumn("total-media", "Total Media", GROUP_MEDIA,
+        (r) => r.totalMedia, (t) => t.totalMedia),
+      // On a $0 total, reveal whether the client is set to forecast Media.
+      tooltip: (row) =>
+        row.totalMedia === 0
+          ? `Media forecasting type: ${row.mediaForecast ? "Yes" : "No"}`
+          : undefined,
+    },
     varianceColumn("total-media-var", "Total Media Var $", GROUP_MEDIA,
       (r) => r.totalMediaVar, (t) => t.totalMediaVar),
     moneyColumn("total-digital-media", "Total Digital Media", GROUP_MEDIA,
@@ -178,8 +185,15 @@ export function buildClientTableColumns({
   // ── Labs ──────────────────────────────────────────────────────────────────
 
   const labs: ClientColumn[] = [
-    moneyColumn("total-labs", "TOTAL-LABS", GROUP_LABS,
-      (r) => r.totalLabs, (t) => t.totalLabs),
+    {
+      ...moneyColumn("total-labs", "TOTAL-LABS", GROUP_LABS,
+        (r) => r.totalLabs, (t) => t.totalLabs),
+      // On a $0 total, reveal whether the client is set to forecast Labs.
+      tooltip: (row) =>
+        row.totalLabs === 0
+          ? `Labs forecasting type: ${row.labsForecast ? "Yes" : "No"}`
+          : undefined,
+    },
     varianceColumn("labs-var", "LABS Var $", GROUP_LABS,
       (r) => r.labsVar, (t) => t.labsVar),
     percentColumn("labs-share-total-media", "LABS Share of Total Media", GROUP_LABS,

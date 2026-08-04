@@ -48,9 +48,9 @@ import { computeSwingFlags } from "../flags/swing-rules";
 import { computeUnderTargetFlags } from "../flags/under-target-rules";
 import { reconcileFlags } from "../flags/reconcile";
 import { justifyStoredFlag } from "../flags/reconcile";
-import { actualsMonthlyTotal } from "../flags/axis-totals";
 import { deriveStepStatus, flagsMoDrift } from "../flags/status";
 import {
+  aggregateByType,
   previousRFQ,
   type AxisData,
   type AxisId,
@@ -196,8 +196,8 @@ export function useForecastValidation(
   const moDrift = useMemo(
     () =>
       flagsMoDrift(flags, {
-        media: actualsMonthlyTotal(media),
-        labs: actualsMonthlyTotal(labs),
+        media: aggregateByType(media, "ADMIN_INPUT"),
+        labs: aggregateByType(labs, "ADMIN_INPUT"),
       }),
     [flags, media, labs]
   );
@@ -264,6 +264,7 @@ export function useForecastValidation(
             media: live.media,
             labs: live.labs,
             analyzedMonths: window,
+            partnerLabel: live.partnerLabel,
           }),
         ];
 

@@ -30,16 +30,16 @@ const MONTH_SHORT = [
 ];
 
 /**
- * Short, explicit flag name. Under-target and revenue swings get a fixed name;
- * media/labs swings are named by their subject (channel / partner) carried in
- * the stored title. Derived from ruleId so renames apply to already-stored flags
- * without waiting for a re-validation.
+ * Short, explicit flag name. Revenue swings get a fixed name; media/labs swings
+ * and under-target flags are named by their subject (channel / partner) carried
+ * in the stored title. Derived from ruleId so renames apply to already-stored
+ * flags without waiting for a re-validation.
  */
-function flagName(flag: StoredFlag): string {
+export function flagName(flag: StoredFlag): string {
   switch (flag.ruleId) {
     case "media-under-target":
     case "labs-under-target":
-      return "Under target";
+      return `Under target · ${flag.title}`;
     case "revenue-swing":
       return "Revenue swing";
     default:
@@ -48,7 +48,7 @@ function flagName(flag: StoredFlag): string {
 }
 
 /** "1,2,3" → "Jan–Mar" when contiguous, else "Jan, Feb, May". */
-function formatMonths(months: number[]): string {
+export function formatMonths(months: number[]): string {
   if (months.length === 0) return "none";
   const sorted = [...months].sort((a, b) => a - b);
   const contiguous = sorted.every((m, i) => i === 0 || m === sorted[i - 1] + 1);

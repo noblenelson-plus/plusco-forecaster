@@ -2,99 +2,111 @@
 "use client";
 
 /**
- * Product Revenue section — the Product Fees stream, per client, with Primary
- * vs Secondary submission and variance. Reuses the Client Revenue column
- * descriptors and rendering wholesale (ProductRevenueRow is structurally the
- * same as ClientRevenueRow), so sort, export, the red→green variance gradient
- * and the dynamic headers all behave identically.
+ * Product Revenue section — per-product (Product Fees) revenue for the Revenue
+ * page. Replaces the earlier client-grain placeholder.
  *
- * Client-grain only: there is no per-product (Product Name) breakdown yet — the
- * scope hook sums every Product Fees line per client. The pie and product bars
- * from Adriana's mock need per-row product data (a `revenueDetail` on
- * ScopeForecastData), which is the pending Tristan item.
+ * Reads per-product data directly for the scope (useScopeProductRevenue), then
+ * renders one row per client × product (Client · Product · Business Lead · GM ·
+ * Primary · Comparison · Variance $ · Variance %) plus the three charts from
+ * Adriana's mock: Product Mix (donut), Products by Agency and Products by Client
+ * (stacked bars). All charts are $-weighted on the primary submission.
+ *
+ * Follows the same Type toggles / submissions as the other Revenue tables, is
+ * gated by the Product Fees revenue-type filter, and narrows to the focused
+ * client (selected in the Client Revenue table).
  */
 
 import { useMemo } from "react";
-import { ArrowDown, ArrowUp, Package } from "lucide-react";
+import { ArrowDown, ArrowUp, Package, PieChart, BarChart3, Loader2 } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
+import DonutChart from "../../dashboard/charts/donut-chart";
+import HorizontalStackedBar from "../../dashboard/charts/horizontal-stacked-bar";
+import ExportSheetButton from "../table/export-sheet-button";
+import { useTableSort } from "../table/use-table-sort";
 import {
   computeProductRevenue,
+  buildProductRevenueColumns,
   type ProductRevenueRow,
+  type ProductColumn,
 } from "./product-revenue-data";
-import type { ClientRevenueRow } from "./client-revenue-data";
-import {
-  buildClientRevenueColumns,
-  type ClientRevenueTotals,
-  type RevenueColumn,
-} from "./client-revenue-columns";
-import { useTableSort } from "../table/use-table-sort";
-import ExportSheetButton from "../table/export-sheet-button";
+import { useScopeProductRevenue } from "../../../lib/dashboard/data/use-scope-product-revenue";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../../lib/stores/comparison-selection.store";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
-import type {
-  ScopeForecastData,
-  RevenueMode,
-} from "../../../lib/dashboard/data/use-scope-forecast-data";
+import { useProducts } from "../../../lib/hooks/use-products";
+import { formatMoney } from "../../../lib/format/money";
+import type { RevenueMode } from "../../../lib/dashboard/data/use-scope-forecast-data";
+import type { Currency } from "../../../lib/types/client.types";
 
 const modeLabel = (mode: RevenueMode) => (mode === "official" ? "OF" : "BL");
 
 /** Matches the Client Revenue focus highlight. */
 const FOCUS_BG = "bg-yellow-50";
 
+/** Chart value formatter — "$0" for zero (formatMoney returns "—"). */
+const moneyFmt = (v: number): string => {
+  const f = formatMoney(v);
+  return f === "—" ? "$0" : `$${f}`;
+};
+
 export default function ProductRevenueSection({
-  data,
-  comparisonData,
   scopedClientIds,
   primaryMode,
   secondaryMode,
   focusedClientId,
   onFocusChange,
   selectedStreams,
+  currencyByClient,
+  usdToCad,
+  comparisonUsdToCad,
+  selMonths,
 }: {
-  data: ScopeForecastData;
-  comparisonData: ScopeForecastData;
   scopedClientIds: string[];
   primaryMode: RevenueMode;
   secondaryMode: RevenueMode;
- focusedClientId: string | null;
+  focusedClientId: string | null;
   onFocusChange: (clientId: string | null) => void;
   selectedStreams: ReadonlySet<string>;
+  currencyByClient: Record<string, Currency>;
+  usdToCad?: number;
+  comparisonUsdToCad?: number;
+  selMonths: number[];
 }) {
   const { selectedYear, selectedRFQ } = useForecastSelection();
   const { comparisonYear, comparisonRFQ } = useComparisonSelection();
   const usersMap = useUsersMap();
   const { clients } = useAccessibleClients();
+  const { products } = useProducts();
 
-  const hasComparison = comparisonData.hasContext;
+  const hasComparison = comparisonYear !== null && comparisonRFQ !== null;
+
+  const { entries, loading } = useScopeProductRevenue({
+    scopedClientIds,
+    primary: { year: selectedYear, rfq: selectedRFQ?.type ?? null },
+    primaryMode,
+    comparison: { year: comparisonYear, rfq: comparisonRFQ?.type ?? null },
+    secondaryMode,
+    currencyByClient,
+    usdToCad,
+    comparisonUsdToCad,
+    selMonths,
+  });
+
+  const productNameById = useMemo(
+    () => new Map(products.map((p) => [p.productId, p.name])),
+    [products]
+  );
+
+  // Focus narrows the whole section (table + charts) to one client.
+  const viewEntries = useMemo(
+    () => (focusedClientId ? entries.filter((e) => e.clientId === focusedClientId) : entries),
+    [entries, focusedClientId]
+  );
 
   const result = useMemo(
-    () =>
-      computeProductRevenue(
-        data,
-        comparisonData,
-        clients,
-        usersMap,
-        selectedYear ?? new Date().getFullYear(),
-        scopedClientIds,
-       primaryMode,
-        secondaryMode,
-        hasComparison,
-        selectedStreams
-      ),
-    [
-      data,
-      comparisonData,
-      clients,
-      usersMap,
-      selectedYear,
-      scopedClientIds,
-      primaryMode,
-      secondaryMode,
-      hasComparison,
-      selectedStreams,
-    ]
+    () => computeProductRevenue(viewEntries, clients, usersMap, productNameById, selectedStreams),
+    [viewEntries, clients, usersMap, productNameById, selectedStreams]
   );
 
   const primaryLabel = selectedRFQ
@@ -104,46 +116,34 @@ export default function ProductRevenueSection({
     ? `${comparisonRFQ.type}-${modeLabel(secondaryMode)} · ${comparisonYear}`
     : "Secondary";
 
-  const maxAbs = useMemo(
-    () => result.rows.reduce((max, row) => Math.max(max, Math.abs(row.variance)), 0),
-    [result.rows]
-  );
-
-  const totals = useMemo<ClientRevenueTotals>(() => {
-    const variance = result.totalPrimary - result.totalSecondary;
-    return {
-      primary: result.totalPrimary,
-      secondary: result.totalSecondary,
-      variance,
-      relative:
-        result.totalSecondary > 0 ? (variance / result.totalSecondary) * 100 : null,
-    };
-  }, [result.totalPrimary, result.totalSecondary]);
-
   const columns = useMemo(
     () =>
-      buildClientRevenueColumns({
+      buildProductRevenueColumns({
         hasComparison,
-        maxAbs,
+        maxAbs: result.maxAbs,
         primaryLabel,
         secondaryLabel,
       }),
-    [hasComparison, maxAbs, primaryLabel, secondaryLabel]
+    [hasComparison, result.maxAbs, primaryLabel, secondaryLabel]
   );
-
-  // ProductRevenueRow and ClientRevenueRow are the same shape; the descriptors
-  // read only their shared fields, so product rows are safe here.
-  const rowsAsRevenue = result.rows as unknown as ClientRevenueRow[];
 
   const { directionFor, toggle: toggleSort, sortRows } = useTableSort(columns);
-  const sortedRows = useMemo(
-    () => sortRows(rowsAsRevenue),
-    [sortRows, rowsAsRevenue]
-  );
+  const sortedRows = useMemo(() => sortRows(result.rows), [sortRows, result.rows]);
 
   const toggleFocus = (clientId: string) => {
     onFocusChange(focusedClientId === clientId ? null : clientId);
   };
+
+  if (loading && result.rows.length === 0) {
+    return (
+      <section className="space-y-4">
+        <h2 className="text-base font-semibold text-foreground">Product Revenue</h2>
+        <div className="flex h-32 items-center justify-center text-muted-foreground">
+          <Loader2 size={18} className="animate-spin" />
+        </div>
+      </section>
+    );
+  }
 
   if (result.rows.length === 0) {
     return (
@@ -156,7 +156,7 @@ export default function ProductRevenueSection({
     );
   }
 
-  const headerCell = (column: RevenueColumn) => {
+  const headerCell = (column: ProductColumn) => {
     const direction = directionFor(column.id);
     return (
       <th
@@ -182,17 +182,14 @@ export default function ProductRevenueSection({
     );
   };
 
-  const bodyCell = (column: RevenueColumn, row: ClientRevenueRow) => {
+  const bodyCell = (column: ProductColumn, row: ProductRevenueRow) => {
     const style = column.cellStyle?.(row);
     const text = column.display(row);
 
     if (style) {
       return (
         <td key={column.id} className="px-1 py-1 text-right">
-          <span
-            className="inline-block w-full rounded px-2 py-1 tabular-nums"
-            style={style}
-          >
+          <span className="inline-block w-full rounded px-2 py-1 tabular-nums" style={style}>
             {text}
           </span>
         </td>
@@ -221,7 +218,7 @@ export default function ProductRevenueSection({
     );
   };
 
-  const footerCell = (column: RevenueColumn) => {
+  const footerCell = (column: ProductColumn) => {
     if (!column.total) return <td key={column.id} className="bg-muted" />;
     return (
       <td
@@ -230,30 +227,23 @@ export default function ProductRevenueSection({
           column.align === "right" ? "text-right" : "text-left"
         } first:pl-0 last:pr-0`}
       >
-        {column.total(totals)}
+        {column.total(result.totals)}
       </td>
     );
   };
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-foreground">Product Revenue</h2>
         <ExportSheetButton
           columns={columns}
           rows={sortedRows}
-          totals={totals}
-          title={`Product Revenue — ${primaryLabel}${
-            hasComparison ? ` vs ${secondaryLabel}` : ""
-          }`}
+          totals={result.totals}
+          title={`Product Revenue — ${primaryLabel}${hasComparison ? ` vs ${secondaryLabel}` : ""}`}
           sheetTitle="Product Revenue"
         />
       </div>
-
-      <p className="-mt-2 text-xs text-muted-foreground">
-        Product Fees per client. Per-product detail is coming once the product
-        breakdown is available.
-      </p>
 
       <ChartCard title="Product Revenue" icon={Package}>
         <div className="max-h-[560px] overflow-auto">
@@ -268,7 +258,7 @@ export default function ProductRevenueSection({
                 const focused = row.clientId === focusedClientId;
                 return (
                   <tr
-                    key={row.clientId}
+                    key={row.key}
                     onClick={() => toggleFocus(row.clientId)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
@@ -277,7 +267,7 @@ export default function ProductRevenueSection({
                       }
                     }}
                     tabIndex={0}
-                    title={focused ? "Click to clear focus" : `Focus on ${row.name}`}
+                    title={focused ? "Click to clear focus" : `Focus on ${row.clientName}`}
                     className={`cursor-pointer border-b border-border/60 transition-colors ${
                       focused ? FOCUS_BG : "hover:bg-muted/60"
                     }`}
@@ -295,6 +285,26 @@ export default function ProductRevenueSection({
           </table>
         </div>
       </ChartCard>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <ChartCard title="Product Mix" icon={PieChart}>
+          <DonutChart segments={result.mix} valueFormat={moneyFmt} />
+        </ChartCard>
+        <ChartCard title="Products by Agency" icon={BarChart3}>
+          <HorizontalStackedBar
+            series={result.byAgency.series}
+            rows={result.byAgency.rows}
+            valueFormat={moneyFmt}
+          />
+        </ChartCard>
+        <ChartCard title="Products by Client" icon={BarChart3}>
+          <HorizontalStackedBar
+            series={result.byClient.series}
+            rows={result.byClient.rows}
+            valueFormat={moneyFmt}
+          />
+        </ChartCard>
+      </div>
     </section>
   );
 }
