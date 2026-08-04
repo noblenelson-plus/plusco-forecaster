@@ -23,6 +23,7 @@ import ProductRevenueSection from "../sections/product-revenue-section";
 import RevenueTypesFilter from "../sections/revenue-types-filter";
 import type { StreamSlice } from "../../../lib/dashboard/data/aggregate";
 import type { Currency } from "../../../lib/types/client.types";
+import type { ClientDimensions } from "../../dashboard/dimension-breakdown";
 import type {
   ScopeForecastData,
   RevenueMode,
@@ -64,6 +65,10 @@ export default function RevenueTab({
   usdToCad?: number;
   comparisonUsdToCad?: number;
   selMonths: number[];
+  // Passed to every tab uniformly by DashboardPage; not used by the revenue
+  // sections, but declared so the shared call site type-checks.
+  clientNameById: Record<string, string>;
+  clientDimensions: ClientDimensions;
 }) {
   // The Revenue Types section (charts + totals) follows the focus; the client
   // tables never do — they stay full so you can switch between clients.
