@@ -3,13 +3,12 @@
 
 /**
  * Product Revenue section — per-product (Product Fees) revenue for the Revenue
- * page. Replaces the earlier client-grain placeholder.
- *
- * Reads per-product data directly for the scope (useScopeProductRevenue), then
- * renders one row per client × product (Client · Product · Business Lead · GM ·
- * Primary · Comparison · Variance $ · Variance %) plus the three charts from
- * Adriana's mock: Product Mix (donut), Products by Agency and Products by Client
- * (stacked bars). All charts are $-weighted on the primary submission.
+ * page. Renders one row per client × product (Client · Product · Business Lead ·
+ * Primary · Comparison · Variance $ · Variance %) plus charts shaped for the same
+ * components the Product Adoption section uses: ForecasterPieChart (Product Mix,
+ * $-weighted) and the Forecaster StackedBarChart (Products by Agency / by Client,
+ * distinct-product counts). Laid out as a 2×2 grid: table + client chart on top,
+ * mix + agency below.
  *
  * Follows the same Type toggles / submissions as the other Revenue tables, is
  * gated by the Product Fees revenue-type filter, and narrows to the focused
@@ -19,8 +18,8 @@
 import { useMemo } from "react";
 import { ArrowDown, ArrowUp, Package, PieChart, BarChart3, Loader2 } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
-import DonutChart from "../../dashboard/charts/donut-chart";
-import HorizontalStackedBar from "../../dashboard/charts/horizontal-stacked-bar";
+import ForecasterPieChart from "../charts/pie-chart";
+import StackedBarChart from "../charts/stacked-bar-chart";
 import ExportSheetButton from "../table/export-sheet-button";
 import { useTableSort } from "../table/use-table-sort";
 import {
@@ -197,11 +196,16 @@ export default function ProductRevenueSection({
     }
 
     if (column.kind === "text") {
+      // Client and Product read as the row's identity, so both get solid
+      // foreground text; the other text columns stay dimmed.
+      const emphasize = column.id === "client" || column.id === "product";
       return (
         <td
           key={column.id}
           title={text === "—" ? undefined : text}
-          className="max-w-[200px] truncate px-3 py-2 text-left text-muted-foreground first:pl-0 first:text-foreground"
+          className={`max-w-[200px] truncate px-3 py-2 text-left first:pl-0 ${
+            emphasize ? "text-foreground" : "text-muted-foreground"
+          }`}
         >
           {text}
         </td>
@@ -245,8 +249,9 @@ export default function ProductRevenueSection({
         />
       </div>
 
-      <ChartCard title="Product Revenue" icon={Package}>
-        <div className="max-h-[560px] overflow-auto">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ChartCard title="Product Revenue" icon={Package} className="h-full">
+        <div className="max-h-80 overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-card">
               <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
@@ -284,25 +289,20 @@ export default function ProductRevenueSection({
             </tfoot>
           </table>
         </div>
-      </ChartCard>
+        </ChartCard>
+        <ChartCard title="Product Mix" icon={PieChart} className="h-full">
+          <ForecasterPieChart segments={result.mix} valueFormat={moneyFmt} />
+        </ChartCard>
+      </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <ChartCard title="Product Mix" icon={PieChart}>
-          <DonutChart segments={result.mix} valueFormat={moneyFmt} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ChartCard title="Products by Client" icon={BarChart3} className="h-full">
+          <div style={{ height: Math.max(240, result.byClient.length * 34 + 60) }}>
+            <StackedBarChart rows={result.byClient} colorFor={result.colorFor} layout="horizontal" />
+          </div>
         </ChartCard>
-        <ChartCard title="Products by Agency" icon={BarChart3}>
-          <HorizontalStackedBar
-            series={result.byAgency.series}
-            rows={result.byAgency.rows}
-            valueFormat={moneyFmt}
-          />
-        </ChartCard>
-        <ChartCard title="Products by Client" icon={BarChart3}>
-          <HorizontalStackedBar
-            series={result.byClient.series}
-            rows={result.byClient.rows}
-            valueFormat={moneyFmt}
-          />
+        <ChartCard title="Products by Agency" icon={BarChart3} className="h-full">
+          <StackedBarChart rows={result.byAgency} colorFor={result.colorFor} layout="vertical" />
         </ChartCard>
       </div>
     </section>
