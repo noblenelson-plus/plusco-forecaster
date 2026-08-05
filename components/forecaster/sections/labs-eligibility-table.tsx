@@ -158,8 +158,7 @@ export default function LabsEligibilityTable({
                   <td className="py-2 px-3 text-left text-muted-foreground">{row.partnerName}</td>
                   <td className="py-2 pl-3 text-right">
                     <span className="inline-block bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">
-                      No
-                    </span>
+                      No </span>
                   </td>
                 </tr>
               ))}
@@ -170,3 +169,4 @@ export default function LabsEligibilityTable({
     </ChartCard>
   );
 }
+

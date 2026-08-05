@@ -2,10 +2,14 @@
 "use client";
 
 /**
- * Horizontal stacked bar chart — one bar per row (e.g. a client), the bar
- * length is the row total and the colored segments are the per-category split
- * (e.g. media type). Rows are expected pre-sorted by the caller. Built on the
+ * Horizontal stacked bar chart — one bar per row (e.g. a client or agency), the
+ * bar length is the row total and the colored segments are the per-category
+ * split (e.g. product). Rows are expected pre-sorted by the caller. Built on the
  * shared <ChartContainer>; the row total is printed at the end of each bar.
+ *
+ * A row may carry an optional `tooltip` map: an alternate per-key value shown on
+ * hover instead of the bar value — e.g. when the bar length is a COUNT but the
+ * hover should reveal the $ amount. `tooltipFormat` formats those values.
  */
 
 import { useMemo } from "react";
@@ -28,12 +32,19 @@ export interface StackSeries {
 
 export interface StackRow {
   label: string;
-  /** Value per series key; missing keys count as 0. */
+  /** Value per series key; missing keys count as 0. Drives the bar length. */
   values: Record<string, number>;
+  /**
+   * Optional alternate value per key, shown in the tooltip instead of the bar
+   * value (e.g. the $ amount when the bar length is a product count). Falls back
+   * to `values` when a key is absent.
+   */
+  tooltip?: Record<string, number>;
 }
 
 const ROW_HEIGHT = 34;
 const TOTAL_KEY = "__total";
+const TIP_PREFIX = "__tip_";
 
 const truncate = (s: string, n = 18) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
@@ -41,12 +52,18 @@ export default function HorizontalStackedBar({
   series,
   rows,
   valueFormat = (v) => String(Math.round(v)),
+  tooltipFormat,
 }: {
   series: StackSeries[];
   rows: StackRow[];
+  /** Formats the bar-end total label. */
   valueFormat?: (value: number) => string;
+  /** Formats the hover tooltip value; defaults to `valueFormat`. */
+  tooltipFormat?: (value: number) => string;
 }) {
-  // Drop series with no spend across the visible rows, so the legend only
+  const fmtTip = tooltipFormat ?? valueFormat;
+
+  // Drop series with no value across the visible rows, so the legend only
   // lists categories that actually appear.
   const activeSeries = useMemo(
     () => series.filter((s) => rows.some((r) => (r.values[s.key] ?? 0) > 0)),
@@ -62,6 +79,7 @@ export default function HorizontalStackedBar({
       activeSeries.forEach((s) => {
         const v = r.values[s.key] ?? 0;
         row[s.key] = v;
+        row[`${TIP_PREFIX}${s.key}`] = r.tooltip?.[s.key] ?? v;
         total += v;
       });
       row[TOTAL_KEY] = total;
@@ -106,22 +124,26 @@ export default function HorizontalStackedBar({
           cursor={{ fillOpacity: 0.4 }}
           content={
             <ChartTooltipContent
-              formatter={(value, name, item) => (
-                <div className="flex w-full items-center justify-between gap-3">
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className="h-2.5 w-2.5 rounded-[2px]"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="text-muted-foreground">
-                      {config[name as string]?.label ?? name}
+              formatter={(value, name, item) => {
+                const payload = item.payload as Record<string, number>;
+                const tip = payload[`${TIP_PREFIX}${name as string}`] ?? Number(value);
+                return (
+                  <div className="flex w-full items-center justify-between gap-3">
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="h-2.5 w-2.5 rounded-[2px]"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="text-muted-foreground">
+                        {config[name as string]?.label ?? name}
+                      </span>
                     </span>
-                  </span>
-                  <span className="font-medium tabular-nums text-foreground">
-                    {valueFormat(Number(value))}
-                  </span>
-                </div>
-              )}
+                    <span className="font-medium tabular-nums text-foreground">
+                      {fmtTip(Number(tip))}
+                    </span>
+                  </div>
+                );
+              }}
             />
           }
         />
