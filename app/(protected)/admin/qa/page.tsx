@@ -112,7 +112,7 @@ export default function AdminQaPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted">
+    <div className="flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col bg-muted">
       {/* Sticky header stack — page title + selectors, then the filter bar
           (same pattern as the dashboard's header). */}
       <header className="sticky top-14 lg:top-0 z-20 flex flex-col bg-white">

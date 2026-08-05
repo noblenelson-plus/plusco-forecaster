@@ -328,7 +328,7 @@ export default function DashboardPage() {
 
   return (
     <div
-      className={`flex min-h-screen flex-col bg-muted transition-[margin] duration-200 ease-in-out ${
+      className={`flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col bg-muted transition-[margin] duration-200 ease-in-out ${
         flagsOpen && isFlagTab ? "lg:mr-96" : ""
       }`}
     >
@@ -398,8 +398,11 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className="flex items-center justify-between border-y border-purple-700 bg-purple-600 px-6">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2 border-y border-purple-700 bg-purple-600 px-6">
+          {/* Tabs scroll horizontally when the viewport is too narrow (high
+              display scaling), so the Flags button on the right stays reachable
+              instead of being pushed off-screen. */}
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {visibleTabs.map((t) => {
               const Icon = t.icon;
               const active = tab === t.id;
@@ -407,7 +410,7 @@ export default function DashboardPage() {
                 <button
                   key={t.id}
                   onClick={() => selectTab(t.id)}
-                  className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                  className={`-mb-px flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                     active
                       ? "border-primary text-white"
                       : "border-transparent text-white/70 hover:text-white"
@@ -427,7 +430,7 @@ export default function DashboardPage() {
               onClick={() => setFlagsOpen((v) => !v)}
               title="View flags for the clients in scope"
               aria-pressed={flagsOpen}
-              className={`flex items-center gap-1.5 border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              className={`flex shrink-0 items-center gap-1.5 border px-3 py-1.5 text-xs font-semibold transition-colors ${
                 scopeFlags.unjustified > 0
                   ? "border-yellow-400 bg-yellow-400 text-gray-900 hover:bg-yellow-300"
                   : "border-white/30 text-white hover:bg-white/10"

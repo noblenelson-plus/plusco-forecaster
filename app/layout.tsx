@@ -32,6 +32,14 @@ export default function RootLayout({
       className={`${urbanist.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        {/* Apply the app zoom before paint to avoid a flash of unzoomed content.
+            Defaults to 80% when nothing is stored; a saved choice wins. Kept in
+            sync with lib/app-zoom.ts (default 80, neutral 100, clamp 60–120). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var s=localStorage.getItem("app-zoom");var z=s?Number(s):80;if(z){z=Math.min(120,Math.max(60,Math.round(z/10)*10));if(z!==100){var f=z/100,r=document.documentElement;r.style.zoom=String(f);r.style.setProperty("--app-zoom",String(f));}}}catch(e){}})();`,
+          }}
+        />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

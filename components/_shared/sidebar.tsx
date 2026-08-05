@@ -28,6 +28,7 @@ import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { ROLE_LABELS } from "../../lib/types/user.types";
 import PlusLogo from "./plus-logo";
+import ZoomControl from "./zoom-control";
 
 interface NavItem {
   label: string;
@@ -171,6 +172,8 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
 
       {/* User block */}
       <div className={`py-4 border-t border-gray-100 ${collapsed ? "px-2" : "px-3"}`}>
+        {/* App-wide zoom — helps users whose display scaling crops the layout. */}
+        <ZoomControl collapsed={collapsed} />
         <div
           className={`flex items-center mb-1 ${
             collapsed ? "justify-center py-2" : "gap-3 px-3 py-2"

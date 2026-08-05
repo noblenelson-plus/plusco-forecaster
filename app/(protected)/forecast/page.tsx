@@ -516,7 +516,7 @@ function ForecastPageContent() {
     // Full-height flex column so the timeline bar can stick to the bottom of
     // the viewport even when the grid is short: the content area grows
     // (flex-1) and pushes the sticky bar down.
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-[calc(100vh/var(--app-zoom,1))]">
       {/* Global toast for click-to-copy on read-only cells. */}
       <CopyToast />
       {/* ─── Context bar — selectors ─── */}
@@ -530,13 +530,6 @@ function ForecastPageContent() {
       <div className="sticky top-0 z-40 bg-white border-b border-gray-200">
         <div className="flex flex-wrap items-center gap-3 px-6 py-3">
           <ForecastSelectors orientation="horizontal" theme="light" />
-
-          {/* Currency this client forecasts in — amounts entered are in this
-              currency (the dashboard converts everything to CAD). Hidden on
-              the Product tab, which carries no dollar amounts. */}
-          {selectedClient && tab !== "product" && (
-            <ForecastCurrencyBadge currency={selectedClient.CL_Currency ?? "CAD"} />
-          )}
 
           {/* Labs penetration panel toggle (Labs tab only). */}
           {tab === "labs" && (
@@ -657,6 +650,16 @@ function ForecastPageContent() {
               </button>
             );
           })}
+
+          {/* Currency this client forecasts in — amounts entered are in this
+              currency (the dashboard converts everything to CAD). Sits on the
+              tabs row (which has free space) so the selector bar above stays on
+              a single line. Hidden on the Product tab, which carries no amounts. */}
+          {selectedClient && tab !== "product" && (
+            <div className="ml-auto pb-1">
+              <ForecastCurrencyBadge currency={selectedClient.CL_Currency ?? "CAD"} />
+            </div>
+          )}
         </div>
       </div>
 

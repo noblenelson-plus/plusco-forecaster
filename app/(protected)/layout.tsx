@@ -15,7 +15,7 @@ const initials = profile?.displayName
 ? profile.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
 : user?.email?.[0].toUpperCase() ?? "?";
 return (
-<main className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-8">
+<main className="flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col items-center justify-center bg-gray-50 p-8">
 <div className="w-full max-w-md">
     {/* Logo */}
     <div className="flex items-center justify-center gap-3 mb-10">
@@ -117,7 +117,7 @@ router.replace("/");
 }, [profileLoading, isViewer, pathname, router]);
 if (loading) {
 return (
-<main className="flex min-h-screen items-center justify-center bg-gray-50">
+<main className="flex min-h-[calc(100vh/var(--app-zoom,1))] items-center justify-center bg-gray-50">
 <div className="flex flex-col items-center gap-3">
 <div className="w-8 h-8 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
 <p className="text-sm text-gray-400 tracking-wide">Loading...</p>
@@ -141,7 +141,7 @@ if (!hasAccess) {
 return <AccessPendingScreen />;
 }
 return (
-<div className="flex min-h-screen bg-gray-50">
+<div className="flex min-h-[calc(100vh/var(--app-zoom,1))] bg-gray-50">
   {/* Mobile overlay */}
   {sidebarOpen && (
     <div
@@ -161,7 +161,7 @@ return (
       fixed top-0 left-0 z-30 h-full
       transform transition-transform duration-200 ease-in-out
       ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-      lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:flex-shrink-0
+      lg:sticky lg:top-0 lg:h-[calc(100vh/var(--app-zoom,1))] lg:translate-x-0 lg:flex-shrink-0
       lg:transform-none lg:transition-none
     `}
   >

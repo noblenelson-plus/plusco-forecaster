@@ -394,7 +394,7 @@ export default function ForecastGrid({
           // Bounded height makes this the vertical scroller too (it is already
           // the horizontal one via overflow), so the sticky header row below can
           // pin to the top — Excel-style frozen header + frozen first column.
-          className="bg-white border border-gray-200 rounded-xl overflow-auto max-h-[calc(100vh-14rem)]"
+          className="bg-white border border-gray-200 rounded-xl overflow-auto max-h-[calc(100vh/var(--app-zoom,1)-14rem)]"
           onKeyDown={sel.onKeyDown}
           onCopy={sel.onCopy}
           onPaste={sel.onPaste}

@@ -55,7 +55,7 @@ export default function LabsPenetrationPanel({
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <RatioHeader result={result} />
 
-      <div className="max-h-[62vh] overflow-y-auto divide-y-8 divide-gray-100">
+      <div className="max-h-[calc(62vh/var(--app-zoom,1))] overflow-y-auto divide-y-8 divide-gray-100">
         {types.length === 0 ? (
           <p className="px-4 py-8 text-center text-xs text-gray-400">
             No Labs partner configured for this year.

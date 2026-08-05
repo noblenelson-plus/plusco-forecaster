@@ -130,7 +130,7 @@ export default function FlagsPage() {
   const steps = selectedRFQ ? stepsForRfq(selectedRFQ.type) : [];
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted">
+    <div className="flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col bg-muted">
       <header className="sticky top-14 lg:top-0 z-20 bg-white">
         <PageHeader
           title="Flags"

@@ -118,7 +118,7 @@ export default function LoginPage() {
 
   if (loading || user) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50">
+      <main className="flex min-h-[calc(100vh/var(--app-zoom,1))] items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
           <p className="text-sm tracking-wide text-gray-400">Loading...</p>
@@ -128,7 +128,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-gray-50 p-4">
+    <main className="relative flex min-h-[calc(100vh/var(--app-zoom,1))] items-center justify-center bg-gray-50 p-4">
       {/* Signature Plus color stripe across the top of the page */}
       <div className="plus-pattern absolute inset-x-0 top-0 h-2" />
 

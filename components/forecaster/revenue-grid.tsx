@@ -481,7 +481,7 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
         <div
           // Bounded height makes this the vertical scroller too, so the header
           // row pins to the top — frozen header + frozen first column.
-          className="bg-white border border-gray-200 rounded-xl overflow-auto max-h-[calc(100vh-17rem)]"
+          className="bg-white border border-gray-200 rounded-xl overflow-auto max-h-[calc(100vh/var(--app-zoom,1)-17rem)]"
           onKeyDown={sel.onKeyDown}
           onCopy={sel.onCopy}
           onPaste={sel.onPaste}
