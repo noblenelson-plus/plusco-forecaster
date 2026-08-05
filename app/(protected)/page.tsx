@@ -520,7 +520,11 @@ export default function DashboardPage() {
             focusLoading={focusLoading}
             onFocusChange={setFocusedClientId}
             clientDimensions={clientDimensions}
+            currencyByClient={currencyByClient}
+            usdToCad={usdToCad}
+            selMonths={selMonths}
           />
+        
         ) : tab === "revenue" ? (
           <RevenueTab
             data={forecastData}
