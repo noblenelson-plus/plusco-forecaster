@@ -4,8 +4,8 @@
 /**
  * Labs tab. The per-client detail table (opening on its Labs preset) leads, so
  * you can focus a client, then the Labs section, the monthly Labs-share trend,
- * the share-by-media-type and recap cards, and the Region / Business Lead
- * breakdown (Labs spend, shown as a share of each group's planned media).
+ * the share-by-media-type and recap cards, the Region / Business Lead breakdown,
+ * and finally the Labs pacing (Target vs Booked by partner) table.
  *
  * The aggregate cards follow the client focus; the detail table and the
  * scope-wide breakdown always read the full scope.
@@ -15,6 +15,7 @@ import { Loader2, CalendarRange, Percent, FlaskConical } from "lucide-react";
 import StrategyKpisSection from "../sections/strategy-kpis-section";
 import ClientDetailTable from "../sections/client-detail-table";
 import LabsSection from "../sections/labs-section";
+import LabsPacingSection from "../sections/labs-pacing-section";
 import ChartCard from "../../dashboard/charts/chart-card";
 import TrendChart from "../../dashboard/charts/trend-chart";
 import BarList from "../../dashboard/charts/bar-list";
@@ -27,6 +28,7 @@ import { formatCompactMoney, formatPct } from "../../dashboard/charts/format";
 import { MONTHS, sumMonthlyMap } from "../../../lib/types/common.types";
 import { MEDIA_TYPE_LABELS } from "../../../lib/types/forecaster.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
+import type { Currency } from "../../../lib/types/client.types";
 
 const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 0);
 
@@ -40,6 +42,9 @@ export default function LabsTab({
   focusLoading,
   onFocusChange,
   clientDimensions,
+  currencyByClient,
+  usdToCad,
+  selMonths,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -50,6 +55,9 @@ export default function LabsTab({
   focusLoading: boolean;
   onFocusChange: (clientId: string | null) => void;
   clientDimensions: ClientDimensions;
+  currencyByClient: Record<string, Currency>;
+  usdToCad?: number;
+  selMonths: number[];
 }) {
   const shown = focusedClientId ? focusData : data;
   const shownComparison = focusedClientId ? focusComparisonData : comparisonData;
@@ -168,6 +176,15 @@ export default function LabsTab({
           dimensions={clientDimensions}
           metricLabel="BL Labs spend"
           shareDenominator={{ totalsByClient: mediaTotalsByClient, label: "Labs share of media spend" }}
+        />
+      </div>
+
+      <div data-scroll-section data-scroll-label="Labs pacing">
+        <LabsPacingSection
+          scopedClientIds={scopedClientIds}
+          currencyByClient={currencyByClient}
+          usdToCad={usdToCad}
+          selMonths={selMonths}
         />
       </div>
     </div>
