@@ -128,7 +128,7 @@ export default function UserClientsDrawer({
   // Clients visible according to the filters
   const filteredClients = useMemo(() => {
     const q = search.toLowerCase();
-    return clients.filter((c) => {
+    const list = clients.filter((c) => {
       // Hidden clients aren't assignable — but keep ones already assigned to
       // this user so they remain visible (and removable) in the list.
       if (isClientHidden(c) && !selected.has(c.cl_id)) return false;
@@ -142,6 +142,12 @@ export default function UserClientsDrawer({
         resolveClientStatus(c, new Date().getFullYear()) === statusFilter;
       return matchesSearch && matchesAgency && matchesStatus;
     });
+    // Pin selected (checked) clients to the top. `clients` is already sorted
+    // alphabetically and Array.sort is stable, so alphabetical order is
+    // preserved within the selected and unselected groups.
+    return list.sort(
+      (a, b) => Number(selected.has(b.cl_id)) - Number(selected.has(a.cl_id))
+    );
   }, [clients, search, agencyFilter, statusFilter, selected]);
 
   const diff = useMemo(

@@ -140,6 +140,51 @@ export async function fetchAccessibleClients(
   return [...byId.values()].sort(byName);
 }
 
+// ─── Write scope (client-side mirror of the Firestore `canWriteClient` rule) ──
+
+/**
+ * Whether the current user may WRITE a client's data (forecast, milestones,
+ * flags). Mirrors the `canWriteClient` function in firestoreRules.txt so the UI
+ * can hide/skip clients a batch write would be rejected for:
+ *   - ADMIN → every client.
+ *   - EXEC  → every client of an assigned agency (agency-wide) or an explicit
+ *             grant.
+ *   - BL    → only explicitly assigned clients (never agency-wide).
+ *   - VIEWER (or no profile) → none.
+ *
+ * Read scope is broader (assigned ∪ agency for everyone) — this is strictly the
+ * write subset. The real enforcement stays in the Firestore rules; this only
+ * prevents a doomed write from being attempted.
+ */
+export function canWriteClient(
+  client: Pick<Client, "cl_id" | "CL_Agency">,
+  profile: Pick<UserProfile, "role" | "assignedClients" | "assignedAgencies"> | null,
+  isAdmin: boolean
+): boolean {
+  if (isAdmin || profile?.role === "ADMIN") return true;
+  if (!profile) return false;
+
+  const assigned = new Set(profile.assignedClients ?? []);
+  const agencies = new Set(profile.assignedAgencies ?? []);
+
+  if (profile.role === "EXEC") {
+    return assigned.has(client.cl_id) || agencies.has(client.CL_Agency);
+  }
+  if (profile.role === "BUSINESS_LEAD") {
+    return assigned.has(client.cl_id);
+  }
+  return false; // VIEWER — read-only
+}
+
+/** The subset of `clients` the current user may write to (see canWriteClient). */
+export function filterWritableClients(
+  clients: Client[],
+  profile: Pick<UserProfile, "role" | "assignedClients" | "assignedAgencies"> | null,
+  isAdmin: boolean
+): Client[] {
+  return clients.filter((c) => canWriteClient(c, profile, isAdmin));
+}
+
 // ─── Lectures / helpers (en mémoire, pas de requête Firestore) ────────────────
 
 /**

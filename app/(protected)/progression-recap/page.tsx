@@ -12,23 +12,30 @@
  * authenticated user (no admin guard).
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Loader2, ClipboardCheck, MousePointerClick } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import DashboardFilterBar from "../../../components/dashboard/filters/dashboard-filter-bar";
 import ProgressionRecapTable, {
   type RecapDisplayRow,
 } from "../../../components/progression/progression-recap-table";
+import MilestoneBatchRunner from "../../../components/progression/milestone-batch-runner";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../../lib/dashboard/filters/use-dashboard-filters";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useProgressionRecap } from "../../../lib/hooks/use-progression-recap";
+import { filterWritableClients } from "../../../lib/services/assignment-service";
 
 export default function ProgressionRecapPage() {
   const { clients, loading: clientsLoading, error: clientsError } = useAccessibleClients();
+  const { profile, isAdmin, permissions } = useUserProfile();
   const usersMap = useUsersMap();
   const { selectedYear } = useForecastSelection();
+
+  // Bumped after a batch run to force the (one-shot) recap reads to reload.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Same faceted filters as the dashboard.
   const {
@@ -43,7 +50,17 @@ export default function ProgressionRecapPage() {
   const recap = useProgressionRecap({
     clientIds: filteredClientIds,
     year: selectedYear,
+    refreshKey,
   });
+
+  // The filtered clients the current user may WRITE to — the batch check writes
+  // flags + validations, so it can only target the editable subset (read scope
+  // is broader). Read-only users (Viewers) get no runner.
+  const writableClientIds = useMemo(
+    () =>
+      filterWritableClients(filteredClients, profile, isAdmin).map((c) => c.cl_id),
+    [filteredClients, profile, isAdmin]
+  );
 
   const recapByClient = useMemo(() => {
     const map = new Map(recap.rows.map((r) => [r.clientId, r]));
@@ -82,6 +99,19 @@ export default function ProgressionRecapPage() {
           </span>
           <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
           <ForecastSelectors orientation="horizontal" theme="light" fields={["year"]} />
+
+          {/* Batch milestone check — run one step for every editable, filtered
+              client at once. Only for users who can edit forecasts. */}
+          {permissions.canEditForecast && (
+            <>
+              <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
+              <MilestoneBatchRunner
+                writableClientIds={writableClientIds}
+                year={selectedYear}
+                onComplete={() => setRefreshKey((k) => k + 1)}
+              />
+            </>
+          )}
         </div>
 
         {/* Same faceted filter bar as the dashboard */}

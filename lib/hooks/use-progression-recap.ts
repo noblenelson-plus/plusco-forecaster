@@ -35,6 +35,12 @@ export interface RecapRow {
 export interface UseProgressionRecapParams {
   clientIds: string[];
   year: number | null;
+  /**
+   * Bump to force a re-fetch without changing the client set or year — used
+   * after a batch milestone check writes new validations so the table reflects
+   * them (the reads are one-shot, not live subscriptions).
+   */
+  refreshKey?: number;
 }
 
 export interface UseProgressionRecapResult {
@@ -66,6 +72,7 @@ function rowsToMonthlyByType(
 export function useProgressionRecap({
   clientIds,
   year,
+  refreshKey = 0,
 }: UseProgressionRecapParams): UseProgressionRecapResult {
   const [rows, setRows] = useState<RecapRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -136,7 +143,7 @@ export function useProgressionRecap({
     return () => {
       cancelled = true;
     };
-  }, [clientKey, year]);
+  }, [clientKey, year, refreshKey]);
 
   return { rows, loading, error };
 }
