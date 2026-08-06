@@ -499,6 +499,10 @@ export default function DashboardPage() {
             focusedClientId={activeFocusId}
             focusLoading={focusLoading}
             mediabox={mediaboxData}
+            scopedClientIds={scopedClientIds}
+            currencyByClient={currencyByClient}
+            usdToCad={usdToCad}
+            selMonths={selMonths}
           />
         ) : tab === "media" ? (
           <MediaSpendTab
