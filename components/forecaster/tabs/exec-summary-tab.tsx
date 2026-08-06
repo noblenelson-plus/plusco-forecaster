@@ -4,19 +4,28 @@
 /**
  * Executive Summary — the headline of the dashboard: a KPI band (total media,
  * total revenue, revenue/media, total Labs, Labs share), the Investment
- * Strategy KPIs, and three flagship charts (channel mix, revenue mix, monthly
- * digital vs traditional). Everything follows the client focus. Revenue uses
- * the BL Submission basis (the standard headline figure).
+ * Strategy KPIs, and the mix donuts (channel mix, revenue mix, Labs spend,
+ * product revenue). Everything follows the client focus. Revenue uses the BL
+ * Submission basis (the standard headline figure).
  */
 
+import { useMemo } from "react";
 import { Loader2, TrendingUp, DollarSign, Percent, FlaskConical, Layers, Box } from "lucide-react";
 import StrategyKpisSection from "../sections/strategy-kpis-section";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
 import DonutChart from "../../dashboard/charts/donut-chart";
+import { MEDIA_TYPE_COLORS } from "../../dashboard/charts/colors";
+import { useScopeProductRevenue } from "../../../lib/dashboard/data/use-scope-product-revenue";
+import { computeProductRevenue } from "../sections/product-revenue-data";
+import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useProducts } from "../../../lib/hooks/use-products";
+import { useUsersMap } from "../../../lib/hooks/use-users-map";
+import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { formatCompactMoney, formatPct } from "../../dashboard/charts/format";
 import { sumMonthlyMap } from "../../../lib/types/common.types";
-import { computeVariance } from "../../../lib/types/forecaster.types";
+import { computeVariance, MEDIA_TYPE_LABELS } from "../../../lib/types/forecaster.types";
+import type { Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import type { ScopeMediaboxData } from "../../../lib/dashboard/data/use-scope-mediabox-totals";
 
@@ -50,6 +59,10 @@ export default function ExecSummaryTab({
   focusedClientId,
   focusLoading,
   mediabox,
+  scopedClientIds,
+  currencyByClient,
+  usdToCad,
+  selMonths,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -59,6 +72,10 @@ export default function ExecSummaryTab({
   focusLoading: boolean;
   /** MediaBox totals for the scope — feeds the adoption KPI (scope-wide). */
   mediabox: ScopeMediaboxData;
+  scopedClientIds: string[];
+  currencyByClient: Record<string, Currency>;
+  usdToCad?: number;
+  selMonths: number[];
 }) {
   const shown = focusedClientId ? focusData : data;
   const shownComparison = focusedClientId ? focusComparisonData : comparisonData;
@@ -96,6 +113,49 @@ export default function ExecSummaryTab({
 
   const channels = media.byChannel.filter((c) => c.annual > 0);
   const streams = revenue.byStream.filter((s) => s.annual > 0);
+
+  // Labs spend by media channel (mirrors Channel mix).
+  const labsSegments = labs.byType
+    .filter((t) => t.labsAnnual > 0)
+    .map((t) => ({
+      label: MEDIA_TYPE_LABELS[t.mediaType],
+      value: t.labsAnnual,
+      color: MEDIA_TYPE_COLORS[t.mediaType],
+    }));
+
+  // Product revenue by product (mirrors Revenue mix). Reads per-product BL
+  // revenue for the scope; narrows to the focused client like the other charts.
+  const { selectedYear, selectedRFQ } = useForecastSelection();
+  const { clients } = useAccessibleClients();
+  const { products } = useProducts();
+  const usersMap = useUsersMap();
+  const productNameById = useMemo(
+    () => new Map(products.map((prod) => [prod.productId, prod.name])),
+    [products]
+  );
+  const { entries: productEntries } = useScopeProductRevenue({
+    scopedClientIds,
+    primary: { year: selectedYear, rfq: selectedRFQ?.type ?? null },
+    primaryMode: "blSubmission",
+    comparison: { year: null, rfq: null },
+    secondaryMode: "blSubmission",
+    currencyByClient,
+    usdToCad,
+    comparisonUsdToCad: undefined,
+    selMonths,
+  });
+  const viewProductEntries = useMemo(
+    () =>
+      focusedClientId
+        ? productEntries.filter((e) => e.clientId === focusedClientId)
+        : productEntries,
+    [productEntries, focusedClientId]
+  );
+  const productResult = useMemo(
+    () => computeProductRevenue(viewProductEntries, clients, usersMap, productNameById, null),
+    [viewProductEntries, clients, usersMap, productNameById]
+  );
+  const productTotal = productResult.mix.reduce((acc, seg) => acc + seg.value, 0);
 
   return (
     <div className="space-y-8">
@@ -175,6 +235,32 @@ export default function ExecSummaryTab({
             />
           ) : (
             <p className="py-8 text-center text-xs text-muted-foreground">No revenue in scope.</p>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Labs spend" subtitle="Annual BL Labs spend by channel" icon={FlaskConical}>
+          {labsSegments.length > 0 ? (
+            <DonutChart
+              segments={labsSegments}
+              centerValue={formatCompactMoney(labs.totalLabs)}
+              centerLabel="Labs"
+              valueFormat={formatCompactMoney}
+            />
+          ) : (
+            <p className="py-8 text-center text-xs text-muted-foreground">No Labs spend in scope.</p>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Product revenue" subtitle="Annual BL revenue by product" icon={Box}>
+          {productResult.mix.length > 0 ? (
+            <DonutChart
+              segments={productResult.mix}
+              centerValue={formatCompactMoney(productTotal)}
+              centerLabel="Product"
+              valueFormat={formatCompactMoney}
+            />
+          ) : (
+            <p className="py-8 text-center text-xs text-muted-foreground">No product revenue in scope.</p>
           )}
         </ChartCard>
       </div>
