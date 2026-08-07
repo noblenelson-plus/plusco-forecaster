@@ -55,7 +55,11 @@ export interface UseMilestoneBatchCheckResult {
   running: boolean;
   progress: BatchProgress | null;
   summary: BatchSummary | null;
-  /** Run the step's check for the given clients + year. Resolves when all finish. */
+  /**
+   * Run the step's check for the given clients + year. Only already-validated
+   * steps are refreshed — never-validated ones are skipped (see
+   * runClientStepCheck). Resolves when all finish.
+   */
   run: (step: ConfirmationStep, clientIds: string[], year: number) => Promise<void>;
   /** Clear the last run's progress + summary. */
   reset: () => void;

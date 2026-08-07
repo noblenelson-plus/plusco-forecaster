@@ -148,10 +148,16 @@ export interface StepValidation {
 
 export type StepValidationMap = Record<string, StepValidation>;
 
-/** The UI-facing status of a submission's validation, derived at read time. */
+/**
+ * The UI-facing status of a submission's validation, derived at read time.
+ *
+ * Only three states exist: a step is either untouched, or its last check left
+ * flags to justify, or it passed. There is no "stale" state — a validated step
+ * is auto-rechecked whenever its underlying data changes (BL save, actuals
+ * import) and the manual Validate / batch check refresh it otherwise, so the
+ * stored outcome is always current.
+ */
 export type RfqValidationStatus =
-  | "not_validated" // never validated
-  | "failed" // validated but some flags remain unjustified
-  | "validated" // validated, all flags justified, data unchanged since
-  | "stale_bl" // was validated, but the BL forecast changed since
-  | "stale_mo"; // was validated, but MediaOcean actuals changed since
+  | "not_validated" // never validated (no check has run for this step yet)
+  | "failed" // last check left some flags unjustified
+  | "validated"; // last check passed — every flag justified

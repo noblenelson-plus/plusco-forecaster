@@ -2,10 +2,12 @@
 "use client";
 
 /**
- * "Run a milestone check for every client I can edit" — the batch trigger on the
- * Milestones page. The user picks one milestone step and runs its flag analysis
- * across the currently-filtered clients they have WRITE access to (Admin → all,
- * Exec → their agency, BL → assigned). Read-only clients are excluded upstream.
+ * "Refresh a milestone check for every client I can edit" — the batch trigger on
+ * the Milestones page. The user picks one milestone step and re-runs its flag
+ * analysis across the currently-filtered clients they have WRITE access to
+ * (Admin → all, Exec → their agency, BL → assigned). Read-only clients are
+ * excluded upstream. Only clients ALREADY validated for the step are refreshed —
+ * never-validated ones are skipped (handy after a data import).
  *
  * Presentational shell around useMilestoneBatchCheck: a step picker, a confirm
  * step (it writes many docs), a progress bar and a per-status summary. Calls
@@ -204,17 +206,21 @@ export default function MilestoneBatchRunner({
             </div>
             <div className="px-4 py-3 text-sm text-gray-700">
               <p>
-                This runs the <span className="font-semibold">{step.label}</span>{" "}
-                check for{" "}
+                This refreshes the{" "}
+                <span className="font-semibold">{step.label}</span> check for the{" "}
                 <span className="font-semibold">
                   {count} client{count === 1 ? "" : "s"}
                 </span>{" "}
-                for {year}. It recomputes each client&apos;s flags and records the
-                milestone as validated (no flags) or failed (flags to justify).
+                in view for {year} that are{" "}
+                <span className="font-semibold">already validated</span> (or have
+                flags to justify), recomputing their flags and updating each
+                outcome.
               </p>
               <p className="mt-2 text-[13px] text-gray-500">
-                Clients with no forecast for {step.targetRfq} are skipped.
-                Existing justifications are kept.
+                Clients not yet validated for this milestone are left untouched —
+                initial validation stays a manual action. Clients with no forecast
+                for {step.targetRfq} are skipped, and existing justifications are
+                kept.
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-gray-100 px-4 py-3">

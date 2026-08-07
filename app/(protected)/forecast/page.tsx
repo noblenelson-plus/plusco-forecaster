@@ -164,6 +164,14 @@ function ForecastPageContent() {
     [clientConfig, selectedYear]
   );
 
+  // Set below, once `validation` exists — re-runs the check for already-validated
+  // steps after a save. Held in a ref so the grids (declared before `validation`)
+  // can call it. `void` since a save's caller doesn't await the recheck.
+  const recheckRef = useRef<(() => Promise<void>) | null>(null);
+  const recheckValidated = useCallback(() => {
+    void recheckRef.current?.();
+  }, []);
+
   // One grid engine per axis; only the active tab's grid is rendered. Saving
   // Media re-syncs the derived Revenue commission for the same submission.
   const mediaGrid = useForecasterGrid(MEDIA_AXIS_CONFIG, {
@@ -178,10 +186,12 @@ function ForecastPageContent() {
       ).catch((err) =>
         console.error("Revenue commission sync failed:", err)
       );
+      recheckValidated();
     },
   });
   const labsGrid = useForecasterGrid(labsConfig, {
     normalizeLoaded: ensureSingleProjectGeneral,
+    onSaved: recheckValidated,
   });
 
   // Base commission from the Media plan — the Commission Overwrite rule (a
@@ -209,6 +219,7 @@ function ForecastPageContent() {
   const revenueGrid = useForecasterGrid(REVENUE_AXIS_CONFIG, {
     normalizeLoaded: ensureRevenueShape,
     computedRows: revenueComputedRows,
+    onSaved: recheckValidated,
   });
   // Final breakdown (overwrite applied) — drives the grid's Commission row
   // rendering and its hover explanations.
@@ -422,8 +433,6 @@ function ForecastPageContent() {
   // Force-save every axis with unsaved changes — the first step of a validation
   // run so the analysis reads the saved truth. No-op on a locked RFQ (save()
   // returns early), which matches "locked has no impact on validation".
-  const hasUnsavedEdits =
-    mediaGrid.hasChanges || labsGrid.hasChanges || revenueGrid.hasChanges;
   const persistDirty = useCallback(async () => {
     await Promise.all([
       mediaGrid.hasChanges ? mediaGrid.save() : Promise.resolve(),
@@ -444,8 +453,14 @@ function ForecastPageContent() {
     partnerLabel,
     partnerMediaType,
     persistDirty,
-    hasUnsavedEdits,
   });
+  // Reachable from the grids' onSaved (declared above `validation`): after any
+  // forecast save, re-run the check for already-validated steps so their status
+  // stays current without a manual re-validate.
+  const { recheckValidatedSteps } = validation;
+  useEffect(() => {
+    recheckRef.current = recheckValidatedSteps;
+  }, [recheckValidatedSteps]);
 
   // Milestone steps that validate the selected RFQ (its own step + the following
   // MQV) — the ones the validation control offers.

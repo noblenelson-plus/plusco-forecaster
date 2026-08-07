@@ -16,8 +16,11 @@
  * previous RFQ) + cat-4 under-target flags (over the step's admin window),
  * reconcile against the stored flags, persist, then record the step outcome.
  *
- * A client with no `data_entries` doc for the step's target RFQ is skipped (no
- * forecast entered yet) rather than recorded as a vacuous "validated".
+ * A batch only ever REFRESHES steps that were already validated: a client whose
+ * step has no validation record yet is skipped, never validated for the first
+ * time (initial validation stays a deliberate manual action). A client with no
+ * `data_entries` doc for the step's target RFQ is likewise skipped (no forecast
+ * entered yet) rather than recorded as a vacuous "validated".
  */
 
 import type { RFQ } from "../types/rfq.types";
@@ -39,7 +42,10 @@ import {
   writeReconciledFlags,
 } from "./data-entry-service";
 import { fetchAnnualActualsEntry } from "./annual-actuals-service";
-import { recordStepValidation } from "./forecast-validation-service";
+import {
+  fetchStepValidations,
+  recordStepValidation,
+} from "./forecast-validation-service";
 
 /** Coerce a raw stored axis into a usable AxisData (mirrors the hook's axisOf). */
 function axisOf(
@@ -87,10 +93,12 @@ const SKIPPED = (clientId: string): ClientStepCheckResult => ({
 });
 
 /**
- * Runs one milestone step's check for a single client-year and records the
- * outcome. Returns a "skipped" result when the client has no submission for the
- * step's target RFQ. Throws on a Firestore write failure so the caller can mark
- * that client as errored (e.g. a permission-denied on a non-writable client).
+ * Refreshes one milestone step's check for a single client-year and records the
+ * outcome. Returns a "skipped" result when the step was never validated for this
+ * client (a batch only refreshes already-validated steps, never validates a new
+ * one) or when the client has no submission for the step's target RFQ. Throws on
+ * a Firestore write failure so the caller can mark that client as errored (e.g.
+ * a permission-denied on a non-writable client).
  */
 export async function runClientStepCheck(
   clientId: string,
@@ -99,6 +107,12 @@ export async function runClientStepCheck(
   deps: ClientStepCheckDeps
 ): Promise<ClientStepCheckResult> {
   const rfqType = step.targetRfq;
+
+  // A batch only ever REFRESHES already-validated steps: a client that has
+  // never validated this step (no record yet) is skipped, never validated for
+  // the first time. Initial validation is always a deliberate manual action.
+  const validations = await fetchStepValidations(clientId, year);
+  if (!validations[step.id]) return SKIPPED(clientId);
 
   // Current side — the submission for the step's target RFQ. No doc → nothing
   // to validate, skip (don't fabricate a vacuous pass).

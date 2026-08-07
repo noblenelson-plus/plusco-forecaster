@@ -6,8 +6,9 @@
  * tick-a-box list. Each milestone step of the selected RFQ has a Validate button
  * that force-saves and (re)runs the flag analysis for that step's window. A step
  * turns green when every flag is justified, yellow when it failed (flags left to
- * justify) or when the data changed since (revalidate). Justifying happens on the
- * Flags page — this control links there.
+ * justify). Once validated, a step is auto-rechecked on every save, so it never
+ * needs a manual re-validate to stay current. Justifying happens on the Flags
+ * page — this control links there.
  *
  * Presentational: the parent owns the validation hook and passes its state in.
  */
@@ -25,8 +26,6 @@ const STATUS_META: Record<
   not_validated: { label: "Not validated", dot: "bg-gray-300" },
   failed: { label: "Flags to justify", dot: "bg-yellow-400" },
   validated: { label: "Validated", dot: "bg-green-500" },
-  stale_bl: { label: "BL data changed", dot: "bg-yellow-400" },
-  stale_mo: { label: "MediaOcean changed", dot: "bg-yellow-400" },
 };
 
 interface ValidationControlProps {
@@ -76,9 +75,7 @@ export default function ValidationControl({
   // Worst status drives the trigger colour: yellow (needs attention) beats
   // gray (untouched) beats green (all good).
   const statuses = steps.map((s) => stepStatus(s.id));
-  const anyAttention = statuses.some(
-    (s) => s === "failed" || s === "stale_bl" || s === "stale_mo"
-  );
+  const anyAttention = statuses.some((s) => s === "failed");
   const allValidated = statuses.every((s) => s === "validated");
   const triggerClass = anyAttention
     ? "border-yellow-400 bg-yellow-400 text-gray-900"

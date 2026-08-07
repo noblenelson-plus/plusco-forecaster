@@ -16,10 +16,11 @@
  *   4. writes the reconciled set and records the step's status: "validated" when
  *      every flag is justified, otherwise "failed".
  *
- * Staleness ("data changed, revalidate"): a validated step reads back "stale"
- * when the submission's forecast data was saved after the validation, when
- * there are unsaved edits, or when the MediaOcean total behind an under-target
- * flag no longer matches what was stored.
+ * Auto-recheck: whenever the forecast is saved, `recheckValidatedSteps` re-runs
+ * the check for every step of the selected RFQ that already has a validation
+ * record, so a validated step never drifts out of date — its stored outcome is
+ * refreshed in place ("validated" ⇄ "failed"). Steps never validated are left
+ * untouched (they stay "not validated" until someone runs the manual Validate).
  */
 
 "use client";
@@ -48,14 +49,13 @@ import { computeSwingFlags } from "../flags/swing-rules";
 import { computeUnderTargetFlags } from "../flags/under-target-rules";
 import { reconcileFlags } from "../flags/reconcile";
 import { justifyStoredFlag } from "../flags/reconcile";
-import { deriveStepStatus, flagsMoDrift } from "../flags/status";
+import { deriveStepStatus } from "../flags/status";
 import {
-  aggregateByType,
   previousRFQ,
   type AxisData,
   type AxisId,
 } from "../types/forecaster.types";
-import { stepById } from "../constants/confirmation-steps";
+import { CONFIRMATION_STEPS, stepById } from "../constants/confirmation-steps";
 import type {
   FlagContext,
   RfqValidationStatus,
@@ -100,8 +100,6 @@ export interface UseForecastValidationParams {
   partnerMediaType: (partnerId: string) => MediaType | undefined;
   /** Force-save any unsaved forecast edits for the selected RFQ (no-op if clean/locked). */
   persistDirty: () => Promise<void>;
-  /** Are there unsaved edits in the working copies right now? */
-  hasUnsavedEdits: boolean;
 }
 
 export interface ValidationRunResult {
@@ -118,10 +116,16 @@ export interface UseForecastValidationResult {
   unjustifiedCount: number;
   stepValidations: StepValidationMap;
   windows: StepWindowMap;
-  /** Effective status of a step (stored outcome + staleness) for the selected RFQ. */
+  /** Stored outcome of a step for the selected RFQ (not_validated / failed / validated). */
   stepStatus: (stepId: string) => RfqValidationStatus;
   runningStep: string | null;
   runValidation: (stepId: string) => Promise<ValidationRunResult | null>;
+  /**
+   * Re-run the check for every already-validated step of the selected RFQ.
+   * Called after a forecast save so a validated step's stored outcome stays
+   * current; a no-op for steps that were never validated.
+   */
+  recheckValidatedSteps: () => Promise<void>;
   /** Reset a step's status to "not validated" (clears its validation record). */
   unvalidate: (stepId: string) => Promise<void>;
   justify: (
@@ -141,7 +145,6 @@ export function useForecastValidation(
     partnerLabel,
     partnerMediaType,
     persistDirty,
-    hasUnsavedEdits,
   } = params;
 
   const { user } = useAuth();
@@ -150,21 +153,16 @@ export function useForecastValidation(
 
   // ─── Subscriptions ──────────────────────────────────────────────────────────
   const [flagMap, setFlagMap] = useState<StoredFlagMap>({});
-  const [forecastEditedAt, setForecastEditedAt] = useState<string | undefined>();
   useEffect(() => {
     if (!ready) {
       setFlagMap({});
-      setForecastEditedAt(undefined);
       return;
     }
     return subscribeToFlags(
       selectedClient!.cl_id,
       selectedYear!,
       selectedRFQ!.type,
-      ({ flags, forecastEditedAt }) => {
-        setFlagMap(flags);
-        setForecastEditedAt(forecastEditedAt);
-      }
+      ({ flags }) => setFlagMap(flags)
     );
   }, [ready, selectedClient?.cl_id, selectedYear, selectedRFQ?.type]);
 
@@ -191,28 +189,10 @@ export function useForecastValidation(
     [flags]
   );
 
-  // MediaOcean drift — an under-target flag whose stored MO total no longer
-  // matches the current working actuals over its analyzed window.
-  const moDrift = useMemo(
-    () =>
-      flagsMoDrift(flags, {
-        media: aggregateByType(media, "ADMIN_INPUT"),
-        labs: aggregateByType(labs, "ADMIN_INPUT"),
-      }),
-    [flags, media, labs]
-  );
-
   const stepStatus = useCallback(
     (stepId: string): RfqValidationStatus =>
-      // Staleness signals are relative to the selected submission (the steps of
-      // the selected RFQ).
-      deriveStepStatus({
-        validation: stepValidations[stepId],
-        forecastEditedAt,
-        moDrift,
-        hasUnsavedEdits,
-      }),
-    [stepValidations, forecastEditedAt, hasUnsavedEdits, moDrift]
+      deriveStepStatus({ validation: stepValidations[stepId] }),
+    [stepValidations]
   );
 
   // ─── Actions ────────────────────────────────────────────────────────────────
@@ -297,6 +277,18 @@ export function useForecastValidation(
     [selectedClient?.cl_id, selectedYear, selectedRFQ?.type, persistDirty, user?.uid]
   );
 
+  const recheckValidatedSteps = useCallback(async (): Promise<void> => {
+    if (!selectedRFQ) return;
+    // Only steps of the selected RFQ that have already been validated — a
+    // never-validated step stays "not validated" until a manual Validate.
+    const steps = CONFIRMATION_STEPS.filter(
+      (s) => s.targetRfq === selectedRFQ.type && stepValidations[s.id]
+    );
+    for (const step of steps) {
+      await runValidation(step.id);
+    }
+  }, [selectedRFQ?.type, stepValidations, runValidation]);
+
   const unvalidate = useCallback(
     async (stepId: string): Promise<void> => {
       if (!selectedClient || !selectedYear) return;
@@ -344,6 +336,7 @@ export function useForecastValidation(
     stepStatus,
     runningStep,
     runValidation,
+    recheckValidatedSteps,
     unvalidate,
     justify,
   };

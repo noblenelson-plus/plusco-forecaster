@@ -4,15 +4,15 @@
 /**
  * The per-client "Milestones" table: one row per client, one column per
  * milestone step, each cell an icon showing that step's validation status
- * (not validated / validated / flags to justify / BL data changed / MediaOcean
- * changed). A legend explains the icons, and every column can be filtered by
- * status (independently — filters combine with AND). Downloadable as CSV.
+ * (not validated / validated / flags to justify). A legend explains the icons,
+ * and every column can be filtered by status (independently — filters combine
+ * with AND). Downloadable as CSV.
  *
  * Presentational only — the page fetches/derives the rows and passes them in.
  */
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Check, Download, Minus, Pencil, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, Download, Minus } from "lucide-react";
 import { CONFIRMATION_STEPS } from "../../lib/constants/confirmation-steps";
 import type { RfqValidationStatus } from "../../lib/types/forecast-flags.types";
 
@@ -32,16 +32,12 @@ const STATUS_META: Record<
   not_validated: { label: "Not validated", short: "Not validated", icon: Minus, chip: "bg-gray-100 text-gray-400" },
   validated: { label: "Validated", short: "Validated", icon: Check, chip: "bg-green-500 text-white" },
   failed: { label: "Flags to justify", short: "Flags to justify", icon: AlertTriangle, chip: "bg-yellow-400 text-gray-900" },
-  stale_bl: { label: "BL data changed", short: "BL changed", icon: Pencil, chip: "bg-yellow-400 text-gray-900" },
-  stale_mo: { label: "MediaOcean changed", short: "MO changed", icon: RefreshCw, chip: "bg-yellow-400 text-gray-900" },
 };
 
 const STATUS_ORDER: RfqValidationStatus[] = [
   "not_validated",
   "validated",
   "failed",
-  "stale_bl",
-  "stale_mo",
 ];
 
 /** Quote a CSV field when it contains a comma, quote or newline. */

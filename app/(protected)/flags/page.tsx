@@ -40,10 +40,8 @@ const STATUS_META: Record<
   { label: string; className: string }
 > = {
   not_validated: { label: "Not validated", className: "bg-gray-100 text-gray-600" },
-  failed: { label: "Validation failed", className: "bg-yellow-400 text-gray-900" },
+  failed: { label: "Flags to justify", className: "bg-yellow-400 text-gray-900" },
   validated: { label: "Validated", className: "bg-green-500 text-white" },
-  stale_bl: { label: "BL data changed — revalidate", className: "bg-yellow-400 text-gray-900" },
-  stale_mo: { label: "MediaOcean changed — revalidate", className: "bg-yellow-400 text-gray-900" },
 };
 
 export default function FlagsPage() {
@@ -117,7 +115,6 @@ export default function FlagsPage() {
     partnerLabel,
     partnerMediaType,
     persistDirty: async () => {},
-    hasUnsavedEdits: false,
   });
 
   const alerts = useMemo(
