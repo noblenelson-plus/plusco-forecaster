@@ -36,6 +36,7 @@ import ValidationControl from "../../../components/forecaster/validation-control
 import ForecastGrid, { type RowMeta } from "../../../components/forecaster/forecast-grid";
 import CopyToast from "../../../components/forecaster/copy-toast";
 import RevenueGrid from "../../../components/forecaster/revenue-grid";
+import { CopyRowProvider } from "../../../components/forecaster/copy-row-context";
 import ProductGrid from "../../../components/forecaster/product-grid";
 import ComparisonPanel from "../../../components/forecaster/comparison-panel";
 import LabsPenetrationPanel from "../../../components/forecaster/labs-penetration-panel";
@@ -724,21 +725,25 @@ function ForecastPageContent() {
                   />
                 ))}
 
-              {tab === "revenue" ? (
-                <RevenueGrid
-                  grid={revenueGrid}
-                  commission={commission}
-                  noRates={revenueNoRates}
-                  hideGaia={selectedRFQ?.type === "RFQ0"}
-                />
-              ) : (
-                <ForecastGrid
-                  config={activeConfig}
-                  grid={activeGrid}
-                  rowMeta={tab === "labs" ? labsRowMeta : undefined}
-                  referenceYears={referenceYears}
-                />
-              )}
+              {/* Copy-a-row-to-another-submission: mounted around the active
+                  grid so its rows can offer the action (config = active axis). */}
+              <CopyRowProvider config={activeConfig} rfqs={rfqs}>
+                {tab === "revenue" ? (
+                  <RevenueGrid
+                    grid={revenueGrid}
+                    commission={commission}
+                    noRates={revenueNoRates}
+                    hideGaia={selectedRFQ?.type === "RFQ0"}
+                  />
+                ) : (
+                  <ForecastGrid
+                    config={activeConfig}
+                    grid={activeGrid}
+                    rowMeta={tab === "labs" ? labsRowMeta : undefined}
+                    referenceYears={referenceYears}
+                  />
+                )}
+              </CopyRowProvider>
             </div>
 
             {/* Right column — penetration (Labs) + the comparison panel (its

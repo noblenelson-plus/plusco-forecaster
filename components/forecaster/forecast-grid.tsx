@@ -40,6 +40,7 @@ import {
   EyeOff,
   StickyNote,
   CalendarRange,
+  Copy,
   X,
 } from "lucide-react";
 import type {
@@ -74,7 +75,8 @@ import { fetchAnnualActuals } from "../../lib/services/annual-actuals-service";
 import { SpreadsheetCell, TotalCell } from "./editable-cell";
 import SpreadDialog from "./spread-dialog";
 import NoteDialog from "./note-dialog";
-import RowActionsMenu from "./row-actions-menu";
+import RowActionsMenu, { type RowAction } from "./row-actions-menu";
+import { useCopyRow } from "./copy-row-context";
 import SelectionTotal from "./selection-total";
 import SaveStatusIndicator from "./save-status";
 import GridLastUpdated from "./grid-last-updated";
@@ -759,6 +761,8 @@ function ReferenceActualsSection({
   const totals = useMemo(() => monthTotals(rows), [rows]);
   const fmt = (v: number) =>
     v ? Math.round(v).toLocaleString("en-CA") : "—";
+  // Whole-section collapse: the header stays, the rows/total are hidden.
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <>
@@ -766,9 +770,21 @@ function ReferenceActualsSection({
       <tr className={theme.headerRow}>
         <td colSpan={colSpan} className="p-0">
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
-            <span className={`text-xs font-semibold uppercase tracking-wider ${theme.headerText}`}>
-              {config.actualsLabel}
-            </span>
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              title={collapsed ? "Expand section" : "Collapse section"}
+              className={`flex items-center gap-1.5 hover:opacity-70 transition-opacity ${theme.headerText}`}
+            >
+              {collapsed ? (
+                <ChevronRight size={13} />
+              ) : (
+                <ChevronDown size={13} />
+              )}
+              <span className="text-xs font-semibold uppercase tracking-wider">
+                {config.actualsLabel}
+              </span>
+            </button>
             <Lock size={10} className={theme.lockIcon} />
             <span className={`text-[11px] normal-case ${theme.headerMeta}`}>
               reference · {year}
@@ -777,7 +793,8 @@ function ReferenceActualsSection({
         </td>
       </tr>
 
-      {loading ? (
+      {!collapsed &&
+        (loading ? (
         <tr>
           <td colSpan={colSpan} className={`px-8 py-2.5 text-xs ${theme.labelClass} ${theme.emptyRow}`}>
             Loading {year} {config.actualsLabel}…
@@ -837,7 +854,7 @@ function ReferenceActualsSection({
             </td>
           </tr>
         </>
-      )}
+      ))}
     </>
   );
 }
@@ -1133,6 +1150,11 @@ function DataRow({
       : EMPTY_MONTHS;
 
   const [noteOpen, setNoteOpen] = useState(false);
+  const copyCtx = useCopyRow();
+  // The bucket name is the destination-matching key when copying to another
+  // submission; DataRow only knows the id, so resolve it from the working copy.
+  const bucketName =
+    grid.data.buckets.find((b) => b.bucketId === bucketId)?.name ?? "";
 
   return (
     <tr className="group">
@@ -1180,38 +1202,53 @@ function DataRow({
               Not configured
             </span>
           )}
-          {!readOnly && (
-            <RowActionsMenu
-              ariaLabel={`Actions for ${row.label}`}
-              actions={[
-                // Distribute writes the parent's months — meaningless when they
-                // are derived from the detail lines.
-                ...(monthsDerived
-                  ? []
-                  : [
-                      {
-                        label: "Distribute…",
-                        icon: <SplitSquareHorizontal size={14} />,
-                        onClick: onSpread,
-                      },
-                    ]),
-                {
-                  label: row.note ? "Edit note" : "Add note",
-                  icon: <StickyNote size={14} />,
-                  onClick: () => setNoteOpen(true),
-                },
-                {
-                  label: "Remove",
-                  icon: <Trash2 size={14} />,
-                  danger: true,
-                  onClick: () =>
-                    category === "ADMIN_INPUT"
-                      ? grid.removeActualsRow(row.rowId)
-                      : grid.removeRow(bucketId!, row.rowId),
-                },
-              ]}
-            />
-          )}
+          {(() => {
+            const actions: RowAction[] = [];
+            // Editing actions are hidden when the submission is read-only
+            // (locked / no write access).
+            if (!readOnly) {
+              // Distribute writes the parent's months — meaningless when they
+              // are derived from the detail lines.
+              if (!monthsDerived) {
+                actions.push({
+                  label: "Distribute…",
+                  icon: <SplitSquareHorizontal size={14} />,
+                  onClick: onSpread,
+                });
+              }
+              actions.push({
+                label: row.note ? "Edit note" : "Add note",
+                icon: <StickyNote size={14} />,
+                onClick: () => setNoteOpen(true),
+              });
+            }
+            // Copy-to-submission works even on a locked submission (it only
+            // reads this row); the destination's lock is checked in the dialog.
+            if (category === "BL_INPUT" && copyCtx) {
+              actions.push({
+                label: "Copy to submission…",
+                icon: <Copy size={14} />,
+                onClick: () => copyCtx.open(row, bucketName),
+              });
+            }
+            if (!readOnly) {
+              actions.push({
+                label: "Remove",
+                icon: <Trash2 size={14} />,
+                danger: true,
+                onClick: () =>
+                  category === "ADMIN_INPUT"
+                    ? grid.removeActualsRow(row.rowId)
+                    : grid.removeRow(bucketId!, row.rowId),
+              });
+            }
+            return (
+              <RowActionsMenu
+                ariaLabel={`Actions for ${row.label}`}
+                actions={actions}
+              />
+            );
+          })()}
         </div>
         {noteOpen && (
           <NoteDialog
@@ -1603,6 +1640,8 @@ function ActualsSection({
   const totals = useMemo(() => monthTotals(actuals), [actuals]);
   const types = availableTypes(config, actuals);
   const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
+  // Whole-section collapse: the header stays, the rows/total are hidden.
+  const [collapsed, setCollapsed] = useState(false);
   const colCount = showNotes ? 15 : 14;
   // Per-source color: MediaOcean → pink, GAIA → purple, others → grey.
   const theme = actualsTheme(config.actualsLabel);
@@ -1626,9 +1665,21 @@ function ActualsSection({
       <tr className={theme.headerRow}>
         <td colSpan={showNotes ? 15 : 14} className="p-0">
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
-            <span className={`text-xs font-semibold uppercase tracking-wider ${theme.headerText}`}>
-              {config.actualsLabel}
-            </span>
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              title={collapsed ? "Expand section" : "Collapse section"}
+              className={`flex items-center gap-1.5 hover:opacity-70 transition-opacity ${theme.headerText}`}
+            >
+              {collapsed ? (
+                <ChevronRight size={13} />
+              ) : (
+                <ChevronDown size={13} />
+              )}
+              <span className="text-xs font-semibold uppercase tracking-wider">
+                {config.actualsLabel}
+              </span>
+            </button>
             {readOnly && <Lock size={10} className={theme.lockIcon} />}
             {/* Data version(s) — the rows' "project" annotations, deduped: one
                 value when every row agrees (same spot as MediaBox's sync stamp). */}
@@ -1651,6 +1702,8 @@ function ActualsSection({
         </td>
       </tr>
 
+      {!collapsed && (
+        <>
       {/* Actuals rows */}
       {actuals.length === 0 ? (
         <tr>
@@ -1751,6 +1804,8 @@ function ActualsSection({
             </p>
           </td>
         </tr>
+      )}
+        </>
       )}
 
       {spreadRow && (

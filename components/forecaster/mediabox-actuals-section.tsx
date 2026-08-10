@@ -124,7 +124,7 @@ function MoneyRow({
     // Same system as the MediaOcean rows: neutral surface, source-colored label.
     <tr className="group bg-gray-50 hover:bg-gray-100 border-b border-gray-100">
       <td
-        className={`sticky left-0 z-10 bg-gray-50 group-hover:bg-gray-100 py-2 text-xs text-blue-700 ${
+        className={`sticky left-0 z-10 bg-gray-50 group-hover:bg-gray-100 py-2 text-xs text-blue-700 max-w-[260px] ${
           indent ? "pl-10 pr-4" : "px-4"
         } ${labelText}`}
       >
@@ -132,17 +132,20 @@ function MoneyRow({
           <button
             type="button"
             onClick={expand.onToggle}
-            className="flex items-center gap-1 hover:text-black"
+            title={label}
+            className="flex items-center gap-1 hover:text-black min-w-0 max-w-full"
           >
             {expand.expanded ? (
-              <ChevronDown size={12} />
+              <ChevronDown size={12} className="shrink-0" />
             ) : (
-              <ChevronRight size={12} />
+              <ChevronRight size={12} className="shrink-0" />
             )}
-            <span className="truncate">{label}</span>
+            <span className="truncate min-w-0">{label}</span>
           </button>
         ) : (
-          <span className="truncate">{label}</span>
+          <span className="block truncate" title={label}>
+            {label}
+          </span>
         )}
       </td>
       {showNotes && <td className="bg-gray-50 group-hover:bg-gray-100" />}
@@ -201,6 +204,8 @@ export default function MediaboxActualsSection({
 
   // Which media-type rows are expanded to show their campaigns.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Whole-section collapse: the header stays, the body is hidden.
+  const [collapsed, setCollapsed] = useState(false);
   const toggle = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -238,10 +243,22 @@ export default function MediaboxActualsSection({
       <tr className="bg-blue-400 border-y border-blue-400">
         <td colSpan={colSpan} className="p-0">
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
-            <Database size={11} className="text-gray-900" />
-            <span className="text-xs font-semibold text-gray-900 uppercase tracking-wider">
-              MediaBox
-            </span>
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              title={collapsed ? "Expand section" : "Collapse section"}
+              className="flex items-center gap-1.5 text-gray-900 hover:opacity-70 transition-opacity"
+            >
+              {collapsed ? (
+                <ChevronRight size={13} />
+              ) : (
+                <ChevronDown size={13} />
+              )}
+              <Database size={11} />
+              <span className="text-xs font-semibold uppercase tracking-wider">
+                MediaBox
+              </span>
+            </button>
             <Lock size={10} className="text-blue-800" />
             <span className="text-[11px] text-gray-800 normal-case">
               actual as of {formatSyncedAt(totals?.syncedAt)}
@@ -271,6 +288,8 @@ export default function MediaboxActualsSection({
         </td>
       </tr>
 
+      {!collapsed && (
+        <>
       {/* Empty / loading state */}
       {campaignGroups.length === 0 ? (
         <tr>
@@ -370,6 +389,8 @@ export default function MediaboxActualsSection({
               </p>
             </td>
           </tr>
+        </>
+      )}
         </>
       )}
 

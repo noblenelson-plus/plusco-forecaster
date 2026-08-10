@@ -58,6 +58,7 @@ import {
   FolderPlus,
   Info,
   AlertTriangle,
+  Copy,
 } from "lucide-react";
 import type {
   ForecastBucket,
@@ -107,6 +108,7 @@ import SaveStatusIndicator from "./save-status";
 import GridLastUpdated from "./grid-last-updated";
 import { NoteCell, DetailRow } from "./forecast-grid";
 import RowActionsMenu, { type RowAction } from "./row-actions-menu";
+import { useCopyRow } from "./copy-row-context";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -1553,6 +1555,10 @@ function RevenueDataRow({
     category === "BL_INPUT" && !grid.canEditClosed ? grid.closedMonths : EMPTY_MONTHS;
 
   const [noteOpen, setNoteOpen] = useState(false);
+  const copyCtx = useCopyRow();
+  // Bucket name = destination-matching key when copying to another submission.
+  const bucketName =
+    grid.data.buckets.find((b) => b.bucketId === bucketId)?.name ?? "";
 
   return (
     <tr className="group">
@@ -1566,38 +1572,46 @@ function RevenueDataRow({
               {expand.count}
             </span>
           )}
-          {!readOnly &&
-            (() => {
-              const actions: RowAction[] = [
-                // Distribute writes the parent's months — meaningless when
-                // they are derived from the detail lines.
-                ...(monthsDerived
-                  ? []
-                  : [
-                      {
-                        label: "Distribute…",
-                        icon: <SplitSquareHorizontal size={14} />,
-                        onClick: onSpread,
-                      },
-                    ]),
-                {
-                  label: row.note ? "Edit note" : "Add note",
-                  icon: <StickyNote size={14} />,
-                  onClick: () => setNoteOpen(true),
-                },
-              ];
-              if (removable) {
+          {(() => {
+            const actions: RowAction[] = [];
+            // Editing actions are hidden on a read-only (locked) submission.
+            if (!readOnly) {
+              // Distribute writes the parent's months — meaningless when they
+              // are derived from the detail lines.
+              if (!monthsDerived) {
                 actions.push({
-                  label: "Remove",
-                  icon: <Trash2 size={14} />,
-                  danger: true,
-                  onClick: () => grid.removeRow(bucketId!, row.rowId),
+                  label: "Distribute…",
+                  icon: <SplitSquareHorizontal size={14} />,
+                  onClick: onSpread,
                 });
               }
-              return (
-                <RowActionsMenu ariaLabel={`Actions for ${row.label}`} actions={actions} />
-              );
-            })()}
+              actions.push({
+                label: row.note ? "Edit note" : "Add note",
+                icon: <StickyNote size={14} />,
+                onClick: () => setNoteOpen(true),
+              });
+            }
+            // Copy-to-submission works even when locked (it only reads the row);
+            // the destination's lock is validated in the dialog.
+            if (category === "BL_INPUT" && copyCtx) {
+              actions.push({
+                label: "Copy to submission…",
+                icon: <Copy size={14} />,
+                onClick: () => copyCtx.open(row, bucketName),
+              });
+            }
+            if (!readOnly && removable) {
+              actions.push({
+                label: "Remove",
+                icon: <Trash2 size={14} />,
+                danger: true,
+                onClick: () => grid.removeRow(bucketId!, row.rowId),
+              });
+            }
+            return (
+              <RowActionsMenu ariaLabel={`Actions for ${row.label}`} actions={actions} />
+            );
+          })()}
         </div>
         {productDropdown && (
           <ProductSelect
