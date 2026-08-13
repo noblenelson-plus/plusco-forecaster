@@ -12,10 +12,14 @@
  * intentionally does NOT react to the dashboard's Year/RFQ selectors. Its own
  * five client-level filters (Agency / BU Region / Business Lead / GM Pod /
  * Client) drive the roll-up, and the same filtered rows feed the table below.
+ *
+ * Row focus: clicking a client in the table narrows the scorecards + client
+ * detail panel to that one client (the table stays full, row highlighted). A
+ * "Viewing" chip shows the focused client; changing any filter clears focus.
  */
 
 import { useMemo, useState } from "react";
-import { Loader2, Gauge } from "lucide-react";
+import { Loader2, Gauge, X } from "lucide-react";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import MultiSelectDropdown, {
   type Option,
@@ -30,6 +34,7 @@ import {
   type KpiFilters,
 } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 import InvestmentKpisTable from "./investment-kpis-table";
+import InvestmentKpisClientDetail from "./investment-kpis-client-detail";
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -147,12 +152,37 @@ function MetaShareTrendStrip({
 export default function InvestmentKpisSection() {
   const { rows, loading, error } = useMoKpiByClient();
   const [filters, setFilters] = useState<KpiFilters>(EMPTY_KPI_FILTERS);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   // Options come from ALL rows so the choices stay stable as filters change.
   const options = useMemo(() => kpiFilterOptions(rows), [rows]);
   const filtered = useMemo(() => applyKpiFilters(rows, filters), [rows, filters]);
-  const kpis = useMemo(() => computeInvestmentKpis(filtered), [filtered]);
-  const metaTrend = useMemo(() => metaShareTrendBreakdown(filtered), [filtered]);
+
+  // Focus: clicking a table row narrows the scorecards + client-detail panel to
+  // that one client while the table itself stays full (row highlighted). If the
+  // focused client isn't in the current filtered set (e.g. a filter changed),
+  // focus falls away on its own via this derivation.
+  const focusedRow = useMemo(
+    () =>
+      focusedId
+        ? filtered.find((r) => (r.PLUSCO_CLIENT_ID ?? "").toString() === focusedId) ??
+          null
+        : null,
+    [filtered, focusedId]
+  );
+  const effectiveRows = useMemo(
+    () => (focusedRow ? [focusedRow] : filtered),
+    [focusedRow, filtered]
+  );
+
+  const kpis = useMemo(() => computeInvestmentKpis(effectiveRows), [effectiveRows]);
+  const metaTrend = useMemo(
+    () => metaShareTrendBreakdown(effectiveRows),
+    [effectiveRows]
+  );
+
+  const handleRowClick = (id: string) =>
+    setFocusedId((prev) => (prev === id ? null : id));
 
   const anyFilterActive =
     filters.agency.length > 0 ||
@@ -161,8 +191,10 @@ export default function InvestmentKpisSection() {
     filters.gmPod.length > 0 ||
     filters.client.length > 0;
 
-  const set = (patch: Partial<KpiFilters>) =>
+  const set = (patch: Partial<KpiFilters>) => {
     setFilters((prev) => ({ ...prev, ...patch }));
+    setFocusedId(null);
+  };
 
   // ─── States ──────────────────────────────────────────────────────────────
   if (loading) {
@@ -244,7 +276,10 @@ export default function InvestmentKpisSection() {
         {anyFilterActive && (
           <button
             type="button"
-            onClick={() => setFilters(EMPTY_KPI_FILTERS)}
+            onClick={() => {
+              setFilters(EMPTY_KPI_FILTERS);
+              setFocusedId(null);
+            }}
             className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
           >
             Clear filters
@@ -255,6 +290,26 @@ export default function InvestmentKpisSection() {
           snapshot (RFQ 2-BL-2026, 2025 vs 2026)
         </span>
       </div>
+
+      {focusedRow && (
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-2 rounded-full border border-primary bg-primary/5 px-3 py-1 text-xs font-medium text-foreground">
+            Viewing: {(focusedRow.CLIENT_NAME ?? "").toString()}
+            <button
+              type="button"
+              onClick={() => setFocusedId(null)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Clear focused client"
+            >
+              <X size={12} />
+            </button>
+          </span>
+        </div>
+      )}
+
+      <InvestmentKpisClientDetail
+        row={effectiveRows.length === 1 ? effectiveRows[0] : null}
+      />
 
       {/* Achieve Labs Targets */}
       <KpiGroup title="Achieve Labs Targets" columns={4}>
@@ -353,9 +408,13 @@ export default function InvestmentKpisSection() {
         </KpiGroup>
       </div>
 
-      {/* Client Download Table — driven by the SAME filtered rows, so the one
-          filter bar above controls both the scorecards and the table. */}
-      <InvestmentKpisTable rows={filtered} />
+      {/* Client Download Table — full filtered list; clicking a row focuses the
+          page on that client (scorecards + panel narrow to it). */}
+      <InvestmentKpisTable
+        rows={filtered}
+        focusedId={focusedId}
+        onRowClick={handleRowClick}
+      />
     </div>
   );
 }

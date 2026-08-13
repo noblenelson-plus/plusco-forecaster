@@ -11,6 +11,10 @@
  * of per-client percentages — so the footer cross-checks 1:1 with Looker's total
  * and with the scorecards above. "Download CSV" exports every synced column.
  *
+ * Rows are clickable when `onRowClick` is supplied: clicking toggles the page's
+ * focused client (highlighted here via `focusedId`); the table itself always
+ * shows the full filtered list.
+ *
  * A plain <table> is used on purpose: the shadcn <Table> wraps itself in an
  * overflow-x container, which nested inside our height-capped box would create
  * two scroll containers and break the sticky header/footer/first-column.
@@ -314,7 +318,15 @@ function csvField(value: unknown): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function InvestmentKpisTable({ rows }: { rows: KpiByClientRow[] }) {
+export default function InvestmentKpisTable({
+  rows,
+  focusedId = null,
+  onRowClick,
+}: {
+  rows: KpiByClientRow[];
+  focusedId?: string | null;
+  onRowClick?: (id: string) => void;
+}) {
   const [sortKey, setSortKey] = useState<string>("total_spend_2026");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -445,27 +457,44 @@ export default function InvestmentKpisTable({ rows }: { rows: KpiByClientRow[] }
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((row, i) => (
-                    <tr key={(row.PLUSCO_CLIENT_ID ?? i).toString()}>
-                      {COLUMNS.map((col, idx) => {
-                        const numeric = col.type !== "text";
-                        const sticky =
-                          idx === 0
-                            ? "sticky left-0 z-10 bg-card min-w-[180px]"
-                            : "";
-                        return (
-                          <td
-                            key={col.key}
-                            className={`${cellPad} ${sticky} ${
-                              numeric ? "text-right tabular-nums" : "text-left"
-                            }`}
-                          >
-                            {display(row, col)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                  {sorted.map((row, i) => {
+                    const rowId = (row.PLUSCO_CLIENT_ID ?? i).toString();
+                    const focused = focusedId != null && focusedId === rowId;
+                    const rowCls = onRowClick
+                      ? focused
+                        ? "cursor-pointer bg-muted"
+                        : "cursor-pointer hover:bg-muted/50"
+                      : focused
+                        ? "bg-muted"
+                        : "";
+                    return (
+                      <tr
+                        key={rowId}
+                        className={rowCls}
+                        onClick={onRowClick ? () => onRowClick(rowId) : undefined}
+                      >
+                        {COLUMNS.map((col, idx) => {
+                          const numeric = col.type !== "text";
+                          const sticky =
+                            idx === 0
+                              ? `sticky left-0 z-10 min-w-[180px] ${
+                                  focused ? "bg-muted" : "bg-card"
+                                }`
+                              : "";
+                          return (
+                            <td
+                              key={col.key}
+                              className={`${cellPad} ${sticky} ${
+                                numeric ? "text-right tabular-nums" : "text-left"
+                              }`}
+                            >
+                              {display(row, col)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr>
