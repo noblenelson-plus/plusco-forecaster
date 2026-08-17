@@ -39,6 +39,8 @@ import InvestmentKpisSection from "../../components/forecaster/sections/investme
 import MediaoceanInvestmentSection from "../../components/forecaster/sections/mediaocean-investment-section";
 import MediaoceanTopPartnersSection from "../../components/forecaster/sections/mediaocean-top-partners-section";
 import MediaoceanSocialSection from "../../components/forecaster/sections/mediaocean-social-section";
+import MirRawSection from "../../components/forecaster/sections/mir-raw-section";
+import BillingSummarySection from "../../components/forecaster/sections/billing-summary-section";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
@@ -580,6 +582,10 @@ export default function DashboardPage() {
             mediabox={mediaboxData}
             clientNameById={clientNameById}
           />
+        ) : tab === "mir-raw" ? (
+          <MirRawSection />
+        ) : tab === "billing-summary" ? (
+          <BillingSummarySection />
         ) : (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
             {activeLabel} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â coming soon
