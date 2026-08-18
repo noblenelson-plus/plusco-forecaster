@@ -42,6 +42,7 @@ import MediaoceanSocialSection from "../../components/forecaster/sections/mediao
 import MirRawSection from "../../components/forecaster/sections/mir-raw-section";
 import BillingSummarySection from "../../components/forecaster/sections/billing-summary-section";
 import BillupsSection from "../../components/forecaster/sections/billups-section";
+import ExecutiveSummarySection from "../../components/forecaster/sections/executive-summary-section";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
@@ -485,15 +486,25 @@ export default function DashboardPage() {
             <MediaoceanSocialSection />
           </div>
         ) : tab === "exec-kpis" ? (
-          <BillupsSection
-            forecastData={forecastData}
-            comparisonData={comparisonData}
-            clients={clients}
-            usersMap={usersMap}
-            scopedClientIds={scopedClientIds}
-            year={selectedYear ?? new Date().getFullYear()}
-            rfqLabel={selectedRFQ?.type ?? undefined}
-          />
+          <div className="space-y-10">
+            <ExecutiveSummarySection
+              forecastData={forecastData}
+              comparisonData={comparisonData}
+              clients={clients}
+              usersMap={usersMap}
+              scopedClientIds={scopedClientIds}
+              year={selectedYear ?? new Date().getFullYear()}
+            />
+            <BillupsSection
+              forecastData={forecastData}
+              comparisonData={comparisonData}
+              clients={clients}
+              usersMap={usersMap}
+              scopedClientIds={scopedClientIds}
+              year={selectedYear ?? new Date().getFullYear()}
+              rfqLabel={selectedRFQ?.type ?? undefined}
+            />
+          </div>
         ) : error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {error}

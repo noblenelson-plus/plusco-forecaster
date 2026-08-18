@@ -23,6 +23,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  Target,
 } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
@@ -56,6 +57,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Access",       href: "/admin/users", icon: <Users size={18} />,           section: "admin", adminOnly: true },
   { label: "RFQs",         href: "/admin/rfqs",  icon: <CalendarRange size={18} />,   section: "admin", adminOnly: true },
   { label: "LABS",         href: "/admin/labs",  icon: <FlaskConical size={18} />,    section: "admin", adminOnly: true },
+  { label: "Labs Targets", href: "/admin/targets", icon: <Target size={18} />,       section: "admin", adminOnly: true },
   { label: "DISH Products", href: "/admin/products", icon: <Package size={18} />,     section: "admin", adminOnly: true },
   { label: "Currency",     href: "/admin/currency", icon: <DollarSign size={18} />,   section: "admin", adminOnly: true },
   { label: "QA",           href: "/admin/qa",    icon: <ShieldCheck size={18} />,     section: "admin", adminOnly: true },
