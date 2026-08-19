@@ -1434,8 +1434,7 @@ function BucketSection({
                   Non-commissionable
                 </button>
               ) : (
-                !readOnly &&
-                !lockName && (
+                !readOnly && (
                   <button
                     type="button"
                     onClick={() =>
