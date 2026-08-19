@@ -34,6 +34,7 @@ import {
   ChevronRight,
   RotateCcw,
   FolderPlus,
+  Ban,
   SplitSquareHorizontal,
   Download,
   Eye,
@@ -1399,6 +1400,37 @@ function BucketSection({
                 hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white
                 disabled:hover:border-transparent"
             />
+
+            {config.axisId === "media" &&
+              (bucket.nonCommissionable ? (
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() =>
+                    grid.setBucketNonCommissionable(bucket.bucketId, false)
+                  }
+                  title="This project's media spend is excluded from the commission calculation. Click to make it commissionable again."
+                  className="ml-2 inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 transition-colors hover:bg-amber-200 disabled:cursor-default disabled:hover:bg-amber-100"
+                >
+                  <Ban size={11} />
+                  Non-commissionable
+                </button>
+              ) : (
+                !readOnly &&
+                !lockName && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      grid.setBucketNonCommissionable(bucket.bucketId, true)
+                    }
+                    title="Mark this project non-commissionable — its media spend is excluded from the commission calculation, but still counts in every other total."
+                    className="ml-2 inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-gray-300 px-2.5 py-0.5 text-[11px] font-medium text-gray-600 transition-colors hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700"
+                  >
+                    <Ban size={11} />
+                    Mark non-commissionable
+                  </button>
+                )
+              ))}
 
             {!readOnly && (
               <>

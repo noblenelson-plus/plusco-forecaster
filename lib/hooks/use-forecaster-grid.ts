@@ -239,6 +239,12 @@ export interface UseForecasterGridResult {
   addBucket: (name: string) => void;
   renameBucket: (bucketId: string, name: string) => void;
   removeBucket: (bucketId: string) => void;
+  /**
+   * Mark (or clear) a BL bucket as non-commissionable — excludes its spend from
+   * the commission base (computeCommission) while keeping it in every other
+   * total. Persisted with the grid's explicit Save like any structure change.
+   */
+  setBucketNonCommissionable: (bucketId: string, value: boolean) => void;
   addRow: (bucketId: string, rowType: string) => void;
   removeRow: (bucketId: string, rowId: string) => void;
   /**
@@ -854,6 +860,18 @@ export function useForecasterGrid(
     }));
     setStructureDirty(true);
   }, []);
+  const setBucketNonCommissionable = useCallback(
+    (bucketId: string, value: boolean) => {
+      setData((prev) => ({
+        ...prev,
+        buckets: prev.buckets.map((b) =>
+          b.bucketId === bucketId ? { ...b, nonCommissionable: value } : b
+        ),
+      }));
+      setStructureDirty(true);
+    },
+    []
+  );
 
   const removeBucket = useCallback((bucketId: string) => {
     setData((prev) => ({
@@ -1254,6 +1272,7 @@ export function useForecasterGrid(
     addBucket,
     renameBucket,
     removeBucket,
+    setBucketNonCommissionable,
     addRow,
     removeRow,
     setRowNote,
