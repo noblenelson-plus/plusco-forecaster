@@ -88,6 +88,13 @@ import {
   useMediaboxTotals,
   type UseMediaboxTotalsResult,
 } from "../../lib/hooks/use-mediabox-totals";
+import {
+  useBlPasteTarget,
+  TargetProjectSelect,
+  MonthPasteButton,
+  type BlPasteApi,
+} from "./bl-paste-target";
+import type { PasteSourceRow } from "../../lib/format/mediabox-paste";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -230,6 +237,11 @@ export default function ForecastGrid({
   }, [fetchKey, selectedClient?.cl_id, refYear, config.axisId]);
 
   const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
+
+  // "Paste a MediaBox / MediaOcean month into the BL" — one shared target
+  // project (bucket) for both source sections. Only meaningful on axes with a
+  // MediaBox/MediaOcean source (Media, Labs); harmless elsewhere.
+  const blPaste = useBlPasteTarget(grid, config);
 
   // Collapsed buckets — hidden rows are also excluded from the selection model
   // below so keyboard navigation / paste never reach rows you can't see.
@@ -553,6 +565,9 @@ export default function ForecastGrid({
                   showNotes={showNotes}
                   expandedActuals={expandedActuals}
                   onToggleExpand={toggleActualsExpand}
+                  // MediaOcean → BL paste is Media/Labs only (Revenue's actuals
+                  // source is GAIA, with computed rows — not a paste target).
+                  blPaste={hasMediabox ? blPaste : undefined}
                 />
               )}
 
@@ -562,6 +577,9 @@ export default function ForecastGrid({
                 year={refYear}
                 showNotes={showNotes}
                 mediabox={displayMediabox}
+                // Pasting into the BL only makes sense against the edited year;
+                // a cross-year peek (crossYear) shows the section read-only.
+                blPaste={crossYear ? undefined : blPaste}
               />
             </tbody>
           </table>
@@ -1656,6 +1674,7 @@ function ActualsSection({
   showNotes,
   expandedActuals,
   onToggleExpand,
+  blPaste,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
@@ -1666,10 +1685,18 @@ function ActualsSection({
   showNotes: boolean;
   expandedActuals: Set<string>;
   onToggleExpand: (rowId: string) => void;
+  /** "Paste this month into the BL" plumbing (shared with the MediaBox section). */
+  blPaste?: BlPasteApi;
 }) {
   const actuals = grid.data.actuals;
   const readOnly = !grid.canEditActuals;
   const totals = useMemo(() => monthTotals(actuals), [actuals]);
+  // Source lines for the "paste month → BL" tool. MediaOcean actuals already key
+  // by the BL rowType, so the label is the rowType itself (an exact match).
+  const pasteRows = useMemo<PasteSourceRow[]>(
+    () => actuals.map((r) => ({ label: r.rowType, byMonth: r.months })),
+    [actuals]
+  );
   const types = availableTypes(config, actuals);
   const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
   // Whole-section collapse: the header stays, the rows/total are hidden.
@@ -1729,6 +1756,9 @@ function ActualsSection({
                 options={types}
                 onPick={(rowType) => grid.addActualsRow(rowType)}
               />
+            )}
+            {blPaste && actuals.length > 0 && (
+              <TargetProjectSelect api={blPaste} />
             )}
           </div>
         </td>
@@ -1816,18 +1846,29 @@ function ActualsSection({
 
       {/* Actuals total */}
       {actuals.length > 0 && (
-        <tr className="bg-gray-200 border-y border-gray-300">
+        <tr className="group bg-gray-200 border-y border-gray-300">
           <td className="sticky left-0 z-10 bg-gray-200 px-4 py-2 text-xs font-bold text-gray-900 uppercase tracking-wider">
             {config.actualsLabel} total
           </td>
           {showNotes && <td className="bg-gray-200" />}
           {MONTHS.map((m) => (
             <td key={m} className="px-2.5 py-2 text-right align-middle">
-              <p className="text-sm font-bold text-gray-900 tabular-nums">
-                {totals[m]
-                  ? Math.round(totals[m]).toLocaleString("en-CA")
-                  : "—"}
-              </p>
+              <span className="inline-flex w-full items-center justify-end gap-1">
+                {blPaste && (
+                  <MonthPasteButton
+                    api={blPaste}
+                    rows={pasteRows}
+                    month={m}
+                    sourceLabel={config.actualsLabel}
+                    typeNoun={config.rowTypeLabel.toLowerCase()}
+                  />
+                )}
+                <p className="text-sm font-bold text-gray-900 tabular-nums">
+                  {totals[m]
+                    ? Math.round(totals[m]).toLocaleString("en-CA")
+                    : "—"}
+                </p>
+              </span>
             </td>
           ))}
           <td className="px-2.5 py-2 text-right align-middle bg-gray-300">
