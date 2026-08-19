@@ -134,6 +134,12 @@ export interface ForecastBucket {
   bucketId: string;
   name: string;
   rows: ForecastRow[];
+  /**
+   * When true, this bucket's spend is EXCLUDED from the commission base
+   * (computeCommission) but still counts everywhere else. Set by BLs to mark a
+   * non-commissionable campaign/project. Absent = commissionable.
+   */
+  nonCommissionable?: boolean;
 }
 
 // ─── Axis data (BL_INPUT + ADMIN_INPUT) ──────────────────────────────────────
@@ -337,10 +343,20 @@ export interface ComparisonRef {
  */
 export function aggregateByType(
   data: AxisData,
-  side: ComparisonSide
+  side: ComparisonSide,
+  /**
+   * Optional filter over BL_INPUT buckets (ignored for ADMIN_INPUT). Used by the
+   * commission calc to exclude non-commissionable buckets from its base; every
+   * other caller omits it and aggregates all buckets as before.
+   */
+  bucketFilter?: (bucket: ForecastBucket) => boolean
 ): Record<string, MonthlyMap> {
   const rows =
-    side === "ADMIN_INPUT" ? data.actuals : data.buckets.flatMap((b) => b.rows);
+    side === "ADMIN_INPUT"
+      ? data.actuals
+      : (bucketFilter ? data.buckets.filter(bucketFilter) : data.buckets).flatMap(
+          (b) => b.rows
+        );
   const totals: Record<string, MonthlyMap> = {};
   rows.forEach((row) => {
     const acc = (totals[row.rowType] ??= emptyMonthly());

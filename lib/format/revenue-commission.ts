@@ -92,8 +92,13 @@ export function computeCommission(
   mediaData: AxisData,
   yearRates: Partial<Record<MediaType, MonthlyMap>> | undefined
 ): CommissionBreakdown {
-  const plannedByType = aggregateByType(mediaData, "BL_INPUT");
-  const months = emptyMonthly();
+// Non-commissionable buckets (campaigns a BL flagged) are excluded from the
+  // commission base — their spend still counts everywhere else, just not here.
+  const plannedByType = aggregateByType(
+    mediaData,
+    "BL_INPUT",
+    (bucket) => !bucket.nonCommissionable
+  );  const months = emptyMonthly();
   const byMonth: Record<number, CommissionMediaLine[]> = {};
   let annual = 0;
 
