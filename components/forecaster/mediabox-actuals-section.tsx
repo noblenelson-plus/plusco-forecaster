@@ -1,4 +1,4 @@
-// components/forecaster/mediabox-actuals-section.tsx
+﻿// components/forecaster/mediabox-actuals-section.tsx
 "use client";
 
 /**
@@ -206,6 +206,8 @@ export default function MediaboxActualsSection({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Whole-section collapse: the header stays, the body is hidden.
   const [collapsed, setCollapsed] = useState(false);
+  // Reference-data hierarchy: campaign-first (default) or type/partner-first.
+  const [hierarchy, setHierarchy] = useState<"campaign" | "type">("campaign");
   const toggle = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -227,6 +229,52 @@ export default function MediaboxActualsSection({
   // Inverted view: campaign at the top, media types / partners nested.
   const campaignGroups = groupByCampaign(typeRows);
   const typeNoun = axisId === "labs" ? "partner" : "media type";
+
+  // Short label for the toggle: media -> "Channel", labs -> "Partner".
+  const typeLabelShort = axisId === "labs" ? "Partner" : "Channel";
+
+  // Normalized rows for whichever hierarchy is active: a primary row that
+  // expands to its nested children, plus a flat summary of the OTHER dimension.
+  const primaryRows =
+    hierarchy === "campaign"
+      ? campaignGroups.map((g) => ({
+          key: g.name,
+          label: g.name,
+          byMonth: g.byMonth,
+          total: g.total,
+          children: g.types.map((t) => ({
+            label: t.label,
+            byMonth: t.byMonth,
+            total: t.total,
+          })),
+        }))
+      : typeRows.map((t) => ({
+          key: t.label,
+          label: t.label,
+          byMonth: t.byMonth,
+          total: t.total,
+          children: t.campaigns.map((c) => ({
+            label: c.name,
+            byMonth: c.byMonth,
+            total: c.total,
+          })),
+        }));
+
+  const summaryRows =
+    hierarchy === "campaign"
+      ? typeRows.map((t) => ({
+          key: `summary::${t.label}`,
+          label: t.label,
+          byMonth: t.byMonth,
+          total: t.total,
+        }))
+      : campaignGroups.map((g) => ({
+          key: `summary::${g.name}`,
+          label: g.name,
+          byMonth: g.byMonth,
+          total: g.total,
+        }));
+  const summaryNoun = hierarchy === "campaign" ? typeNoun : "campaign";
 
   // Grand total across every type/partner — the section's bottom line.
   const grandByMonth: MonthlyMap = {};
@@ -278,6 +326,30 @@ export default function MediaboxActualsSection({
               refreshing={refreshing}
               startedAt={totals?.refreshStartedAt}
             />
+            <div className="inline-flex overflow-hidden rounded-md border border-blue-600/40 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setHierarchy("campaign")}
+                className={`px-2 py-0.5 font-medium transition-colors ${
+                  hierarchy === "campaign"
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-900 hover:bg-blue-300"
+                }`}
+              >
+                Campaign › {typeLabelShort}
+              </button>
+              <button
+                type="button"
+                onClick={() => setHierarchy("type")}
+                className={`px-2 py-0.5 font-medium transition-colors ${
+                  hierarchy === "type"
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-900 hover:bg-blue-300"
+                }`}
+              >
+                {typeLabelShort} › Campaign
+              </button>
+            </div>
             {cad && cad.hasUsd && !cad.usdConverted && (
               <span className="flex items-center gap-1 text-[11px] text-gray-900">
                 <AlertTriangle size={11} />
@@ -291,7 +363,7 @@ export default function MediaboxActualsSection({
       {!collapsed && (
         <>
       {/* Empty / loading state */}
-      {campaignGroups.length === 0 ? (
+      {primaryRows.length === 0 ? (
         <tr>
           <td
             colSpan={colSpan}
@@ -304,29 +376,29 @@ export default function MediaboxActualsSection({
         </tr>
       ) : (
         <>
-          {/* Inverted hierarchy: campaign at the top, types nested. */}
-          {campaignGroups.map((group) => {
-            const isOpen = expanded.has(group.name);
+          {/* Active hierarchy: primary rows, each expandable to its children. */}
+          {primaryRows.map((group) => {
+            const isOpen = expanded.has(group.key);
             return (
-              <Fragment key={group.name}>
+              <Fragment key={group.key}>
                 <MoneyRow
-                  label={group.name}
+                  label={group.label}
                   byMonth={group.byMonth}
                   total={group.total}
                   showNotes={showNotes}
                   bold
                   expand={{
                     expanded: isOpen,
-                    onToggle: () => toggle(group.name),
+                    onToggle: () => toggle(group.key),
                   }}
                 />
                 {isOpen &&
-                  group.types.map((t) => (
+                  group.children.map((c) => (
                     <MoneyRow
-                      key={`${group.name}::${t.label}`}
-                      label={t.label}
-                      byMonth={t.byMonth}
-                      total={t.total}
+                      key={`${group.key}::${c.label}`}
+                      label={c.label}
+                      byMonth={c.byMonth}
+                      total={c.total}
                       showNotes={showNotes}
                       indent
                     />
@@ -335,21 +407,21 @@ export default function MediaboxActualsSection({
             );
           })}
 
-          {/* Summary: total per media type / partner. */}
+          {/* Summary: total per the OTHER dimension. */}
           <tr className="bg-gray-100 border-y border-gray-200">
             <td
               colSpan={colSpan}
               className="sticky left-0 z-10 px-4 py-1.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wider"
             >
-              Summary — total per {typeNoun}
+              Summary — total per {summaryNoun}
             </td>
           </tr>
-          {typeRows.map((type) => (
+          {summaryRows.map((sRow) => (
             <MoneyRow
-              key={`summary::${type.label}`}
-              label={type.label}
-              byMonth={type.byMonth}
-              total={type.total}
+              key={sRow.key}
+              label={sRow.label}
+              byMonth={sRow.byMonth}
+              total={sRow.total}
               showNotes={showNotes}
               bold
             />
