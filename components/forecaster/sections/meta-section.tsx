@@ -14,6 +14,7 @@
 import { useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import StatCard from "../../dashboard/charts/stat-card";
+import MetaGmPodTable from "./meta-gm-pod-table";
 import { useMoKpiByClient } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 
 // ─── Formatting ────────────────────────────────────────────────────────────────
@@ -223,6 +224,8 @@ export default function MetaSection({
         elapsed — the exact Looker &ldquo;v2&rdquo; formula is still being
         reconciled.
       </p>
+
+      <MetaGmPodTable rows={rows} />
     </div>
   );
 }
