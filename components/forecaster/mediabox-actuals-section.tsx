@@ -30,6 +30,11 @@ import {
   groupByCampaign,
   type MediaboxCadType,
 } from "../../lib/services/mediabox-totals-service";
+import {
+  TargetProjectSelect,
+  MonthPasteButton,
+  type BlPasteApi,
+} from "./bl-paste-target";
 
 /** Axes that sit under MediaOcean and therefore get a MediaBox section. */
 export function axisHasMediabox(axisId: AxisId): boolean {
@@ -192,12 +197,18 @@ export default function MediaboxActualsSection({
   year,
   showNotes,
   mediabox,
+  blPaste,
 }: {
   axisId: AxisId;
   year: number | null;
   showNotes: boolean;
   /** Owned by ForecastGrid so the CSV export shares the same data. */
   mediabox: UseMediaboxTotalsResult;
+  /**
+   * "Paste this month into the BL" plumbing (shared with the MediaOcean
+   * section). Undefined disables pasting — e.g. while peeking at another year.
+   */
+  blPaste?: BlPasteApi;
 }) {
   const { cad, totals, refreshing, triggering, loading, error, refresh } =
     mediabox;
@@ -284,6 +295,9 @@ export default function MediaboxActualsSection({
                 USD not converted (no {year} rate)
               </span>
             )}
+            {blPaste && typeRows.length > 0 && (
+              <TargetProjectSelect api={blPaste} />
+            )}
           </div>
         </td>
       </tr>
@@ -357,7 +371,7 @@ export default function MediaboxActualsSection({
 
           {/* Grand total — same light-gray convention as the other sections'
               total rows. */}
-          <tr className="bg-gray-200 border-y border-gray-300">
+          <tr className="group bg-gray-200 border-y border-gray-300">
             <td className="sticky left-0 z-10 bg-gray-200 px-4 py-2 text-xs font-bold text-gray-900 uppercase tracking-wider">
               MediaBox total
             </td>
@@ -367,13 +381,28 @@ export default function MediaboxActualsSection({
               return (
                 <td
                   key={m}
-                  onClick={() => v && copyCellValue(v)}
-                  title={v ? "Click to copy" : undefined}
-                  className={`px-2.5 py-2 text-right align-middle ${v ? "cursor-copy" : ""}`}
+                  className="px-2.5 py-2 text-right align-middle"
                 >
-                  <p className="text-sm font-bold text-gray-900 tabular-nums">
-                    {money(v)}
-                  </p>
+                  <span className="inline-flex w-full items-center justify-end gap-1">
+                    {blPaste && (
+                      <MonthPasteButton
+                        api={blPaste}
+                        rows={typeRows}
+                        month={m}
+                        sourceLabel="MediaBox"
+                        typeNoun={typeNoun}
+                      />
+                    )}
+                    <span
+                      onClick={() => v && copyCellValue(v)}
+                      title={v ? "Click to copy" : undefined}
+                      className={v ? "cursor-copy" : ""}
+                    >
+                      <span className="text-sm font-bold text-gray-900 tabular-nums">
+                        {money(v)}
+                      </span>
+                    </span>
+                  </span>
                 </td>
               );
             })}

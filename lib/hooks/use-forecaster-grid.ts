@@ -35,6 +35,7 @@ import {
   saveAnnualActuals,
 } from "../services/annual-actuals-service";
 import { MONTHS, type MonthlyMap } from "../types/common.types";
+import type { SetByTypeUpdate } from "../format/mediabox-paste";
 import { resolveClosedMonths, type RFQType } from "../types/rfq.types";
 import { useAutosave, type SaveStatus } from "./use-autosave";
 import {
@@ -234,6 +235,14 @@ export interface UseForecasterGridResult {
       delta: number;
     }[]
   ) => void;
+  /**
+   * Set (replace) BL_INPUT cells, targeting a row by (bucket, rowType) and
+   * creating it when the project lacks that type. Used by the "paste a
+   * MediaBox / MediaOcean month into the BL" tool — each matched channel /
+   * partner overwrites its BL row for that month. A null/0 value on an absent
+   * row is a no-op (no empty row is created).
+   */
+  setCellsByType: (updates: SetByTypeUpdate[]) => void;
 
   // Structure
   addBucket: (name: string) => void;
@@ -838,6 +847,72 @@ export function useForecasterGrid(
     [data, original, config, isCoordEditable]
   );
 
+  // Set (replace) BL_INPUT cells, targeting a row by (bucket, rowType) like
+  // addToCells but overwriting the month instead of accumulating. Powers the
+  // "paste a MediaBox / MediaOcean month into the BL" tool: each matched channel
+  // / partner value replaces the BL row's value for that month. A missing row is
+  // created only for a non-zero value — never just to store an empty cell.
+  // (Media / Labs, the only axes with a MediaBox/MediaOcean source, carry no
+  // blExplicitZeroRowTypes, so a set 0 is a plain empty cell here.)
+  const setCellsByType = useCallback(
+    (rawUpdates: SetByTypeUpdate[]) => {
+      // Drop updates aimed at a closed period the user can't edit (BL).
+      const updates = rawUpdates.filter((u) =>
+        isCoordEditable({
+          category: "BL_INPUT",
+          bucketId: u.bucketId,
+          rowId: null,
+          month: u.month,
+        })
+      );
+      if (updates.length === 0) return;
+
+      const next = clone(data);
+      let createdAny = false;
+      const touched: { coord: CellCoord; value: number }[] = [];
+
+      for (const u of updates) {
+        const bucket = next.buckets.find((b) => b.bucketId === u.bucketId);
+        if (!bucket) continue;
+        const value = u.value ?? 0;
+        let row = bucket.rows.find((r) => r.rowType === u.rowType);
+        if (!row) {
+          // No point creating a row just to store an empty/zero value.
+          if (value === 0) continue;
+          const label =
+            config.rowTypeOptions.find((o) => o.value === u.rowType)?.label ??
+            u.rowType;
+          row = newRow(u.rowType, label);
+          bucket.rows.push(row);
+          createdAny = true;
+        }
+        row.months[u.month] = value;
+        touched.push({
+          coord: {
+            category: "BL_INPUT",
+            bucketId: bucket.bucketId,
+            rowId: row.rowId,
+            month: u.month,
+          },
+          value,
+        });
+      }
+
+      setData(next);
+      setDirtyMap((prev) => {
+        const nextMap = new Map(prev);
+        for (const { coord, value } of touched) {
+          const key = buildCellKey(coord);
+          if (getValueIn(original, coord) !== value) nextMap.set(key, value);
+          else nextMap.delete(key);
+        }
+        return nextMap;
+      });
+      if (createdAny) setStructureDirty(true);
+    },
+    [data, original, config, isCoordEditable]
+  );
+
   // ─── Structure (buckets / rows) ─────────────────────────────────────────
 
   const addBucket = useCallback((name: string) => {
@@ -1251,6 +1326,7 @@ export function useForecasterGrid(
     setCellValue,
     setCells,
     addToCells,
+    setCellsByType,
     addBucket,
     renameBucket,
     removeBucket,
