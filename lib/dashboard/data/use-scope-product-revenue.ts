@@ -62,7 +62,7 @@ export interface UseScopeProductRevenueParams {
 
 /** Sum a monthly map over the selected months (all months when none selected). */
 function sumMonths(months: MonthlyMap, selMonths: number[]): number {
-  if (selMonths.length === 0) {
+  if (!selMonths || selMonths.length === 0) {
     let total = 0;
     for (const v of Object.values(months)) total += Number(v) || 0;
     return total;
@@ -116,8 +116,8 @@ export function useScopeProductRevenue({
   const [loading, setLoading] = useState(false);
 
   // Stable primitive keys so array identity churn doesn't re-trigger fetches.
-  const idsKey = scopedClientIds.join(",");
-  const monthsKey = selMonths.join(",");
+const idsKey = (scopedClientIds ?? []).join(",");
+  const monthsKey = (selMonths ?? []).join(",");
   const ready = primary.year !== null && primary.rfq !== null && idsKey !== "";
 
   useEffect(() => {
