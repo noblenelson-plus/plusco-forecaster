@@ -22,6 +22,8 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
+import { BarChart3 } from "lucide-react";
+import ChartCard from "../../dashboard/charts/chart-card";
 import { useSocialPartnerMix } from "../../../lib/dashboard/data/use-social-partner-mix";
 
 function num(v: unknown): number {
@@ -54,11 +56,9 @@ export default function MetaSocialMixChart() {
   }, [rows]);
 
   return (
-    <div data-scroll-section data-scroll-label="Social mix by partner" className="space-y-3">
-      <h3 className="text-base font-bold text-foreground">
-        Social Mix — $ by Social Partner (MIR)
-      </h3>
-      <div className="h-80 rounded-xl border border-gray-200 p-4">
+    <div data-scroll-section data-scroll-label="Social mix by partner">
+      <ChartCard title="Social Mix — $ by Social Partner (MIR)" icon={BarChart3}>
+        <div className="mt-2 h-80">
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             Loading…
@@ -88,8 +88,8 @@ export default function MetaSocialMixChart() {
                 tickFormatter={compactMoney}
                 width={56}
               />
-              <Tooltip
-                formatter={(v: number) => fullMoney(v)}
+                            <Tooltip
+                formatter={(v) => fullMoney(Number(v))}
                 labelStyle={{ color: "#111827", fontWeight: 600 }}
                 contentStyle={{ fontSize: 12, borderRadius: 8 }}
               />
@@ -99,7 +99,8 @@ export default function MetaSocialMixChart() {
             </BarChart>
           </ResponsiveContainer>
         )}
-      </div>
+        </div>
+      </ChartCard>
     </div>
   );
 }

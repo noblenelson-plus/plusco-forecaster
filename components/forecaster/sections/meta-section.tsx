@@ -15,11 +15,11 @@ import { useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import StatCard from "../../dashboard/charts/stat-card";
 import MetaGmPodTable from "./meta-gm-pod-table";
+import MetaGmPodTrendTable from "./meta-gm-pod-trend-table";
 import MetaByClientTable from "./meta-by-client-table";
-import MetaPacingPies from "./meta-pacing-pies";
+import MetaPacingYoy from "./meta-pacing-yoy";
 import MediaoceanSocialSection from "./mediaocean-social-section";
-import { useMoKpiByClient } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
-
+import { useMetaSocialOutput } from "../../../lib/dashboard/data/use-meta-social-output";
 // ─── Formatting ────────────────────────────────────────────────────────────────
 function num(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
@@ -62,7 +62,7 @@ export default function MetaSection({
   scopedClientIds: string[];
 }) {
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
-  const kpi = useMoKpiByClient();
+    const kpi = useMetaSocialOutput();
 
   const rows = useMemo(
     () => kpi.rows.filter((r) => scopeSet.has(r.PLUSCO_CLIENT_ID)),
@@ -183,14 +183,16 @@ export default function MetaSection({
           <StatCard
             label="Meta Share of Social 2026"
             value={pct(m.metaShare2026)}
-            sub={m.shareVar !== null ? `${ppt(m.shareVar)} vs 2025` : undefined}
+            variance={m.shareVar !== null ? { pillLabel: ppt(m.shareVar), isFavorable: m.shareVar <= 0 } : undefined}
             accent="text-indigo-500"
           />
           <StatCard
             label="Other Platforms Share 2026"
             value={pct(m.otherShare2026)}
-            sub={
-              m.otherShareVar !== null ? `${ppt(m.otherShareVar)} vs 2025` : undefined
+            variance={
+              m.otherShareVar !== null
+                ? { pillLabel: ppt(m.otherShareVar), isFavorable: m.otherShareVar >= 0 }
+                : undefined
             }
           />
           <StatCard
@@ -210,7 +212,7 @@ export default function MetaSection({
           <StatCard
             label="Target Meta Share 2026"
             value={pct(m.targetShare)}
-            sub={m.targetShareVar !== null ? `${ppt(m.targetShareVar, 0)} vs 2025` : undefined}
+            variance={m.targetShareVar !== null ? { pillLabel: ppt(m.targetShareVar, 0), isFavorable: m.targetShareVar <= 0 } : undefined}
             accent="text-indigo-500"
           />
           <StatCard label="Spend Pacing" value={pct(m.spendPacing)} />
@@ -228,11 +230,13 @@ export default function MetaSection({
         reconciled.
       </p>
 
-<MetaGmPodTable rows={rows} />
+        <MetaGmPodTable rows={rows} />
+
+      <MetaGmPodTrendTable rows={rows} />
 
       <MetaByClientTable rows={rows} />
 
-      <MetaPacingPies rows={rows} />
+           <MetaPacingYoy rows={rows} />
 
       {/* Phase 3: partner-level YoY (META vs TikTok vs Reddit...). Reuses the
           MediaOcean social section — it has its own filters because
