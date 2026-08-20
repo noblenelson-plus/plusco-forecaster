@@ -35,12 +35,13 @@ import RevenueTab from "../../components/forecaster/tabs/revenue-tab";
 import ProductTab from "../../components/forecaster/tabs/product-tab";
 import MediaboxTab from "../../components/forecaster/tabs/mediabox-tab";
 import ClientNoteCard from "../../components/forecaster/sections/client-note-card";
-import InvestmentKpisSection from "../../components/forecaster/sections/investment-kpis-section";
 import MediaoceanInvestmentSection from "../../components/forecaster/sections/mediaocean-investment-section";
 import MediaoceanTopPartnersSection from "../../components/forecaster/sections/mediaocean-top-partners-section";
 import MediaoceanSocialSection from "../../components/forecaster/sections/mediaocean-social-section";
 import MirRawSection from "../../components/forecaster/sections/mir-raw-section";
 import BillingSummarySection from "../../components/forecaster/sections/billing-summary-section";
+import BillupsSection from "../../components/forecaster/sections/billups-section";
+import ExecKpisTabs from "../../components/forecaster/sections/exec-kpis-tabs";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
@@ -478,15 +479,20 @@ export default function DashboardPage() {
           )}
         {tab === "mediaocean" ? (
           <div className="space-y-10">
-            <InvestmentKpisSection />
             <MediaoceanInvestmentSection />
             <MediaoceanTopPartnersSection />
             <MediaoceanSocialSection />
           </div>
         ) : tab === "exec-kpis" ? (
-          <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
-            {activeLabel} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â coming soon
-          </div>
+          <ExecKpisTabs
+            forecastData={forecastData}
+            comparisonData={comparisonData}
+            clients={clients}
+            usersMap={usersMap}
+            scopedClientIds={scopedClientIds}
+            year={selectedYear ?? new Date().getFullYear()}
+            rfqLabel={selectedRFQ?.type ?? undefined}
+          />
         ) : error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {error}
