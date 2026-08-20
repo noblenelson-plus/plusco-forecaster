@@ -15,6 +15,9 @@ import { useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import StatCard from "../../dashboard/charts/stat-card";
 import MetaGmPodTable from "./meta-gm-pod-table";
+import MetaByClientTable from "./meta-by-client-table";
+import MetaPacingPies from "./meta-pacing-pies";
+import MediaoceanSocialSection from "./mediaocean-social-section";
 import { useMoKpiByClient } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 
 // ─── Formatting ────────────────────────────────────────────────────────────────
@@ -225,7 +228,16 @@ export default function MetaSection({
         reconciled.
       </p>
 
-      <MetaGmPodTable rows={rows} />
+<MetaGmPodTable rows={rows} />
+
+      <MetaByClientTable rows={rows} />
+
+      <MetaPacingPies rows={rows} />
+
+      {/* Phase 3: partner-level YoY (META vs TikTok vs Reddit...). Reuses the
+          MediaOcean social section — it has its own filters because
+          social_partner_mix has no client id to scope by. */}
+      <MediaoceanSocialSection />
     </div>
   );
 }
