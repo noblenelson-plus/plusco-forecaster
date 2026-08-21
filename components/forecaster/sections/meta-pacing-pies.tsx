@@ -17,6 +17,8 @@ import { useMemo } from "react";
 import ForecasterPieChart, {
   type PieSegment,
 } from "../charts/pie-chart";
+import { PieChart } from "lucide-react";
+import ChartCard from "../../dashboard/charts/chart-card";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 
 function num(v: unknown): number {
@@ -27,35 +29,20 @@ function num(v: unknown): number {
 function PieCard({ title, segments }: { title: string; segments: PieSegment[] }) {
   const total = segments.reduce((a, s) => a + s.value, 0);
   return (
-    <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-      <p className="text-sm font-semibold text-foreground">{title}</p>
-      <div className="h-44">
-        {total > 0 ? (
+    <ChartCard title={title} icon={PieChart}>
+      {total > 0 ? (
+        <div className="mt-2 flex justify-center">
           <ForecasterPieChart
             segments={segments}
             valueFormat={(v) => `${v} clients`}
           />
-        ) : (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            No clients in scope
-          </div>
-        )}
-      </div>
-      <div className="space-y-1">
-        {segments.map((s) => (
-          <div key={s.label} className="flex items-center gap-2 text-xs">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-sm"
-              style={{ background: s.color }}
-            />
-            <span className="flex-1 text-gray-600">{s.label}</span>
-            <span className="tabular-nums text-gray-900">
-              {s.value} ({total > 0 ? Math.round((s.value / total) * 100) : 0}%)
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
+        </div>
+      ) : (
+        <div className="flex h-48 items-center justify-center text-xs text-muted-foreground">
+          No clients in scope
+        </div>
+      )}
+    </ChartCard>
   );
 }
 
