@@ -19,6 +19,7 @@ import MetaGmPodTrendTable from "./meta-gm-pod-trend-table";
 import MetaByClientTable from "./meta-by-client-table";
 import MetaPacingYoy from "./meta-pacing-yoy";
 import MetaPartnerSection from "./meta-partner-section";
+import MetaPacingVsTarget from "./meta-pacing-vs-target";
 import { useMetaSocialOutput } from "../../../lib/dashboard/data/use-meta-social-output";
 // ─── Formatting ────────────────────────────────────────────────────────────────
 function num(v: unknown): number {
@@ -245,6 +246,12 @@ export default function MetaSection({
         Meta Pacing YoY
       </div>
       <MetaPartnerSection />
+
+      {/* Final Meta section: per-client pacing vs the 2026 divestment target. */}
+      <div className="rounded-md bg-gray-900 px-4 py-2 text-center text-sm font-semibold uppercase italic tracking-wider text-white">
+        Meta Pacing vs Divestment Target
+      </div>
+      <MetaPacingVsTarget rows={rows} />
     </div>
   );
 }

@@ -19,10 +19,13 @@ export interface PieSegment {
 export default function ForecasterPieChart({
   segments,
   valueFormat = (v) => String(Math.round(v)),
+  size = 256,
 }: {
   segments: PieSegment[];
   /** Formats the raw value shown in the tooltip (e.g. money formatter). */
   valueFormat?: (value: number) => string;
+  /** Square size (px) of the pie drawing area. Defaults to 256 (h-64 w-64). */
+  size?: number;
 }) {
   const data = segments.filter((s) => s.value > 0);
   const total = data.reduce((acc, s) => acc + s.value, 0);
@@ -54,7 +57,7 @@ export default function ForecasterPieChart({
 
   return (
     <div className="@container flex flex-col items-center gap-4">
-      <div className="h-64 w-64 flex-shrink-0">
+      <div className="flex-shrink-0" style={{ height: size, width: size }}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
