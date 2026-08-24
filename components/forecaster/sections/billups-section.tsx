@@ -1,4 +1,4 @@
-﻿// filepath: components/forecaster/sections/billups-section.tsx
+// filepath: components/forecaster/sections/billups-section.tsx
 "use client";
 
 /**
@@ -25,7 +25,7 @@
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Gauge, Loader2 } from "lucide-react";
+import { Loader2, DollarSign, PieChart, AlertTriangle, Table2 } from "lucide-react";
 import StatCard from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
 import BillupsTable from "./billups-table";
@@ -94,27 +94,27 @@ function MirCards({ k }: { k: BillupsKpis }) {
     <div className="space-y-6">
       <Band label="Eligible Clients Only">
         <CardGrid>
-          <StatCard label="Billups Share of OOH" value={pct(k.ooh.eligibleShare)} accent="text-indigo-500" />
-          <StatCard label="Billups-OOH" value={money(k.ooh.eligibleBillups)} />
-          <StatCard label="OOH Channel" value={money(k.ooh.eligibleChannel)} />
-          <StatCard label="Missed Opportunity (OOH)" value={money(k.ooh.eligibleMissed)} accent="text-red-500" />
+          <StatCard icon={PieChart} label="Billups Share of OOH" value={pct(k.ooh.eligibleShare)} accent="text-indigo-500" />
+          <StatCard icon={DollarSign} label="Billups-OOH" value={money(k.ooh.eligibleBillups)} />
+          <StatCard icon={DollarSign} label="OOH Channel" value={money(k.ooh.eligibleChannel)} />
+          <StatCard icon={AlertTriangle} label="Missed Opportunity (OOH)" value={money(k.ooh.eligibleMissed)} accent="text-red-500" />
 
-          <StatCard label="Billups Share of PRINT" value={pct(k.print.eligibleShare)} accent="text-indigo-500" />
-          <StatCard label="Billups-Print" value={money(k.print.eligibleBillups)} />
-          <StatCard label="Print Channel" value={money(k.print.eligibleChannel)} />
-          <StatCard label="Missed Opportunity (Print)" value={money(k.print.eligibleMissed)} accent="text-red-500" />
+          <StatCard icon={PieChart} label="Billups Share of PRINT" value={pct(k.print.eligibleShare)} accent="text-indigo-500" />
+          <StatCard icon={DollarSign} label="Billups-Print" value={money(k.print.eligibleBillups)} />
+          <StatCard icon={DollarSign} label="Print Channel" value={money(k.print.eligibleChannel)} />
+          <StatCard icon={AlertTriangle} label="Missed Opportunity (Print)" value={money(k.print.eligibleMissed)} accent="text-red-500" />
 
-          <StatCard label="Billups Share of OOH+PRINT" value={pct(k.combined.share)} accent="text-indigo-500" />
-          <StatCard label="Billups (OOH+Print)" value={money(k.combined.billups)} />
-          <StatCard label="OOH+PRINT" value={money(k.combined.channel)} />
-          <StatCard label="Missed Opportunity (Eligible $)" value={money(k.combined.missed)} accent="text-red-500" />
+          <StatCard icon={PieChart} label="Billups Share of OOH+PRINT" value={pct(k.combined.share)} accent="text-indigo-500" />
+          <StatCard icon={DollarSign} label="Billups (OOH+Print)" value={money(k.combined.billups)} />
+          <StatCard icon={DollarSign} label="OOH+PRINT" value={money(k.combined.channel)} />
+          <StatCard icon={AlertTriangle} label="Missed Opportunity (Eligible $)" value={money(k.combined.missed)} accent="text-red-500" />
         </CardGrid>
       </Band>
 
       <Band label="Non Eligible Clients">
         <CardGrid>
-          <StatCard label="OOH Channel" value={money(k.ooh.nonEligibleChannel)} />
-          <StatCard label="Print Channel" value={money(k.print.nonEligibleChannel)} />
+          <StatCard icon={DollarSign} label="OOH Channel" value={money(k.ooh.nonEligibleChannel)} />
+          <StatCard icon={DollarSign} label="Print Channel" value={money(k.print.nonEligibleChannel)} />
         </CardGrid>
       </Band>
     </div>
@@ -127,28 +127,28 @@ function ForecastCards({ k }: { k: BillupsKpis }) {
     <div className="space-y-6">
       <Band label="Eligible Clients Only">
         <CardGrid>
-          <StatCard label="Billups-OOH" value={money(k.ooh.eligibleBillups)} />
-          <StatCard label="% Billups-OOH Share OOH" value={pct(k.ooh.eligibleShare)} accent="text-indigo-500" />
-          <StatCard label="Billups-Print" value={money(k.print.eligibleBillups)} />
-          <StatCard label="% Billups-PRINT Share PRINT" value={pct(k.print.eligibleShare)} accent="text-indigo-500" />
-          <StatCard label="Billups" value={money(k.combined.billups)} />
-          <StatCard label="OOH Channel" value={money(k.ooh.eligibleChannel)} />
-          <StatCard label="Print Channel" value={money(k.print.eligibleChannel)} />
-          <StatCard label="% Billups Share OOH+PRINT" value={pct(k.combined.share, 2)} accent="text-indigo-500" />
-          <StatCard label="OOH+PRINT" value={money(k.combined.channel)} />
+          <StatCard icon={DollarSign} label="Billups-OOH" value={money(k.ooh.eligibleBillups)} />
+          <StatCard icon={PieChart} label="% Billups-OOH Share OOH" value={pct(k.ooh.eligibleShare)} accent="text-indigo-500" />
+          <StatCard icon={DollarSign} label="Billups-Print" value={money(k.print.eligibleBillups)} />
+          <StatCard icon={PieChart} label="% Billups-PRINT Share PRINT" value={pct(k.print.eligibleShare)} accent="text-indigo-500" />
+          <StatCard icon={DollarSign} label="Billups" value={money(k.combined.billups)} />
+          <StatCard icon={DollarSign} label="OOH Channel" value={money(k.ooh.eligibleChannel)} />
+          <StatCard icon={DollarSign} label="Print Channel" value={money(k.print.eligibleChannel)} />
+          <StatCard icon={PieChart} label="% Billups Share OOH+PRINT" value={pct(k.combined.share, 2)} accent="text-indigo-500" />
+          <StatCard icon={DollarSign} label="OOH+PRINT" value={money(k.combined.channel)} />
         </CardGrid>
       </Band>
 
       <Band label="Non Eligible Clients">
         <CardGrid>
-          <StatCard label="OOH Channel" value={money(k.ooh.nonEligibleChannel)} />
-          <StatCard label="Print Channel" value={money(k.print.nonEligibleChannel)} />
+          <StatCard icon={DollarSign} label="OOH Channel" value={money(k.ooh.nonEligibleChannel)} />
+          <StatCard icon={DollarSign} label="Print Channel" value={money(k.print.nonEligibleChannel)} />
         </CardGrid>
       </Band>
 
       <Band label="Print Spends with no Billups">
         <CardGrid>
-          <StatCard label="Print Spends with no Billups" value={money(k.printSpendsWithNoBillups)} />
+          <StatCard icon={DollarSign} label="Print Spends with no Billups" value={money(k.printSpendsWithNoBillups)} />
         </CardGrid>
       </Band>
     </div>
@@ -294,9 +294,9 @@ export default function BillupsSection({
     <div className="space-y-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <Gauge size={18} className="text-primary" />
           <div>
-            <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plusco Exec KPIs</p>
+            <h2 className="text-xl font-bold text-foreground">{title}</h2>
             <p className="text-xs text-muted-foreground">
               {caption} · {rows.length} clients
             </p>
@@ -324,7 +324,7 @@ export default function BillupsSection({
           </div>
 
           <div data-scroll-section data-scroll-label="Client detail">
-            <ChartCard title="Client detail" subtitle={`${rows.length} clients`}>
+            <ChartCard icon={Table2} title="Client detail" subtitle={`${rows.length} clients`}>
               <BillupsTable rows={rows} />
             </ChartCard>
           </div>

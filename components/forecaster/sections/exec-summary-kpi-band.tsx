@@ -11,6 +11,7 @@
  */
 
 import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   ragFromPctOfTarget,
   targetBarWidth,
@@ -24,6 +25,8 @@ import {
 /** One metric tile. `status` (when set) wins; otherwise it's derived from pctOfTarget. */
 export interface ExecMetric {
   label: string;
+  /** Optional icon shown beside the label. */
+  icon?: LucideIcon;
   /** Preformatted display value, e.g. "$27,546,111" or "55%". */
   value: string;
   /** % of target (0..1+): drives the progress bar and the derived RAG status. */
@@ -61,15 +64,21 @@ function resolveStatus(m: ExecMetric, bands?: RagBands): RagStatus {
 function KpiTile({ metric, bands }: { metric: ExecMetric; bands?: RagBands }) {
   const status = resolveStatus(metric, bands);
   const showBar = metric.pctOfTarget != null;
+  const Icon = metric.icon;
 
   return (
     <div
       className={`rounded-xl border border-l-4 border-border bg-card p-4 transition-colors ${ACCENT[status]}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium text-muted-foreground">
-          {metric.label}
-        </p>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {Icon && (
+            <Icon size={14} className="flex-shrink-0 text-muted-foreground" />
+          )}
+          <p className="truncate text-xs font-medium text-muted-foreground">
+            {metric.label}
+          </p>
+        </div>
         {status !== "neutral" && (
           <span
             className={`mt-0.5 h-2 w-2 flex-shrink-0 rounded-full ${ragDot(status)}`}
@@ -121,7 +130,7 @@ function KpiTile({ metric, bands }: { metric: ExecMetric; bands?: RagBands }) {
   );
 }
 
-function Legend() {
+export function RagLegend() {
   const items: { status: RagStatus; label: string }[] = [
     { status: "green", label: "On / above goal" },
     { status: "amber", label: "Approaching" },
@@ -157,7 +166,7 @@ export default function ExecSummaryKpiBand({
     <div className="space-y-4">
       {legend && (
         <div className="flex justify-end">
-          <Legend />
+          <RagLegend />
         </div>
       )}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">

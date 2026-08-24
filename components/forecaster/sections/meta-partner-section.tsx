@@ -26,7 +26,7 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
-import { Share2, BarChart3, PieChart as PieIcon, Loader2 } from "lucide-react";
+import { Share2, BarChart3, PieChart as PieIcon, Loader2, DollarSign } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
 import StatCard from "../../dashboard/charts/stat-card";
 import ForecasterPieChart, { type PieSegment } from "../charts/pie-chart";
@@ -254,9 +254,9 @@ export default function MetaPartnerSection() {
           </div>
         </ChartCard>
         <div className="flex flex-col gap-3">
-          <StatCard label="Social 2025" value={money(m.social2025)} />
-          <StatCard label="Meta 2025" value={money(m.meta2025)} />
-          <StatCard label="Meta Share of Social 2025" value={pct(m.metaShare2025)} accent="text-indigo-500" />
+          <StatCard icon={DollarSign} label="Social 2025" value={money(m.social2025)} />
+          <StatCard icon={DollarSign} label="Meta 2025" value={money(m.meta2025)} />
+          <StatCard icon={PieIcon} label="Meta Share of Social 2025" value={pct(m.metaShare2025)} accent="text-indigo-500" />
         </div>
       </div>
 
@@ -273,9 +273,9 @@ export default function MetaPartnerSection() {
           </div>
         </ChartCard>
         <div className="flex flex-col gap-3">
-          <StatCard label="Social 2026" value={money(m.social2026)} />
-          <StatCard label="Meta 2026" value={money(m.meta2026)} />
-          <StatCard label="Meta Share of Social 2026" value={pct(m.metaShare2026)} accent="text-indigo-500" />
+          <StatCard icon={DollarSign} label="Social 2026" value={money(m.social2026)} />
+          <StatCard icon={DollarSign} label="Meta 2026" value={money(m.meta2026)} />
+          <StatCard icon={PieIcon} label="Meta Share of Social 2026" value={pct(m.metaShare2026)} accent="text-indigo-500" />
         </div>
       </div>
     </div>
