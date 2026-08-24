@@ -1,4 +1,4 @@
-﻿// components/forecaster/sections/meta-pacing-yoy.tsx
+// components/forecaster/sections/meta-pacing-yoy.tsx
 "use client";
 
 /**
@@ -9,89 +9,89 @@
  *   • Meta Spend — table + pie over Flag_Meta_Spend_YOY
  *     (YOY Divestment of min. 30% / Divestment Shortfall; "No Data" excluded).
  * Source: meta_social_output (via MetaSection), already dashboard-scoped.
+ *
+ * UI — standardized to the app's table DNA: shared TableColumn descriptors,
+ * a ChartCard with an "Export" action (these are per-client detail tables with
+ * no totals row, so export runs with includeTotals=false), and the semantic-
+ * token styling shared with the other Meta tables. Numbers/order are unchanged.
  */
 
 import { useMemo } from "react";
 import ForecasterPieChart, { type PieSegment } from "../charts/pie-chart";
 import { Percent, DollarSign, PieChart } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
+import ExportSheetButton from "../table/export-sheet-button";
+import type { TableColumn } from "../table/table-column.types";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
+import {
+  num,
+  str,
+  money,
+  moneySigned,
+  pct,
+  pctSigned,
+  ppt,
+  safeDiv,
+  opt,
+  shareVar,
+} from "./meta-format";
 
-// ─── Formatting ────────────────────────────────────────────────────────────────
-function num(v: unknown): number {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-function str(v: unknown): string {
-  return v === null || v === undefined || v === "" ? "—" : String(v);
-}
-function money(v: number): string {
-  return v ? `$${Math.round(v).toLocaleString("en-CA")}` : "$0";
-}
-function moneySigned(v: number): string {
-  return `${v < 0 ? "-" : ""}$${Math.abs(Math.round(v)).toLocaleString("en-CA")}`;
-}
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-function pctSigned(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}%`;
-}
-function ppt(v: number | null, digits = 1): string {
-  return v === null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}pt`;
-}
-function safeDiv(a: number, b: number): number | null {
-  return b !== 0 ? a / b : null;
-}
-function opt(r: KpiByClientRow, key: string): string {
-  return str((r as Record<string, unknown>)[key]);
-}
-function shareVar(m26: number, s26: number, m25: number, s25: number): number | null {
-  const a = safeDiv(m26, s26);
-  const b = safeDiv(m25, s25);
-  return a !== null && b !== null ? a - b : null;
-}
+/** These tables have no footer, so the export carries an empty totals object. */
+type NoTotals = Record<string, never>;
+const NO_TOTALS: NoTotals = {};
 
-interface Col {
-  header: string;
-  align: "left" | "right";
-  sticky?: boolean;
-  cell: (r: KpiByClientRow) => string;
-}
+type MetaColumn = TableColumn<KpiByClientRow, NoTotals>;
 
 /** A per-client table card next to a separate "% of Clients" pie card. */
 function TableWithPie({
   title,
   icon,
-  cols,
+  columns,
   rows,
   segments,
+  exportTitle,
+  sheetTitle,
 }: {
   title: string;
   icon: typeof Percent;
-  cols: Col[];
+  columns: MetaColumn[];
   rows: KpiByClientRow[];
   segments: PieSegment[];
+  exportTitle: string;
+  sheetTitle: string;
 }) {
-  const alignCls = (c: Col) => (c.align === "left" ? "text-left" : "text-right");
   const total = segments.reduce((a, s) => a + s.value, 0);
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
       {/* Table card */}
-      <ChartCard title={title} icon={icon} className="lg:col-span-3">
+      <ChartCard
+        title={title}
+        icon={icon}
+        className="lg:col-span-3"
+        action={
+          <ExportSheetButton
+            columns={columns}
+            rows={rows}
+            totals={NO_TOTALS}
+            title={exportTitle}
+            sheetTitle={sheetTitle}
+            includeTotals={false}
+          />
+        }
+      >
         <div className="-mx-2 mt-2 max-h-[420px] overflow-auto">
           <table className="min-w-full border-collapse text-sm">
             <thead className="sticky top-0 z-20">
-              <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
-                {cols.map((c) => (
+              <tr className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
+                {columns.map((c) => (
                   <th
-                    key={c.header}
-                    className={`whitespace-nowrap px-3 py-2.5 font-medium ${alignCls(c)} ${
-                      c.sticky ? "sticky left-0 z-10 bg-gray-50" : ""
-                    }`}
+                    key={c.id}
+                    className={`whitespace-nowrap px-3 py-2.5 font-medium ${
+                      c.align === "left" ? "text-left" : "text-right"
+                    } ${c.pinned ? "sticky left-0 z-10 bg-muted" : ""}`}
                   >
-                    {c.header}
+                    {c.label}
                   </th>
                 ))}
               </tr>
@@ -100,21 +100,23 @@ function TableWithPie({
               {rows.map((r) => (
                 <tr
                   key={r.PLUSCO_CLIENT_ID}
-                  className="border-b border-gray-100 hover:bg-gray-50"
+                  className="border-b border-border/60 transition-colors hover:bg-muted/60"
                 >
-                  {cols.map((c) => (
+                  {columns.map((c) => (
                     <td
-                      key={c.header}
-                      title={c.sticky ? c.cell(r) : undefined}
-                      className={`px-3 py-2 ${alignCls(c)} ${
-                        c.align === "right" ? "tabular-nums text-gray-700" : "text-gray-700"
+                      key={c.id}
+                      title={c.pinned ? c.display(r) : undefined}
+                      className={`px-3 py-2 ${
+                        c.align === "left"
+                          ? "text-left text-foreground"
+                          : "text-right tabular-nums text-foreground"
                       } ${
-                        c.sticky
-                          ? "sticky left-0 z-10 max-w-[150px] truncate bg-white font-medium text-gray-900"
+                        c.pinned
+                          ? "sticky left-0 z-10 max-w-[150px] truncate bg-card font-medium text-foreground"
                           : "whitespace-nowrap"
                       }`}
                     >
-                      {c.cell(r)}
+                      {c.display(r)}
                     </td>
                   ))}
                 </tr>
@@ -143,23 +145,150 @@ function TableWithPie({
   );
 }
 
-const SHARE_COLS: Col[] = [
-  { header: "Client", align: "left", sticky: true, cell: (r) => str(r.CLIENT_NAME) },
-  { header: "Scenario", align: "left", cell: (r) => opt(r, "scenario_meta_mapping") },
-  { header: "Meta Share Trend", align: "left", cell: (r) => str(r.meta_share_trend) },
-  { header: "Meta Share 2026", align: "right", cell: (r) => pct(safeDiv(num(r.meta_spend_2026), num(r.social_spend_2026))) },
-  { header: "Meta Share 2025", align: "right", cell: (r) => pct(safeDiv(num(r.meta_spend_2025), num(r.social_spend_2025))) },
-  { header: "Meta Share Variance", align: "right", cell: (r) => ppt(shareVar(num(r.meta_spend_2026), num(r.social_spend_2026), num(r.meta_spend_2025), num(r.social_spend_2025))) },
-  { header: "Target Meta Share", align: "right", cell: (r) => pct(safeDiv(num(r.target_meta_spend_2026), num(r.social_forecast_rfq1))) },
+const SHARE_COLUMNS: MetaColumn[] = [
+  {
+    id: "client",
+    label: "Client",
+    group: "Meta share of social",
+    kind: "text",
+    align: "left",
+    pinned: true,
+    width: 150,
+    raw: (r) => str(r.CLIENT_NAME),
+    display: (r) => str(r.CLIENT_NAME),
+  },
+  {
+    id: "scenario",
+    label: "Scenario",
+    group: "Meta share of social",
+    kind: "text",
+    align: "left",
+    raw: (r) => opt(r, "scenario_meta_mapping"),
+    display: (r) => opt(r, "scenario_meta_mapping"),
+  },
+  {
+    id: "meta_share_trend",
+    label: "Meta Share Trend",
+    group: "Meta share of social",
+    kind: "text",
+    align: "left",
+    raw: (r) => str(r.meta_share_trend),
+    display: (r) => str(r.meta_share_trend),
+  },
+  {
+    id: "meta_share_2026",
+    label: "Meta Share 2026",
+    group: "Meta share of social",
+    kind: "percent",
+    align: "right",
+    raw: (r) => safeDiv(num(r.meta_spend_2026), num(r.social_spend_2026)),
+    display: (r) => pct(safeDiv(num(r.meta_spend_2026), num(r.social_spend_2026))),
+  },
+  {
+    id: "meta_share_2025",
+    label: "Meta Share 2025",
+    group: "Meta share of social",
+    kind: "percent",
+    align: "right",
+    raw: (r) => safeDiv(num(r.meta_spend_2025), num(r.social_spend_2025)),
+    display: (r) => pct(safeDiv(num(r.meta_spend_2025), num(r.social_spend_2025))),
+  },
+  {
+    id: "meta_share_variance",
+    label: "Meta Share Variance",
+    group: "Meta share of social",
+    kind: "percent",
+    align: "right",
+    raw: (r) =>
+      shareVar(
+        num(r.meta_spend_2026),
+        num(r.social_spend_2026),
+        num(r.meta_spend_2025),
+        num(r.social_spend_2025)
+      ),
+    display: (r) =>
+      ppt(
+        shareVar(
+          num(r.meta_spend_2026),
+          num(r.social_spend_2026),
+          num(r.meta_spend_2025),
+          num(r.social_spend_2025)
+        )
+      ),
+  },
+  {
+    id: "target_meta_share",
+    label: "Target Meta Share",
+    group: "Meta share of social",
+    kind: "percent",
+    align: "right",
+    raw: (r) => safeDiv(num(r.target_meta_spend_2026), num(r.social_forecast_rfq1)),
+    display: (r) =>
+      pct(safeDiv(num(r.target_meta_spend_2026), num(r.social_forecast_rfq1))),
+  },
 ];
 
-const SPEND_COLS: Col[] = [
-  { header: "Client", align: "left", sticky: true, cell: (r) => str(r.CLIENT_NAME) },
-  { header: "Flag Meta Spend YoY", align: "left", cell: (r) => opt(r, "Flag_Meta_Spend_YOY") },
-  { header: "Meta 2026", align: "right", cell: (r) => money(num(r.meta_spend_2026)) },
-  { header: "Meta 2025", align: "right", cell: (r) => money(num(r.meta_spend_2025)) },
-  { header: "Meta Spend Var YoY $", align: "right", cell: (r) => moneySigned(num(r.meta_spend_2026) - num(r.meta_spend_2025)) },
-  { header: "Meta Spend Var YoY %", align: "right", cell: (r) => pctSigned(safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2025))) },
+const SPEND_COLUMNS: MetaColumn[] = [
+  {
+    id: "client",
+    label: "Client",
+    group: "Meta spend",
+    kind: "text",
+    align: "left",
+    pinned: true,
+    width: 150,
+    raw: (r) => str(r.CLIENT_NAME),
+    display: (r) => str(r.CLIENT_NAME),
+  },
+  {
+    id: "flag_meta_spend_yoy",
+    label: "Flag Meta Spend YoY",
+    group: "Meta spend",
+    kind: "text",
+    align: "left",
+    raw: (r) => opt(r, "Flag_Meta_Spend_YOY"),
+    display: (r) => opt(r, "Flag_Meta_Spend_YOY"),
+  },
+  {
+    id: "meta_2026",
+    label: "Meta 2026",
+    group: "Meta spend",
+    kind: "money",
+    align: "right",
+    raw: (r) => num(r.meta_spend_2026),
+    display: (r) => money(num(r.meta_spend_2026)),
+  },
+  {
+    id: "meta_2025",
+    label: "Meta 2025",
+    group: "Meta spend",
+    kind: "money",
+    align: "right",
+    raw: (r) => num(r.meta_spend_2025),
+    display: (r) => money(num(r.meta_spend_2025)),
+  },
+  {
+    id: "meta_var_yoy_usd",
+    label: "Meta Spend Var YoY $",
+    group: "Meta spend",
+    kind: "money",
+    align: "right",
+    raw: (r) => num(r.meta_spend_2026) - num(r.meta_spend_2025),
+    display: (r) => moneySigned(num(r.meta_spend_2026) - num(r.meta_spend_2025)),
+  },
+  {
+    id: "meta_var_yoy_pct",
+    label: "Meta Spend Var YoY %",
+    group: "Meta spend",
+    kind: "percent",
+    align: "right",
+    raw: (r) =>
+      safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2025)),
+    display: (r) =>
+      pctSigned(
+        safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2025))
+      ),
+  },
 ];
 
 export default function MetaPacingYoy({ rows }: { rows: KpiByClientRow[] }) {
@@ -209,16 +338,20 @@ export default function MetaPacingYoy({ rows }: { rows: KpiByClientRow[] }) {
       <TableWithPie
         title="Meta Share of Social"
         icon={Percent}
-        cols={SHARE_COLS}
+        columns={SHARE_COLUMNS}
         rows={sorted}
         segments={shareSegments}
+        exportTitle="Meta — Meta Share of Social"
+        sheetTitle="Meta share of social"
       />
       <TableWithPie
         title="Meta Spend"
         icon={DollarSign}
-        cols={SPEND_COLS}
+        columns={SPEND_COLUMNS}
         rows={sorted}
         segments={spendSegments}
+        exportTitle="Meta — Meta Spend"
+        sheetTitle="Meta spend"
       />
     </div>
   );

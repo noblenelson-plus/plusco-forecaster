@@ -1,4 +1,4 @@
-﻿// components/forecaster/sections/meta-section.tsx
+// components/forecaster/sections/meta-section.tsx
 "use client";
 
 /**
@@ -9,6 +9,12 @@
  *
  * Later phases add the GM-Pod table, the YoY partner tables/charts, and the
  * by-client table.
+ *
+ * UI — matches the app's section DNA: the divestment scorecards sit in a
+ * `data-scroll-section` so the right-edge side-nav lists them like every other
+ * section; the page title follows the Executive Summary sub-page style; and each
+ * grouped area below carries a plain `text-base font-semibold` heading instead
+ * of the old dark banners. All number formatting comes from ./meta-format.
  */
 
 import { useMemo } from "react";
@@ -21,23 +27,7 @@ import MetaPacingYoy from "./meta-pacing-yoy";
 import MetaPartnerSection from "./meta-partner-section";
 import MetaPacingVsTarget from "./meta-pacing-vs-target";
 import { useMetaSocialOutput } from "../../../lib/dashboard/data/use-meta-social-output";
-// ─── Formatting ────────────────────────────────────────────────────────────────
-function num(v: unknown): number {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-function money(v: number): string {
-  return `$${Math.round(v).toLocaleString("en-CA")}`;
-}
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-function ppt(v: number, digits = 1): string {
-  return `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}pt`;
-}
-function safeDiv(a: number, b: number): number | null {
-  return b !== 0 ? a / b : null;
-}
+import { num, money, pct, ppt, safeDiv } from "./meta-format";
 
 /** A labeled row of scorecards (e.g. "2025", "2026", "2026 Target"). */
 function YearRow({
@@ -63,7 +53,7 @@ export default function MetaSection({
   scopedClientIds: string[];
 }) {
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
-    const kpi = useMetaSocialOutput();
+  const kpi = useMetaSocialOutput();
 
   const rows = useMemo(
     () => kpi.rows.filter((r) => scopeSet.has(r.PLUSCO_CLIENT_ID)),
@@ -158,100 +148,109 @@ export default function MetaSection({
 
   return (
     <div className="space-y-8">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Plusco Exec KPIs
+      {/* Divestment scorecards — now a scroll-section so the side-nav lists it. */}
+      <div
+        data-scroll-section
+        data-scroll-label="Meta divestment"
+        className="space-y-6"
+      >
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Plusco Exec KPIs
+          </p>
+          <h2 className="text-xl font-bold text-foreground">Meta Divestment</h2>
+        </div>
+
+        <div className="space-y-6">
+          {/* 2025 actuals */}
+          <YearRow label="2025">
+            <StatCard label="Social 2025" value={money(m.social2025)} />
+            <StatCard label="Meta 2025" value={money(m.meta2025)} />
+            <StatCard
+              label="Meta Share of Social 2025"
+              value={pct(m.metaShare2025)}
+              accent="text-indigo-500"
+            />
+          </YearRow>
+
+          {/* 2026 actuals */}
+          <YearRow label="2026">
+            <StatCard label="Social 2026" value={money(m.social2026)} />
+            <StatCard label="Meta 2026" value={money(m.meta2026)} />
+            <StatCard
+              label="Meta Share of Social 2026"
+              value={pct(m.metaShare2026)}
+              variance={m.shareVar !== null ? { pillLabel: ppt(m.shareVar), isFavorable: m.shareVar <= 0 } : undefined}
+              accent="text-indigo-500"
+            />
+            <StatCard
+              label="Other Platforms Share 2026"
+              value={pct(m.otherShare2026)}
+              variance={
+                m.otherShareVar !== null
+                  ? { pillLabel: ppt(m.otherShareVar), isFavorable: m.otherShareVar >= 0 }
+                  : undefined
+              }
+            />
+            <StatCard
+              label="% Clients with Divested Meta Share"
+              value={pct(m.pctDivested)}
+              accent="text-emerald-500"
+            />
+          </YearRow>
+
+          {/* 2026 target */}
+          <YearRow label="2026 Target">
+            <StatCard label="Social Forecast (RFQ)" value={money(m.socialForecast)} />
+            <StatCard
+              label="Target Meta Spend 2026 (-30%)"
+              value={money(m.targetMeta)}
+            />
+            <StatCard
+              label="Target Meta Share 2026"
+              value={pct(m.targetShare)}
+              variance={m.targetShareVar !== null ? { pillLabel: ppt(m.targetShareVar, 0), isFavorable: m.targetShareVar <= 0 } : undefined}
+              accent="text-indigo-500"
+            />
+            <StatCard label="Spend Pacing" value={pct(m.spendPacing)} />
+            <StatCard
+              label="Pacing Index"
+              value={m.pacingIndex !== null ? Math.round(m.pacingIndex).toString() : "—"}
+            />
+          </YearRow>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Target Meta Spend = Σ per-client target (2026 Social Forecast × 2025 Meta
+          Share of Social × 0.70). Pacing Index = Spend Pacing ÷ share of year
+          elapsed — the exact Looker &ldquo;v2&rdquo; formula is still being
+          reconciled.
         </p>
-        <h2 className="text-xl font-bold text-foreground">Meta Divestment</h2>
       </div>
 
-      <div className="space-y-6">
-        {/* 2025 actuals */}
-        <YearRow label="2025">
-          <StatCard label="Social 2025" value={money(m.social2025)} />
-          <StatCard label="Meta 2025" value={money(m.meta2025)} />
-          <StatCard
-            label="Meta Share of Social 2025"
-            value={pct(m.metaShare2025)}
-            accent="text-indigo-500"
-          />
-        </YearRow>
-
-        {/* 2026 actuals */}
-        <YearRow label="2026">
-          <StatCard label="Social 2026" value={money(m.social2026)} />
-          <StatCard label="Meta 2026" value={money(m.meta2026)} />
-          <StatCard
-            label="Meta Share of Social 2026"
-            value={pct(m.metaShare2026)}
-            variance={m.shareVar !== null ? { pillLabel: ppt(m.shareVar), isFavorable: m.shareVar <= 0 } : undefined}
-            accent="text-indigo-500"
-          />
-          <StatCard
-            label="Other Platforms Share 2026"
-            value={pct(m.otherShare2026)}
-            variance={
-              m.otherShareVar !== null
-                ? { pillLabel: ppt(m.otherShareVar), isFavorable: m.otherShareVar >= 0 }
-                : undefined
-            }
-          />
-          <StatCard
-            label="% Clients with Divested Meta Share"
-            value={pct(m.pctDivested)}
-            accent="text-emerald-500"
-          />
-        </YearRow>
-
-        {/* 2026 target */}
-        <YearRow label="2026 Target">
-          <StatCard label="Social Forecast (RFQ)" value={money(m.socialForecast)} />
-          <StatCard
-            label="Target Meta Spend 2026 (-30%)"
-            value={money(m.targetMeta)}
-          />
-          <StatCard
-            label="Target Meta Share 2026"
-            value={pct(m.targetShare)}
-            variance={m.targetShareVar !== null ? { pillLabel: ppt(m.targetShareVar, 0), isFavorable: m.targetShareVar <= 0 } : undefined}
-            accent="text-indigo-500"
-          />
-          <StatCard label="Spend Pacing" value={pct(m.spendPacing)} />
-          <StatCard
-            label="Pacing Index"
-            value={m.pacingIndex !== null ? Math.round(m.pacingIndex).toString() : "—"}
-          />
-        </YearRow>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        Target Meta Spend = Σ per-client target (2026 Social Forecast × 2025 Meta
-        Share of Social × 0.70). Pacing Index = Spend Pacing ÷ share of year
-        elapsed — the exact Looker &ldquo;v2&rdquo; formula is still being
-        reconciled.
-      </p>
-
-        <MetaGmPodTable rows={rows} />
+      <MetaGmPodTable rows={rows} />
 
       <MetaGmPodTrendTable rows={rows} />
 
       <MetaByClientTable rows={rows} />
 
-           <MetaPacingYoy rows={rows} />
+      <MetaPacingYoy rows={rows} />
 
-      {/* Phase 3: partner-level YoY (META vs TikTok vs Reddit...). Reuses the
-          MediaOcean social section — it has its own filters because
-          social_partner_mix has no client id to scope by. */}
-               <div className="rounded-md bg-gray-900 px-4 py-2 text-center text-sm font-semibold uppercase italic tracking-wider text-white">
-        Meta Pacing YoY
+      {/* Partner-level YoY (META vs TikTok vs Reddit...). Reuses the MediaOcean
+          social section — it carries its own filters because social_partner_mix
+          has no client id to scope by. */}
+      <div className="space-y-4">
+        <h2 className="text-base font-semibold text-foreground">Meta Partner YoY</h2>
+        <MetaPartnerSection />
       </div>
-      <MetaPartnerSection />
 
       {/* Final Meta section: per-client pacing vs the 2026 divestment target. */}
-      <div className="rounded-md bg-gray-900 px-4 py-2 text-center text-sm font-semibold uppercase italic tracking-wider text-white">
-        Meta Pacing vs Divestment Target
+      <div className="space-y-4">
+        <h2 className="text-base font-semibold text-foreground">
+          Meta Pacing vs Divestment Target
+        </h2>
+        <MetaPacingVsTarget rows={rows} />
       </div>
-      <MetaPacingVsTarget rows={rows} />
     </div>
   );
 }

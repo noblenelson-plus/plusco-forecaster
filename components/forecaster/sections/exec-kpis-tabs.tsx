@@ -1,4 +1,4 @@
-﻿// components/forecaster/sections/exec-kpis-tabs.tsx
+// components/forecaster/sections/exec-kpis-tabs.tsx
 "use client";
 
 /**
@@ -7,9 +7,9 @@
  *   Executive Summary · Investment Strategy KPIs · Meta · Billups · Local Media
  *
  * Summary and Billups take the page's forecast scope (dashboard filters +
- * currency already applied). Investment Strategy KPIs is self-contained (it
- * fetches its own MO-KPI data and carries its own section filters), so it needs
- * no props. Meta and Local Media are placeholders for now.
+ * currency already applied). Investment Strategy KPIs, Meta and Billups are all
+ * scoped by the same global scopedClientIds, so one filter bar drives every
+ * sub-page. Local Media is a placeholder for now.
  */
 
 import { useState } from "react";
@@ -97,7 +97,9 @@ export default function ExecKpisTabs({
         />
       )}
 
-      {sub === "investment" && <InvestmentKpisSection />}
+      {sub === "investment" && (
+        <InvestmentKpisSection scopedClientIds={scopedClientIds} />
+      )}
 
       {sub === "meta" && <MetaSection scopedClientIds={scopedClientIds} />}
 

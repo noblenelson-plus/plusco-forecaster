@@ -1,4 +1,4 @@
-﻿// filepath: components/forecaster/sections/investment-kpis-section.tsx
+// filepath: components/forecaster/sections/investment-kpis-section.tsx
 "use client";
 
 /**
@@ -9,41 +9,35 @@
  * recomputed here; every rule already ran in BigQuery.
  *
  * This is a fixed strategy snapshot (source = RFQ 2-BL-2026, 2025 vs 2026): it
- * intentionally does NOT react to the dashboard's Year/RFQ selectors. Its own
- * five client-level filters (Agency / BU Region / Business Lead / GM Pod /
- * Client) drive the roll-up, and the same filtered rows feed the table below.
+ * intentionally does NOT react to the dashboard's Year/RFQ selectors. It is
+ * scoped by the dashboard's global filter bar (the same scopedClientIds list
+ * Meta and Billups use), so one filter drives every Executive-KPI sub-page; the
+ * scoped rows feed the scorecards and the table below.
  *
  * Row focus: clicking a client in the table narrows the scorecards + client
  * detail panel to that one client (the table stays full, row highlighted). A
- * "Viewing" chip shows the focused client; changing any filter clears focus.
+ * "Viewing" chip shows the focused client; a scope change clears focus.
  */
 
 import { useMemo, useState } from "react";
-import { Loader2, Gauge, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
-import MultiSelectDropdown, {
-  type Option,
-} from "../../_shared/multi-select-dropdown";
 import {
   useMoKpiByClient,
-  kpiFilterOptions,
-  applyKpiFilters,
   computeInvestmentKpis,
   metaShareTrendBreakdown,
-  EMPTY_KPI_FILTERS,
-  type KpiFilters,
 } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 import InvestmentKpisTable from "./investment-kpis-table";
 import InvestmentKpisClientDetail from "./investment-kpis-client-detail";
 
-// ─── Formatting helpers ───────────────────────────────────────────────────────
+// --- Formatting helpers -------------------------------------------------------
 
-/** 27546111 → "$27 546 111" (en-CA, matching the app's money style). */
+/** 27546111 -> "$27 546 111" (en-CA, matching the app's money style). */
 function money(v: number): string {
   return `$${Math.round(v).toLocaleString("en-CA")}`;
 }
 
-/** 0.55 → "55%" ; null → "—". */
+/** 0.55 -> "55%" ; null -> "—". */
 function pct(v: number | null, digits = 0): string {
   return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
 }
@@ -68,10 +62,7 @@ function yoyVariance(
   return { pillLabel, isFavorable };
 }
 
-const toOptions = (values: string[]): Option[] =>
-  values.map((v) => ({ value: v, label: v }));
-
-// ─── Small building blocks ────────────────────────────────────────────────────
+// --- Small building blocks ----------------------------------------------------
 
 function KpiGroup({
   title,
@@ -147,16 +138,27 @@ function MetaShareTrendStrip({
   );
 }
 
-// ─── Section ──────────────────────────────────────────────────────────────────
+// --- Section ------------------------------------------------------------------
 
-export default function InvestmentKpisSection() {
+export default function InvestmentKpisSection({
+  scopedClientIds,
+}: {
+  /** Global dashboard scope. Omitted -> the section shows every accessible row. */
+  scopedClientIds?: string[];
+}) {
   const { rows, loading, error } = useMoKpiByClient();
-  const [filters, setFilters] = useState<KpiFilters>(EMPTY_KPI_FILTERS);
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
-  // Options come from ALL rows so the choices stay stable as filters change.
-  const options = useMemo(() => kpiFilterOptions(rows), [rows]);
-  const filtered = useMemo(() => applyKpiFilters(rows, filters), [rows, filters]);
+  // Scope to the dashboard's global filter (the same list Meta and Billups use).
+  // When no scope is supplied the section renders standalone over every row.
+  const scopeSet = useMemo(
+    () => (scopedClientIds ? new Set(scopedClientIds) : null),
+    [scopedClientIds]
+  );
+  const filtered = useMemo(
+    () => (scopeSet ? rows.filter((r) => scopeSet.has(r.PLUSCO_CLIENT_ID)) : rows),
+    [rows, scopeSet]
+  );
 
   // Focus: clicking a table row narrows the scorecards + client-detail panel to
   // that one client while the table itself stays full (row highlighted). If the
@@ -184,19 +186,7 @@ export default function InvestmentKpisSection() {
   const handleRowClick = (id: string) =>
     setFocusedId((prev) => (prev === id ? null : id));
 
-  const anyFilterActive =
-    filters.agency.length > 0 ||
-    filters.buRegion.length > 0 ||
-    filters.businessLead.length > 0 ||
-    filters.gmPod.length > 0 ||
-    filters.client.length > 0;
-
-  const set = (patch: Partial<KpiFilters>) => {
-    setFilters((prev) => ({ ...prev, ...patch }));
-    setFocusedId(null);
-  };
-
-  // ─── States ──────────────────────────────────────────────────────────────
+  // --- States --------------------------------------------------------------
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
@@ -232,63 +222,16 @@ export default function InvestmentKpisSection() {
 
   return (
     <div data-scroll-section data-scroll-label="Investment KPIs" className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <Gauge size={18} className="text-primary" />
-        <h2 className="text-lg font-semibold text-foreground">Investment KPIs</h2>
-      </div>
-
-      {/* Filter bar (5 client-level filters) */}
-      <div className="flex flex-wrap items-center gap-3">
-        <MultiSelectDropdown
-          label="Agency"
-          options={toOptions(options.agency)}
-          selectedValues={filters.agency}
-          onChange={(v) => set({ agency: v })}
-          searchable
-        />
-        <MultiSelectDropdown
-          label="BU Region"
-          options={toOptions(options.buRegion)}
-          selectedValues={filters.buRegion}
-          onChange={(v) => set({ buRegion: v })}
-        />
-        <MultiSelectDropdown
-          label="Business Lead"
-          options={toOptions(options.businessLead)}
-          selectedValues={filters.businessLead}
-          onChange={(v) => set({ businessLead: v })}
-          searchable
-        />
-        <MultiSelectDropdown
-          label="GM Pod"
-          options={toOptions(options.gmPod)}
-          selectedValues={filters.gmPod}
-          onChange={(v) => set({ gmPod: v })}
-        />
-        <MultiSelectDropdown
-          label="Client"
-          options={toOptions(options.client)}
-          selectedValues={filters.client}
-          onChange={(v) => set({ client: v })}
-          searchable
-        />
-        {anyFilterActive && (
-          <button
-            type="button"
-            onClick={() => {
-              setFilters(EMPTY_KPI_FILTERS);
-              setFocusedId(null);
-            }}
-            className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          >
-            Clear filters
-          </button>
-        )}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {kpis.clientCount} client{kpis.clientCount === 1 ? "" : "s"} · strategy
-          snapshot (RFQ 2-BL-2026, 2025 vs 2026)
-        </span>
+      {/* Header - matches the Executive Summary / Meta sub-page style. */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Plusco Exec KPIs
+        </p>
+        <h2 className="text-xl font-bold text-foreground">Investment KPIs</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {kpis.clientCount} client{kpis.clientCount === 1 ? "" : "s"} in scope -
+          strategy snapshot (RFQ 2-BL-2026, 2025 vs 2026)
+        </p>
       </div>
 
       {focusedRow && (

@@ -1,4 +1,4 @@
-// filepath: components/forecaster/sections/meta-pacing-vs-target.tsx
+// components/forecaster/sections/meta-pacing-vs-target.tsx
 "use client";
 
 /**
@@ -20,42 +20,22 @@
  * share of the year elapsed. "No Data" clients are excluded from both pies.
  *
  * Source: meta_social_output (via MetaSection), already dashboard-scoped.
+ *
+ * UI — standardized to the app's table DNA: shared TableColumn descriptors, a
+ * ChartCard with an "Export" action, and the semantic-token styling shared with
+ * the other Meta tables. Grand-total cells are recomputed from summed dollars
+ * (a Totals object built once), not averaged. Numbers/order are unchanged.
  */
 
 import { useMemo } from "react";
 import ForecasterPieChart, { type PieSegment } from "../charts/pie-chart";
 import { Percent, DollarSign, PieChart } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
+import ExportSheetButton from "../table/export-sheet-button";
+import type { TableColumn } from "../table/table-column.types";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
+import { num, str, money, moneyVar, pct, safeDiv, opt } from "./meta-format";
 
-// ─── Formatting ────────────────────────────────────────────────────────────────
-function num(v: unknown): number {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-function str(v: unknown): string {
-  return v === null || v === undefined || v === "" ? "—" : String(v);
-}
-function money(v: number): string {
-  return v ? `$${Math.round(v).toLocaleString("en-CA")}` : "$0";
-}
-/** Signed dollars in Looker style: "$-179,989" / "$11,784" / "$0". */
-function moneyVar(v: number): string {
-  const r = Math.round(v);
-  if (r === 0) return "$0";
-  return `$${r < 0 ? "-" : ""}${Math.abs(r).toLocaleString("en-CA")}`;
-}
-/** Percent from a 0–1 fraction; keeps a leading minus, never a leading plus. */
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-function safeDiv(a: number, b: number): number | null {
-  return b !== 0 ? a / b : null;
-}
-/** Read a stored value by key as a string cell ("—" when blank). */
-function opt(r: KpiByClientRow, key: string): string {
-  return str((r as Record<string, unknown>)[key]);
-}
 /** Read a pre-computed 0–1 fraction by key; null when blank (0 is kept). */
 function frac(r: KpiByClientRow, key: string): number | null {
   const v = (r as Record<string, unknown>)[key];
@@ -73,54 +53,77 @@ function shareVarVsTarget(r: KpiByClientRow): number | null {
   const t = frac(r, "target_meta_share_2026");
   return s !== null && t !== null ? s - t : null;
 }
-/** Grand-total share variance vs target, recomputed from summed dollars. */
-function totalShareVarVsTarget(rows: KpiByClientRow[]): number | null {
-  const share = safeDiv(sumField(rows, "meta_spend_2026"), sumField(rows, "social_spend_2026"));
-  const target = safeDiv(sumField(rows, "target_meta_spend_2026"), sumField(rows, "social_forecast_rfq1"));
+
+/** Grand totals recomputed from summed dollars — drive every footer cell. */
+interface Totals {
+  meta2025: number;
+  meta2026: number;
+  social2026: number;
+  targetMeta: number;
+  socialForecast: number;
+}
+
+/** Share variance vs target from summed dollars, null-safe. */
+function totalShareVar(t: Totals): number | null {
+  const share = safeDiv(t.meta2026, t.social2026);
+  const target = safeDiv(t.targetMeta, t.socialForecast);
   return share !== null && target !== null ? share - target : null;
 }
 
-interface Col {
-  header: string;
-  align: "left" | "right";
-  sticky?: boolean;
-  cell: (r: KpiByClientRow) => string;
-  total?: (rows: KpiByClientRow[]) => string;
-}
+type MetaColumn = TableColumn<KpiByClientRow, Totals>;
 
 /** A per-client table card (with a Grand-total footer) next to a "% of Clients" pie card. */
 function TableWithPie({
   title,
   icon,
-  cols,
+  columns,
   rows,
+  totals,
   segments,
+  exportTitle,
+  sheetTitle,
 }: {
   title: string;
   icon: typeof Percent;
-  cols: Col[];
+  columns: MetaColumn[];
   rows: KpiByClientRow[];
+  totals: Totals;
   segments: PieSegment[];
+  exportTitle: string;
+  sheetTitle: string;
 }) {
-  const alignCls = (c: Col) => (c.align === "left" ? "text-left" : "text-right");
   const total = segments.reduce((a, s) => a + s.value, 0);
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
       {/* Table card */}
-      <ChartCard title={title} icon={icon} className="lg:col-span-3">
+      <ChartCard
+        title={title}
+        icon={icon}
+        className="lg:col-span-3"
+        action={
+          <ExportSheetButton
+            columns={columns}
+            rows={rows}
+            totals={totals}
+            title={exportTitle}
+            sheetTitle={sheetTitle}
+            includeTotals
+          />
+        }
+      >
         <div className="-mx-2 mt-2 max-h-[420px] overflow-auto">
           <table className="min-w-full border-collapse text-sm">
             <thead className="sticky top-0 z-20">
-              <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
-                {cols.map((c) => (
+              <tr className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
+                {columns.map((c) => (
                   <th
-                    key={c.header}
-                    className={`whitespace-nowrap px-3 py-2.5 font-medium ${alignCls(c)} ${
-                      c.sticky ? "sticky left-0 z-10 bg-gray-50" : ""
-                    }`}
+                    key={c.id}
+                    className={`whitespace-nowrap px-3 py-2.5 font-medium ${
+                      c.align === "left" ? "text-left" : "text-right"
+                    } ${c.pinned ? "sticky left-0 z-10 bg-muted" : ""}`}
                   >
-                    {c.header}
+                    {c.label}
                   </th>
                 ))}
               </tr>
@@ -129,36 +132,38 @@ function TableWithPie({
               {rows.map((r) => (
                 <tr
                   key={r.PLUSCO_CLIENT_ID}
-                  className="border-b border-gray-100 hover:bg-gray-50"
+                  className="border-b border-border/60 transition-colors hover:bg-muted/60"
                 >
-                  {cols.map((c) => (
+                  {columns.map((c) => (
                     <td
-                      key={c.header}
-                      title={c.sticky ? c.cell(r) : undefined}
-                      className={`px-3 py-2 ${alignCls(c)} ${
-                        c.align === "right" ? "tabular-nums text-gray-700" : "text-gray-700"
+                      key={c.id}
+                      title={c.pinned ? c.display(r) : undefined}
+                      className={`px-3 py-2 ${
+                        c.align === "left"
+                          ? "text-left text-foreground"
+                          : "text-right tabular-nums text-foreground"
                       } ${
-                        c.sticky
-                          ? "sticky left-0 z-10 max-w-[150px] truncate bg-white font-medium text-gray-900"
+                        c.pinned
+                          ? "sticky left-0 z-10 max-w-[150px] truncate bg-card font-medium text-foreground"
                           : "whitespace-nowrap"
                       }`}
                     >
-                      {c.cell(r)}
+                      {c.display(r)}
                     </td>
                   ))}
                 </tr>
               ))}
             </tbody>
             <tfoot className="sticky bottom-0 z-20">
-              <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold text-gray-900">
-                {cols.map((c) => (
+              <tr className="border-t-2 border-border bg-muted font-semibold text-foreground">
+                {columns.map((c) => (
                   <td
-                    key={c.header}
-                    className={`whitespace-nowrap px-3 py-2.5 ${alignCls(c)} ${
-                      c.align === "right" ? "tabular-nums" : ""
-                    } ${c.sticky ? "sticky left-0 z-10 bg-gray-50" : ""}`}
+                    key={c.id}
+                    className={`whitespace-nowrap px-3 py-2.5 ${
+                      c.align === "left" ? "text-left" : "text-right tabular-nums"
+                    } ${c.pinned ? "sticky left-0 z-10 bg-muted" : ""}`}
                   >
-                    {c.total ? c.total(rows) : ""}
+                    {c.total ? c.total(totals) : ""}
                   </td>
                 ))}
               </tr>
@@ -187,124 +192,214 @@ function TableWithPie({
   );
 }
 
-// ─── Columns ────────────────────────────────────────────────────────────────
-const SHARE_COLS: Col[] = [
+// --- Columns ---
+const SHARE_COLUMNS: MetaColumn[] = [
   {
-    header: "Client",
+    id: "client",
+    label: "Client",
+    group: "Meta share of social",
+    kind: "text",
     align: "left",
-    sticky: true,
-    cell: (r) => str(r.CLIENT_NAME),
+    pinned: true,
+    width: 150,
+    raw: (r) => str(r.CLIENT_NAME),
+    display: (r) => str(r.CLIENT_NAME),
     total: () => "Grand total",
   },
   {
-    header: "Flag Meta Share vs Target",
+    id: "flag_meta_share_vs_target",
+    label: "Flag Meta Share vs Target",
+    group: "Meta share of social",
+    kind: "text",
     align: "left",
-    cell: (r) => opt(r, "Flag_Meta_Share_vs_Target"),
+    raw: (r) => opt(r, "Flag_Meta_Share_vs_Target"),
+    display: (r) => opt(r, "Flag_Meta_Share_vs_Target"),
     total: () => "—",
   },
   {
-    header: "Meta 2025",
+    id: "meta_2025",
+    label: "Meta 2025",
+    group: "Meta share of social",
+    kind: "money",
     align: "right",
-    cell: (r) => money(num(r.meta_spend_2025)),
-    total: (rs) => money(sumField(rs, "meta_spend_2025")),
+    raw: (r) => num(r.meta_spend_2025),
+    display: (r) => money(num(r.meta_spend_2025)),
+    total: (t) => money(t.meta2025),
+    totalRaw: (t) => t.meta2025,
   },
   {
-    header: "Meta 2026",
+    id: "meta_2026",
+    label: "Meta 2026",
+    group: "Meta share of social",
+    kind: "money",
     align: "right",
-    cell: (r) => money(num(r.meta_spend_2026)),
-    total: (rs) => money(sumField(rs, "meta_spend_2026")),
+    raw: (r) => num(r.meta_spend_2026),
+    display: (r) => money(num(r.meta_spend_2026)),
+    total: (t) => money(t.meta2026),
+    totalRaw: (t) => t.meta2026,
   },
   {
-    header: "Meta Spend Var YoY $",
+    id: "meta_var_yoy_usd",
+    label: "Meta Spend Var YoY $",
+    group: "Meta share of social",
+    kind: "money",
     align: "right",
-    cell: (r) => moneyVar(num(r.meta_spend_2026) - num(r.meta_spend_2025)),
-    total: (rs) => moneyVar(sumField(rs, "meta_spend_2026") - sumField(rs, "meta_spend_2025")),
+    raw: (r) => num(r.meta_spend_2026) - num(r.meta_spend_2025),
+    display: (r) => moneyVar(num(r.meta_spend_2026) - num(r.meta_spend_2025)),
+    total: (t) => moneyVar(t.meta2026 - t.meta2025),
+    totalRaw: (t) => t.meta2026 - t.meta2025,
   },
   {
-    header: "Meta Spend Var YoY %",
+    id: "meta_var_yoy_pct",
+    label: "Meta Spend Var YoY %",
+    group: "Meta share of social",
+    kind: "percent",
     align: "right",
-    cell: (r) => pct(safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2026))),
-    total: (rs) => pct(safeDiv(sumField(rs, "meta_spend_2026") - sumField(rs, "meta_spend_2025"), sumField(rs, "meta_spend_2026"))),
+    raw: (r) => safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2026)),
+    display: (r) =>
+      pct(safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2026))),
+    total: (t) => pct(safeDiv(t.meta2026 - t.meta2025, t.meta2026)),
   },
   {
-    header: "Meta Share Social 2026",
+    id: "meta_share_social_2026",
+    label: "Meta Share Social 2026",
+    group: "Meta share of social",
+    kind: "percent",
     align: "right",
-    cell: (r) => pct(frac(r, "meta_share_of_social_2026")),
-    total: (rs) => pct(safeDiv(sumField(rs, "meta_spend_2026"), sumField(rs, "social_spend_2026"))),
+    raw: (r) => frac(r, "meta_share_of_social_2026"),
+    display: (r) => pct(frac(r, "meta_share_of_social_2026")),
+    total: (t) => pct(safeDiv(t.meta2026, t.social2026)),
   },
   {
-    header: "Target Meta Share",
+    id: "target_meta_share",
+    label: "Target Meta Share",
+    group: "Meta share of social",
+    kind: "percent",
     align: "right",
-    cell: (r) => pct(frac(r, "target_meta_share_2026")),
-    total: (rs) => pct(safeDiv(sumField(rs, "target_meta_spend_2026"), sumField(rs, "social_forecast_rfq1"))),
+    raw: (r) => frac(r, "target_meta_share_2026"),
+    display: (r) => pct(frac(r, "target_meta_share_2026")),
+    total: (t) => pct(safeDiv(t.targetMeta, t.socialForecast)),
   },
   {
-    header: "Share Variance vs Target",
+    id: "share_variance_vs_target",
+    label: "Share Variance vs Target",
+    group: "Meta share of social",
+    kind: "percent",
     align: "right",
-    cell: (r) => pct(shareVarVsTarget(r)),
-    total: (rs) => pct(totalShareVarVsTarget(rs)),
+    raw: (r) => shareVarVsTarget(r),
+    display: (r) => pct(shareVarVsTarget(r)),
+    total: (t) => pct(totalShareVar(t)),
   },
 ];
 
-const SPEND_COLS: Col[] = [
+const SPEND_COLUMNS: MetaColumn[] = [
   {
-    header: "Client",
+    id: "client",
+    label: "Client",
+    group: "Meta spend",
+    kind: "text",
     align: "left",
-    sticky: true,
-    cell: (r) => str(r.CLIENT_NAME),
+    pinned: true,
+    width: 150,
+    raw: (r) => str(r.CLIENT_NAME),
+    display: (r) => str(r.CLIENT_NAME),
     total: () => "Grand total",
   },
   {
-    header: "Meta Share Trend",
+    id: "meta_share_trend",
+    label: "Meta Share Trend",
+    group: "Meta spend",
+    kind: "text",
     align: "left",
-    cell: (r) => str(r.meta_share_trend),
+    raw: (r) => str(r.meta_share_trend),
+    display: (r) => str(r.meta_share_trend),
     total: () => "—",
   },
   {
-    header: "Meta 2025",
+    id: "meta_2025",
+    label: "Meta 2025",
+    group: "Meta spend",
+    kind: "money",
     align: "right",
-    cell: (r) => money(num(r.meta_spend_2025)),
-    total: (rs) => money(sumField(rs, "meta_spend_2025")),
+    raw: (r) => num(r.meta_spend_2025),
+    display: (r) => money(num(r.meta_spend_2025)),
+    total: (t) => money(t.meta2025),
+    totalRaw: (t) => t.meta2025,
   },
   {
-    header: "Meta 2026",
+    id: "meta_2026",
+    label: "Meta 2026",
+    group: "Meta spend",
+    kind: "money",
     align: "right",
-    cell: (r) => money(num(r.meta_spend_2026)),
-    total: (rs) => money(sumField(rs, "meta_spend_2026")),
+    raw: (r) => num(r.meta_spend_2026),
+    display: (r) => money(num(r.meta_spend_2026)),
+    total: (t) => money(t.meta2026),
+    totalRaw: (t) => t.meta2026,
   },
   {
-    header: "Meta Spend Var YoY $",
+    id: "meta_var_yoy_usd",
+    label: "Meta Spend Var YoY $",
+    group: "Meta spend",
+    kind: "money",
     align: "right",
-    cell: (r) => moneyVar(num(r.meta_spend_2026) - num(r.meta_spend_2025)),
-    total: (rs) => moneyVar(sumField(rs, "meta_spend_2026") - sumField(rs, "meta_spend_2025")),
+    raw: (r) => num(r.meta_spend_2026) - num(r.meta_spend_2025),
+    display: (r) => moneyVar(num(r.meta_spend_2026) - num(r.meta_spend_2025)),
+    total: (t) => moneyVar(t.meta2026 - t.meta2025),
+    totalRaw: (t) => t.meta2026 - t.meta2025,
   },
   {
-    header: "Meta Spend Var YoY %",
+    id: "meta_var_yoy_pct",
+    label: "Meta Spend Var YoY %",
+    group: "Meta spend",
+    kind: "percent",
     align: "right",
-    cell: (r) => pct(safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2026))),
-    total: (rs) => pct(safeDiv(sumField(rs, "meta_spend_2026") - sumField(rs, "meta_spend_2025"), sumField(rs, "meta_spend_2026"))),
+    raw: (r) => safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2026)),
+    display: (r) =>
+      pct(safeDiv(num(r.meta_spend_2026) - num(r.meta_spend_2025), num(r.meta_spend_2026))),
+    total: (t) => pct(safeDiv(t.meta2026 - t.meta2025, t.meta2026)),
   },
   {
-    header: "Target Meta Spend 2026",
+    id: "target_meta_spend_2026",
+    label: "Target Meta Spend 2026",
+    group: "Meta spend",
+    kind: "money",
     align: "right",
-    cell: (r) => money(num(r.target_meta_spend_2026)),
-    total: (rs) => money(sumField(rs, "target_meta_spend_2026")),
+    raw: (r) => num(r.target_meta_spend_2026),
+    display: (r) => money(num(r.target_meta_spend_2026)),
+    total: (t) => money(t.targetMeta),
+    totalRaw: (t) => t.targetMeta,
   },
   {
-    header: "Spend Pacing",
+    id: "spend_pacing",
+    label: "Spend Pacing",
+    group: "Meta spend",
+    kind: "percent",
     align: "right",
-    cell: (r) => pct(frac(r, "spend_pacing")),
-    total: (rs) => pct(safeDiv(sumField(rs, "meta_spend_2026"), sumField(rs, "target_meta_spend_2026"))),
+    raw: (r) => frac(r, "spend_pacing"),
+    display: (r) => pct(frac(r, "spend_pacing")),
+    total: (t) => pct(safeDiv(t.meta2026, t.targetMeta)),
   },
 ];
 
-// ─── Section ────────────────────────────────────────────────────────────────────
+// --- Section ---
 export default function MetaPacingVsTarget({ rows }: { rows: KpiByClientRow[] }) {
   const sorted = useMemo(
     () =>
       [...rows].sort((a, b) =>
         (a.CLIENT_NAME ?? "").localeCompare(b.CLIENT_NAME ?? "")
       ),
+    [rows]
+  );
+
+  const totals = useMemo<Totals>(
+    () => ({
+      meta2025: sumField(rows, "meta_spend_2025"),
+      meta2026: sumField(rows, "meta_spend_2026"),
+      social2026: sumField(rows, "social_spend_2026"),
+      targetMeta: sumField(rows, "target_meta_spend_2026"),
+      socialForecast: sumField(rows, "social_forecast_rfq1"),
+    }),
     [rows]
   );
 
@@ -355,16 +450,22 @@ export default function MetaPacingVsTarget({ rows }: { rows: KpiByClientRow[] })
       <TableWithPie
         title="Meta Share of Social"
         icon={Percent}
-        cols={SHARE_COLS}
+        columns={SHARE_COLUMNS}
         rows={sorted}
+        totals={totals}
         segments={shareVsTarget}
+        exportTitle="Meta — Share vs Divestment Target"
+        sheetTitle="Meta share vs target"
       />
       <TableWithPie
         title="Meta Spend"
         icon={DollarSign}
-        cols={SPEND_COLS}
+        columns={SPEND_COLUMNS}
         rows={sorted}
+        totals={totals}
         segments={pacing}
+        exportTitle="Meta — Spend vs Divestment Target"
+        sheetTitle="Meta spend vs target"
       />
     </div>
   );
