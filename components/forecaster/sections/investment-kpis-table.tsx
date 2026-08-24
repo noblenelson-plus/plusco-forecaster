@@ -7,9 +7,16 @@
  * shows every metric from the Looker CSV (sortable), caps its height with ONE
  * scroll container (sticky header + sticky Client column + a pinned Grand-total
  * row). The total row sums the DOLLAR columns and computes the CORRECT portfolio
- * rate for each percentage column (sum(numerator) / sum(denominator)) — never an average
- * of per-client percentages — so the footer cross-checks 1:1 with Looker's total
- * and with the scorecards above. "Download CSV" exports every synced column.
+ * rate for each percentage column (sum numerator / sum denominator) — never an
+ * average of per-client percentages — so the footer cross-checks 1:1 with
+ * Looker's total and with the scorecards above. Exports every synced column.
+ *
+ * Columns are organized into groups (Meta / Digital Direct / Programmatic /
+ * Labs / Billups); a chip row lets the user show or hide each group so a wide
+ * table can be focused on one area at a time. The dimension columns (Client,
+ * Agency, BU Region, Business Lead, GM Pod) are always shown. Target metrics
+ * are RAG-colored (red/amber/green) against their goals, matching the
+ * Executive Summary. Exports always include every column, regardless of view.
  *
  * Rows are clickable when `onRowClick` is supplied: clicking toggles the page's
  * focused client (highlighted here via `focusedId`); the table itself always
@@ -34,12 +41,27 @@ import { Button } from "../../ui/button";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 import ExportSheetButton from "../table/export-sheet-button";
 import type { TableColumn } from "../table/table-column.types";
+import { ragStatus, ragCell, type RagStatus, type RagBands } from "./exec-rag";
 
 // --- Numeric helpers ----------------------------------------------------------
 
 function num(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Row value as a number, or null when blank / non-numeric. */
+function fieldN(r: KpiByClientRow, key: string): number | null {
+  const v = r[key];
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Shared Billups eligibility rule: eligible unless explicitly not. */
+function parseEligible(v: unknown): boolean {
+  const s = String(v ?? "").trim().toLowerCase();
+  return !(s === "n/a" || s === "no" || s === "not eligible");
 }
 
 function sumField(rows: KpiByClientRow[], key: string): number {
@@ -50,7 +72,7 @@ function safeDivN(a: number, b: number): number | null {
   return b ? a / b : null;
 }
 
-/** Portfolio ratio = sum(numerator) / sum(denominator) (null when the denominator is 0). */
+/** Portfolio ratio = sum(numerator) / sum(denominator) (null when denom is 0). */
 function ratio(rows: KpiByClientRow[], numKey: string, denKey: string): number | null {
   return safeDivN(sumField(rows, numKey), sumField(rows, denKey));
 }
@@ -68,7 +90,7 @@ function shareDelta(
   return s26 === null || s25 === null ? null : s26 - s25;
 }
 
-// Meta spend variance % = (2026 − 2025) / 2025 ; null when 2025 is zero.
+// Meta spend variance % = (2026 - 2025) / 2025 ; null when 2025 is zero.
 function metaSpendVariancePct(r: KpiByClientRow): number | null {
   const m25 = num(r["meta_spend_2025"]);
   const m26 = num(r["meta_spend_2026"]);
@@ -78,54 +100,98 @@ function metaSpendVariancePct(r: KpiByClientRow): number | null {
 // --- Column model -------------------------------------------------------------
 
 type CellType = "text" | "money" | "pct" | "delta";
+type Group = "dim" | "meta" | "dd" | "prog" | "labs" | "billups";
+
+interface Goals {
+  labsShareGoal: number | null;
+  billupsShareGoal: number | null;
+  bands?: RagBands;
+}
 
 interface Col {
   key: string; // unique key; also the Firestore field unless `field`/`compute` given
   header: string;
   type: CellType;
+  group: Group;
   field?: string; // Firestore field name (defaults to key)
   compute?: (r: KpiByClientRow) => number | null; // per-row derived value
   footer?: (rows: KpiByClientRow[]) => number | null; // portfolio value for the total row
+  width?: string; // tailwind max-width class for a narrowed text column
+  truncate?: boolean; // wrap value in a truncating div + full value on hover
+  rag?: (r: KpiByClientRow, goals: Goals) => RagStatus; // per-row cell status
 }
 
+// Per-row targets for the RAG-colored cells.
+const metaShareTargetOf = (r: KpiByClientRow): number | null =>
+  safeDivN(num(r["target_meta_spend_2026"]), num(r["social_forecast_rfq1"]));
+
 const COLUMNS: Col[] = [
-  // Dimensions / status
-  { key: "CLIENT_NAME", header: "Client", type: "text" },
-  { key: "AGENCY", header: "Agency", type: "text" },
-  { key: "BU_REGION", header: "BU Region", type: "text" },
-  { key: "BUSINESS_LEAD", header: "Business Lead", type: "text" },
-  { key: "GM_POD", header: "GM Pod", type: "text" },
-  { key: "scenario_meta_mapping", header: "Scenario", type: "text" },
-  { key: "meta_share_trend", header: "Meta Share Trend", type: "text" },
-  { key: "eligible_billups_ooh", header: "Elig. Billups OOH", type: "text" },
-  { key: "eligible_billups_print", header: "Elig. Billups Print", type: "text" },
-  // Meta
-  { key: "meta_spend_2025", header: "Meta Spend 2025", type: "money" },
-  { key: "social_spend_2025", header: "Social Spend 2025", type: "money" },
+  // --- Dimensions (always shown) ---
+  {
+    key: "CLIENT_NAME",
+    header: "Client",
+    type: "text",
+    group: "dim",
+    width: "max-w-[160px]",
+    truncate: true,
+  },
+  { key: "AGENCY", header: "Agency", type: "text", group: "dim" },
+  { key: "BU_REGION", header: "BU Region", type: "text", group: "dim" },
+  {
+    key: "BUSINESS_LEAD",
+    header: "Business Lead",
+    type: "text",
+    group: "dim",
+    width: "max-w-[150px]",
+    truncate: true,
+  },
+  { key: "GM_POD", header: "GM Pod", type: "text", group: "dim" },
+
+  // --- Meta ---
+  {
+    key: "scenario_meta_mapping",
+    header: "Scenario",
+    type: "text",
+    group: "meta",
+    width: "max-w-[140px]",
+    truncate: true,
+  },
+  { key: "meta_share_trend", header: "Meta Share Trend", type: "text", group: "meta" },
+  { key: "meta_spend_2025", header: "Meta Spend 2025", type: "money", group: "meta" },
+  { key: "social_spend_2025", header: "Social Spend 2025", type: "money", group: "meta" },
   {
     key: "meta_share_of_social_2025",
     header: "Meta Share 2025",
     type: "pct",
+    group: "meta",
     footer: (rs) => ratio(rs, "meta_spend_2025", "social_spend_2025"),
   },
-  { key: "meta_spend_2026", header: "Meta Spend 2026", type: "money" },
-  { key: "social_spend_2026", header: "Social Spend 2026", type: "money" },
+  { key: "meta_spend_2026", header: "Meta Spend 2026", type: "money", group: "meta" },
+  { key: "social_spend_2026", header: "Social Spend 2026", type: "money", group: "meta" },
   {
     key: "meta_share_of_social_2026",
     header: "Meta Share 2026",
     type: "pct",
+    group: "meta",
     footer: (rs) => ratio(rs, "meta_spend_2026", "social_spend_2026"),
+    rag: (r, g) =>
+      ragStatus(fieldN(r, "meta_share_of_social_2026"), metaShareTargetOf(r), {
+        lowerIsBetter: true,
+        bands: g.bands,
+      }),
   },
   {
     key: "meta_spend_variance_dollar",
     header: "Meta Spend Var $",
     type: "money",
+    group: "meta",
     compute: (r) => num(r["meta_spend_2026"]) - num(r["meta_spend_2025"]),
   },
   {
     key: "meta_spend_variance_pct",
     header: "Meta Spend Var %",
     type: "delta",
+    group: "meta",
     compute: metaSpendVariancePct,
     footer: (rs) =>
       safeDivN(
@@ -133,45 +199,58 @@ const COLUMNS: Col[] = [
         sumField(rs, "meta_spend_2025")
       ),
   },
-  { key: "social_forecast_rfq1", header: "Social Forecast", type: "money" },
-  { key: "target_meta_spend_2026", header: "Target Meta Spend (−30%)", type: "money" },
+  { key: "social_forecast_rfq1", header: "Social Forecast", type: "money", group: "meta" },
+  {
+    key: "target_meta_spend_2026",
+    header: "Target Meta Spend (−30%)",
+    type: "money",
+    group: "meta",
+  },
   {
     key: "spend_pacing",
     header: "% Pacing vs Target",
     type: "pct",
+    group: "meta",
     footer: (rs) => ratio(rs, "meta_spend_2026", "target_meta_spend_2026"),
+    rag: (r, g) =>
+      ragStatus(fieldN(r, "spend_pacing"), 1, { lowerIsBetter: true, bands: g.bands }),
   },
   {
     key: "meta_share_variance_yoy",
     header: "Meta Share Var YOY",
     type: "delta",
+    group: "meta",
     footer: (rs) =>
       shareDelta(rs, "meta_spend_2026", "social_spend_2026", "meta_spend_2025", "social_spend_2025"),
   },
-  { key: "miq_social_forecast_2026", header: "MIQ-Social Forecast", type: "money" },
-  { key: "miq_social_spend_2026", header: "MIQ-Social Spend", type: "money" },
+  { key: "miq_social_forecast_2026", header: "MIQ-Social Forecast", type: "money", group: "meta" },
+  { key: "miq_social_spend_2026", header: "MIQ-Social Spend", type: "money", group: "meta" },
   {
     key: "miq_social_pacing",
     header: "MIQ-Social Pacing",
     type: "pct",
+    group: "meta",
     footer: (rs) => ratio(rs, "miq_social_spend_2026", "miq_social_forecast_2026"),
   },
   {
     key: "target_meta_share_2026",
     header: "Target Meta Share",
     type: "pct",
+    group: "meta",
     footer: (rs) => ratio(rs, "target_meta_spend_2026", "social_forecast_rfq1"),
   },
   {
     key: "other_platforms_share_social_2026",
     header: "Other Platforms Share",
     type: "pct",
+    group: "meta",
     footer: (rs) => ratio(rs, "other_platforms_spend_2026", "social_spend_2026"),
   },
   {
     key: "other_platforms_share_variance",
     header: "Other Platforms Var (ppt)",
     type: "delta",
+    group: "meta",
     footer: (rs) =>
       shareDelta(
         rs,
@@ -181,18 +260,21 @@ const COLUMNS: Col[] = [
         "social_spend_2025"
       ),
   },
-  // Digital Direct
-  { key: "digital_direct_spend_2026", header: "Digital Direct Spend", type: "money" },
+
+  // --- Digital Direct ---
+  { key: "digital_direct_spend_2026", header: "Digital Direct Spend", type: "money", group: "dd" },
   {
     key: "dd_share_of_digital_2026",
     header: "DD Share of Digital",
     type: "pct",
+    group: "dd",
     footer: (rs) => ratio(rs, "digital_direct_spend_2026", "digital_spend_2026"),
   },
   {
     key: "dd_share_variance_vs_2025_ppt",
     header: "DD Var vs 2025 (ppt)",
     type: "delta",
+    group: "dd",
     footer: (rs) =>
       shareDelta(
         rs,
@@ -206,26 +288,31 @@ const COLUMNS: Col[] = [
     key: "dd_pct_deal_partners",
     header: "DD % Deal",
     type: "pct",
+    group: "dd",
     footer: (rs) => ratio(rs, "dd_deal_spend_2026", "digital_direct_spend_2026"),
   },
   {
     key: "dd_pct_nondeal_partners",
     header: "DD % Non-Deal",
     type: "pct",
+    group: "dd",
     footer: (rs) => ratio(rs, "dd_nondeal_spend_2026", "digital_direct_spend_2026"),
   },
-  // Programmatic
-  { key: "prog_spend_2026", header: "Prog Spend", type: "money" },
+
+  // --- Programmatic ---
+  { key: "prog_spend_2026", header: "Prog Spend", type: "money", group: "prog" },
   {
     key: "prog_share_of_digital_2026",
     header: "Prog Share of Digital",
     type: "pct",
+    group: "prog",
     footer: (rs) => ratio(rs, "prog_spend_2026", "digital_spend_2026"),
   },
   {
     key: "prog_share_variance_vs_2025_ppt",
     header: "Prog Var vs 2025 (ppt)",
     type: "delta",
+    group: "prog",
     footer: (rs) =>
       shareDelta(rs, "prog_spend_2026", "digital_spend_2026", "prog_spend_2025", "digital_spend_2025"),
   },
@@ -233,43 +320,77 @@ const COLUMNS: Col[] = [
     key: "prog_pct_deal_partners",
     header: "Prog % Deal",
     type: "pct",
+    group: "prog",
     footer: (rs) => ratio(rs, "prog_deal_spend_2026", "prog_spend_2026"),
   },
   {
     key: "prog_pct_nondeal_partners",
     header: "Prog % Non-Deal",
     type: "pct",
+    group: "prog",
     footer: (rs) => ratio(rs, "prog_nondeal_spend_2026", "prog_spend_2026"),
   },
-  // Labs
-  { key: "labs_spend_2026", header: "Labs Spend", type: "money" },
+
+  // --- Labs ---
+  { key: "labs_spend_2026", header: "Labs Spend", type: "money", group: "labs" },
   {
     key: "labs_share_total_media_2026",
     header: "Labs Share Total Media",
     type: "pct",
+    group: "labs",
     footer: (rs) => ratio(rs, "labs_spend_2026", "total_spend_2026"),
+    rag: (r, g) =>
+      ragStatus(fieldN(r, "labs_share_total_media_2026"), g.labsShareGoal, { bands: g.bands }),
   },
   {
     key: "prog_labs_share_of_prog_2026",
     header: "Prog Labs Share of Prog",
     type: "pct",
+    group: "labs",
     footer: (rs) => ratio(rs, "prog_labs_spend_2026", "prog_spend_2026"),
   },
+
+  // --- Billups ---
+  { key: "eligible_billups_ooh", header: "Elig. Billups OOH", type: "text", group: "billups" },
+  { key: "eligible_billups_print", header: "Elig. Billups Print", type: "text", group: "billups" },
   {
     key: "billups_ooh_share_of_ooh_2026",
     header: "Billups Share of OOH",
     type: "pct",
+    group: "billups",
     footer: (rs) => ratio(rs, "billups_ooh_spend_2026", "ooh_spend_2026"),
+    rag: (r, g) =>
+      parseEligible(r["eligible_billups_ooh"])
+        ? ragStatus(fieldN(r, "billups_ooh_share_of_ooh_2026"), g.billupsShareGoal, {
+            bands: g.bands,
+          })
+        : "neutral",
   },
   {
     key: "billups_print_share_of_print_2026",
     header: "Billups Share of Print",
     type: "pct",
+    group: "billups",
     footer: (rs) => ratio(rs, "billups_print_spend_2026", "print_spend_2026"),
+    rag: (r, g) =>
+      parseEligible(r["eligible_billups_print"])
+        ? ragStatus(fieldN(r, "billups_print_share_of_print_2026"), g.billupsShareGoal, {
+            bands: g.bands,
+          })
+        : "neutral",
   },
 ];
 
-// --- Value + format helpers ----------------------------------------------------
+// Group chips (dimension columns are always visible, so not listed here).
+const GROUP_CHIPS: { id: Exclude<Group, "dim">; label: string }[] = [
+  { id: "meta", label: "Meta" },
+  { id: "dd", label: "Digital Direct" },
+  { id: "prog", label: "Programmatic" },
+  { id: "labs", label: "Labs" },
+  { id: "billups", label: "Billups" },
+];
+
+// --- Value + format helpers ---------------------------------------------------
 
 function rawValue(r: KpiByClientRow, col: Col): unknown {
   return col.compute ? col.compute(r) : r[col.field ?? col.key];
@@ -313,11 +434,7 @@ function footerText(col: Col, rows: KpiByClientRow[], moneyTotal: number): strin
   return "";
 }
 
-// Adapter: expose the same COLUMNS as shared TableColumn descriptors so the
-// "Export to Sheets" button mirrors exactly what the table shows (same headers,
-// same formatted cells, same Grand-total footer). Money body cells and money
-// totals export as real numbers; percentages/deltas export as their display
-// string, matching the rest of the app's Sheets exports.
+// Export always covers every column (independent of which groups are shown).
 const EXPORT_COLUMNS: TableColumn<KpiByClientRow, KpiByClientRow[]>[] = COLUMNS.map(
   (col) => ({
     id: col.key,
@@ -362,13 +479,32 @@ export default function InvestmentKpisTable({
   rows,
   focusedId = null,
   onRowClick,
+  labsShareGoal = null,
+  billupsShareGoal = null,
+  bands,
 }: {
   rows: KpiByClientRow[];
   focusedId?: string | null;
   onRowClick?: (id: string) => void;
+  labsShareGoal?: number | null;
+  billupsShareGoal?: number | null;
+  bands?: RagBands;
 }) {
   const [sortKey, setSortKey] = useState<string>("total_spend_2026");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [visibleGroups, setVisibleGroups] = useState<Set<Group>>(
+    () => new Set<Group>(["meta", "dd", "prog", "labs", "billups"])
+  );
+
+  const goals: Goals = useMemo(
+    () => ({ labsShareGoal, billupsShareGoal, bands }),
+    [labsShareGoal, billupsShareGoal, bands]
+  );
+
+  const columns = useMemo(
+    () => COLUMNS.filter((c) => c.group === "dim" || visibleGroups.has(c.group)),
+    [visibleGroups]
+  );
 
   const sorted = useMemo(() => {
     const col = COLUMNS.find((c) => c.key === sortKey);
@@ -401,6 +537,15 @@ export default function InvestmentKpisTable({
       setSortKey(key);
       setSortDir("desc");
     }
+  };
+
+  const toggleGroup = (id: Group) => {
+    setVisibleGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   function downloadCsv() {
@@ -462,6 +607,30 @@ export default function InvestmentKpisTable({
             </Button>
           </CardAction>
         </CardHeader>
+
+        {/* Column-group toggles: focus the table on one area at a time. */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+          <span className="text-xs font-medium text-muted-foreground">Columns</span>
+          {GROUP_CHIPS.map(({ id, label }) => {
+            const on = visibleGroups.has(id);
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => toggleGroup(id)}
+                aria-pressed={on}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  on
+                    ? "border-transparent bg-muted text-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
         <CardContent className="px-0 pb-0">
           {rows.length === 0 ? (
             <p className="px-5 py-10 text-center text-xs text-muted-foreground">
@@ -472,33 +641,37 @@ export default function InvestmentKpisTable({
               <table className="min-w-full caption-bottom border-collapse text-sm">
                 <thead>
                   <tr>
-                    {COLUMNS.map((col, idx) => {
+                    {columns.map((col, idx) => {
                       const numeric = col.type !== "text";
                       const active = sortKey === col.key;
                       const sticky =
                         idx === 0
-                          ? "sticky left-0 top-0 z-30 min-w-[180px]"
+                          ? "sticky left-0 top-0 z-30 min-w-[160px]"
                           : "sticky top-0 z-20";
+                      const groupStart =
+                        idx > 0 && columns[idx - 1].group !== col.group
+                          ? "border-l border-border"
+                          : "";
                       return (
                         <th
                           key={col.key}
-                          className={`${headBase} ${sticky} ${
+                          className={`${headBase} ${sticky} ${groupStart} ${col.width ?? ""} ${
                             numeric ? "text-right" : "text-left"
                           }`}
                         >
                           <button
                             type="button"
                             onClick={() => toggleSort(col.key)}
-                            className={`inline-flex items-center gap-1 hover:text-foreground ${
+                            className={`inline-flex max-w-full items-center gap-1 hover:text-foreground ${
                               numeric ? "flex-row-reverse" : ""
                             } ${active ? "text-foreground" : ""}`}
                           >
-                            {col.header}
+                            <span className={col.truncate ? "truncate" : ""}>{col.header}</span>
                             {active &&
                               (sortDir === "asc" ? (
-                                <ArrowUp size={12} />
+                                <ArrowUp size={12} className="flex-shrink-0" />
                               ) : (
-                                <ArrowDown size={12} />
+                                <ArrowDown size={12} className="flex-shrink-0" />
                               ))}
                           </button>
                         </th>
@@ -510,35 +683,40 @@ export default function InvestmentKpisTable({
                   {sorted.map((row, i) => {
                     const rowId = (row.PLUSCO_CLIENT_ID ?? i).toString();
                     const focused = focusedId != null && focusedId === rowId;
-                    const rowCls = onRowClick
-                      ? focused
-                        ? "cursor-pointer bg-muted"
-                        : "cursor-pointer hover:bg-muted/50"
-                      : focused
-                        ? "bg-muted"
-                        : "";
+                    const zebra = !focused && i % 2 === 1 ? "bg-muted/20" : "";
+                    const rowCls = focused
+                      ? "bg-muted"
+                      : `${zebra} ${onRowClick ? "cursor-pointer hover:bg-muted/50" : ""}`.trim();
                     return (
                       <tr
                         key={rowId}
                         className={rowCls}
                         onClick={onRowClick ? () => onRowClick(rowId) : undefined}
                       >
-                        {COLUMNS.map((col, idx) => {
+                        {columns.map((col, idx) => {
                           const numeric = col.type !== "text";
                           const sticky =
                             idx === 0
-                              ? `sticky left-0 z-10 min-w-[180px] ${
+                              ? `sticky left-0 z-10 min-w-[160px] ${
                                   focused ? "bg-muted" : "bg-card"
                                 }`
                               : "";
+                          const groupStart =
+                            idx > 0 && columns[idx - 1].group !== col.group
+                              ? "border-l border-border"
+                              : "";
+                          const status = col.rag ? col.rag(row, goals) : "neutral";
+                          const rag = status !== "neutral" ? ragCell(status) : "";
+                          const text = display(row, col);
                           return (
                             <td
                               key={col.key}
-                              className={`${cellPad} ${sticky} ${
+                              title={col.truncate ? text : undefined}
+                              className={`${cellPad} ${sticky} ${groupStart} ${col.width ?? ""} ${rag} ${
                                 numeric ? "text-right tabular-nums" : "text-left"
                               }`}
                             >
-                              {display(row, col)}
+                              {col.truncate ? <div className="truncate">{text}</div> : text}
                             </td>
                           );
                         })}
@@ -548,12 +726,16 @@ export default function InvestmentKpisTable({
                 </tbody>
                 <tfoot>
                   <tr>
-                    {COLUMNS.map((col, idx) => {
+                    {columns.map((col, idx) => {
+                      const groupStart =
+                        idx > 0 && columns[idx - 1].group !== col.group
+                          ? "border-l border-border"
+                          : "";
                       if (idx === 0) {
                         return (
                           <td
                             key={col.key}
-                            className={`${footBase} sticky left-0 bottom-0 z-30 min-w-[180px] text-left`}
+                            className={`${footBase} sticky bottom-0 left-0 z-30 min-w-[160px] text-left`}
                           >
                             Grand total
                           </td>
@@ -563,7 +745,7 @@ export default function InvestmentKpisTable({
                       return (
                         <td
                           key={col.key}
-                          className={`${footBase} sticky bottom-0 z-20 ${
+                          className={`${footBase} ${groupStart} sticky bottom-0 z-20 ${
                             numeric ? "text-right tabular-nums" : "text-left"
                           }`}
                         >

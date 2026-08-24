@@ -19,8 +19,8 @@
  * "Viewing" chip shows the focused client; a scope change clears focus.
  */
 
-import { useMemo, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { Loader2, X, DollarSign, PieChart, Target } from "lucide-react";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import {
   useMoKpiByClient,
@@ -29,6 +29,11 @@ import {
 } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 import InvestmentKpisTable from "./investment-kpis-table";
 import InvestmentKpisClientDetail from "./investment-kpis-client-detail";
+import {
+  subscribeToPartnerTargets,
+  getPartnerTargetsForYear,
+} from "../../../lib/services/partner-targets-service";
+import type { PartnerTargetsYear } from "../../../lib/types/partner-targets.types";
 
 // --- Formatting helpers -------------------------------------------------------
 
@@ -140,6 +145,9 @@ function MetaShareTrendStrip({
 
 // --- Section ------------------------------------------------------------------
 
+// Goal lines come from the admin Labs Targets tab; this page is a 2026 snapshot.
+const TARGET_YEAR = 2026;
+
 export default function InvestmentKpisSection({
   scopedClientIds,
 }: {
@@ -148,6 +156,16 @@ export default function InvestmentKpisSection({
 }) {
   const { rows, loading, error } = useMoKpiByClient();
   const [focusedId, setFocusedId] = useState<string | null>(null);
+
+  // Goals for the table's RAG coloring (Labs share + Billups share).
+  const [targetYears, setTargetYears] = useState<PartnerTargetsYear[]>([]);
+  useEffect(() => {
+    const unsubscribe = subscribeToPartnerTargets(setTargetYears);
+    return () => unsubscribe();
+  }, []);
+  const targets = getPartnerTargetsForYear(targetYears, TARGET_YEAR) ?? null;
+  const labsShareGoal = targets?.totalLabsShareOfMediaTarget ?? null;
+  const billupsShareGoal = targets?.execGoals?.billupsShare ?? null;
 
   // Scope to the dashboard's global filter (the same list Meta and Billups use).
   // When no scope is supplied the section renders standalone over every row.
@@ -257,19 +275,23 @@ export default function InvestmentKpisSection({
       {/* Achieve Labs Targets */}
       <KpiGroup title="Achieve Labs Targets" columns={4}>
         <StatCard
+          icon={PieChart}
           label="Labs Share of Total Media"
           value={pct(labs.labsShareOfTotalMedia)}
           sub="Plusco Target: 20–25%"
         />
         <StatCard
+          icon={PieChart}
           label="Prog Labs Share of Prog"
           value={pct(labs.progLabsShareOfProg)}
         />
         <StatCard
+          icon={PieChart}
           label="Billups Share of OOH"
           value={pct(labs.billupsShareOfOoh)}
         />
         <StatCard
+          icon={PieChart}
           label="Billups Share of Print"
           value={pct(labs.billupsShareOfPrint)}
         />
@@ -283,30 +305,36 @@ export default function InvestmentKpisSection({
         footer={<MetaShareTrendStrip data={metaTrend} />}
       >
         <StatCard
+          icon={PieChart}
           label="Meta Share of Social"
           value={pct(meta.metaShareOfSocial.value)}
           variance={yoyVariance(meta.metaShareOfSocial.yoyPpt, "down")}
         />
         <StatCard
+          icon={PieChart}
           label="Target Meta Share of Social"
           value={pct(meta.targetMetaShareOfSocial)}
         />
         <StatCard
+          icon={PieChart}
           label="Other Platforms Share 2026"
           value={pct(meta.otherPlatformsShare.value)}
           variance={yoyVariance(meta.otherPlatformsShare.yoyPpt, "up")}
         />
-        <StatCard label="% of Target" value={pct(meta.pctOfTarget)} />
-        <StatCard label="Meta Spend" value={money(meta.metaSpend2026)} />
+        <StatCard icon={Target} label="% of Target" value={pct(meta.pctOfTarget)} />
+        <StatCard icon={DollarSign} label="Meta Spend" value={money(meta.metaSpend2026)} />
         <StatCard
+          icon={DollarSign}
           label="Target Meta Spend (−30%)"
           value={money(meta.targetMetaSpend2026)}
         />
         <StatCard
+          icon={DollarSign}
           label="MIQ-Social Spend Booked"
           value={money(meta.miqSocialSpend2026)}
         />
         <StatCard
+          icon={DollarSign}
           label="MIQ-Social Forecast"
           value={money(meta.miqSocialForecast2026)}
         />
@@ -316,16 +344,19 @@ export default function InvestmentKpisSection({
       <div className="grid gap-6 lg:grid-cols-2">
         <KpiGroup title="Grow Programmatic" columns={3}>
           <StatCard
+            icon={PieChart}
             label="Prog Share of Digital"
             value={pct(programmatic.shareOfDigital.value)}
             variance={yoyVariance(programmatic.shareOfDigital.yoyPpt, "up")}
           />
           <StatCard
+            icon={DollarSign}
             label="$ Deal Partners"
             value={money(programmatic.dealSpend)}
             sub={pct(programmatic.dealPct)}
           />
           <StatCard
+            icon={DollarSign}
             label="$ Non-Deal Partners"
             value={money(programmatic.nonDealSpend)}
             sub={pct(programmatic.nonDealPct)}
@@ -334,16 +365,19 @@ export default function InvestmentKpisSection({
 
         <KpiGroup title="Decrease Digital Direct" columns={3}>
           <StatCard
+            icon={PieChart}
             label="Digital Direct Share of Digital"
             value={pct(digitalDirect.shareOfDigital.value)}
             variance={yoyVariance(digitalDirect.shareOfDigital.yoyPpt, "down")}
           />
           <StatCard
+            icon={DollarSign}
             label="$ Deal Partners"
             value={money(digitalDirect.dealSpend)}
             sub={pct(digitalDirect.dealPct)}
           />
           <StatCard
+            icon={DollarSign}
             label="$ Non-Deal Partners"
             value={money(digitalDirect.nonDealSpend)}
             sub={pct(digitalDirect.nonDealPct)}
@@ -357,6 +391,8 @@ export default function InvestmentKpisSection({
         rows={filtered}
         focusedId={focusedId}
         onRowClick={handleRowClick}
+        labsShareGoal={labsShareGoal}
+        billupsShareGoal={billupsShareGoal}
       />
     </div>
   );

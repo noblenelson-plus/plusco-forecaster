@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Calendar } from "lucide-react";
+import { Loader2, Calendar, PieChart, DollarSign, AlertTriangle } from "lucide-react";
 import { computeClientTable } from "./client-table-data";
 import {
   useMoKpiByClient,
@@ -48,7 +48,7 @@ import {
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { Client } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
-import ExecSummaryKpiBand, { type ExecPillar } from "./exec-summary-kpi-band";
+import ExecSummaryKpiBand, { RagLegend, type ExecPillar } from "./exec-summary-kpi-band";
 import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
 import { ragStatus } from "./exec-rag";
@@ -217,12 +217,14 @@ export default function ExecutiveSummarySection({
         subtitle: "Booked to date (MIR)",
         metrics: [
           {
+            icon: PieChart,
             label: "Labs Share of Total Media",
             value: pct(inv.labs.labsShareOfTotalMedia),
             pctOfTarget: ratioTo(inv.labs.labsShareOfTotalMedia, labsShareGoal),
             goalLabel: labsShareGoal != null ? `Goal ${pct(labsShareGoal)}` : undefined,
           },
           {
+            icon: DollarSign,
             label: "Total LABS Spend",
             value: money(bookedLabsSpend),
             pctOfTarget: ratioTo(bookedLabsSpend, goals.labsSpend),
@@ -236,6 +238,7 @@ export default function ExecutiveSummarySection({
         subtitle: "Booked to date (MIR)",
         metrics: [
           {
+            icon: PieChart,
             label: "Billups Share of OOH",
             value: pct(billupsBooked.ooh.eligibleShare),
             pctOfTarget: ratioTo(billupsBooked.ooh.eligibleShare, goals.billupsShare),
@@ -243,6 +246,7 @@ export default function ExecutiveSummarySection({
               goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
           },
           {
+            icon: PieChart,
             label: "Billups Share of PRINT",
             value: pct(billupsBooked.print.eligibleShare),
             pctOfTarget: ratioTo(billupsBooked.print.eligibleShare, goals.billupsShare),
@@ -250,6 +254,7 @@ export default function ExecutiveSummarySection({
               goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
           },
           {
+            icon: AlertTriangle,
             label: "Missed Opportunity",
             value: money(billupsBooked.combined.missed),
             sub: "Eligible $ not captured by Billups",
@@ -261,6 +266,7 @@ export default function ExecutiveSummarySection({
         subtitle: "Booked to date (MIR)",
         metrics: [
           {
+            icon: DollarSign,
             label: "Meta Spend 2026",
             value: money(inv.meta.metaSpend2026),
             pctOfTarget: ratioTo(inv.meta.metaSpend2026, inv.meta.targetMetaSpend2026),
@@ -270,6 +276,7 @@ export default function ExecutiveSummarySection({
             goalLabel: `Target ${moneyCompact(inv.meta.targetMetaSpend2026)}`,
           },
           {
+            icon: PieChart,
             label: "Meta Share of Social 2026",
             value: pct(inv.meta.metaShareOfSocial.value),
             status: ragStatus(
@@ -287,6 +294,7 @@ export default function ExecutiveSummarySection({
                 : null,
           },
           {
+            icon: DollarSign,
             label: "MIQ-Social Spend",
             value: money(inv.meta.miqSocialSpend2026),
           },
@@ -300,12 +308,14 @@ export default function ExecutiveSummarySection({
         subtitle: "Forecaster",
         metrics: [
           {
+            icon: PieChart,
             label: "Labs Share of Total Media",
             value: pct(fcLabsShare),
             pctOfTarget: ratioTo(fcLabsShare, labsShareGoal),
             goalLabel: labsShareGoal != null ? `Goal ${pct(labsShareGoal)}` : undefined,
           },
           {
+            icon: DollarSign,
             label: "Total Labs Forecast",
             value: money(fcLabsTotal),
             pctOfTarget: ratioTo(fcLabsTotal, goals.labsSpend),
@@ -323,6 +333,7 @@ export default function ExecutiveSummarySection({
         subtitle: "Forecaster",
         metrics: [
           {
+            icon: PieChart,
             label: "Billups Share of OOH",
             value: pct(billupsForecast.ooh.eligibleShare),
             pctOfTarget: ratioTo(billupsForecast.ooh.eligibleShare, goals.billupsShare),
@@ -330,6 +341,7 @@ export default function ExecutiveSummarySection({
               goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
           },
           {
+            icon: PieChart,
             label: "Billups Share of PRINT",
             value: pct(billupsForecast.print.eligibleShare),
             pctOfTarget: ratioTo(billupsForecast.print.eligibleShare, goals.billupsShare),
@@ -343,6 +355,7 @@ export default function ExecutiveSummarySection({
         subtitle: "Forecaster",
         metrics: [
           {
+            icon: DollarSign,
             label: "MIQ-Social Forecast",
             value: money(inv.meta.miqSocialForecast2026),
           },
@@ -394,19 +407,22 @@ export default function ExecutiveSummarySection({
   // -- Render --------------------------------------------------------------
   return (
     <div data-scroll-section data-scroll-label="Executive Summary" className="space-y-6">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Plusco Exec KPIs
-        </p>
-        <h2 className="text-xl font-bold text-foreground">Executive Summary</h2>
-        <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-[11px] font-medium text-muted-foreground">
-          <Calendar size={12} className="flex-shrink-0" />
-          {periodLabel}
+      {/* Header — one tight row: title + as-of date (left), RAG legend (center),
+          source toggle (right), so the scorecards are the first thing seen. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Plusco Exec KPIs
+          </p>
+          <h2 className="text-xl font-bold text-foreground">Executive Summary</h2>
+          <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+            <Calendar size={12} className="flex-shrink-0" />
+            {periodLabel}
+          </div>
         </div>
-      </div>
 
-      {/* Source-of-truth toggle */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+        <RagLegend />
+
         <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
           {(
             [
@@ -428,13 +444,10 @@ export default function ExecutiveSummarySection({
             </button>
           ))}
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          The by-GM and by-client tables below always reflect Booked to date (MIR).
-        </p>
       </div>
 
       {/* Total Plusco KPI band (drives off the selected source) */}
-      <ExecSummaryKpiBand pillars={pillars} />
+      <ExecSummaryKpiBand pillars={pillars} legend={false} />
 
       {/* By GM */}
       <ExecKpisByGmTable

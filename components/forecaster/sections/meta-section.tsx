@@ -18,7 +18,7 @@
  */
 
 import { useMemo } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, DollarSign, PieChart, Users, Gauge, Activity } from "lucide-react";
 import StatCard from "../../dashboard/charts/stat-card";
 import MetaGmPodTable from "./meta-gm-pod-table";
 import MetaGmPodTrendTable from "./meta-gm-pod-trend-table";
@@ -42,7 +42,9 @@ function YearRow({
       <div className="w-24 shrink-0 pt-2 text-sm font-bold uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
-      <div className="flex flex-1 flex-wrap gap-3">{children}</div>
+      <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {children}
+      </div>
     </div>
   );
 }
@@ -147,7 +149,7 @@ export default function MetaSection({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Divestment scorecards — now a scroll-section so the side-nav lists it. */}
       <div
         data-scroll-section
@@ -159,14 +161,19 @@ export default function MetaSection({
             Plusco Exec KPIs
           </p>
           <h2 className="text-xl font-bold text-foreground">Meta Divestment</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Progress toward the 2026 divestment target, broken down by GM pod and
+            client.
+          </p>
         </div>
 
         <div className="space-y-6">
           {/* 2025 actuals */}
           <YearRow label="2025">
-            <StatCard label="Social 2025" value={money(m.social2025)} />
-            <StatCard label="Meta 2025" value={money(m.meta2025)} />
+            <StatCard icon={DollarSign} label="Social 2025" value={money(m.social2025)} />
+            <StatCard icon={DollarSign} label="Meta 2025" value={money(m.meta2025)} />
             <StatCard
+              icon={PieChart}
               label="Meta Share of Social 2025"
               value={pct(m.metaShare2025)}
               accent="text-indigo-500"
@@ -175,15 +182,17 @@ export default function MetaSection({
 
           {/* 2026 actuals */}
           <YearRow label="2026">
-            <StatCard label="Social 2026" value={money(m.social2026)} />
-            <StatCard label="Meta 2026" value={money(m.meta2026)} />
+            <StatCard icon={DollarSign} label="Social 2026" value={money(m.social2026)} />
+            <StatCard icon={DollarSign} label="Meta 2026" value={money(m.meta2026)} />
             <StatCard
+              icon={PieChart}
               label="Meta Share of Social 2026"
               value={pct(m.metaShare2026)}
               variance={m.shareVar !== null ? { pillLabel: ppt(m.shareVar), isFavorable: m.shareVar <= 0 } : undefined}
               accent="text-indigo-500"
             />
             <StatCard
+              icon={PieChart}
               label="Other Platforms Share 2026"
               value={pct(m.otherShare2026)}
               variance={
@@ -193,6 +202,7 @@ export default function MetaSection({
               }
             />
             <StatCard
+              icon={Users}
               label="% Clients with Divested Meta Share"
               value={pct(m.pctDivested)}
               accent="text-emerald-500"
@@ -201,19 +211,22 @@ export default function MetaSection({
 
           {/* 2026 target */}
           <YearRow label="2026 Target">
-            <StatCard label="Social Forecast (RFQ)" value={money(m.socialForecast)} />
+            <StatCard icon={DollarSign} label="Social Forecast (RFQ)" value={money(m.socialForecast)} />
             <StatCard
+              icon={DollarSign}
               label="Target Meta Spend 2026 (-30%)"
               value={money(m.targetMeta)}
             />
             <StatCard
+              icon={PieChart}
               label="Target Meta Share 2026"
               value={pct(m.targetShare)}
               variance={m.targetShareVar !== null ? { pillLabel: ppt(m.targetShareVar, 0), isFavorable: m.targetShareVar <= 0 } : undefined}
               accent="text-indigo-500"
             />
-            <StatCard label="Spend Pacing" value={pct(m.spendPacing)} />
+            <StatCard icon={Gauge} label="Spend Pacing" value={pct(m.spendPacing)} />
             <StatCard
+              icon={Activity}
               label="Pacing Index"
               value={m.pacingIndex !== null ? Math.round(m.pacingIndex).toString() : "—"}
             />
@@ -234,22 +247,45 @@ export default function MetaSection({
 
       <MetaByClientTable rows={rows} />
 
-      <MetaPacingYoy rows={rows} />
-
-      {/* Partner-level YoY (META vs TikTok vs Reddit...). Reuses the MediaOcean
-          social section — it carries its own filters because social_partner_mix
-          has no client id to scope by. */}
-      <div className="space-y-4">
-        <h2 className="text-base font-semibold text-foreground">Meta Partner YoY</h2>
+      {/* Section 2 — Partner Mix: where the social dollars go (META vs TikTok,
+          Reddit, ...). Reuses the MediaOcean social section; it carries its own
+          filters because social_partner_mix has no client id to scope by. */}
+      <div className="space-y-6 border-t border-border pt-8">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">Partner Mix</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            How social investment splits across partners (Meta vs TikTok, Reddit,
+            and others), 2025 vs 2026.
+          </p>
+        </div>
         <MetaPartnerSection />
       </div>
 
-      {/* Final Meta section: per-client pacing vs the 2026 divestment target. */}
-      <div className="space-y-4">
-        <h2 className="text-base font-semibold text-foreground">
-          Meta Pacing vs Divestment Target
-        </h2>
-        <MetaPacingVsTarget rows={rows} />
+      {/* Section 3 — Pacing vs Target: are we on pace to divest. The two blocks
+          below share the same table+pie layout on purpose, so their headers
+          spell out the difference: YoY movement vs. performance against target. */}
+      <div className="space-y-8 border-t border-border pt-8">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">Pacing vs Target</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Whether Meta share and spend are on pace to divest — year-over-year
+            movement, and performance against the 2026 divestment target.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-base font-semibold text-foreground">
+            Meta Share &amp; Spend — YoY movement
+          </h3>
+          <MetaPacingYoy rows={rows} />
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-base font-semibold text-foreground">
+            Meta Share &amp; Spend — vs Divestment Target
+          </h3>
+          <MetaPacingVsTarget rows={rows} />
+        </div>
       </div>
     </div>
   );
