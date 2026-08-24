@@ -1,4 +1,4 @@
-﻿// filepath: components/forecaster/sections/executive-summary-section.tsx
+// filepath: components/forecaster/sections/executive-summary-section.tsx
 "use client";
 
 /**
@@ -8,20 +8,19 @@
  * Forecaster split, mirroring the Looker Executive Summary.
  *
  * Actuals are computed live over the dashboard scope:
- *   • Media Labs booked + Meta (all) — from `mo_kpi_by_client` via
+ *   - Media Labs booked + Meta (all) — from `mo_kpi_by_client` via
  *     computeInvestmentKpis (plus a raw Total LABS Spend sum).
- *   • Media Labs forecast — from the page's forecast scope (`data.labs`).
- *   • Billups booked + forecast — the same path as the Billups section
+ *   - Media Labs forecast — from the page's forecast scope (`data.labs`).
+ *   - Billups booked + forecast — the same path as the Billups section
  *     (computeBillupsKpis over MIR rows and mapped forecast rows).
  *
  * Goal lines come from the admin Labs Targets tab (`partner_targets/{year}`):
  * the Labs share target + the Exec goals (Labs spend, Meta spend + share,
- * Billups share). "% of Target" is the actual spend ÷ the goal.
+ * Billups share). "% of Target" is the actual spend / the goal.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Loader2 } from "lucide-react";
-import StatCard from "../../dashboard/charts/stat-card";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Calendar } from "lucide-react";
 import { computeClientTable } from "./client-table-data";
 import {
   useMoKpiByClient,
@@ -49,10 +48,14 @@ import {
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { Client } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
+import ExecSummaryKpiBand, { type ExecPillar } from "./exec-summary-kpi-band";
+import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
+import ExecKpisByClientTable from "./exec-kpis-by-client-table";
+import { ragStatus } from "./exec-rag";
 
 const ELIGIBILITY_YEAR = 2026;
 
-// ─── Formatting helpers ───────────────────────────────────────────────────────
+// --- Formatting helpers -------------------------------------------------------
 
 function num(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
@@ -72,57 +75,13 @@ function money(v: number): string {
 function pct(v: number | null, digits = 0): string {
   return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
 }
-function safeDiv(a: number, b: number | null): number | null {
-  return b && b !== 0 ? a / b : null;
-}
 
-// ─── Layout pieces ────────────────────────────────────────────────────────────
+// --- MIR "as of" date --------------------------------------------------------
+// The MIR data is pulled roughly once a month; this is the pull date shown in
+// the source column of the latest MIR. Update it whenever a new MIR is synced.
+const MIR_AS_OF_LABEL = "Jul 27, 2026";
 
-function Column({
-  title,
-  goal,
-  children,
-}: {
-  title: string;
-  goal?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="text-center">
-        <h3 className="text-base font-bold text-foreground">{title}</h3>
-        {goal && <p className="mt-0.5 text-xs text-muted-foreground">{goal}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Block({
-  label,
-  note,
-  children,
-}: {
-  label: string;
-  note?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </p>
-        {note && (
-          <p className="text-[11px] italic text-muted-foreground/80">{note}</p>
-        )}
-      </div>
-      <div className="space-y-3">{children}</div>
-    </div>
-  );
-}
-
-// ─── Section ──────────────────────────────────────────────────────────────────
+// --- Section ------------------------------------------------------------------
 
 export default function ExecutiveSummarySection({
   forecastData,
@@ -141,7 +100,7 @@ export default function ExecutiveSummarySection({
 }) {
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
 
-  // ── Targets / goals (from the admin Labs Targets tab) ──────────────────────
+  // -- Targets / goals (from the admin Labs Targets tab) ----------------------
   const [targetYears, setTargetYears] = useState<PartnerTargetsYear[]>([]);
   useEffect(() => {
     const unsubscribe = subscribeToPartnerTargets(setTargetYears);
@@ -151,7 +110,7 @@ export default function ExecutiveSummarySection({
   const goals = targets?.execGoals ?? EMPTY_EXEC_GOALS;
   const labsShareGoal = targets?.totalLabsShareOfMediaTarget ?? null;
 
-  // ── mo_kpi_by_client: Meta (all) + Labs booked ─────────────────────────────
+  // -- mo_kpi_by_client: Meta (all) + Labs booked -----------------------------
   const kpi = useMoKpiByClient();
   const scopedKpiRows = useMemo(
     () => kpi.rows.filter((r) => scopeSet.has(r.PLUSCO_CLIENT_ID)),
@@ -166,7 +125,7 @@ export default function ExecutiveSummarySection({
     [scopedKpiRows]
   );
 
-  // ── Billups: booked (MIR) + forecast, same path as the Billups section ─────
+  // -- Billups: booked (MIR) + forecast, same path as the Billups section -----
   const mir = useBillupsMirRows();
   const mirRows = useMemo(
     () => mir.rows.filter((r) => scopeSet.has(r.clientId)),
@@ -236,20 +195,184 @@ export default function ExecutiveSummarySection({
     [billupsForecastRows]
   );
 
-  // ── Media Labs forecast (from the page's forecast scope) ───────────────────
+  // -- Media Labs forecast (from the page's forecast scope) -------------------
   const fcLabsShare = forecastData.labs.ratio;
   const fcLabsTotal = forecastData.labs.totalLabs;
   const fcLabsDelta = comparisonData.hasContext
     ? fcLabsTotal - comparisonData.labs.totalLabs
     : null;
 
-  // ── Derived % of target ────────────────────────────────────────────────────
-  const bookedLabsPctOfTarget = safeDiv(bookedLabsSpend, goals.labsSpend);
-  const fcLabsPctOfTarget = safeDiv(fcLabsTotal, goals.labsSpend);
-
   const metaYoyPpt = inv.meta.metaShareOfSocial.yoyPpt;
 
-  // ── Loading / error ────────────────────────────────────────────────────────
+  // -- Source of truth (MIR vs Forecaster) drives the KPI band ----------------
+  const [source, setSource] = useState<"mir" | "forecaster">("mir");
+
+  const pillars = useMemo<ExecPillar[]>(() => {
+    const ratioTo = (actual: number | null, goal: number | null): number | null =>
+      actual != null && goal != null && goal !== 0 ? actual / goal : null;
+
+    const mirPillars: ExecPillar[] = [
+      {
+        title: "Media Labs",
+        subtitle: "Booked to date (MIR)",
+        metrics: [
+          {
+            label: "Labs Share of Total Media",
+            value: pct(inv.labs.labsShareOfTotalMedia),
+            pctOfTarget: ratioTo(inv.labs.labsShareOfTotalMedia, labsShareGoal),
+            goalLabel: labsShareGoal != null ? `Goal ${pct(labsShareGoal)}` : undefined,
+          },
+          {
+            label: "Total LABS Spend",
+            value: money(bookedLabsSpend),
+            pctOfTarget: ratioTo(bookedLabsSpend, goals.labsSpend),
+            goalLabel:
+              goals.labsSpend != null ? `Goal ${moneyCompact(goals.labsSpend)}` : undefined,
+          },
+        ],
+      },
+      {
+        title: "Billups",
+        subtitle: "Booked to date (MIR)",
+        metrics: [
+          {
+            label: "Billups Share of OOH",
+            value: pct(billupsBooked.ooh.eligibleShare),
+            pctOfTarget: ratioTo(billupsBooked.ooh.eligibleShare, goals.billupsShare),
+            goalLabel:
+              goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
+          },
+          {
+            label: "Billups Share of PRINT",
+            value: pct(billupsBooked.print.eligibleShare),
+            pctOfTarget: ratioTo(billupsBooked.print.eligibleShare, goals.billupsShare),
+            goalLabel:
+              goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
+          },
+          {
+            label: "Missed Opportunity",
+            value: money(billupsBooked.combined.missed),
+            sub: "Eligible $ not captured by Billups",
+          },
+        ],
+      },
+      {
+        title: "Meta",
+        subtitle: "Booked to date (MIR)",
+        metrics: [
+          {
+            label: "Meta Spend 2026",
+            value: money(inv.meta.metaSpend2026),
+            pctOfTarget: ratioTo(inv.meta.metaSpend2026, inv.meta.targetMetaSpend2026),
+            status: ragStatus(inv.meta.metaSpend2026, inv.meta.targetMetaSpend2026, {
+              lowerIsBetter: true,
+            }),
+            goalLabel: `Target ${moneyCompact(inv.meta.targetMetaSpend2026)}`,
+          },
+          {
+            label: "Meta Share of Social 2026",
+            value: pct(inv.meta.metaShareOfSocial.value),
+            status: ragStatus(
+              inv.meta.metaShareOfSocial.value,
+              inv.meta.targetMetaShareOfSocial,
+              { lowerIsBetter: true }
+            ),
+            sub: `Target ${pct(inv.meta.targetMetaShareOfSocial)}`,
+            yoy:
+              metaYoyPpt != null
+                ? {
+                    label: `${(metaYoyPpt * 100).toFixed(1)}pt YoY`,
+                    favorable: metaYoyPpt <= 0,
+                  }
+                : null,
+          },
+          {
+            label: "MIQ-Social Spend",
+            value: money(inv.meta.miqSocialSpend2026),
+          },
+        ],
+      },
+    ];
+
+    const forecasterPillars: ExecPillar[] = [
+      {
+        title: "Media Labs",
+        subtitle: "Forecaster",
+        metrics: [
+          {
+            label: "Labs Share of Total Media",
+            value: pct(fcLabsShare),
+            pctOfTarget: ratioTo(fcLabsShare, labsShareGoal),
+            goalLabel: labsShareGoal != null ? `Goal ${pct(labsShareGoal)}` : undefined,
+          },
+          {
+            label: "Total Labs Forecast",
+            value: money(fcLabsTotal),
+            pctOfTarget: ratioTo(fcLabsTotal, goals.labsSpend),
+            goalLabel:
+              goals.labsSpend != null ? `Goal ${moneyCompact(goals.labsSpend)}` : undefined,
+            sub:
+              fcLabsDelta != null
+                ? `${fcLabsDelta >= 0 ? "+" : ""}${moneyCompact(fcLabsDelta)} vs comparison`
+                : undefined,
+          },
+        ],
+      },
+      {
+        title: "Billups",
+        subtitle: "Forecaster",
+        metrics: [
+          {
+            label: "Billups Share of OOH",
+            value: pct(billupsForecast.ooh.eligibleShare),
+            pctOfTarget: ratioTo(billupsForecast.ooh.eligibleShare, goals.billupsShare),
+            goalLabel:
+              goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
+          },
+          {
+            label: "Billups Share of PRINT",
+            value: pct(billupsForecast.print.eligibleShare),
+            pctOfTarget: ratioTo(billupsForecast.print.eligibleShare, goals.billupsShare),
+            goalLabel:
+              goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
+          },
+        ],
+      },
+      {
+        title: "Meta",
+        subtitle: "Forecaster",
+        metrics: [
+          {
+            label: "MIQ-Social Forecast",
+            value: money(inv.meta.miqSocialForecast2026),
+          },
+        ],
+      },
+    ];
+
+    return source === "mir" ? mirPillars : forecasterPillars;
+  }, [
+    source,
+    inv,
+    bookedLabsSpend,
+    billupsBooked,
+    billupsForecast,
+    fcLabsShare,
+    fcLabsTotal,
+    fcLabsDelta,
+    goals,
+    labsShareGoal,
+    metaYoyPpt,
+  ]);
+
+  // -- Period / "as of" label (source-aware) ----------------------------------
+  const mirSourceLabel = `Booked to date (MIR) · as of ${MIR_AS_OF_LABEL}`;
+  const periodLabel =
+    source === "mir"
+      ? `${year} · ${mirSourceLabel}`
+      : `${year} · Forecaster (live)`;
+
+  // -- Loading / error --------------------------------------------------------
   const busy = kpi.loading || mir.loading || forecastData.loading;
   const err = kpi.error || mir.error || forecastData.error;
 
@@ -268,7 +391,7 @@ export default function ExecutiveSummarySection({
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // -- Render --------------------------------------------------------------
   return (
     <div data-scroll-section data-scroll-label="Executive Summary" className="space-y-6">
       <div>
@@ -276,86 +399,58 @@ export default function ExecutiveSummarySection({
           Plusco Exec KPIs
         </p>
         <h2 className="text-xl font-bold text-foreground">Executive Summary</h2>
+        <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+          <Calendar size={12} className="flex-shrink-0" />
+          {periodLabel}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
-        {/* ── Media Labs ── */}
-        <Column
-          title="Media Labs"
-          goal={
-            goals.labsSpend != null || labsShareGoal != null ? (
-              <>
-                Spend: {goals.labsSpend != null ? money(goals.labsSpend) : "—"}
-                {labsShareGoal != null && <> ({pct(labsShareGoal)} Share of Total Media)</>}
-              </>
-            ) : undefined
-          }
-        >
-          <Block label="Booked To Date" note="Note: SSP & PBB excluded">
-            <StatCard label="Labs Share of Total Media" value={pct(inv.labs.labsShareOfTotalMedia)} accent="text-violet-500" />
-            <StatCard label="Total LABS Spend" value={money(bookedLabsSpend)} />
-            <StatCard label="% of Target" value={pct(bookedLabsPctOfTarget)} accent="text-indigo-500" />
-          </Block>
-          <Block label="Forecaster" note="Note: Top 5 Labs partners only">
-            <StatCard label="Labs Share of Total Media" value={pct(fcLabsShare)} accent="text-violet-500" />
-            <StatCard
-              label="Total Labs Forecast"
-              value={money(fcLabsTotal)}
-              sub={fcLabsDelta != null ? `${fcLabsDelta >= 0 ? "+" : ""}${moneyCompact(fcLabsDelta)} vs comparison` : undefined}
-            />
-            <StatCard label="% of Target" value={pct(fcLabsPctOfTarget)} accent="text-indigo-500" />
-          </Block>
-        </Column>
-
-        {/* ── Billups ── */}
-        <Column
-          title="Billups"
-          goal={
-            goals.billupsShare != null ? (
-              <>Share of OOH/Print: {pct(goals.billupsShare)} for eligible clients</>
-            ) : undefined
-          }
-        >
-          <Block label="Booked To Date" note="Note: Eligible clients only, excludes client losses/inactive">
-            <StatCard label="Billups Share of OOH" value={pct(billupsBooked.ooh.eligibleShare)} accent="text-indigo-500" />
-            <StatCard label="Billups Share of PRINT" value={pct(billupsBooked.print.eligibleShare)} accent="text-indigo-500" />
-            <StatCard label="Missed Opportunity (Eligible $)" value={money(billupsBooked.combined.missed)} accent="text-red-500" />
-          </Block>
-          <Block label="Forecaster" note="Note: Eligible clients only">
-            <StatCard label="Billups Share of OOH" value={pct(billupsForecast.ooh.eligibleShare)} accent="text-indigo-500" />
-            <StatCard label="Billups Share of PRINT" value={pct(billupsForecast.print.eligibleShare)} accent="text-indigo-500" />
-          </Block>
-        </Column>
-
-        {/* ── Meta ── */}
-        <Column
-          title="Meta"
-          goal={
-            goals.metaSpend != null || goals.metaShareOfSocial != null ? (
-              <>
-                {goals.metaSpend != null && <>Spend &lt; {money(goals.metaSpend)}</>}
-                {goals.metaShareOfSocial != null && (
-                  <> · Meta Share of Social {pct(goals.metaShareOfSocial)}</>
-                )}
-              </>
-            ) : undefined
-          }
-        >
-          <Block label="Booked To Date">
-            <StatCard label="Meta spend 2026" value={money(inv.meta.metaSpend2026)} />
-            <StatCard
-              label="Meta Share of Social 2026"
-              value={pct(inv.meta.metaShareOfSocial.value)}
-              sub={metaYoyPpt != null ? `${(metaYoyPpt * 100).toFixed(1)}pt YoY` : undefined}
-              accent="text-indigo-500"
-            />
-            <StatCard label="MIQ-Social Spend" value={money(inv.meta.miqSocialSpend2026)} />
-          </Block>
-          <Block label="Forecaster" note="Note: MIQ-Social only">
-            <StatCard label="MIQ-Social forecast" value={money(inv.meta.miqSocialForecast2026)} />
-          </Block>
-        </Column>
+      {/* Source-of-truth toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+          {(
+            [
+              ["mir", "Booked to date (MIR)"],
+              ["forecaster", "Forecaster"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSource(id)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                source === id
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          The by-GM and by-client tables below always reflect Booked to date (MIR).
+        </p>
       </div>
+
+      {/* Total Plusco KPI band (drives off the selected source) */}
+      <ExecSummaryKpiBand pillars={pillars} />
+
+      {/* By GM */}
+      <ExecKpisByGmTable
+        rows={scopedKpiRows}
+        labsShareGoal={labsShareGoal}
+        billupsShareGoal={goals.billupsShare}
+        sourceLabel={mirSourceLabel}
+      />
+
+      {/* By client */}
+      <ExecKpisByClientTable
+        rows={scopedKpiRows}
+        labsShareGoal={labsShareGoal}
+        billupsShareGoal={goals.billupsShare}
+        sourceLabel={mirSourceLabel}
+      />
     </div>
   );
 }

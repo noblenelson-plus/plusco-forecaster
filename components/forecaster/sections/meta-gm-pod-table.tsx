@@ -1,4 +1,4 @@
-﻿// components/forecaster/sections/meta-gm-pod-table.tsx
+// components/forecaster/sections/meta-gm-pod-table.tsx
 "use client";
 
 /**
@@ -6,37 +6,33 @@
  * mo_kpi_by_client rows by GM Pod and shows the full Meta divestment column set,
  * with a weighted grand-total row. Shares, variances and pacing are recomputed
  * from each group's summed dollars (never averaged), so the total row is exact.
+ *
+ * UI — standardized to the app's table DNA: the columns are shared TableColumn
+ * descriptors (one source of truth for header, body and total, plus the raw
+ * values the Sheets export needs), the surface is a ChartCard with an "Export"
+ * action, and the table uses the semantic-token styling shared with the other
+ * Meta tables. Because a group row and the grand total are both a PodTotals, a
+ * column's display and total share one expression. Numbers/order are unchanged.
  */
 
 import { useMemo } from "react";
 import { Users } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
+import ExportSheetButton from "../table/export-sheet-button";
+import type { TableColumn } from "../table/table-column.types";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
+import {
+  num,
+  money,
+  moneySigned,
+  pct,
+  pctSigned,
+  ppt,
+  safeDiv,
+  shareVar,
+} from "./meta-format";
 
-// ─── Formatting ────────────────────────────────────────────────────────────────
-function num(v: unknown): number {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-function money(v: number): string {
-  return `$${Math.round(v).toLocaleString("en-CA")}`;
-}
-function moneySigned(v: number): string {
-  return `${v < 0 ? "-" : ""}$${Math.abs(Math.round(v)).toLocaleString("en-CA")}`;
-}
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-function pctSigned(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}%`;
-}
-function ppt(v: number | null, digits = 1): string {
-  return v === null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}pt`;
-}
-function safeDiv(a: number, b: number): number | null {
-  return b !== 0 ? a / b : null;
-}
-
+/** One GM-Pod group's summed dollars / counts. The grand total is the same shape. */
 interface PodTotals {
   pod: string;
   meta2025: number;
@@ -53,62 +49,222 @@ interface PodTotals {
   withTrend: number;
 }
 
-/** Derived columns from a group's summed dollars / counts. */
-function derive(t: PodTotals) {
-  const metaShare2025 = safeDiv(t.meta2025, t.social2025);
-  const metaShare2026 = safeDiv(t.meta2026, t.social2026);
-  const yoyVarDollar = t.meta2026 - t.meta2025;
-  const yoyVarPct = safeDiv(yoyVarDollar, t.meta2025);
-  const spendPacing = safeDiv(t.meta2026, t.targetMeta);
-  const shareVar =
-    metaShare2026 !== null && metaShare2025 !== null
-      ? metaShare2026 - metaShare2025
-      : null;
-  const targetShare = safeDiv(t.targetMeta, t.socialForecast);
-  const otherShare2025 = safeDiv(t.other2025, t.social2025);
-  const otherShare2026 = safeDiv(t.other2026, t.social2026);
-  const otherShareVar =
-    otherShare2026 !== null && otherShare2025 !== null
-      ? otherShare2026 - otherShare2025
-      : null;
-  const miqPacing = safeDiv(t.miqMir, t.miqForecast);
-  const pctDivested = safeDiv(t.divested, t.withTrend);
-  return {
-    metaShare2025,
-    metaShare2026,
-    yoyVarDollar,
-    yoyVarPct,
-    spendPacing,
-    shareVar,
-    targetShare,
-    otherShare2026,
-    otherShareVar,
-    miqPacing,
-    pctDivested,
-  };
-}
-
-const HEADERS = [
-  "GM Pod",
-  "Meta 2025",
-  "Social 2025",
-  "Meta Share 2025",
-  "Meta 2026",
-  "Social 2026",
-  "Meta Share 2026",
-  "Meta Spend Var YoY $",
-  "Meta Spend Var YoY %",
-  "Social Forecast (RFQ)",
-  "Target Meta Spend (-30%)",
-  "Spend Pacing",
-  "Meta Share Var vs 2025",
-  "MIQ-Social Forecast",
-  "MIQ-Social MIR",
-  "MIQ-Social Pacing",
-  "Target Meta Share 2026",
-  "Other Platforms Share 2026",
-  "Other Platform Share Var vs 2025",
-  "% Clients Divested",
+const COLUMNS: TableColumn<PodTotals, PodTotals>[] = [
+  {
+    id: "gm_pod",
+    label: "GM Pod",
+    group: "By GM Pod",
+    kind: "text",
+    align: "left",
+    pinned: true,
+    width: 200,
+    raw: (t) => t.pod,
+    display: (t) => t.pod,
+    total: (t) => t.pod,
+  },
+  {
+    id: "meta_2025",
+    label: "Meta 2025",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.meta2025,
+    display: (t) => money(t.meta2025),
+    total: (t) => money(t.meta2025),
+    totalRaw: (t) => t.meta2025,
+  },
+  {
+    id: "social_2025",
+    label: "Social 2025",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.social2025,
+    display: (t) => money(t.social2025),
+    total: (t) => money(t.social2025),
+    totalRaw: (t) => t.social2025,
+  },
+  {
+    id: "meta_share_2025",
+    label: "Meta Share 2025",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => safeDiv(t.meta2025, t.social2025),
+    display: (t) => pct(safeDiv(t.meta2025, t.social2025)),
+    total: (t) => pct(safeDiv(t.meta2025, t.social2025)),
+  },
+  {
+    id: "meta_2026",
+    label: "Meta 2026",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.meta2026,
+    display: (t) => money(t.meta2026),
+    total: (t) => money(t.meta2026),
+    totalRaw: (t) => t.meta2026,
+  },
+  {
+    id: "social_2026",
+    label: "Social 2026",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.social2026,
+    display: (t) => money(t.social2026),
+    total: (t) => money(t.social2026),
+    totalRaw: (t) => t.social2026,
+  },
+  {
+    id: "meta_share_2026",
+    label: "Meta Share 2026",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => safeDiv(t.meta2026, t.social2026),
+    display: (t) => pct(safeDiv(t.meta2026, t.social2026)),
+    total: (t) => pct(safeDiv(t.meta2026, t.social2026)),
+  },
+  {
+    id: "meta_var_yoy_usd",
+    label: "Meta Spend Var YoY $",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.meta2026 - t.meta2025,
+    display: (t) => moneySigned(t.meta2026 - t.meta2025),
+    total: (t) => moneySigned(t.meta2026 - t.meta2025),
+    totalRaw: (t) => t.meta2026 - t.meta2025,
+  },
+  {
+    id: "meta_var_yoy_pct",
+    label: "Meta Spend Var YoY %",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => safeDiv(t.meta2026 - t.meta2025, t.meta2025),
+    display: (t) => pctSigned(safeDiv(t.meta2026 - t.meta2025, t.meta2025)),
+    total: (t) => pctSigned(safeDiv(t.meta2026 - t.meta2025, t.meta2025)),
+  },
+  {
+    id: "social_forecast_rfq",
+    label: "Social Forecast (RFQ)",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.socialForecast,
+    display: (t) => money(t.socialForecast),
+    total: (t) => money(t.socialForecast),
+    totalRaw: (t) => t.socialForecast,
+  },
+  {
+    id: "target_meta_spend",
+    label: "Target Meta Spend (-30%)",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.targetMeta,
+    display: (t) => money(t.targetMeta),
+    total: (t) => money(t.targetMeta),
+    totalRaw: (t) => t.targetMeta,
+  },
+  {
+    id: "spend_pacing",
+    label: "Spend Pacing",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => safeDiv(t.meta2026, t.targetMeta),
+    display: (t) => pct(safeDiv(t.meta2026, t.targetMeta)),
+    total: (t) => pct(safeDiv(t.meta2026, t.targetMeta)),
+  },
+  {
+    id: "meta_share_var_vs_2025",
+    label: "Meta Share Var vs 2025",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => shareVar(t.meta2026, t.social2026, t.meta2025, t.social2025),
+    display: (t) =>
+      ppt(shareVar(t.meta2026, t.social2026, t.meta2025, t.social2025)),
+    total: (t) =>
+      ppt(shareVar(t.meta2026, t.social2026, t.meta2025, t.social2025)),
+  },
+  {
+    id: "miq_social_forecast",
+    label: "MIQ-Social Forecast",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.miqForecast,
+    display: (t) => money(t.miqForecast),
+    total: (t) => money(t.miqForecast),
+    totalRaw: (t) => t.miqForecast,
+  },
+  {
+    id: "miq_social_mir",
+    label: "MIQ-Social MIR",
+    group: "By GM Pod",
+    kind: "money",
+    align: "right",
+    raw: (t) => t.miqMir,
+    display: (t) => money(t.miqMir),
+    total: (t) => money(t.miqMir),
+    totalRaw: (t) => t.miqMir,
+  },
+  {
+    id: "miq_social_pacing",
+    label: "MIQ-Social Pacing",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => safeDiv(t.miqMir, t.miqForecast),
+    display: (t) => pct(safeDiv(t.miqMir, t.miqForecast)),
+    total: (t) => pct(safeDiv(t.miqMir, t.miqForecast)),
+  },
+  {
+    id: "target_meta_share_2026",
+    label: "Target Meta Share 2026",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => safeDiv(t.targetMeta, t.socialForecast),
+    display: (t) => pct(safeDiv(t.targetMeta, t.socialForecast)),
+    total: (t) => pct(safeDiv(t.targetMeta, t.socialForecast)),
+  },
+  {
+    id: "other_platforms_share_2026",
+    label: "Other Platforms Share 2026",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => safeDiv(t.other2026, t.social2026),
+    display: (t) => pct(safeDiv(t.other2026, t.social2026)),
+    total: (t) => pct(safeDiv(t.other2026, t.social2026)),
+  },
+  {
+    id: "other_share_var_vs_2025",
+    label: "Other Platform Share Var vs 2025",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => shareVar(t.other2026, t.social2026, t.other2025, t.social2025),
+    display: (t) =>
+      ppt(shareVar(t.other2026, t.social2026, t.other2025, t.social2025)),
+    total: (t) =>
+      ppt(shareVar(t.other2026, t.social2026, t.other2025, t.social2025)),
+  },
+  {
+    id: "pct_clients_divested",
+    label: "% Clients Divested",
+    group: "By GM Pod",
+    kind: "percent",
+    align: "right",
+    raw: (t) => safeDiv(t.divested, t.withTrend),
+    display: (t) => pct(safeDiv(t.divested, t.withTrend)),
+    total: (t) => pct(safeDiv(t.divested, t.withTrend)),
+  },
 ];
 
 export default function MetaGmPodTable({ rows }: { rows: KpiByClientRow[] }) {
@@ -172,80 +328,73 @@ export default function MetaGmPodTable({ rows }: { rows: KpiByClientRow[] }) {
     return { pods, total };
   }, [rows]);
 
-  const cells = (t: PodTotals) => {
-    const d = derive(t);
-    return [
-      money(t.meta2025),
-      money(t.social2025),
-      pct(d.metaShare2025),
-      money(t.meta2026),
-      money(t.social2026),
-      pct(d.metaShare2026),
-      moneySigned(d.yoyVarDollar),
-      pctSigned(d.yoyVarPct),
-      money(t.socialForecast),
-      money(t.targetMeta),
-      pct(d.spendPacing),
-      ppt(d.shareVar),
-      money(t.miqForecast),
-      money(t.miqMir),
-      pct(d.miqPacing),
-      pct(d.targetShare),
-      pct(d.otherShare2026),
-      ppt(d.otherShareVar),
-      pct(d.pctDivested),
-    ];
-  };
-
   return (
     <div data-scroll-section data-scroll-label="Meta by GM Pod">
-      <ChartCard title="By GM Pod" icon={Users}>
+      <ChartCard
+        title="By GM Pod"
+        icon={Users}
+        action={
+          <ExportSheetButton
+            columns={COLUMNS}
+            rows={pods}
+            totals={total}
+            title="Meta — By GM Pod"
+            sheetTitle="Meta by GM Pod"
+            includeTotals
+          />
+        }
+      >
         <div className="-mx-2 mt-2 overflow-x-auto">
           <table className="min-w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
-                {HEADERS.map((h, i) => (
+              <tr className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
+                {COLUMNS.map((c) => (
                   <th
-                    key={h}
+                    key={c.id}
                     className={`whitespace-nowrap px-3 py-2.5 font-medium ${
-                      i === 0
-                        ? "sticky left-0 z-10 bg-gray-50 text-left"
-                        : "text-right"
-                    }`}
+                      c.align === "left" ? "text-left" : "text-right"
+                    } ${c.pinned ? "sticky left-0 z-10 bg-muted" : ""}`}
                   >
-                    {h}
+                    {c.label}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {pods.map((t) => (
-                <tr key={t.pod} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-2 text-left font-medium text-gray-900">
-                    {t.pod}
-                  </td>
-                  {cells(t).map((c, i) => (
+                <tr
+                  key={t.pod}
+                  className="border-b border-border/60 transition-colors hover:bg-muted/60"
+                >
+                  {COLUMNS.map((c) => (
                     <td
-                      key={i}
-                      className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700"
+                      key={c.id}
+                      className={`whitespace-nowrap px-3 py-2 ${
+                        c.align === "left"
+                          ? "text-left text-foreground"
+                          : "text-right tabular-nums text-foreground"
+                      } ${
+                        c.pinned
+                          ? "sticky left-0 z-10 bg-card font-medium text-foreground"
+                          : ""
+                      }`}
                     >
-                      {c}
+                      {c.display(t)}
                     </td>
                   ))}
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t border-gray-300 bg-gray-100 font-semibold text-gray-900">
-                <td className="sticky left-0 z-10 whitespace-nowrap bg-gray-100 px-3 py-2.5 text-left">
-                  {total.pod}
-                </td>
-                {cells(total).map((c, i) => (
+              <tr className="border-t-2 border-border bg-muted font-semibold text-foreground">
+                {COLUMNS.map((c) => (
                   <td
-                    key={i}
-                    className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums"
+                    key={c.id}
+                    className={`whitespace-nowrap px-3 py-2.5 ${
+                      c.align === "left" ? "text-left" : "text-right tabular-nums"
+                    } ${c.pinned ? "sticky left-0 z-10 bg-muted" : ""}`}
                   >
-                    {c}
+                    {c.total ? c.total(total) : ""}
                   </td>
                 ))}
               </tr>

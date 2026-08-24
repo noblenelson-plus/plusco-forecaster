@@ -1,4 +1,4 @@
-﻿// components/forecaster/sections/meta-partner-section.tsx
+// components/forecaster/sections/meta-partner-section.tsx
 "use client";
 
 /**
@@ -8,6 +8,11 @@
  *   1. YoY partner table + grouped bar chart (spend 2025 vs 2026).
  *   2. 2025 block: partner table (spend $, %) + pie + Social/Meta/Share scorecards.
  *   3. 2026 block: same for 2026.
+ *
+ * UI — standardized to the app's DNA: number formatting comes from ./meta-format,
+ * the tables use the semantic-token styling (bg-muted header/footer, border-border,
+ * hover:bg-muted/60) shared with the other Meta tables, and the loading state uses
+ * the shared spinner. Numbers, columns and chart are unchanged.
  */
 
 import { useMemo } from "react";
@@ -21,32 +26,14 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
-import { Share2, BarChart3, PieChart as PieIcon } from "lucide-react";
+import { Share2, BarChart3, PieChart as PieIcon, Loader2 } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
 import StatCard from "../../dashboard/charts/stat-card";
 import ForecasterPieChart, { type PieSegment } from "../charts/pie-chart";
 import { useSocialPartnerMix } from "../../../lib/dashboard/data/use-social-partner-mix";
+import { num, money, moneySigned, pct, ppt, safeDiv } from "./meta-format";
 
-// ─── Formatting ────────────────────────────────────────────────────────────────
-function num(v: unknown): number {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-function money(v: number): string {
-  return v ? `$${Math.round(v).toLocaleString("en-CA")}` : "$0";
-}
-function moneySigned(v: number): string {
-  return `${v < 0 ? "-" : ""}$${Math.abs(Math.round(v)).toLocaleString("en-CA")}`;
-}
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-function ppt(v: number | null, digits = 1): string {
-  return v === null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(digits)}pt`;
-}
-function safeDiv(a: number, b: number): number | null {
-  return b !== 0 ? a / b : null;
-}
+/** Compact axis labels for the bar chart (chart-only, so it stays local). */
 function compactMoney(v: number): string {
   const abs = Math.abs(v);
   if (abs >= 1_000_000) return `$${(v / 1_000_000).toFixed(0)}M`;
@@ -89,7 +76,7 @@ function YearTable({
   return (
     <table className="min-w-full border-collapse text-sm">
       <thead>
-        <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
+        <tr className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
           <th className="px-3 py-2.5 text-left font-medium">Partner</th>
           <th className="px-3 py-2.5 text-right font-medium">Spend $</th>
           <th className="px-3 py-2.5 text-right font-medium">Spend %</th>
@@ -97,15 +84,18 @@ function YearTable({
       </thead>
       <tbody>
         {sorted.map((p) => (
-          <tr key={p.partner} className="border-b border-gray-100 hover:bg-gray-50">
-            <td className="whitespace-nowrap px-3 py-2 text-left text-gray-700">{p.partner}</td>
-            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">{money(p[key])}</td>
-            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">{pct(safeDiv(p[key], socialTotal))}</td>
+          <tr
+            key={p.partner}
+            className="border-b border-border/60 transition-colors hover:bg-muted/60"
+          >
+            <td className="whitespace-nowrap px-3 py-2 text-left text-foreground">{p.partner}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">{money(p[key])}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">{pct(safeDiv(p[key], socialTotal))}</td>
           </tr>
         ))}
       </tbody>
       <tfoot>
-        <tr className="border-t border-gray-300 bg-gray-100 font-semibold text-gray-900">
+        <tr className="border-t-2 border-border bg-muted font-semibold text-foreground">
           <td className="px-3 py-2.5 text-left">Grand total</td>
           <td className="px-3 py-2.5 text-right tabular-nums">{money(socialTotal)}</td>
           <td className="px-3 py-2.5 text-right tabular-nums">100%</td>
@@ -165,8 +155,8 @@ export default function MetaPartnerSection() {
 
   if (loading) {
     return (
-      <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-        Loading…
+      <div className="flex h-40 items-center justify-center text-muted-foreground">
+        <Loader2 size={20} className="animate-spin" />
       </div>
     );
   }
@@ -184,7 +174,7 @@ export default function MetaPartnerSection() {
           <div className="-mx-2 mt-2 overflow-x-auto">
             <table className="min-w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
+                <tr className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
                   <th className="px-3 py-2.5 text-left font-medium">Partner</th>
                   <th className="px-3 py-2.5 text-right font-medium">Spend 2025</th>
                   <th className="px-3 py-2.5 text-right font-medium">Spend 2026</th>
@@ -194,12 +184,15 @@ export default function MetaPartnerSection() {
               </thead>
               <tbody>
                 {m.byYoy.map((p) => (
-                  <tr key={p.partner} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="whitespace-nowrap px-3 py-2 text-left text-gray-700">{p.partner}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">{money(p.spend2025)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">{money(p.spend2026)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">{moneySigned(p.spend2026 - p.spend2025)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">
+                  <tr
+                    key={p.partner}
+                    className="border-b border-border/60 transition-colors hover:bg-muted/60"
+                  >
+                    <td className="whitespace-nowrap px-3 py-2 text-left text-foreground">{p.partner}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">{money(p.spend2025)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">{money(p.spend2026)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">{moneySigned(p.spend2026 - p.spend2025)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                       {ppt(
                         (safeDiv(p.spend2026, m.social2026) ?? 0) -
                           (safeDiv(p.spend2025, m.social2025) ?? 0)
@@ -209,7 +202,7 @@ export default function MetaPartnerSection() {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-gray-300 bg-gray-100 font-semibold text-gray-900">
+                <tr className="border-t-2 border-border bg-muted font-semibold text-foreground">
                   <td className="px-3 py-2.5 text-left">Grand total</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{money(m.social2025)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{money(m.social2026)}</td>

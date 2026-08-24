@@ -1,13 +1,13 @@
-﻿// filepath: components/forecaster/sections/investment-kpis-table.tsx
+// filepath: components/forecaster/sections/investment-kpis-table.tsx
 "use client";
 
 /**
- * CLIENT DOWNLOAD TABLE (MediaOcean → Investment KPIs) — presentational.
+ * CLIENT DOWNLOAD TABLE (MediaOcean -> Investment KPIs) — presentational.
  * Receives already-filtered rows from the section (single shared filter bar),
  * shows every metric from the Looker CSV (sortable), caps its height with ONE
  * scroll container (sticky header + sticky Client column + a pinned Grand-total
  * row). The total row sums the DOLLAR columns and computes the CORRECT portfolio
- * rate for each percentage column (Σnumerator ÷ Σdenominator) — never an average
+ * rate for each percentage column (sum(numerator) / sum(denominator)) — never an average
  * of per-client percentages — so the footer cross-checks 1:1 with Looker's total
  * and with the scorecards above. "Download CSV" exports every synced column.
  *
@@ -32,8 +32,10 @@ import {
 } from "../../ui/card";
 import { Button } from "../../ui/button";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
+import ExportSheetButton from "../table/export-sheet-button";
+import type { TableColumn } from "../table/table-column.types";
 
-// ─── Numeric helpers ──────────────────────────────────────────────────────────
+// --- Numeric helpers ----------------------------------------------------------
 
 function num(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
@@ -48,7 +50,7 @@ function safeDivN(a: number, b: number): number | null {
   return b ? a / b : null;
 }
 
-/** Portfolio ratio = Σnumerator ÷ Σdenominator (null when the denominator is 0). */
+/** Portfolio ratio = sum(numerator) / sum(denominator) (null when the denominator is 0). */
 function ratio(rows: KpiByClientRow[], numKey: string, denKey: string): number | null {
   return safeDivN(sumField(rows, numKey), sumField(rows, denKey));
 }
@@ -73,7 +75,7 @@ function metaSpendVariancePct(r: KpiByClientRow): number | null {
   return m25 === 0 ? null : (m26 - m25) / m25;
 }
 
-// ─── Column model ─────────────────────────────────────────────────────────────
+// --- Column model -------------------------------------------------------------
 
 type CellType = "text" | "money" | "pct" | "delta";
 
@@ -267,7 +269,7 @@ const COLUMNS: Col[] = [
   },
 ];
 
-// ─── Value + format helpers ────────────────────────────────────────────────────
+// --- Value + format helpers ----------------------------------------------------
 
 function rawValue(r: KpiByClientRow, col: Col): unknown {
   return col.compute ? col.compute(r) : r[col.field ?? col.key];
@@ -311,12 +313,50 @@ function footerText(col: Col, rows: KpiByClientRow[], moneyTotal: number): strin
   return "";
 }
 
+// Adapter: expose the same COLUMNS as shared TableColumn descriptors so the
+// "Export to Sheets" button mirrors exactly what the table shows (same headers,
+// same formatted cells, same Grand-total footer). Money body cells and money
+// totals export as real numbers; percentages/deltas export as their display
+// string, matching the rest of the app's Sheets exports.
+const EXPORT_COLUMNS: TableColumn<KpiByClientRow, KpiByClientRow[]>[] = COLUMNS.map(
+  (col) => ({
+    id: col.key,
+    label: col.header,
+    group: "Investment KPIs",
+    kind:
+      col.type === "money" ? "money" : col.type === "text" ? "text" : "percent",
+    align: col.type === "text" ? "left" : "right",
+    raw: (r) => {
+      const v = rawValue(r, col);
+      if (col.type === "text") return textOf(v);
+      if (v === null || v === undefined || v === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    },
+    display: (r) => display(r, col),
+    total:
+      col.type === "text"
+        ? undefined
+        : (rows: KpiByClientRow[]) =>
+            footerText(
+              col,
+              rows,
+              rows.reduce((acc, r) => acc + num(rawValue(r, col)), 0)
+            ),
+    totalRaw:
+      col.type === "money"
+        ? (rows: KpiByClientRow[]) =>
+            rows.reduce((acc, r) => acc + num(rawValue(r, col)), 0)
+        : undefined,
+  })
+);
+
 function csvField(value: unknown): string {
   const s = value === null || value === undefined ? "" : String(value);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// --- Component ----------------------------------------------------------------
 
 export default function InvestmentKpisTable({
   rows,
@@ -400,7 +440,17 @@ export default function InvestmentKpisTable({
               </CardDescription>
             </div>
           </div>
-          <CardAction>
+          <CardAction className="flex items-center gap-2">
+            {rows.length > 0 && (
+              <ExportSheetButton
+                columns={EXPORT_COLUMNS}
+                rows={sorted}
+                totals={sorted}
+                title="Investment KPIs — By Client"
+                sheetTitle="Investment KPIs"
+                includeTotals
+              />
+            )}
             <Button
               variant="outline"
               size="sm"
