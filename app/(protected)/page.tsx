@@ -35,8 +35,7 @@ import RevenueTab from "../../components/forecaster/tabs/revenue-tab";
 import ProductTab from "../../components/forecaster/tabs/product-tab";
 import MediaboxTab from "../../components/forecaster/tabs/mediabox-tab";
 import ClientNoteCard from "../../components/forecaster/sections/client-note-card";
-import MirRawSection from "../../components/forecaster/sections/mir-raw-section";
-import BillingSummarySection from "../../components/forecaster/sections/billing-summary-section";
+import ReportsTabs from "../../components/forecaster/sections/reports-tabs";
 import BillupsSection from "../../components/forecaster/sections/billups-section";
 import ExecKpisTabs from "../../components/forecaster/sections/exec-kpis-tabs";
 import MediaOceanTabs, { type MediaOceanSubTab } from "../../components/forecaster/sections/mediaocean-tabs";
@@ -590,10 +589,8 @@ export default function DashboardPage() {
             mediabox={mediaboxData}
             clientNameById={clientNameById}
           />
-        ) : tab === "mir-raw" ? (
-          <MirRawSection />
-        ) : tab === "billing-summary" ? (
-          <BillingSummarySection />
+        ) : tab === "reports" ? (
+          <ReportsTabs />
         ) : (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
             {activeLabel} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â coming soon
