@@ -1,15 +1,16 @@
-﻿// filepath: components/forecaster/sections/mediaocean-social-section.tsx
+// filepath: components/forecaster/sections/mediaocean-social-section.tsx
 "use client";
 
 /**
  * SOCIAL MEDIA section (MediaOcean tab) -- the last MediaOcean section. Reads the
  * `social_partner_mix` collection via useSocialPartnerMix and rolls the (filtered)
  * rows up to: a per-partner table (spend 2025, spend 2026, variance, share ppt)
- * and a 2025-vs-2026 Social Share comparison chart. Six client-level filters
- * (Agency / BU Region / Business Lead / GM Pod / Client / Month).
+ * and a 2025-vs-2026 Social Share comparison chart.
  *
- * Design: mirrors the other MediaOcean sections -- icon+title header,
- * MultiSelectDropdown filters, ChartCard shells, shared table styling. All figures
+ * Design: mirrors the other MediaOcean sections -- icon+title header, ChartCard
+ * shells, shared table styling. Driven by the global dashboard filter + Time &
+ * Context; no local filters. Social has NO year filter -- it intrinsically
+ * compares 2025 vs 2026 -- so only client scope + months apply. All figures
  * recompute from the summable monthly spends (the hook ignores the stored annual
  * columns), so Month filtering stays correct.
  *
@@ -18,49 +19,59 @@
  * compare side by side, not parts of one total.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Loader2, Share2, Table } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
-import MultiSelectDropdown, {
-  type Option,
-} from "../../_shared/multi-select-dropdown";
 import {
   useSocialPartnerMix,
-  socialFilterOptions,
-  applySocialFilters,
   computeSocialSummary,
-  EMPTY_SOCIAL_FILTERS,
-  type SocialFilters,
   type SocialPartnerSlice,
+  type SocialPartnerRow,
 } from "../../../lib/dashboard/data/use-social-partner-mix";
+import type { Client } from "../../../lib/types/client.types";
 
-// ─── Formatting helpers ───────────────────────────────────────────────────────
+// --- Formatting helpers -------------------------------------------------------
 
-/** 27546111 → "$27 546 111" (en-CA). */
+/** 27546111 -> "$27 546 111" (en-CA). */
 function money(v: number): string {
   return `$${Math.round(v).toLocaleString("en-CA")}`;
 }
 
-/** 0.55 → "55%" ; null → "—". */
+/** 0.55 -> "55%" ; null -> "—". */
 function pct(v: number | null, digits = 0): string {
   return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
 }
 
-/** Signed points, e.g. -12.0 → "−12.0", null → "—". */
+/** Signed points, e.g. -12.0 -> "−12.0", null -> "—". */
 function ppt(v: number | null): string {
   if (v === null) return "—";
   const sign = v > 0 ? "+" : v < 0 ? "−" : "";
   return `${sign}${Math.abs(v).toFixed(1)}`;
 }
 
-const toOptions = (values: string[]): Option[] =>
-  values.map((v) => ({ value: v, label: v }));
+// Month name -> number, to match the global Months selection against the row's
+// MONTH (which may be a name, a number, or a date string).
+const MONTH_NAMES = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+function monthOf(r: SocialPartnerRow): number | null {
+  const raw = String(r.MONTH ?? "").trim();
+  if (!raw) return null;
+  const idx = MONTH_NAMES.indexOf(raw.toLowerCase());
+  if (idx >= 0) return idx + 1;
+  const n = Number(raw);
+  if (Number.isFinite(n) && n >= 1 && n <= 12) return n;
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) return d.getUTCMonth() + 1;
+  return null;
+}
 
 // Two-tone palette for the paired share bars (2025 / 2026).
 const COLOR_2025 = "#3b82f6"; // blue
 const COLOR_2026 = "#f59e0b"; // amber
 
-// ─── Social table ──────────────────────────────────────────────────────────────
+// --- Social table -------------------------------------------------------------
 // Same styling as the shared VarianceTable / other MediaOcean tables.
 function SocialTable({
   partners,
@@ -124,7 +135,7 @@ function SocialTable({
   );
 }
 
-// ─── Paired share bars (2025 vs 2026 per partner) ─────────────────────────────
+// --- Paired share bars (2025 vs 2026 per partner) -----------------------------
 function ShareBars({ partners }: { partners: SocialPartnerSlice[] }) {
   // Scale bars to the largest share in view so differences are legible.
   const maxShare = partners.reduce((m, p) => {
@@ -187,31 +198,53 @@ function ShareBars({ partners }: { partners: SocialPartnerSlice[] }) {
   );
 }
 
-// ─── Section ──────────────────────────────────────────────────────────────────
+// --- Section ------------------------------------------------------------------
 
-export default function MediaoceanSocialSection() {
+export default function MediaoceanSocialSection({
+  scopedClientIds,
+  clients,
+  selMonths,
+}: {
+  scopedClientIds: string[];
+  clients: Client[];
+  selMonths: number[];
+}) {
   const { rows, loading, error } = useSocialPartnerMix();
-  const [filters, setFilters] = useState<SocialFilters>(EMPTY_SOCIAL_FILTERS);
 
-  const options = useMemo(() => socialFilterOptions(rows), [rows]);
+  // Driven by the global filter bar + Time & Context (no local filters). Social
+  // has no year filter -- it intrinsically compares 2025 vs 2026 -- so we map
+  // only client scope + months. Client scope arrives as ids; social rows key on
+  // client NAME, so we map ids -> names via the clients collection and match
+  // case-insensitively.
+  const scopedNames = useMemo(() => {
+    const nameById = new Map(clients.map((c) => [c.cl_id, c.CL_Name]));
+    const names = new Set<string>();
+    for (const id of scopedClientIds) {
+      const n = nameById.get(id);
+      if (n) names.add(n.trim().toLowerCase());
+    }
+    return names;
+  }, [scopedClientIds, clients]);
+
   const filtered = useMemo(
-    () => applySocialFilters(rows, filters),
-    [rows, filters]
+    () =>
+      rows.filter((r) => {
+        if (
+          scopedNames.size > 0 &&
+          !scopedNames.has(String(r.PLUSCO_CLIENT_NAME).trim().toLowerCase())
+        )
+          return false;
+        if (selMonths.length > 0) {
+          const m = monthOf(r);
+          if (m === null || !selMonths.includes(m)) return false;
+        }
+        return true;
+      }),
+    [rows, scopedNames, selMonths]
   );
   const summary = useMemo(() => computeSocialSummary(filtered), [filtered]);
 
-  const anyFilterActive =
-    filters.agency.length > 0 ||
-    filters.buRegion.length > 0 ||
-    filters.businessLead.length > 0 ||
-    filters.gmPod.length > 0 ||
-    filters.client.length > 0 ||
-    filters.month.length > 0;
-
-  const set = (patch: Partial<SocialFilters>) =>
-    setFilters((prev) => ({ ...prev, ...patch }));
-
-  // ─── States (mirror the other sections) ───────────────────────────────────
+  // --- States (mirror the other sections) -----------------------------------
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
@@ -250,62 +283,10 @@ export default function MediaoceanSocialSection() {
       data-scroll-label="Social Media"
       className="space-y-6"
     >
-      {/* Header */}
+      {/* Header — with a right-aligned 2026 social-spend caption. */}
       <div className="flex items-center gap-2">
         <Share2 size={18} className="text-primary" />
         <h2 className="text-lg font-semibold text-foreground">Social Media</h2>
-      </div>
-
-      {/* Filter bar (6 filters) */}
-      <div className="flex flex-wrap items-center gap-3">
-        <MultiSelectDropdown
-          label="Agency"
-          options={toOptions(options.agency)}
-          selectedValues={filters.agency}
-          onChange={(v) => set({ agency: v })}
-          searchable
-        />
-        <MultiSelectDropdown
-          label="BU Region"
-          options={toOptions(options.buRegion)}
-          selectedValues={filters.buRegion}
-          onChange={(v) => set({ buRegion: v })}
-        />
-        <MultiSelectDropdown
-          label="Business Lead"
-          options={toOptions(options.businessLead)}
-          selectedValues={filters.businessLead}
-          onChange={(v) => set({ businessLead: v })}
-          searchable
-        />
-        <MultiSelectDropdown
-          label="GM Pod"
-          options={toOptions(options.gmPod)}
-          selectedValues={filters.gmPod}
-          onChange={(v) => set({ gmPod: v })}
-        />
-        <MultiSelectDropdown
-          label="Client"
-          options={toOptions(options.client)}
-          selectedValues={filters.client}
-          onChange={(v) => set({ client: v })}
-          searchable
-        />
-        <MultiSelectDropdown
-          label="Month"
-          options={toOptions(options.month)}
-          selectedValues={filters.month}
-          onChange={(v) => set({ month: v })}
-        />
-        {anyFilterActive && (
-          <button
-            type="button"
-            onClick={() => setFilters(EMPTY_SOCIAL_FILTERS)}
-            className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          >
-            Clear filters
-          </button>
-        )}
         <span className="ml-auto text-xs text-muted-foreground">
           {money(summary.total2026)} social spend (2026)
         </span>
