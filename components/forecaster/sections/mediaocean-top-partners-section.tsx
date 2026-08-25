@@ -1,4 +1,4 @@
-﻿// filepath: components/forecaster/sections/mediaocean-top-partners-section.tsx
+// filepath: components/forecaster/sections/mediaocean-top-partners-section.tsx
 "use client";
 
 /**
@@ -12,8 +12,12 @@
  * Design: mirrors the Total Media Investment section -- StatCard heroes, ChartCard
  * shells, shared table styling (uppercase muted headers, border-b rows, border-t-2
  * grand total), the shared HorizontalStackedBar (single series) for the ranking.
- * Four partner filters (Channel / Programmatic / 2026 Deals / Partner) plus Year,
- * which defaults to 2026 but stays changeable. Recomputes over active filters.
+ *
+ * Filtering: client scope, year and months come from the global dashboard filter
+ * + Time & Context. On top of that, four buy-level facets stay section-local
+ * (Media Channel / Programmatic / 2026 Deals / Media Partner) because they have
+ * no equivalent in the global bar -- they mirror the Looker report's partner
+ * facets.
  *
  * Deal split is PER ROW (PLUSCO_2026_DEALS === "Partner Deal"), reproducing the
  * Looker calc field. Everything else -- "#N/A", "Partner Deal - OLG" -- is Non-Deal.
@@ -38,7 +42,9 @@ import {
   EMPTY_PARTNER_FILTERS,
   type PartnerFilters,
   type PartnerSlice,
+  type MediaInvestmentRow,
 } from "../../../lib/dashboard/data/use-mediaocean-investment-mix";
+import type { Client } from "../../../lib/types/client.types";
 
 // How many partners to show in the table + bar chart (matches the Looker "Top 20").
 const TOP_N = 20;
@@ -46,14 +52,14 @@ const TOP_N = 20;
 // Single bar-series color for the Spend by Partner chart (flat Plus blue).
 const BAR_COLOR = "#3b82f6";
 
-// ─── Formatting helpers ───────────────────────────────────────────────────────
+// --- Formatting helpers -------------------------------------------------------
 
-/** 287023068 → "$287 023 068" (en-CA, matching the app's money style). */
+/** 287023068 -> "$287 023 068" (en-CA, matching the app's money style). */
 function money(v: number): string {
   return `$${Math.round(v).toLocaleString("en-CA")}`;
 }
 
-/** 0.68 → "68%" ; null → "—". */
+/** 0.68 -> "68%" ; null -> "—". */
 function pct(v: number | null, digits = 0): string {
   return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
 }
@@ -61,7 +67,24 @@ function pct(v: number | null, digits = 0): string {
 const toOptions = (values: string[]): Option[] =>
   values.map((v) => ({ value: v, label: v }));
 
-// ─── Partner table ─────────────────────────────────────────────────────────────
+// Month name -> number, to match the global Months selection against the row's
+// MONTH / MONTH_DATE (which may be a name, a number, or a date string).
+const MONTH_NAMES = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+function monthOf(r: MediaInvestmentRow): number | null {
+  if (r.MONTH_DATE) {
+    const d = new Date(r.MONTH_DATE);
+    if (!Number.isNaN(d.getTime())) return d.getUTCMonth() + 1;
+  }
+  const n = Number(r.MONTH);
+  if (Number.isFinite(n) && n >= 1 && n <= 12) return n;
+  const idx = MONTH_NAMES.indexOf(String(r.MONTH ?? "").trim().toLowerCase());
+  return idx >= 0 ? idx + 1 : null;
+}
+
+// --- Partner table ------------------------------------------------------------
 // Same styling as the Total Media channel table / shared VarianceTable.
 function PartnerTable({ partners }: { partners: PartnerSlice[] }) {
   return (
@@ -94,22 +117,62 @@ function PartnerTable({ partners }: { partners: PartnerSlice[] }) {
   );
 }
 
-// ─── Section ──────────────────────────────────────────────────────────────────
+// --- Section ------------------------------------------------------------------
 
-export default function MediaoceanTopPartnersSection() {
+export default function MediaoceanTopPartnersSection({
+  scopedClientIds,
+  clients,
+  year,
+  selMonths,
+}: {
+  scopedClientIds: string[];
+  clients: Client[];
+  year: number;
+  selMonths: number[];
+}) {
   const { rows, loading, error } = useMediaoceanInvestmentMix();
 
-  // Year defaults to 2026 (senior-management default view); still changeable.
-  const [filters, setFilters] = useState<PartnerFilters>({
-    ...EMPTY_PARTNER_FILTERS,
-    year: ["2026"],
-  });
+  // Buy-level facets with no global equivalent stay section-local. Year is left
+  // empty here on purpose -- the global Time & Context owns the year.
+  const [facets, setFacets] = useState<PartnerFilters>(EMPTY_PARTNER_FILTERS);
 
-  // Options come from ALL rows so the choices stay stable as filters change.
+  // Driven by the global filter bar + Time & Context. Client scope arrives as
+  // ids; MediaOcean rows key on client NAME, so we map ids -> names via the
+  // clients collection and match case-insensitively.
+  const scopedNames = useMemo(() => {
+    const nameById = new Map(clients.map((c) => [c.cl_id, c.CL_Name]));
+    const names = new Set<string>();
+    for (const id of scopedClientIds) {
+      const n = nameById.get(id);
+      if (n) names.add(n.trim().toLowerCase());
+    }
+    return names;
+  }, [scopedClientIds, clients]);
+
+  const yearStr = String(year);
+  const scoped = useMemo(
+    () =>
+      rows.filter((r) => {
+        if (String(r.PLUSCO_YEAR) !== yearStr) return false;
+        if (
+          scopedNames.size > 0 &&
+          !scopedNames.has(String(r.PLUSCO_CLIENT_NAME).trim().toLowerCase())
+        )
+          return false;
+        if (selMonths.length > 0) {
+          const m = monthOf(r);
+          if (m === null || !selMonths.includes(m)) return false;
+        }
+        return true;
+      }),
+    [rows, yearStr, scopedNames, selMonths]
+  );
+
+  // Facet options come from ALL rows so the choices stay stable as facets change.
   const options = useMemo(() => partnerFilterOptions(rows), [rows]);
   const filtered = useMemo(
-    () => applyPartnerFilters(rows, filters),
-    [rows, filters]
+    () => applyPartnerFilters(scoped, facets),
+    [scoped, facets]
   );
   const top = useMemo(() => computeTopPartners(filtered), [filtered]);
 
@@ -132,20 +195,16 @@ export default function MediaoceanTopPartnersSection() {
     [topPartners]
   );
 
-  const anyFilterActive =
-    filters.channel.length > 0 ||
-    filters.programmatic.length > 0 ||
-    filters.deals.length > 0 ||
-    filters.partner.length > 0 ||
-    filters.year.length > 0;
+  const anyFacetActive =
+    facets.channel.length > 0 ||
+    facets.programmatic.length > 0 ||
+    facets.deals.length > 0 ||
+    facets.partner.length > 0;
 
-  const set = (patch: Partial<PartnerFilters>) =>
-    setFilters((prev) => ({ ...prev, ...patch }));
+  const setFacet = (patch: Partial<PartnerFilters>) =>
+    setFacets((prev) => ({ ...prev, ...patch }));
 
-  const resetFilters = () =>
-    setFilters({ ...EMPTY_PARTNER_FILTERS, year: ["2026"] });
-
-  // ─── States (mirror the other sections) ───────────────────────────────────
+  // --- States (mirror the other sections) -----------------------------------
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
@@ -190,47 +249,42 @@ export default function MediaoceanTopPartnersSection() {
         <h2 className="text-lg font-semibold text-foreground">Top Partners</h2>
       </div>
 
-      {/* Filter bar (4 partner filters + Year) */}
+      {/* Buy-level facets (no global equivalent). Client scope, year and months
+          still come from the global filter bar + Time & Context. */}
       <div className="flex flex-wrap items-center gap-3">
         <MultiSelectDropdown
           label="Media Channel"
           options={toOptions(options.channel)}
-          selectedValues={filters.channel}
-          onChange={(v) => set({ channel: v })}
+          selectedValues={facets.channel}
+          onChange={(v) => setFacet({ channel: v })}
           searchable
         />
         <MultiSelectDropdown
           label="Programmatic"
           options={toOptions(options.programmatic)}
-          selectedValues={filters.programmatic}
-          onChange={(v) => set({ programmatic: v })}
+          selectedValues={facets.programmatic}
+          onChange={(v) => setFacet({ programmatic: v })}
         />
         <MultiSelectDropdown
           label="2026 Deals"
           options={toOptions(options.deals)}
-          selectedValues={filters.deals}
-          onChange={(v) => set({ deals: v })}
+          selectedValues={facets.deals}
+          onChange={(v) => setFacet({ deals: v })}
         />
         <MultiSelectDropdown
           label="Media Partner"
           options={toOptions(options.partner)}
-          selectedValues={filters.partner}
-          onChange={(v) => set({ partner: v })}
+          selectedValues={facets.partner}
+          onChange={(v) => setFacet({ partner: v })}
           searchable
         />
-        <MultiSelectDropdown
-          label="Year"
-          options={toOptions(options.year)}
-          selectedValues={filters.year}
-          onChange={(v) => set({ year: v })}
-        />
-        {anyFilterActive && (
+        {anyFacetActive && (
           <button
             type="button"
-            onClick={resetFilters}
+            onClick={() => setFacets(EMPTY_PARTNER_FILTERS)}
             className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
           >
-            Reset to 2026
+            Clear filters
           </button>
         )}
       </div>
