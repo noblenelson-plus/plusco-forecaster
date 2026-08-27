@@ -142,6 +142,15 @@ export function useBlPasteTarget(
         lookup.set(normKey(o.value), { value: o.value, label: o.label });
         lookup.set(normKey(o.label), { value: o.value, label: o.label });
       }
+      
+      // MediaBox uses some display names that differ from the BL media-type
+      // labels — map those aliases to the right BL code so they don't land as
+      // "NOT CONFIGURED". Key = MediaBox label, value = BL rowType code.
+      const ALIASES: Record<string, string> = { "Paid Search": "sem" };
+      for (const [alias, code] of Object.entries(ALIASES)) {
+        const hit = lookup.get(normKey(code));
+        if (hit) lookup.set(normKey(alias), hit);
+      }
 
       const unmatched = new Set<string>();
       const specs: CampaignProjectPaste[] = campaigns
