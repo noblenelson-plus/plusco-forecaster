@@ -15,9 +15,12 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { ClipboardPaste } from "lucide-react";
-import { MONTHS } from "../../lib/types/common.types";
+import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import type { AxisConfig, ForecastBucket } from "../../lib/types/forecaster.types";
-import type { UseForecasterGridResult } from "../../lib/hooks/use-forecaster-grid";
+import type {
+  UseForecasterGridResult,
+  CampaignProjectPaste,
+} from "../../lib/hooks/use-forecaster-grid";
 import {
   buildMonthPaste,
   monthSourceTotal,
@@ -38,6 +41,21 @@ function bucketVolume(bucket: ForecastBucket): number {
   );
 }
 
+/** Normalize a media-type label/code for matching (lowercase, alphanumerics only). */
+function normKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * A MediaBox campaign as the copy buttons hand it in: a name plus its channel
+ * breakdown (each channel's label + 12-month CAD values). Structurally matches
+ * the campaign groups the MediaBox section already builds.
+ */
+export interface CampaignCopySource {
+  name: string;
+  types: { label: string; byMonth: MonthlyMap }[];
+}
+
 export interface BlPasteApi {
   buckets: ForecastBucket[];
   targetBucketId: string | null;
@@ -47,6 +65,10 @@ export interface BlPasteApi {
   canPaste: boolean;
   /** Match `rows` for `month`, set the matched values into the target bucket. */
   pasteMonth: (rows: PasteSourceRow[], month: number, sourceLabel: string) => void;
+  /** Copy one MediaBox campaign into BL submission as its own project. */
+  pasteCampaign: (campaign: CampaignCopySource) => void;
+  /** Copy every given MediaBox campaign into BL, each as its own project. */
+  pasteCampaigns: (campaigns: CampaignCopySource[]) => void;
 }
 
 export function useBlPasteTarget(
@@ -107,6 +129,67 @@ export function useBlPasteTarget(
     [grid, targetBucketId, targetName, config.rowTypeOptions, config.rowTypeLabel]
   );
 
+  // Copy MediaBox campaigns into BL submission, each as its own project. Maps
+  // each channel's display label to a BL rowType code (normalized match against
+  // config.rowTypeOptions); unmatched channels paste under their raw label and
+  // are reported in the toast. Overwrite-by-name + fill happen in the grid.
+  const pasteCampaigns = useCallback(
+    (campaigns: CampaignCopySource[]) => {
+      if (grid.locked || campaigns.length === 0) return;
+
+      const lookup = new Map<string, { value: string; label: string }>();
+      for (const o of config.rowTypeOptions) {
+        lookup.set(normKey(o.value), { value: o.value, label: o.label });
+        lookup.set(normKey(o.label), { value: o.value, label: o.label });
+      }
+
+      const unmatched = new Set<string>();
+      const specs: CampaignProjectPaste[] = campaigns
+        .filter((c) => c.name.trim() !== "")
+        .map((c) => ({
+          name: c.name,
+          channels: c.types.map((t) => {
+            const hit = lookup.get(normKey(t.label));
+            if (!hit) unmatched.add(t.label);
+            return {
+              rowType: hit?.value ?? t.label,
+              label: hit?.label ?? t.label,
+              months: t.byMonth,
+            };
+          }),
+        }));
+
+      if (specs.length === 0) return;
+
+      const { created, overwritten } = grid.pasteCampaignsAsProjects(specs);
+
+      const parts: string[] = [
+        specs.length === 1
+          ? `Copied "${specs[0].name}" to BL`
+          : `Copied ${specs.length} campaigns to BL`,
+      ];
+      const counts: string[] = [];
+      if (created) counts.push(`${created} created`);
+      if (overwritten) counts.push(`${overwritten} overwritten`);
+      if (counts.length) parts.push(counts.join(", "));
+      let kind: ForecastToastKind = "success";
+      if (unmatched.size > 0) {
+        parts.push(
+          `${unmatched.size} channel${unmatched.size > 1 ? "s" : ""} unmatched`
+        );
+        kind = "warning";
+      }
+      parts.push("Save to keep");
+      showForecastToast(parts.join(" · "), kind);
+    },
+    [grid, config.rowTypeOptions]
+  );
+
+  const pasteCampaign = useCallback(
+    (campaign: CampaignCopySource) => pasteCampaigns([campaign]),
+    [pasteCampaigns]
+  );
+
   return {
     buckets,
     targetBucketId,
@@ -114,6 +197,8 @@ export function useBlPasteTarget(
     targetName,
     canPaste,
     pasteMonth,
+    pasteCampaign,
+    pasteCampaigns,
   };
 }
 
@@ -122,7 +207,15 @@ export function useBlPasteTarget(
  * axis has a single project (the target is then unambiguous — that lone bucket).
  */
 export function TargetProjectSelect({ api }: { api: BlPasteApi }) {
-  if (api.buckets.length <= 1 || !api.canPaste) return null;
+  if (!api.canPaste) return null;
+  if (api.buckets.length <= 1) {
+    return (
+      <span className="flex items-center gap-1 text-[11px] font-medium text-gray-900">
+        <ClipboardPaste size={11} />
+        <span className="normal-case">paste into {api.targetName}</span>
+      </span>
+    );
+  }
   return (
     <label className="flex items-center gap-1 text-[11px] font-medium text-gray-900">
       <ClipboardPaste size={11} />
@@ -171,6 +264,57 @@ export function MonthPasteButton({
       className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center justify-center p-0.5 text-gray-600 hover:text-gray-900 hover:bg-gray-300"
     >
       <ClipboardPaste size={13} />
+    </button>
+  );
+}
+
+/**
+ * Copy button for a single MediaBox campaign row — copies that campaign into BL
+ * submission as its own project. Hidden when pasting is unavailable (locked RFQ).
+ */
+export function CopyCampaignButton({
+  api,
+  campaign,
+}: {
+  api: BlPasteApi;
+  campaign: CampaignCopySource;
+}) {
+  if (!api.canPaste) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => api.pasteCampaign(campaign)}
+      title={`Copy "${campaign.name}" to BL submission as its own project`}
+      aria-label={`Copy ${campaign.name} to BL submission`}
+      className="inline-flex items-center justify-center p-0.5 text-gray-500 hover:text-gray-900 hover:bg-gray-200"
+    >
+      <ClipboardPaste size={13} />
+    </button>
+  );
+}
+
+/**
+ * "Copy all to BL" button for the MediaBox section header — copies every
+ * campaign into BL submission, each as its own project. Hidden when pasting is
+ * unavailable or there is nothing to copy.
+ */
+export function CopyAllCampaignsButton({
+  api,
+  campaigns,
+}: {
+  api: BlPasteApi;
+  campaigns: CampaignCopySource[];
+}) {
+  if (!api.canPaste || campaigns.length === 0) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => api.pasteCampaigns(campaigns)}
+      title="Copy every campaign to BL submission, each as its own project"
+      className="inline-flex items-center gap-1 border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-900 hover:bg-gray-100"
+    >
+      <ClipboardPaste size={11} />
+      <span className="normal-case">Copy all to BL</span>
     </button>
   );
 }

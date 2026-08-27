@@ -188,6 +188,29 @@ function cellDiffers(
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
+/** One channel row to write into a pasted campaign project. */
+export interface CampaignChannelPaste {
+  /** BL rowType code (e.g. "digitalDirect"); a free string, mapped to config where possible. */
+  rowType: string;
+  /** Display label for the row. */
+  label: string;
+  /** 12-month values (already converted to CAD). */
+  months: MonthlyMap;
+}
+
+/** A MediaBox campaign to paste into BL submission as its own project. */
+export interface CampaignProjectPaste {
+  /** Campaign name -> BL project (bucket) name. */
+  name: string;
+  channels: CampaignChannelPaste[];
+}
+
+/** Summary of a pasteCampaignsAsProjects run, for the confirmation toast. */
+export interface CampaignPasteResult {
+  created: number;
+  overwritten: number;
+}
+
 export interface UseForecasterGridResult {
   /** Is the client/year/RFQ triplet complete? The grid hides otherwise. */
   selectionReady: boolean;
@@ -246,6 +269,15 @@ export interface UseForecasterGridResult {
 
   // Structure
   addBucket: (name: string) => void;
+  /**
+   * Paste one or more MediaBox campaigns into BL submission, each as its own
+   * project (bucket) named after the campaign, with one row per channel filled
+   * across all 12 months. A campaign whose name already matches a project
+   * overwrites that project's rows; the rest are created. No-op when locked.
+   */
+  pasteCampaignsAsProjects: (
+    campaigns: CampaignProjectPaste[]
+  ) => CampaignPasteResult;
   renameBucket: (bucketId: string, name: string) => void;
   removeBucket: (bucketId: string) => void;
   /**
@@ -921,6 +953,63 @@ export function useForecasterGrid(
 
   // ─── Structure (buckets / rows) ─────────────────────────────────────────
 
+  const pasteCampaignsAsProjects = useCallback(
+    (campaigns: CampaignProjectPaste[]): CampaignPasteResult => {
+      if (locked || campaigns.length === 0) {
+        return { created: 0, overwritten: 0 };
+      }
+
+      // Count create-vs-overwrite from the current working copy first, so the
+      // pure state updater below can be invoked twice (React strict mode) safely.
+      const existing = new Set(
+        data.buckets.map((b) => b.name.trim().toLowerCase())
+      );
+      let created = 0;
+      let overwritten = 0;
+      for (const c of campaigns) {
+        const key = c.name.trim().toLowerCase();
+        if (existing.has(key)) {
+          overwritten++;
+        } else {
+          created++;
+          existing.add(key);
+        }
+      }
+
+      setData((prev) => {
+        const buckets = prev.buckets.map((b) => ({ ...b }));
+        const indexByName = new Map<string, number>(
+          buckets.map((b, i) => [b.name.trim().toLowerCase(), i])
+        );
+
+        for (const camp of campaigns) {
+          const rows: ForecastRow[] = camp.channels.map((ch) => {
+            const row = newRow(ch.rowType, ch.label);
+            row.months = { ...ch.months };
+            return row;
+          });
+          const key = camp.name.trim().toLowerCase();
+          const idx = indexByName.get(key);
+          if (idx !== undefined) {
+            // Overwrite: keep the project's id/name, replace its rows.
+            buckets[idx] = { ...buckets[idx], rows };
+          } else {
+            const nb = newBucket(camp.name);
+            nb.rows = rows;
+            buckets.push(nb);
+            indexByName.set(key, buckets.length - 1);
+          }
+        }
+
+        return { ...prev, buckets };
+      });
+
+      setStructureDirty(true);
+      return { created, overwritten };
+    },
+    [data, locked]
+  );
+
   const addBucket = useCallback((name: string) => {
     setData((prev) => ({ ...prev, buckets: [...prev.buckets, newBucket(name)] }));
     setStructureDirty(true);
@@ -1346,6 +1435,7 @@ export function useForecasterGrid(
     addToCells,
     setCellsByType,
     addBucket,
+    pasteCampaignsAsProjects,
     renameBucket,
     removeBucket,
     setBucketNonCommissionable,

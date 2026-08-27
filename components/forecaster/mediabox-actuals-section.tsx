@@ -13,7 +13,7 @@
  * time with the year's rate.
  */
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   RefreshCw,
   Database,
@@ -31,8 +31,8 @@ import {
   type MediaboxCadType,
 } from "../../lib/services/mediabox-totals-service";
 import {
-  TargetProjectSelect,
-  MonthPasteButton,
+  CopyCampaignButton,
+  CopyAllCampaignsButton,
   type BlPasteApi,
 } from "./bl-paste-target";
 
@@ -115,6 +115,7 @@ function MoneyRow({
   indent = false,
   bold = false,
   expand,
+  action,
 }: {
   label: string;
   byMonth: MonthlyMap;
@@ -123,6 +124,7 @@ function MoneyRow({
   indent?: boolean;
   bold?: boolean;
   expand?: { expanded: boolean; onToggle: () => void };
+  action?: ReactNode;
 }) {
   const labelText = bold ? "font-medium" : "";
   return (
@@ -133,25 +135,28 @@ function MoneyRow({
           indent ? "pl-10 pr-4" : "px-4"
         } ${labelText}`}
       >
-        {expand ? (
-          <button
-            type="button"
-            onClick={expand.onToggle}
-            title={label}
-            className="flex items-center gap-1 hover:text-black min-w-0 max-w-full"
-          >
-            {expand.expanded ? (
-              <ChevronDown size={12} className="shrink-0" />
-            ) : (
-              <ChevronRight size={12} className="shrink-0" />
-            )}
-            <span className="truncate min-w-0">{label}</span>
-          </button>
-        ) : (
-          <span className="block truncate" title={label}>
-            {label}
-          </span>
-        )}
+        <div className="flex items-center gap-1 min-w-0">
+          {expand ? (
+            <button
+              type="button"
+              onClick={expand.onToggle}
+              title={label}
+              className="flex items-center gap-1 hover:text-black min-w-0 max-w-full"
+            >
+              {expand.expanded ? (
+                <ChevronDown size={12} className="shrink-0" />
+              ) : (
+                <ChevronRight size={12} className="shrink-0" />
+              )}
+              <span className="truncate min-w-0">{label}</span>
+            </button>
+          ) : (
+            <span className="block truncate" title={label}>
+              {label}
+            </span>
+          )}
+          {action ? <span className="shrink-0">{action}</span> : null}
+        </div>
       </td>
       {showNotes && <td className="bg-gray-50 group-hover:bg-gray-100" />}
       {MONTHS.map((m) => {
@@ -253,6 +258,7 @@ export default function MediaboxActualsSection({
           label: g.name,
           byMonth: g.byMonth,
           total: g.total,
+          campaign: g,
           children: g.types.map((t) => ({
             label: t.label,
             byMonth: t.byMonth,
@@ -264,6 +270,7 @@ export default function MediaboxActualsSection({
           label: t.label,
           byMonth: t.byMonth,
           total: t.total,
+          campaign: undefined,
           children: t.campaigns.map((c) => ({
             label: c.name,
             byMonth: c.byMonth,
@@ -367,9 +374,15 @@ export default function MediaboxActualsSection({
                 USD not converted (no {year} rate)
               </span>
             )}
-            {blPaste && typeRows.length > 0 && (
-              <TargetProjectSelect api={blPaste} />
-            )}
+            {blPaste &&
+              axisId === "media" &&
+              hierarchy === "campaign" &&
+              campaignGroups.length > 0 && (
+                <CopyAllCampaignsButton
+                  api={blPaste}
+                  campaigns={campaignGroups}
+                />
+              )}
           </div>
         </td>
       </tr>
@@ -405,6 +418,17 @@ export default function MediaboxActualsSection({
                     expanded: isOpen,
                     onToggle: () => toggle(group.key),
                   }}
+                  action={
+                    blPaste &&
+                    axisId === "media" &&
+                    hierarchy === "campaign" &&
+                    group.campaign ? (
+                      <CopyCampaignButton
+                        api={blPaste}
+                        campaign={group.campaign}
+                      />
+                    ) : undefined
+                  }
                 />
                 {isOpen &&
                   group.children.map((c) => (
@@ -456,15 +480,6 @@ export default function MediaboxActualsSection({
                   className="px-2.5 py-2 text-right align-middle"
                 >
                   <span className="inline-flex w-full items-center justify-end gap-1">
-                    {blPaste && (
-                      <MonthPasteButton
-                        api={blPaste}
-                        rows={typeRows}
-                        month={m}
-                        sourceLabel="MediaBox"
-                        typeNoun={typeNoun}
-                      />
-                    )}
                     <span
                       onClick={() => v && copyCellValue(v)}
                       title={v ? "Click to copy" : undefined}
