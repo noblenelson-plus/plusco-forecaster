@@ -375,7 +375,7 @@ export default function MediaboxActualsSection({
               </span>
             )}
             {blPaste &&
-              axisId === "media" &&
+
               hierarchy === "campaign" &&
               campaignGroups.length > 0 && (
                 <CopyAllCampaignsButton
@@ -420,7 +420,7 @@ export default function MediaboxActualsSection({
                   }}
                   action={
                     blPaste &&
-                    axisId === "media" &&
+                    
                     hierarchy === "campaign" &&
                     group.campaign ? (
                       <CopyCampaignButton
