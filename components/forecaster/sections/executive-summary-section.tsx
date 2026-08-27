@@ -52,6 +52,7 @@ import ExecSummaryKpiBand, { RagLegend, type ExecPillar } from "./exec-summary-k
 import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
 import { ragStatus } from "./exec-rag";
+import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
 
 const ELIGIBILITY_YEAR = 2026;
 
@@ -99,6 +100,8 @@ export default function ExecutiveSummarySection({
   year: number;
 }) {
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
+  // -- MIR "as of" date from the last sync (dashboard_meta/last_sync) ----------
+  const lastSync = useLastSync();
 
   // -- Targets / goals (from the admin Labs Targets tab) ----------------------
   const [targetYears, setTargetYears] = useState<PartnerTargetsYear[]>([]);
@@ -379,7 +382,7 @@ export default function ExecutiveSummarySection({
   ]);
 
   // -- Period / "as of" label (source-aware) ----------------------------------
-  const mirSourceLabel = `Booked to date (MIR) · as of ${MIR_AS_OF_LABEL}`;
+  const mirSourceLabel = `Booked to date (MIR) · as of ${lastSync.labelShort ?? MIR_AS_OF_LABEL}`;
   const periodLabel =
     source === "mir"
       ? `${year} · ${mirSourceLabel}`
