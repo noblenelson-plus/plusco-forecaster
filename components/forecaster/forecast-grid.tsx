@@ -1412,9 +1412,9 @@ function BucketSection({
               title={
                 lockName
                   ? `The single ${config.bucketLabel.toLowerCase()} is always named "${GENERAL_PROJECT_NAME}" — add another ${config.bucketLabel.toLowerCase()} to enable renaming.`
-                  : undefined
+                  : bucket.name
               }
-              className="font-semibold text-gray-900 text-sm bg-transparent border border-transparent rounded-md px-1.5 py-0.5 min-w-0 flex-1
+              className="font-semibold text-gray-900 text-sm bg-transparent border border-transparent rounded-md px-1.5 py-0.5 min-w-[220px] flex-1
                 hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:bg-white
                 disabled:hover:border-transparent"
             />
