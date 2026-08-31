@@ -29,6 +29,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      // The inline script below mutates <html>'s style (zoom) before hydration
+      // to avoid a flash of unzoomed content — an intentional server/client
+      // divergence, so we opt this element out of the hydration warning.
+      suppressHydrationWarning
       className={`${urbanist.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
