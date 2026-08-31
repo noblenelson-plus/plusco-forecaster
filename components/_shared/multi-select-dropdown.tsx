@@ -15,6 +15,7 @@ interface MultiSelectDropdownProps {
   selectedValues: string[];
   onChange: (values: string[]) => void;
   searchable?: boolean;
+  align?: "left" | "right";
 }
 
 function useClickOutside(onClose: () => void) {
@@ -37,6 +38,7 @@ export default function MultiSelectDropdown({
   selectedValues,
   onChange,
   searchable = false,
+  align = "left",
 }: MultiSelectDropdownProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -97,7 +99,7 @@ export default function MultiSelectDropdown({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 w-64 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[300px]">
+        <div className={`absolute ${align === "right" ? "right-0" : "left-0"} top-full mt-1 z-50 w-64 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden flex flex-col max-h-[300px]`}>
           {searchable && (
             <div className="relative border-b border-gray-100 flex-shrink-0">
               <Search

@@ -26,6 +26,8 @@ export interface ClientDimensions {
   regionByClient: Record<string, string>;
   /** cl_id → business lead display name ("Unassigned" when unset). */
   businessLeadByClient: Record<string, string>;
+  /** cl_id → "Agency Region" label, e.g. "Cossette Media Ontario". */
+  agencyRegionByClient: Record<string, string>;
 }
 
 function toItems(
