@@ -2,35 +2,33 @@
 "use client";
 
 /**
- * Labs tab. The per-client detail table (opening on its Labs preset) leads, so
- * you can focus a client, then the Labs section, the monthly Labs-share trend,
- * the share-by-media-type and recap cards, the Region / Business Lead breakdown,
- * and finally the Labs pacing (Target vs Booked by partner) table.
+ * Labs tab. Two sub-tabs, since both halves are equally important and the
+ * pacing table was previously buried below the fold:
+ *   - Labs spend  — the per-client detail table (opening on its Labs preset,
+ *     so you can focus a client), the Labs section, and a scope-wide
+ *     "By client" chart filterable by Labs partner.
+ *   - Labs pacing — the Target vs Booked by partner table, surfaced up top.
  *
- * The aggregate cards follow the client focus; the detail table and the
- * scope-wide breakdown always read the full scope.
+ * The Clients table lives on Labs spend only: it drives client focus for the
+ * Labs section, whereas pacing is scope-wide and ignores focus. Focus still
+ * persists in the background when switching sub-tabs.
  */
 
-import { Loader2, CalendarRange, Percent, FlaskConical } from "lucide-react";
-import StrategyKpisSection from "../sections/strategy-kpis-section";
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import ClientDetailTable from "../sections/client-detail-table";
 import LabsSection from "../sections/labs-section";
 import LabsPacingSection from "../sections/labs-pacing-section";
-import ChartCard from "../../dashboard/charts/chart-card";
-import TrendChart from "../../dashboard/charts/trend-chart";
-import BarList from "../../dashboard/charts/bar-list";
-import LabsRecapTable from "../../dashboard/labs-recap-table";
-import DimensionBreakdown, {
-  type ClientDimensions,
-} from "../../dashboard/dimension-breakdown";
-import { LABS_COLOR, MEDIA_TYPE_COLORS } from "../../dashboard/charts/colors";
-import { formatCompactMoney, formatPct } from "../../dashboard/charts/format";
-import { MONTHS, sumMonthlyMap } from "../../../lib/types/common.types";
-import { MEDIA_TYPE_LABELS } from "../../../lib/types/forecaster.types";
+import ClientSpendChart from "../../dashboard/client-spend-chart";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import type { Currency } from "../../../lib/types/client.types";
 
-const monthsToPoints = (m: Record<number, number>) => MONTHS.map((k) => m[k] ?? 0);
+type LabsSubTab = "spend" | "pacing";
+
+const SUBTABS: { id: LabsSubTab; label: string }[] = [
+  { id: "spend", label: "Labs spend" },
+  { id: "pacing", label: "Labs pacing" },
+];
 
 export default function LabsTab({
   data,
@@ -41,7 +39,7 @@ export default function LabsTab({
   focusedClientId,
   focusLoading,
   onFocusChange,
-  clientDimensions,
+  clientNameById,
   currencyByClient,
   usdToCad,
   selMonths,
@@ -54,139 +52,108 @@ export default function LabsTab({
   focusedClientId: string | null;
   focusLoading: boolean;
   onFocusChange: (clientId: string | null) => void;
-  clientDimensions: ClientDimensions;
+  clientNameById: Record<string, string>;
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
   selMonths: number[];
 }) {
+  const [sub, setSub] = useState<LabsSubTab>("spend");
+
   const shown = focusedClientId ? focusData : data;
   const shownComparison = focusedClientId ? focusComparisonData : comparisonData;
-  const labs = shown.labs;
 
-  // Monthly Labs share (%): monthly Labs spend over monthly planned media.
-  const labsPoints = monthsToPoints(shown.labsMonthly);
-  const mediaPoints = monthsToPoints(shown.media.monthly);
-  const shareByMonth = labsPoints.map((labsM, i) =>
-    mediaPoints[i] > 0 ? labsM / mediaPoints[i] : 0
-  );
-  const target = labs.targetRatio;
-
-  const shareByType = labs.byType
-    .filter((t) => t.plannedAnnual > 0 && t.coverage !== null && isFinite(t.coverage))
-    .map((t) => ({
-      label: MEDIA_TYPE_LABELS[t.mediaType],
-      value: t.coverage as number,
-      color: MEDIA_TYPE_COLORS[t.mediaType],
-      hint: formatCompactMoney(t.labsAnnual),
-    }));
-
-  // Scope-wide per-client totals for the Region / Business Lead breakdown.
-  const mediaTotalsByClient = data.mediaByClient.map((cb) => ({
-    clientId: cb.clientId,
-    total: Object.values(cb.byType).reduce((acc, m) => acc + sumMonthlyMap(m), 0),
-  }));
-  const labsTotalMap = new Map<string, number>();
+  // Scope-wide per-client Labs spend split by partner, for the By-client chart.
+  const partnerNameById: Record<string, string> = {};
+  const byClientMap = new Map<string, Record<string, number>>();
   for (const r of data.labsDetail) {
-    labsTotalMap.set(r.clientId, (labsTotalMap.get(r.clientId) ?? 0) + r.total);
+    partnerNameById[r.partnerId] = r.partnerName;
+    const byFacet = byClientMap.get(r.clientId) ?? {};
+    byFacet[r.partnerId] = (byFacet[r.partnerId] ?? 0) + r.total;
+    byClientMap.set(r.clientId, byFacet);
   }
-  const labsTotalsByClient = [...labsTotalMap.entries()].map(
-    ([clientId, total]) => ({ clientId, total })
-  );
+  const labsByPartner = [...byClientMap.entries()].map(([clientId, byFacet]) => ({
+    clientId,
+    byFacet,
+  }));
+  const partnerOptions = Object.entries(partnerNameById)
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   return (
-    <div className="space-y-8">
-      <div data-scroll-section data-scroll-label="Strategy KPIs" className="relative">
-        <StrategyKpisSection data={shown} comparisonData={shownComparison} />
-        {focusLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/60">
-            <Loader2 size={20} className="animate-spin text-muted-foreground" />
+    <div className="space-y-6">
+      {/* Sub-tab bar — matches the Reports / Executive KPIs sub-tab strip. */}
+      <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {SUBTABS.map((t) => {
+          const active = sub === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setSub(t.id)}
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                active
+                  ? "border-primary text-gray-900"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {sub === "spend" && (
+        <div className="space-y-8">
+          <div data-scroll-section data-scroll-label="Clients">
+            <ClientDetailTable
+              data={data}
+              comparisonData={comparisonData}
+              scopedClientIds={scopedClientIds}
+              focusedClientId={focusedClientId}
+              onFocusChange={onFocusChange}
+              defaultView="labs"
+            />
           </div>
-        )}
-      </div>
 
-      <div data-scroll-section data-scroll-label="Clients">
-        <ClientDetailTable
-          data={data}
-          comparisonData={comparisonData}
-          scopedClientIds={scopedClientIds}
-          focusedClientId={focusedClientId}
-          onFocusChange={onFocusChange}
-          defaultView="labs"
-        />
-      </div>
+          <div className="relative space-y-8">
+            <div data-scroll-section data-scroll-label="Labs">
+              <LabsSection
+                data={shown}
+                comparisonData={shownComparison}
+                scopedClientIds={scopedClientIds}
+                focusedClientId={focusedClientId}
+              />
+            </div>
 
-      <div className="relative space-y-8">
-        <div data-scroll-section data-scroll-label="Labs">
-          <LabsSection
-            data={shown}
-            comparisonData={shownComparison}
+            {focusLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/60">
+                <Loader2 size={20} className="animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </div>
+
+          <div data-scroll-section data-scroll-label="Spend by client">
+            <ClientSpendChart
+              title="By client"
+              metricLabel="Labs spend"
+              filterLabel="Labs partner"
+              byClient={labsByPartner}
+              facetOptions={partnerOptions}
+              clientNameById={clientNameById}
+            />
+          </div>
+        </div>
+      )}
+
+      {sub === "pacing" && (
+        <div data-scroll-section data-scroll-label="Labs pacing">
+          <LabsPacingSection
             scopedClientIds={scopedClientIds}
-            focusedClientId={focusedClientId}
+            currencyByClient={currencyByClient}
+            usdToCad={usdToCad}
+            selMonths={selMonths}
           />
         </div>
-
-        <div data-scroll-section data-scroll-label="Labs monthly">
-          <ChartCard
-            title="Labs share by month"
-            subtitle="Monthly Labs spend as a share of planned media"
-            icon={CalendarRange}
-          >
-            <TrendChart
-              series={[{ label: "Share", color: LABS_COLOR, points: shareByMonth }]}
-              valueFormat={(v) => formatPct(v)}
-              reference={{ value: target, label: `Target ${formatPct(target)}`, color: "#94a3b8" }}
-            />
-          </ChartCard>
-        </div>
-
-        <div data-scroll-section data-scroll-label="Share & recap" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <ChartCard
-            title="Share by media type"
-            subtitle="Labs spend as a share of planned media, per channel"
-            icon={Percent}
-          >
-            {shareByType.length > 0 ? (
-              <BarList items={shareByType} valueFormat={(v) => formatPct(v)} />
-            ) : (
-              <p className="py-8 text-center text-xs text-muted-foreground">
-                No planned media to compare against.
-              </p>
-            )}
-          </ChartCard>
-
-          <ChartCard
-            title="Recap by media type"
-            subtitle="Planned media, Labs spend, share and partner count per channel"
-            icon={FlaskConical}
-          >
-            <LabsRecapTable labs={labs} />
-          </ChartCard>
-        </div>
-
-        {focusLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/60">
-            <Loader2 size={20} className="animate-spin text-muted-foreground" />
-          </div>
-        )}
-      </div>
-
-      <div data-scroll-section data-scroll-label="By region / BL">
-        <DimensionBreakdown
-          totalsByClient={labsTotalsByClient}
-          dimensions={clientDimensions}
-          metricLabel="BL Labs spend"
-          shareDenominator={{ totalsByClient: mediaTotalsByClient, label: "Labs share of media spend" }}
-        />
-      </div>
-
-      <div data-scroll-section data-scroll-label="Labs pacing">
-        <LabsPacingSection
-          scopedClientIds={scopedClientIds}
-          currencyByClient={currencyByClient}
-          usdToCad={usdToCad}
-          selMonths={selMonths}
-        />
-      </div>
+      )}
     </div>
   );
 }

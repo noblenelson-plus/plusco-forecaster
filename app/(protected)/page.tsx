@@ -191,13 +191,16 @@ export default function DashboardPage() {
   const clientDimensions = useMemo<ClientDimensions>(() => {
     const regionByClient: Record<string, string> = {};
     const businessLeadByClient: Record<string, string> = {};
+    const agencyRegionByClient: Record<string, string> = {};
     for (const c of clients) {
       regionByClient[c.cl_id] = c.CL_Business_Unit_Region || "No region";
       businessLeadByClient[c.cl_id] = c.CL_Business_Lead
         ? usersMap.get(c.CL_Business_Lead) ?? c.CL_Business_Lead
         : "Unassigned";
+      agencyRegionByClient[c.cl_id] =
+        `${c.CL_Agency || "No agency"} ${c.CL_Business_Unit_Region || "No region"}`;
     }
-    return { regionByClient, businessLeadByClient };
+    return { regionByClient, businessLeadByClient, agencyRegionByClient };
   }, [clients, usersMap]);
 
   // In USD mode, feed only USD clients into the (already dynamic) filter engine
@@ -263,7 +266,7 @@ export default function DashboardPage() {
 
   const [selMonths, setSelMonths] = useState<number[]>([]);
   const [tab, setTab] = useState<ForecasterTab>("exec");
-  const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("kpis");
+  const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
   // Tabs the current user may see (Viewers lose the revenue + global tabs).
   const visibleTabs = useMemo(
     () => visibleForecasterTabs(permissions),
@@ -522,6 +525,8 @@ export default function DashboardPage() {
             focusLoading={focusLoading}
             mediabox={mediaboxData}
             scopedClientIds={scopedClientIds}
+            clientDimensions={clientDimensions}
+            clientNameById={clientNameById}
             currencyByClient={currencyByClient}
             usdToCad={usdToCad}
             selMonths={selMonths}
@@ -536,7 +541,7 @@ export default function DashboardPage() {
             focusedClientId={activeFocusId}
             focusLoading={focusLoading}
             onFocusChange={setFocusedClientId}
-            clientDimensions={clientDimensions}
+            clientNameById={clientNameById}
           />
         ) : tab === "labs" ? (
           <LabsTab
@@ -548,7 +553,7 @@ export default function DashboardPage() {
             focusedClientId={activeFocusId}
             focusLoading={focusLoading}
             onFocusChange={setFocusedClientId}
-            clientDimensions={clientDimensions}
+            clientNameById={clientNameById}
             currencyByClient={currencyByClient}
             usdToCad={usdToCad}
             selMonths={selMonths}

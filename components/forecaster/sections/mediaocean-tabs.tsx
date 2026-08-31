@@ -25,8 +25,8 @@ import type { Client } from "../../../lib/types/client.types";
 export type MediaOceanSubTab = "kpis" | "investments";
 
 const SUBTABS: { id: MediaOceanSubTab; label: string }[] = [
-  { id: "kpis", label: "KPIs Media and Labs" },
   { id: "investments", label: "Media Investments" },
+  { id: "kpis", label: "KPIs Media and Labs" },
 ];
 
 export default function MediaOceanTabs({
