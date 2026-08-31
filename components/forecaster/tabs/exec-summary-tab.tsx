@@ -28,6 +28,8 @@ import { computeVariance, MEDIA_TYPE_LABELS } from "../../../lib/types/forecaste
 import type { Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import type { ScopeMediaboxData } from "../../../lib/dashboard/data/use-scope-mediabox-totals";
+import SpendBreakdownRow from "../../dashboard/spend-breakdown-row";
+import type { ClientDimensions } from "../../dashboard/dimension-breakdown";
 
 /** Compute and format a StatCard variance, mirroring the other tabs. */
 function getVariance(
@@ -60,6 +62,8 @@ export default function ExecSummaryTab({
   focusLoading,
   mediabox,
   scopedClientIds,
+  clientDimensions,
+  clientNameById,
   currencyByClient,
   usdToCad,
   selMonths,
@@ -73,6 +77,8 @@ export default function ExecSummaryTab({
   /** MediaBox totals for the scope — feeds the adoption KPI (scope-wide). */
   mediabox: ScopeMediaboxData;
   scopedClientIds: string[];
+  clientDimensions: ClientDimensions;
+  clientNameById: Record<string, string>;
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
   selMonths: number[];
@@ -156,6 +162,21 @@ export default function ExecSummaryTab({
     [viewProductEntries, clients, usersMap, productNameById]
   );
   const productTotal = productResult.mix.reduce((acc, seg) => acc + seg.value, 0);
+
+  // Scope-wide per-client totals for the spend breakdown row (Media / Labs
+  // toggle). Both read the full scope (data), never the focused client.
+  const mediaTotals = data.mediaByClient.map((cb) => ({
+    clientId: cb.clientId,
+    total: Object.values(cb.byType).reduce((acc, m) => acc + sumMonthlyMap(m), 0),
+  }));
+  const labsTotalMap = new Map<string, number>();
+  for (const r of data.labsDetail) {
+    labsTotalMap.set(r.clientId, (labsTotalMap.get(r.clientId) ?? 0) + r.total);
+  }
+  const labsTotals = [...labsTotalMap.entries()].map(([clientId, total]) => ({
+    clientId,
+    total,
+  }));
 
   return (
     <div className="space-y-8">
@@ -263,6 +284,16 @@ export default function ExecSummaryTab({
             <p className="py-8 text-center text-xs text-muted-foreground">No product revenue in scope.</p>
           )}
         </ChartCard>
+      </div>
+
+      <div data-scroll-section data-scroll-label="Spend breakdown">
+        <SpendBreakdownRow
+          mediaTotals={mediaTotals}
+          labsTotals={labsTotals}
+          agencyRegionByClient={clientDimensions.agencyRegionByClient}
+          businessLeadByClient={clientDimensions.businessLeadByClient}
+          clientNameById={clientNameById}
+        />
       </div>
 
         {focusLoading && (

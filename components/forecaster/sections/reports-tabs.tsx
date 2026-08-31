@@ -20,8 +20,8 @@ import BillingSummarySection from "./billing-summary-section";
 type ReportsSubTab = "mir-raw" | "billing";
 
 const SUBTABS: { id: ReportsSubTab; label: string }[] = [
-  { id: "mir-raw", label: "MIR Raw Data" },
-  { id: "billing", label: "Billing Summary" },
+  { id: "mir-raw", label: "Mediaocean Data (MIR)" },
+  { id: "billing", label: "Mediaocean Billing Summary" },
 ];
 
 export default function ReportsTabs() {
