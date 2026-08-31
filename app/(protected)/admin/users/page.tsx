@@ -19,6 +19,8 @@ import {
 import {
   fetchInvites,
   deleteInvite,
+  updateInviteRole,
+  updateInviteClients,
 } from "../../../../lib/services/invite-service";
 import { useRouter } from "next/navigation";
 import UserClientsDrawer from "../../../../components/users/user-clients-drawer";
@@ -51,6 +53,15 @@ const ROLE_BADGE: Record<UserRole, string> = {
 type MainTab = "team" | "agencies";
 type RoleFilter = "ALL" | UserRole;
 
+// Pending invites are shown inline in the team list as lightweight pseudo-users
+// (no `users` doc exists yet — it's created on first sign-in). We tag them with
+// `pending` and key them by a prefixed synthetic uid so the existing handlers
+// can tell them apart and route writes to the invite doc instead.
+const INVITE_UID_PREFIX = "invite:";
+type Row = UserProfile & { pending?: boolean };
+const inviteEmailFromUid = (uid: string) =>
+  uid.slice(INVITE_UID_PREFIX.length);
+
 export default function AdminUsersPage() {
   const { profile, isAdmin, loading: profileLoading } = useUserProfile();
   const router = useRouter();
@@ -68,7 +79,7 @@ export default function AdminUsersPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
 
   // Client assignment drawer
-  const [assignUser, setAssignUser] = useState<UserProfile | null>(null);
+  const [assignUser, setAssignUser] = useState<Row | null>(null);
 
   // Guard — redirect non-admins
   useEffect(() => {
@@ -126,7 +137,12 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function handleToggleDisabled(target: UserProfile) {
+  async function handleToggleDisabled(target: Row) {
+    // For a pending invite, "remove access" means revoking the invite.
+    if (target.pending) {
+      await handleRevokeInvite(target.email);
+      return;
+    }
     setUpdatingUid(target.uid);
     setError("");
     try {
@@ -145,26 +161,35 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function handleRoleChange(uid: string, newRole: UserRole) {
-    setUpdatingUid(uid);
+  async function handleRoleChange(target: Row, newRole: UserRole) {
+    setUpdatingUid(target.uid);
     try {
-      const target = users.find((u) => u.uid === uid);
+      // Pending invite — just update the pre-provisioned role on the invite doc.
+      if (target.pending) {
+        await updateInviteRole(target.email, newRole);
+        setInvites((prev) =>
+          prev.map((i) =>
+            i.email === target.email ? { ...i, role: newRole } : i
+          )
+        );
+        return;
+      }
       // Re-resolve the user's agencies from their email domain — their account
       // may predate the domain mapping being configured. Union with existing so
       // an unconfigured domain never wipes agencies (protects manually-set ones).
-      const resolved = target?.email
+      const resolved = target.email
         ? await resolveAgenciesForEmail(target.email)
         : [];
       const mergedAgencies = Array.from(
-        new Set([...(target?.assignedAgencies ?? []), ...resolved])
+        new Set([...(target.assignedAgencies ?? []), ...resolved])
       );
-      await updateDoc(doc(db, "users", uid), {
+      await updateDoc(doc(db, "users", target.uid), {
         role: newRole,
         assignedAgencies: mergedAgencies,
       });
       setUsers((prev) =>
         prev.map((u) =>
-          u.uid === uid
+          u.uid === target.uid
             ? { ...u, role: newRole, assignedAgencies: mergedAgencies }
             : u
         )
@@ -217,11 +242,19 @@ export default function AdminUsersPage() {
     }
   }
 
-  // After the drawer saves — update the client counter locally
+  // After the drawer saves — update the client counter locally. Routes to the
+  // right collection depending on whether this is a real user or an invite.
   function handleAssignmentsSaved(uid: string, assignedClients: string[]) {
-    setUsers((prev) =>
-      prev.map((u) => (u.uid === uid ? { ...u, assignedClients } : u))
-    );
+    if (uid.startsWith(INVITE_UID_PREFIX)) {
+      const email = inviteEmailFromUid(uid);
+      setInvites((prev) =>
+        prev.map((i) => (i.email === email ? { ...i, assignedClients } : i))
+      );
+    } else {
+      setUsers((prev) =>
+        prev.map((u) => (u.uid === uid ? { ...u, assignedClients } : u))
+      );
+    }
     setAssignUser(null);
   }
 
@@ -250,22 +283,49 @@ export default function AdminUsersPage() {
     return map;
   }, [users]);
 
+  // Pending invites rendered as lightweight pseudo-users, merged into the list.
+  // Agencies are unknown until first sign-in (resolved from the email domain),
+  // hence empty here.
+  const inviteRows = useMemo<Row[]>(
+    () =>
+      invites.map((inv) => ({
+        uid: INVITE_UID_PREFIX + inv.email,
+        email: inv.email,
+        displayName: null,
+        photoURL: null,
+        role: inv.role,
+        assignedClients: inv.assignedClients ?? [],
+        assignedAgencies: [],
+        disabled: false,
+        createdAt: null,
+        lastLoginAt: null,
+        pending: true,
+      })),
+    [invites]
+  );
+
   const filteredUsers = useMemo(() => {
     const q = search.toLowerCase();
-    return users
+    const all: Row[] = [...users, ...inviteRows];
+    return all
       .filter((u) => roleFilter === "ALL" || u.role === roleFilter)
       .filter(
         (u) =>
           u.email.toLowerCase().includes(q) ||
           (u.displayName ?? "").toLowerCase().includes(q)
       )
-      .sort((a, b) =>
-        (a.displayName ?? a.email).localeCompare(b.displayName ?? b.email)
-      );
-  }, [users, roleFilter, search]);
+      .sort((a, b) => {
+        // Pending invites sink to the bottom; then alphabetical.
+        if (!!a.pending !== !!b.pending) return a.pending ? 1 : -1;
+        return (a.displayName ?? a.email).localeCompare(b.displayName ?? b.email);
+      });
+  }, [users, inviteRows, roleFilter, search]);
 
   if (profileLoading) return null;
   if (!isAdmin) return null;
+
+  // When the assignment drawer targets a pending invite, save to the invite doc.
+  const pendingAssignEmail = assignUser?.pending ? assignUser.email : null;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -359,48 +419,6 @@ export default function AdminUsersPage() {
         <>
           <AccessLevelsCard className="mb-6" />
 
-          {/* Pending invites */}
-          {invites.length > 0 && (
-            <div className="mb-6 bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
-                <Mail size={14} className="text-gray-400" />
-                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Pending invites ({invites.length})
-                </h2>
-              </div>
-              <ul className="divide-y divide-gray-100">
-                {invites.map((inv) => (
-                  <li
-                    key={inv.email}
-                    className="flex items-center gap-3 px-4 py-2.5"
-                  >
-                    <div className="w-8 h-8 bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <Mail size={14} className="text-gray-400" />
-                    </div>
-                    <span className="min-w-0 flex-1 text-sm text-gray-900 truncate">
-                      {inv.email}
-                    </span>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 text-[11px] font-semibold ${ROLE_BADGE[inv.role]}`}
-                    >
-                      {ROLE_LABELS[inv.role]}
-                    </span>
-                    <span className="text-[11px] text-gray-400 hidden sm:inline">
-                      awaiting first sign-in
-                    </span>
-                    <button
-                      onClick={() => handleRevokeInvite(inv.email)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                      title="Revoke invite"
-                    >
-                      <Ban size={15} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
           {/* Search + role filter */}
           <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
             <div className="relative flex-1 min-w-[220px] max-w-sm">
@@ -465,7 +483,7 @@ export default function AdminUsersPage() {
                     user={u}
                     updating={updatingUid === u.uid}
                     isSelf={u.uid === profile?.uid}
-                    onRoleChange={handleRoleChange}
+                    onRoleChange={(role) => handleRoleChange(u, role)}
                     onAssignClients={() => setAssignUser(u)}
                     onToggleDisabled={() => handleToggleDisabled(u)}
                   />
@@ -487,6 +505,11 @@ export default function AdminUsersPage() {
         user={assignUser}
         onClose={() => setAssignUser(null)}
         onSaved={handleAssignmentsSaved}
+        saveFn={
+          pendingAssignEmail
+            ? (clients) => updateInviteClients(pendingAssignEmail, clients)
+            : undefined
+        }
       />
 
       {/* Invite (pre-provision) modal — mounted only while open */}
@@ -564,13 +587,14 @@ function UserRow({
   onAssignClients,
   onToggleDisabled,
 }: {
-  user: UserProfile;
+  user: Row;
   updating: boolean;
   isSelf: boolean;
-  onRoleChange: (uid: string, role: UserRole) => void;
+  onRoleChange: (role: UserRole) => void;
   onAssignClients: () => void;
   onToggleDisabled: () => void;
 }) {
+  const pending = !!user.pending;
   const initials = user.displayName
     ? user.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : user.email[0].toUpperCase();
@@ -586,13 +610,17 @@ function UserRow({
         disabled ? "bg-gray-50/60" : "hover:bg-gray-50"
       }`}
     >
-      {/* Avatar */}
+      {/* Avatar — a mail glyph for not-yet-signed-in invites */}
       <div
         className={`w-9 h-9 flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-          disabled ? "bg-gray-200 text-gray-400" : "bg-yellow-400 text-gray-900"
+          pending
+            ? "bg-gray-100 text-gray-400"
+            : disabled
+              ? "bg-gray-200 text-gray-400"
+              : "bg-yellow-400 text-gray-900"
         }`}
       >
-        {initials}
+        {pending ? <Mail size={15} /> : initials}
       </div>
 
       {/* Name + email */}
@@ -602,9 +630,11 @@ function UserRow({
             disabled ? "text-gray-400" : "text-gray-900"
           }`}
         >
-          {user.displayName ?? "—"}
+          {user.displayName ?? user.email}
         </p>
-        <p className="text-gray-400 text-xs truncate">{user.email}</p>
+        <p className="text-gray-400 text-xs truncate">
+          {pending ? "Invited · awaiting first sign-in" : user.email}
+        </p>
       </div>
 
       {disabled ? (
@@ -627,9 +657,18 @@ function UserRow({
         </>
       ) : (
         <>
+          {/* Invited badge */}
+          {pending && (
+            <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold bg-gray-100 text-gray-600 flex-shrink-0">
+              Invited
+            </span>
+          )}
+
           {/* Agency chips */}
           <div className="hidden md:flex items-center gap-1 flex-wrap justify-end max-w-[200px]">
-            {agencies.length === 0 ? (
+            {pending ? (
+              <span className="text-xs text-gray-300">Set at sign-in</span>
+            ) : agencies.length === 0 ? (
               <span className="text-xs text-gray-300">No agency</span>
             ) : agencies.length <= 2 ? (
               agencies.map((a) => (
@@ -674,7 +713,7 @@ function UserRow({
               <div className="relative">
                 <select
                   value={user.role}
-                  onChange={(e) => onRoleChange(user.uid, e.target.value as UserRole)}
+                  onChange={(e) => onRoleChange(e.target.value as UserRole)}
                   className={`appearance-none pl-7 pr-7 py-1.5 text-xs font-semibold rounded-lg border-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-yellow-400 ${ROLE_BADGE[user.role]}`}
                 >
                   {ROLE_ORDER.map((role) => (
@@ -693,12 +732,12 @@ function UserRow({
             )}
           </div>
 
-          {/* Remove access — hidden for your own account (no self-lockout) */}
+          {/* Remove access / revoke invite — hidden for your own account */}
           {!isSelf && !updating && (
             <button
               onClick={onToggleDisabled}
               className="p-1.5 text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
-              title="Remove access"
+              title={pending ? "Revoke invite" : "Remove access"}
             >
               <Ban size={16} />
             </button>

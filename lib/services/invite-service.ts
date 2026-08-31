@@ -8,6 +8,7 @@ import {
   getDocs,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import type { Invite } from "../types/invite.types";
@@ -45,6 +46,22 @@ export async function createInvite(
     createdBy: createdBy ?? null,
     createdAt: serverTimestamp(),
   });
+}
+
+/** Updates the pre-provisioned role of a pending invite. */
+export async function updateInviteRole(
+  email: string,
+  role: UserRole
+): Promise<void> {
+  await updateDoc(doc(db, "invites", normEmail(email)), { role });
+}
+
+/** Updates the pre-provisioned client assignments of a pending invite. */
+export async function updateInviteClients(
+  email: string,
+  assignedClients: string[]
+): Promise<void> {
+  await updateDoc(doc(db, "invites", normEmail(email)), { assignedClients });
 }
 
 /** Revokes a pending invite. */

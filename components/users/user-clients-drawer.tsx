@@ -32,6 +32,12 @@ interface UserClientsDrawerProps {
   onClose: () => void;
   /** Callback after a successful Save — returns the new client list */
   onSaved: (uid: string, assignedClients: string[]) => void;
+  /**
+   * Overrides where the assignments are written. Defaults to
+   * `setUserAssignments(user.uid, …)`. Used for pending invites (no `users`
+   * doc yet), which write to the invite doc keyed by email instead.
+   */
+  saveFn?: (assignedClients: string[]) => Promise<void>;
 }
 
 type AgencyFilter = "ALL" | string;
@@ -74,6 +80,7 @@ export default function UserClientsDrawer({
   user,
   onClose,
   onSaved,
+  saveFn,
 }: UserClientsDrawerProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,7 +200,8 @@ export default function UserClientsDrawer({
     setError("");
     try {
       const finalClients = [...selected];
-      await setUserAssignments(user.uid, finalClients);
+      if (saveFn) await saveFn(finalClients);
+      else await setUserAssignments(user.uid, finalClients);
       onSaved(user.uid, finalClients);
     } catch (err) {
       setError("Failed to save: " + (err instanceof Error ? err.message : "Unknown error"));
