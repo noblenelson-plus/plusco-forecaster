@@ -41,6 +41,8 @@ export const FLAG_CONTEXTS = [
   { value: "CANCELLED", label: "Cancelled" },
   { value: "TIMING_SHIFT", label: "Timing Shift" },
   { value: "INCOMPLETE_INPUT", label: "Incomplete Input" },
+  { value: "INCREMENTAL_BUDGET", label: "Incremental Budget" },
+  { value: "OTHER", label: "Other" },
 ] as const;
 
 export type FlagContext = (typeof FLAG_CONTEXTS)[number]["value"];
