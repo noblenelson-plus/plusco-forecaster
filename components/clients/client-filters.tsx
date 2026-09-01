@@ -38,6 +38,10 @@ interface ClientFiltersProps {
   onRegionFilterChange: (value: string[]) => void;
   verticalFilter: string[];
   onVerticalFilterChange: (value: string[]) => void;
+  businessLeadFilter: string[];
+  onBusinessLeadFilterChange: (value: string[]) => void;
+  /** BL options resolved to names (uid -> label), built on the page. */
+  businessLeadOptions: { value: string; label: string }[];
   clients: Client[];
   filteredClients: Client[];
   isAdmin: boolean;
@@ -76,6 +80,9 @@ export default function ClientFilters({
   onRegionFilterChange,
   verticalFilter,
   onVerticalFilterChange,
+  businessLeadFilter,
+  onBusinessLeadFilterChange,
+  businessLeadOptions,
   clients,
   filteredClients,
   isAdmin,
@@ -315,17 +322,26 @@ export default function ClientFilters({
           onChange={onVerticalFilterChange}
           searchable
         />
+        <MultiSelectDropdown
+          label="Business Lead"
+          options={businessLeadOptions}
+          selectedValues={businessLeadFilter}
+          onChange={onBusinessLeadFilterChange}
+          searchable
+        />
 
         {(agencyFilter.length > 0 ||
           tierFilter.length > 0 ||
           regionFilter.length > 0 ||
-          verticalFilter.length > 0) && (
+          verticalFilter.length > 0 ||
+          businessLeadFilter.length > 0) && (
           <button
             onClick={() => {
               onAgencyFilterChange([]);
               onTierFilterChange([]);
               onRegionFilterChange([]);
               onVerticalFilterChange([]);
+              onBusinessLeadFilterChange([]);
             }}
             className="text-xs font-medium text-gray-500 hover:text-gray-800 px-2 py-1.5 transition-colors"
           >

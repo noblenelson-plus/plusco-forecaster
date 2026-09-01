@@ -280,6 +280,9 @@ export interface UseForecasterGridResult {
   ) => CampaignPasteResult;
   renameBucket: (bucketId: string, name: string) => void;
   removeBucket: (bucketId: string) => void;
+  /** Reorder BL projects (buckets): A-Z / Z-A sort, or move one up/down. */
+  sortBuckets: (dir: "asc" | "desc") => void;
+  moveBucket: (bucketId: string, direction: "up" | "down") => void;
   /**
    * Mark (or clear) a BL bucket as non-commissionable — excludes its spend from
    * the commission base (computeCommission) while keeping it in every other
@@ -1053,6 +1056,34 @@ export function useForecasterGrid(
     });
   }, []);
 
+  const sortBuckets = useCallback((dir: "asc" | "desc") => {
+    setData((prev) => {
+      const sorted = [...prev.buckets].sort((a, b) =>
+        dir === "asc"
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name)
+      );
+      return { ...prev, buckets: sorted };
+    });
+    setStructureDirty(true);
+  }, []);
+
+  const moveBucket = useCallback(
+    (bucketId: string, direction: "up" | "down") => {
+      setData((prev) => {
+        const i = prev.buckets.findIndex((b) => b.bucketId === bucketId);
+        if (i === -1) return prev;
+        const j = direction === "up" ? i - 1 : i + 1;
+        if (j < 0 || j >= prev.buckets.length) return prev;
+        const buckets = [...prev.buckets];
+        [buckets[i], buckets[j]] = [buckets[j], buckets[i]];
+        return { ...prev, buckets };
+      });
+      setStructureDirty(true);
+    },
+    []
+  );
+
   const addRow = useCallback(
     (bucketId: string, rowType: string) => {
       const label =
@@ -1438,6 +1469,8 @@ export function useForecasterGrid(
     pasteCampaignsAsProjects,
     renameBucket,
     removeBucket,
+    sortBuckets,
+    moveBucket,
     setBucketNonCommissionable,
     addRow,
     removeRow,

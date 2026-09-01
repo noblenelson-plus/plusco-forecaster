@@ -32,6 +32,9 @@ import {
   Lock,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
+  ArrowDownAZ,
+  ArrowUpAZ,
   RotateCcw,
   FolderPlus,
   Ban,
@@ -477,7 +480,7 @@ export default function ForecastGrid({
                   </td>
                 </tr>
               ) : (
-                grid.data.buckets.map((bucket) => (
+                grid.data.buckets.map((bucket, bucketIdx) => (
                   <BucketSection
                     key={bucket.bucketId}
                     bucket={bucket}
@@ -495,6 +498,13 @@ export default function ForecastGrid({
                       config.allowMultipleBuckets &&
                       grid.data.buckets.length === 1
                     }
+                    reorderable={
+                      config.allowMultipleBuckets &&
+                      grid.data.buckets.length > 1 &&
+                      !blReadOnly
+                    }
+                    canMoveUp={bucketIdx > 0}
+                    canMoveDown={bucketIdx < grid.data.buckets.length - 1}
                   />
                 ))
               )}
@@ -896,6 +906,7 @@ function GridToolbar({
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const [addingBucket, setAddingBucket] = useState(false);
   const [bucketName, setBucketName] = useState("");
+  const [sortAsc, setSortAsc] = useState(true);
 
   // MediaBox rows for the export — same grouping as the grid section (media
   // type on the Media axis, LABS partner on Labs; empty on Revenue).
@@ -984,6 +995,22 @@ function GridToolbar({
               Add {config.bucketLabel.toLowerCase()}
             </button>
           ))}
+
+        {!grid.locked &&
+          config.allowMultipleBuckets &&
+          grid.data.buckets.length > 1 && (
+            <button
+              onClick={() => {
+                grid.sortBuckets(sortAsc ? "asc" : "desc");
+                setSortAsc((v) => !v);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              title={sortAsc ? "Sort projects A to Z" : "Sort projects Z to A"}
+            >
+              {sortAsc ? <ArrowDownAZ size={14} /> : <ArrowUpAZ size={14} />}
+              Sort
+            </button>
+          )}
 
         <button
           onClick={onToggleNotes}
@@ -1371,6 +1398,9 @@ function BucketSection({
   onToggleCollapse,
   showNotes,
   lockName,
+  reorderable,
+  canMoveUp,
+  canMoveDown,
 }: {
   bucket: ForecastBucket;
   config: AxisConfig;
@@ -1386,6 +1416,10 @@ function BucketSection({
   /** Lone project — its name is auto-managed ("General") and not editable, and
    *  it can't be removed. Lifted once a second project exists. */
   lockName: boolean;
+  /** Whether project reorder controls (up/down) are shown for this axis. */
+  reorderable: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
 }) {
   const bucketTotals = useMemo(() => monthTotals(bucket.rows), [bucket.rows]);
   const types = availableTypes(config, bucket.rows);
@@ -1404,6 +1438,26 @@ function BucketSection({
             >
               {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
             </button>
+            {reorderable && (
+              <div className="flex flex-col flex-shrink-0 -my-1">
+                <button
+                  onClick={() => grid.moveBucket(bucket.bucketId, "up")}
+                  disabled={!canMoveUp}
+                  className="rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                  title="Move project up"
+                >
+                  <ChevronUp size={13} />
+                </button>
+                <button
+                  onClick={() => grid.moveBucket(bucket.bucketId, "down")}
+                  disabled={!canMoveDown}
+                  className="rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                  title="Move project down"
+                >
+                  <ChevronDown size={13} />
+                </button>
+              </div>
+            )}
             <input
               type="text"
               value={bucket.name}

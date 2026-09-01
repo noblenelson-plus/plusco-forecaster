@@ -8,6 +8,7 @@ import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import { fetchAccessibleClients } from "../../../lib/services/assignment-service";
 import ClientGrid from "../../../components/clients/client-grid";
 import ClientFilters from "../../../components/clients/client-filters";
+import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import ClientDrawer from "../../../components/clients/client-drawer";
 import PageHeader from "../../../components/_shared/page-header";
 import type { ClientStatus } from "../../../lib/constants/client.constants";
@@ -32,6 +33,8 @@ export default function ClientsPage() {
   const [tierFilter, setTierFilter] = useState<string[]>([]);
   const [regionFilter, setRegionFilter] = useState<string[]>([]);
   const [verticalFilter, setVerticalFilter] = useState<string[]>([]);
+  const [businessLeadFilter, setBusinessLeadFilter] = useState<string[]>([]);
+  const usersMap = useUsersMap();
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -61,6 +64,13 @@ export default function ClientsPage() {
 
   // Filtered clients. Hidden clients stay visible to admins (with a badge) but
   // are removed entirely for Business Leads — even on this page.
+  // Business Lead filter options — distinct BLs in use, resolved to names.
+  const businessLeadOptions = [
+    ...new Set(clients.map((c) => c.CL_Business_Lead).filter(Boolean)),
+  ]
+    .map((uid) => ({ value: uid, label: usersMap.get(uid) ?? uid }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
   const filteredClients = clients.filter((c) => {
     if (isClientHidden(c) && !isAdmin) return false;
     const matchesSearch =
@@ -78,13 +88,17 @@ export default function ClientsPage() {
     const matchesVertical =
       verticalFilter.length === 0 ||
       verticalFilter.includes(c.CL_Advertiser_Vertical ?? "");
+    const matchesBusinessLead =
+      businessLeadFilter.length === 0 ||
+      businessLeadFilter.includes(c.CL_Business_Lead);
     return (
       matchesSearch &&
       matchesStatus &&
       matchesAgency &&
       matchesTier &&
       matchesRegion &&
-      matchesVertical
+      matchesVertical &&
+      matchesBusinessLead
     );
   });
 
@@ -169,6 +183,9 @@ export default function ClientsPage() {
           onRegionFilterChange={setRegionFilter}
           verticalFilter={verticalFilter}
           onVerticalFilterChange={setVerticalFilter}
+          businessLeadFilter={businessLeadFilter}
+          onBusinessLeadFilterChange={setBusinessLeadFilter}
+          businessLeadOptions={businessLeadOptions}
           clients={clients}
           filteredClients={filteredClients}
           isAdmin={isAdmin}
