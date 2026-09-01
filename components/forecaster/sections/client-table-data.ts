@@ -11,6 +11,7 @@
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import type { Client } from "../../../lib/types/client.types";
 import type { MonthlyMap } from "../../../lib/types/common.types";
+import { DEFAULT_FORECASTING_TYPE, resolveClientStatus } from "../../../lib/format/client";
 
 // Column order for the per-channel media metrics (matches the Looker table).
 export const CHANNEL_ORDER = [
@@ -141,8 +142,11 @@ export function computeClientTable(
     const lp = labs.get(id);
     const clp = compLabs.get(id);
 
-    const totalLabs = lp ? [...lp.values()].reduce((a, b) => a + b, 0) : 0;
-    const compTotalLabs = clp ? [...clp.values()].reduce((a, b) => a + b, 0) : 0;
+    // Total Labs counts ONLY the main partners shown as columns (PARTNER_COLS);
+    // "Other"/N/A partners are excluded (matching the Looker dashboard), so Total
+    // Labs always equals the sum of the partner columns -- on screen and export.
+    const totalLabs = PARTNER_COLS.reduce((a, p) => a + partnerSum(lp, p.names), 0);
+    const compTotalLabs = PARTNER_COLS.reduce((a, p) => a + partnerSum(clp, p.names), 0);
 
     const billupsOoh = lp?.get("billups-ooh") ?? 0;
     const billupsPrint = lp?.get("billups-print") ?? 0;
@@ -156,10 +160,13 @@ export function computeClientTable(
       businessLead: client?.CL_Business_Lead ? usersMap.get(client.CL_Business_Lead) ?? client.CL_Business_Lead : "",
       agency: client?.CL_Agency ?? "",
       region: client?.CL_Business_Unit_Region ?? "",
-      status: client?.Client_Status_By_Year?.[year] ?? client?.Client_Status_2026 ?? "",
+      status: client ? resolveClientStatus(client, year) : "",
       notes: client?.Client_Notes ?? "",
-      mediaForecast: client?.Forecasting_Type?.mediaSpend ?? false,
-      labsForecast: client?.Forecasting_Type?.labs ?? false,
+      // Forecasting-type toggles are sparse: an unset axis means enabled, per
+      // DEFAULT_FORECASTING_TYPE. Defaulting to false here mislabeled every
+      // client with no stored Forecasting_Type as "not forecasting".
+      mediaForecast: client?.Forecasting_Type?.mediaSpend ?? DEFAULT_FORECASTING_TYPE.mediaSpend,
+      labsForecast: client?.Forecasting_Type?.labs ?? DEFAULT_FORECASTING_TYPE.labs,
 
       totalMedia: m.total,
       totalMediaVar: m.total - (cm?.total ?? 0),

@@ -1,4 +1,4 @@
-// app/(protected)/page.tsx
+﻿// app/(protected)/page.tsx
 "use client";
 
 /**
@@ -48,6 +48,7 @@ import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
+import { isTestClient } from "../../lib/format/client";
 import { useScopeMediaboxTotals } from "../../lib/dashboard/data/use-scope-mediabox-totals";
 import { useScopeFlags } from "../../lib/dashboard/data/use-scope-flags";
 import { useCurrencyRates } from "../../lib/hooks/use-currency-rates";
@@ -102,11 +103,8 @@ function ModeToggle({
  * or "Latest" untouched. Adjust TEST_CLIENT_PATTERN if the naming convention
  * differs.
  */
-const TEST_CLIENT_PATTERN = /(^|[^a-z])test([^a-z]|$)/i;
-
-function isTestClient(name: string | undefined | null): boolean {
-  return !!name && TEST_CLIENT_PATTERN.test(name);
-}
+// isTestClient + TEST_CLIENT_PATTERN now live in lib/format/client.ts so the
+// dashboard and the QA reconciliation share one definition (imported above).
 
 export default function DashboardPage() {
   const { clients: allClients, loading, error } = useAccessibleClients();

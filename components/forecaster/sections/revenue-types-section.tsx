@@ -9,6 +9,11 @@
  * Both the pie and the table honor the page's revenue-types selection, and both
  * show Commission + Commission Overwrite merged as one "Commission" — the merge
  * and the selection are applied by selectedStreamSlices so every surface agrees.
+ *
+ * Official (OF) revenue is a single synthetic stream ("official") with no BL
+ * stream breakdown, so a side showing OF must NOT be narrowed by the BL
+ * revenue-type selection — that set never contains "official" and would zero the
+ * side out. Whichever side is in Official mode selects the official key alone.
  */
 
 import { useMemo } from "react";
@@ -22,6 +27,7 @@ import { formatMoney } from "../../../lib/format/money";
 import { computeVariance } from "../../../lib/types/forecaster.types";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../../lib/stores/comparison-selection.store";
+import { OFFICIAL_STREAM_KEY } from "../../../lib/dashboard/data/aggregate";
 import type {
   ScopeForecastData,
   RevenueMode,
@@ -33,6 +39,18 @@ const money = (v: number) => {
 };
 
 const modeLabel = (mode: RevenueMode) => (mode === "official" ? "OF" : "BL");
+
+/**
+ * The stream selection a side actually uses: the page selection for BL, but the
+ * lone official key when the side is in Official mode (so the BL revenue-type
+ * filter never zeroes the single OF figure). Stable identity for OFFICIAL_ONLY
+ * keeps the memos below from recomputing needlessly.
+ */
+const OFFICIAL_ONLY: ReadonlySet<string> = new Set([OFFICIAL_STREAM_KEY]);
+const streamSelectionFor = (
+  mode: RevenueMode,
+  selected: ReadonlySet<string>
+): ReadonlySet<string> => (mode === "official" ? OFFICIAL_ONLY : selected);
 
 function toVariance(absolute: number, relative: number | null): StatVariance | null {
   if (relative === null) return null;
@@ -68,12 +86,14 @@ export default function RevenueTypesSection({
     ? `${comparisonRFQ.type}-${modeLabel(secondaryMode)} · ${comparisonYear}`
     : "Variant";
 
-  // Selected + commission-merged slices for each side.
+  // Selected + commission-merged slices for each side. A side in Official mode
+  // selects the official key alone (see file header) so the BL revenue-type
+  // filter can't zero it.
   const primarySlices = useMemo(
     () =>
       selectedStreamSlices(
         data.revenueByMode[primaryMode].breakdown.byStream,
-        selectedStreams
+        streamSelectionFor(primaryMode, selectedStreams)
       ),
     [data, primaryMode, selectedStreams]
   );
@@ -82,7 +102,7 @@ export default function RevenueTypesSection({
       hasComparison
         ? selectedStreamSlices(
             comparisonData.revenueByMode[secondaryMode].breakdown.byStream,
-            selectedStreams
+            streamSelectionFor(secondaryMode, selectedStreams)
           )
         : [],
     [comparisonData, secondaryMode, selectedStreams, hasComparison]
