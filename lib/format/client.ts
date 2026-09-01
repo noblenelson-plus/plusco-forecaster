@@ -18,6 +18,21 @@ export const DEFAULT_FORECASTING_TYPE: ForecastingType = {
   revenues: true,
 };
 
+/**
+ * Test-client detection. A client counts as a test client when the word "TEST"
+ * appears in its name as a standalone token — catching "1_TEST CLIENT" and
+ * "TEST CLIENT" while leaving real names like "Contest" or "Latest" untouched.
+ *
+ * Test clients are excluded from the dashboard AND the QA reconciliation (so the
+ * two share one definition and can't drift), but remain available in the
+ * Forecast editing grid. Adjust the pattern here if the naming convention changes.
+ */
+export const TEST_CLIENT_PATTERN = /(^|[^a-z])test([^a-z]|$)/i;
+
+export function isTestClient(name: string | undefined | null): boolean {
+  return !!name && TEST_CLIENT_PATTERN.test(name);
+}
+
 type StatusCarrier = Pick<Client, "Client_Status_By_Year" | "Client_Status_2026">;
 
 /**

@@ -10,10 +10,16 @@
  * total: deselecting a type lowers every client's figure (and the grand total)
  * by that type's amount. Commission and Commission Overwrite are summed as one
  * "Commission" via sumSelectedStreams. A null selection means all streams.
+ *
+ * Official (OF) revenue is a single reported figure with no per-stream breakdown
+ * (its only key is the synthetic "official"), so the BL revenue-type filter must
+ * NOT apply to a side showing OF — otherwise every selection zeroes it out. Both
+ * sides therefore bypass the filter (pass null) when their mode is "official".
  */
 
 import type { ScopeForecastData, RevenueMode } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import type { Client } from "../../../lib/types/client.types";
+import { resolveClientStatus } from "../../../lib/format/client";
 import { sumSelectedStreams } from "./revenue-types-data";
 
 export interface ClientRevenueRow {
@@ -49,21 +55,21 @@ export function computeClientRevenue(
 ): ClientRevenueResult {
   const clientById = new Map(clients.map((c) => [c.cl_id, c]));
 
-  // clientId → revenue summed over the selected streams, per side.
+  // clientId → revenue summed over the selected streams, per side. A side in
+  // Official mode ignores the BL revenue-type filter (see file header): its
+  // single "official" key is never in that set, so filtering would zero it.
   const primaryByClient = new Map(
     data.revenueByMode[primaryMode].byClient.map((r) => [
       r.clientId,
-      sumSelectedStreams(r.byStream, selectedStreams),
+      primaryMode === "official"
+        ? sumSelectedStreams(r.byStream, null)
+        : sumSelectedStreams(r.byStream, selectedStreams),
     ])
   );
   const secondaryByClient = new Map(
     hasComparison
       ? comparisonData.revenueByMode[secondaryMode].byClient.map((r) => [
           r.clientId,
-          // Official (OF) revenue is a single reported figure, not broken out
-          // by stream, so it must NOT be filtered by the BL revenue-type
-          // selection — its "official" key is never in that set, which would
-          // zero it out. Sum it whole. BL secondary still respects the filter.
           secondaryMode === "official"
             ? sumSelectedStreams(r.byStream, null)
             : sumSelectedStreams(r.byStream, selectedStreams),
@@ -87,7 +93,7 @@ export function computeClientRevenue(
       name: client?.CL_Name ?? id,
       businessLead: client?.CL_Business_Lead ? usersMap.get(client.CL_Business_Lead) ?? client.CL_Business_Lead : "",
       feeStructure: client?.Client_Fee_Structure ?? "",
-      status: client?.Client_Status_By_Year?.[year] ?? client?.Client_Status_2026 ?? "",
+      status: client ? resolveClientStatus(client, year) : "",
       notes: client?.Client_Notes ?? "",
       primary,
       secondary,

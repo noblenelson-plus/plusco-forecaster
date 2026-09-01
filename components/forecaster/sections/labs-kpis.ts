@@ -5,6 +5,11 @@
  * Ratios follow Adriana's definitions, summing partners by NAME (not by stored
  * media type) so the numerator lists match exactly. Billups is the only
  * OOH/Print partner. KPI variance is in percentage points vs the comparison.
+ *
+ * Scope: only the configured partners for the year are shown, and every total
+ * here (Labs spend, the share KPI, the Grand total) is the sum of those rows --
+ * spend on de-configured/unknown partners is intentionally excluded so the
+ * table always reconciles (no "Other/Unattributed" row).
  */
 
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
@@ -41,6 +46,10 @@ function partnerAnnualByName(labs: LabsPenetrationResult): Map<string, number> {
 
 function ratioSet(d: ScopeForecastData): Record<RatioKey, number | null> {
   const byName = partnerAnnualByName(d.labs);
+  // Total over the configured partners only (the rows the Partners table shows),
+  // so the share numerator matches the section total and never counts spend on
+  // de-configured partners.
+  const configuredLabsTotal = [...byName.values()].reduce((a, b) => a + b, 0);
   const mediaByLabel = new Map(d.media.byChannel.map((c) => [c.label, c.annual]));
   const nameSum = (names: string[]) => names.reduce((a, n) => a + (byName.get(n) ?? 0), 0);
 
@@ -52,7 +61,7 @@ function ratioSet(d: ScopeForecastData): Record<RatioKey, number | null> {
   const progLabs = nameSum(PROG_LABS);
 
   return {
-    labsShareOfTotalMedia: div(d.labs.totalLabs, d.media.totalAnnual),
+    labsShareOfTotalMedia: div(configuredLabsTotal, d.media.totalAnnual),
     billupsShareOohPrint: div(billupsOoh + billupsPrint, ooh + print),
     progLabsShareOfProg: div(progLabs, prog),
     progLabsShareOfDigital: div(progLabs, d.media.digitalAnnual),
@@ -136,9 +145,15 @@ export function computeLabsKpis(
     color: PARTNER_PALETTE[i % PARTNER_PALETTE.length],
   }));
 
+  // The section total is the sum of the partner rows above it -- configured
+  // partners only. Spend on de-configured/unknown partners is intentionally
+  // excluded (no "Other" row), so the Grand total always equals the visible rows.
+  const totalLabs = partners.reduce((acc, pt) => acc + pt.primary, 0);
+  const compTotalLabs = partners.reduce((acc, pt) => acc + pt.variant, 0);
+
   return {
-    totalLabs: data.labs.totalLabs,
-    compTotalLabs: hasComparison ? comparisonData.labs.totalLabs : 0,
+    totalLabs,
+    compTotalLabs,
     kpis,
     partners,
     segments,
