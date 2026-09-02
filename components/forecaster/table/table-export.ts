@@ -104,3 +104,39 @@ export async function exportToNewSheet({
   await writeValues(spreadsheet.spreadsheetId, sheetTitle, matrix);
   return spreadsheet.url;
 }
+
+/**
+ * Pushes several matrices to a brand-new spreadsheet — one tab each, in order —
+ * and returns its URL. Same auth/connect handling as exportToNewSheet; used by
+ * the forecast grid to export BL Submission / MediaOcean / MediaBox as separate
+ * tabs. Tabs are created up front (one API call) and written sequentially.
+ */
+export async function exportToNewSheetWithTabs({
+  title,
+  tabs,
+}: {
+  /** Spreadsheet file name. */
+  title: string;
+  /** One entry per tab, in display order. Each needs a unique sheetTitle. */
+  tabs: { sheetTitle: string; matrix: CellValue[][] }[];
+}): Promise<string> {
+  if (!isGoogleConfigured()) {
+    throw new SheetsUnavailableError(
+      "Google Sheets export is not configured for this environment."
+    );
+  }
+  if (tabs.length === 0) {
+    throw new SheetsUnavailableError("Nothing to export.");
+  }
+
+  if (!isConnected()) await connect();
+
+  const spreadsheet = await createSpreadsheet(
+    title,
+    tabs.map((t) => t.sheetTitle)
+  );
+  for (const tab of tabs) {
+    await writeValues(spreadsheet.spreadsheetId, tab.sheetTitle, tab.matrix);
+  }
+  return spreadsheet.url;
+}

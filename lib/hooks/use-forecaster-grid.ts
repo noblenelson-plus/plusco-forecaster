@@ -56,6 +56,7 @@ import {
   newRow,
   rollUpActuals,
 } from "../types/forecaster.types";
+import type { ImportDiff as BlImportDiff } from "../format/forecast-sheets-import";
 
 // ─── Pure computation helpers (exported — the grid also applies them to the
 //     reference data for the totals variances) ───────────────────────────────
@@ -350,6 +351,15 @@ export interface UseForecasterGridResult {
   // Persistence
   save: () => Promise<void>;
   discard: () => void;
+  /** Step back / forward through this session's changes (whole-grid, survives autosave). */
+  undo: () => void;
+  redo: () => void;
+  /** Restore the doc to how it looked when opened this session (undoable). */
+   revertAll: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Apply a parsed Sheets import (BL Submission) as one undoable commit. */
+  applyBlImport: (diff: BlImportDiff, opts?: { applyRemovals?: boolean }) => void;
 }
 
 /**
@@ -422,6 +432,104 @@ export function useForecasterGrid(
   const [dirtyMap, setDirtyMap] = useState<DirtyMap>(new Map());
   const [structureDirty, setStructureDirty] = useState(false);
 
+  // ─── Undo / redo history ────────────────────────────────────────────────────
+  // A per-session timeline for the whole submission, INDEPENDENT of persistence:
+  // the grid autosaves continuously, but undo/redo are in-memory and are NOT
+  // cleared by a save (that's how Sheets can autosave and still offer full undo).
+  // Every USER mutation funnels through commitData, which snapshots the prior
+  // `data` onto the undo stack. History resets only when the timeline genuinely
+  // restarts — loading a doc or switching client/RFQ. Each undo/redo is itself a
+  // change, so it marks the grid dirty and autosaves like any edit.
+  type GridSnapshot = { data: AxisData };
+  const HISTORY_LIMIT = 100;
+  const undoStackRef = useRef<GridSnapshot[]>([]);
+  const redoStackRef = useRef<GridSnapshot[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  // The doc as it looked when opened this session — the target of "Revert all".
+  // Set at load; never updated by autosave, so revert always returns to the
+  // open-state regardless of how many times the doc saved in between.
+  const sessionBaselineRef = useRef<AxisData>(emptyAxisData());
+
+  // Mirror of the live working copy so commitData can snapshot the pre-mutation
+  // state without listing `data` in every callback's deps.
+  const dataRef = useRef(data);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
+  const takeSnapshot = useCallback(
+    (): GridSnapshot => ({ data: clone(dataRef.current) }),
+    []
+  );
+
+  const syncHistoryFlags = useCallback(() => {
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    setCanUndo(false);
+    setCanRedo(false);
+  }, []);
+
+  /**
+   * The single write path for every USER mutation (cell edits, paste, structure
+   * changes). Snapshots the current `data` for undo, invalidates redo (a new
+   * action forks the timeline), then applies. Lifecycle writes (load, clear)
+   * call setData directly and reset the baseline + history instead; save does
+   * NOT touch history.
+   */
+  const commitData = useCallback(
+    (updater: AxisData | ((prev: AxisData) => AxisData)) => {
+      undoStackRef.current.push(takeSnapshot());
+      if (undoStackRef.current.length > HISTORY_LIMIT) {
+        undoStackRef.current.shift();
+      }
+      redoStackRef.current = [];
+      setData(updater);
+      syncHistoryFlags();
+    },
+    [takeSnapshot, syncHistoryFlags]
+  );
+
+  const undo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+    const prev = undoStackRef.current.pop()!;
+    redoStackRef.current.push(takeSnapshot());
+    setData(clone(prev.data));
+    // Restored state differs from what was just autosaved → mark dirty so it
+    // persists. dirtyMap is a save-time indicator only; save writes full data.
+    setStructureDirty(true);
+    syncHistoryFlags();
+  }, [takeSnapshot, syncHistoryFlags]);
+
+  const redo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    const next = redoStackRef.current.pop()!;
+    undoStackRef.current.push(takeSnapshot());
+    setData(clone(next.data));
+    setStructureDirty(true);
+    syncHistoryFlags();
+  }, [takeSnapshot, syncHistoryFlags]);
+
+  // "Revert all changes" — back to the doc as opened this session. It's one more
+  // step on the timeline (pushes the current state to undo), so it can itself be
+  // undone; it is not a point of no return.
+  const revertAll = useCallback(() => {
+    undoStackRef.current.push(takeSnapshot());
+    if (undoStackRef.current.length > HISTORY_LIMIT) {
+      undoStackRef.current.shift();
+    }
+    redoStackRef.current = [];
+    setData(clone(sessionBaselineRef.current));
+    setStructureDirty(true);
+    syncHistoryFlags();
+  }, [takeSnapshot, syncHistoryFlags]);
+
   // The context the loaded snapshot belongs to. Saves write here — not to the
   // current selection — so an autosave (or a flush triggered by switching
   // client/year/RFQ) always lands on the right doc even if the selection has
@@ -454,6 +562,8 @@ export function useForecasterGrid(
       setData(emptyAxisData());
       setDirtyMap(new Map());
       setStructureDirty(false);
+      sessionBaselineRef.current = emptyAxisData();
+      clearHistory();
       return;
     }
 
@@ -500,6 +610,8 @@ export function useForecasterGrid(
         setData(clone(rolled));
         setDirtyMap(new Map());
         setStructureDirty(false);
+        sessionBaselineRef.current = clone(rolled);
+        clearHistory();
         // Per-side last-save stamps. Annual axes (Media, Labs) read the actuals
         // stamp from the shared annual doc; others (Revenue) from the submission
         // doc, alongside the BL stamp.
@@ -713,7 +825,7 @@ export function useForecasterGrid(
   const setCellValue = useCallback(
     (coord: CellCoord, value: number | null) => {
       if (!isCoordEditable(coord)) return;
-      setData((prev) => {
+      commitData((prev) => {
         const next = clone(prev);
         if (coord.category === "ADMIN_INPUT") {
           const row = next.actuals.find((r) => r.rowId === coord.rowId);
@@ -766,7 +878,7 @@ export function useForecasterGrid(
     (rawUpdates: { coord: CellCoord; value: number | null }[]) => {
       const updates = rawUpdates.filter((u) => isCoordEditable(u.coord));
       if (updates.length === 0) return;
-      setData((prev) => {
+      commitData((prev) => {
         const next = clone(prev);
         for (const { coord, value } of updates) {
           if (coord.category === "ADMIN_INPUT") {
@@ -873,7 +985,7 @@ export function useForecasterGrid(
         });
       }
 
-      setData(next);
+      commitData(next);
       setDirtyMap((prev) => {
         const nextMap = new Map(prev);
         for (const { coord, value } of touched) {
@@ -939,7 +1051,7 @@ export function useForecasterGrid(
         });
       }
 
-      setData(next);
+      commitData(next);
       setDirtyMap((prev) => {
         const nextMap = new Map(prev);
         for (const { coord, value } of touched) {
@@ -979,7 +1091,7 @@ export function useForecasterGrid(
         }
       }
 
-      setData((prev) => {
+      commitData((prev) => {
         const buckets = prev.buckets.map((b) => ({ ...b }));
         const indexByName = new Map<string, number>(
           buckets.map((b, i) => [b.name.trim().toLowerCase(), i])
@@ -1014,12 +1126,12 @@ export function useForecasterGrid(
   );
 
   const addBucket = useCallback((name: string) => {
-    setData((prev) => ({ ...prev, buckets: [...prev.buckets, newBucket(name)] }));
+    commitData((prev) => ({ ...prev, buckets: [...prev.buckets, newBucket(name)] }));
     setStructureDirty(true);
   }, []);
 
   const renameBucket = useCallback((bucketId: string, name: string) => {
-    setData((prev) => ({
+    commitData((prev) => ({
       ...prev,
       buckets: prev.buckets.map((b) =>
         b.bucketId === bucketId ? { ...b, name } : b
@@ -1029,7 +1141,7 @@ export function useForecasterGrid(
   }, []);
   const setBucketNonCommissionable = useCallback(
     (bucketId: string, value: boolean) => {
-      setData((prev) => ({
+      commitData((prev) => ({
         ...prev,
         buckets: prev.buckets.map((b) =>
           b.bucketId === bucketId ? { ...b, nonCommissionable: value } : b
@@ -1041,7 +1153,7 @@ export function useForecasterGrid(
   );
 
   const removeBucket = useCallback((bucketId: string) => {
-    setData((prev) => ({
+    commitData((prev) => ({
       ...prev,
       buckets: prev.buckets.filter((b) => b.bucketId !== bucketId),
     }));
@@ -1057,7 +1169,7 @@ export function useForecasterGrid(
   }, []);
 
   const sortBuckets = useCallback((dir: "asc" | "desc") => {
-    setData((prev) => {
+    commitData((prev) => {
       const sorted = [...prev.buckets].sort((a, b) =>
         dir === "asc"
           ? a.name.localeCompare(b.name)
@@ -1070,7 +1182,7 @@ export function useForecasterGrid(
 
   const moveBucket = useCallback(
     (bucketId: string, direction: "up" | "down") => {
-      setData((prev) => {
+      commitData((prev) => {
         const i = prev.buckets.findIndex((b) => b.bucketId === bucketId);
         if (i === -1) return prev;
         const j = direction === "up" ? i - 1 : i + 1;
@@ -1088,7 +1200,7 @@ export function useForecasterGrid(
     (bucketId: string, rowType: string) => {
       const label =
         config.rowTypeOptions.find((o) => o.value === rowType)?.label ?? rowType;
-      setData((prev) => ({
+      commitData((prev) => ({
         ...prev,
         buckets: prev.buckets.map((b) => {
           if (b.bucketId !== bucketId) return b;
@@ -1107,7 +1219,7 @@ export function useForecasterGrid(
   );
 
   const removeRow = useCallback((bucketId: string, rowId: string) => {
-    setData((prev) => ({
+    commitData((prev) => ({
       ...prev,
       buckets: prev.buckets.map((b) =>
         b.bucketId === bucketId
@@ -1136,7 +1248,7 @@ export function useForecasterGrid(
       note: string
     ) => {
       const trimmed = note.trim();
-      setData((prev) => {
+      commitData((prev) => {
         const next = clone(prev);
         const rows =
           category === "ADMIN_INPUT"
@@ -1159,7 +1271,7 @@ export function useForecasterGrid(
   const setRowProduct = useCallback(
     (bucketId: string, rowId: string, productId: string) => {
       const id = productId.trim();
-      setData((prev) => {
+      commitData((prev) => {
         const next = clone(prev);
         const row = next.buckets
           .find((b) => b.bucketId === bucketId)
@@ -1180,7 +1292,7 @@ export function useForecasterGrid(
     (rowType: string) => {
       const label =
         config.rowTypeOptions.find((o) => o.value === rowType)?.label ?? rowType;
-      setData((prev) => {
+      commitData((prev) => {
         if (
           !config.allowDuplicateRowTypes &&
           prev.actuals.some((r) => r.rowType === rowType)
@@ -1195,7 +1307,7 @@ export function useForecasterGrid(
   );
 
   const removeActualsRow = useCallback((rowId: string) => {
-    setData((prev) => ({
+    commitData((prev) => ({
       ...prev,
       actuals: prev.actuals.filter((r) => r.rowId !== rowId),
     }));
@@ -1215,7 +1327,7 @@ export function useForecasterGrid(
   // cells are read-only until the last detail is removed.
 
   const addActualsDetail = useCallback((rowId: string) => {
-    setData((prev) => ({
+    commitData((prev) => ({
       ...prev,
       actuals: prev.actuals.map((r) => {
         if (r.rowId !== rowId) return r;
@@ -1249,7 +1361,7 @@ export function useForecasterGrid(
 
   const removeActualsDetail = useCallback(
     (rowId: string, detailId: string) => {
-      setData((prev) => ({
+      commitData((prev) => ({
         ...prev,
         actuals: prev.actuals.map((r) => {
           if (r.rowId !== rowId) return r;
@@ -1285,7 +1397,7 @@ export function useForecasterGrid(
   // structure change.
   const setActualsDetailLevel = useCallback(
     (rowId: string, detailId: string, index: number, value: string) => {
-      setData((prev) => {
+      commitData((prev) => {
         const next = clone(prev);
         const row = next.actuals.find((r) => r.rowId === rowId);
         const detail = row?.details?.find((d) => d.detailId === detailId);
@@ -1304,7 +1416,7 @@ export function useForecasterGrid(
   const setActualsRowProduct = useCallback(
     (rowId: string, productId: string) => {
       const id = productId.trim();
-      setData((prev) => {
+      commitData((prev) => {
         const next = clone(prev);
         const row = next.actuals.find((r) => r.rowId === rowId);
         if (!row) return prev;
@@ -1321,7 +1433,7 @@ export function useForecasterGrid(
   const setActualsDetailProduct = useCallback(
     (rowId: string, detailId: string, productId: string) => {
       const id = productId.trim();
-      setData((prev) => {
+      commitData((prev) => {
         const next = clone(prev);
         const detail = next.actuals
           .find((r) => r.rowId === rowId)
@@ -1444,7 +1556,63 @@ export function useForecasterGrid(
     setStructureDirty(false);
     setError("");
   }, [original]);
+  /**
+   * Applies a parsed Google-Sheet import (BL Submission tab) in ONE commit, so
+   * the whole upload is a single Undo. Updates set a matched row's months;
+   * additions create the project (bucket) if needed and add the row; removals
+   * only apply when `applyRemovals` is set (default off — a row missing from the
+   * sheet is kept, never deleted by accident). Marks the grid dirty so the
+   * result autosaves like any edit. No-op when locked.
+   */
+  const applyBlImport = useCallback(
+    (diff: BlImportDiff, opts?: { applyRemovals?: boolean }) => {
+      if (locked) return;
+      const applyRemovals = opts?.applyRemovals ?? false;
+      commitData((prev) => {
+        const buckets = prev.buckets.map((b) => ({
+          ...b,
+          rows: b.rows.map((r) => ({ ...r, months: { ...r.months } })),
+        }));
+        const byId = new Map(buckets.map((b) => [b.bucketId, b]));
+        const byName = new Map(
+          buckets.map((b) => [b.name.trim().toLowerCase(), b])
+        );
 
+        // Updates — overwrite the matched row's months.
+        for (const u of diff.updates) {
+          const row = byId.get(u.bucketId)?.rows.find((r) => r.rowId === u.rowId);
+          if (row) row.months = { ...u.months };
+        }
+
+        // Additions — create the project if new, then append the row.
+        for (const a of diff.additions) {
+          const key = a.bucketName.trim().toLowerCase();
+          let bucket = byName.get(key);
+          if (!bucket) {
+            bucket = newBucket(a.bucketName);
+            buckets.push(bucket);
+            byName.set(key, bucket);
+            byId.set(bucket.bucketId, bucket);
+          }
+          bucket.rows.push({ ...newRow(a.rowType, a.label), months: { ...a.months } });
+        }
+
+        // Removals — opt-in only; drop matched rows, then any project left empty.
+        if (applyRemovals) {
+          for (const rem of diff.removals) {
+            const bucket = byId.get(rem.bucketId);
+            if (bucket) bucket.rows = bucket.rows.filter((r) => r.rowId !== rem.rowId);
+          }
+          return { ...prev, buckets: buckets.filter((b) => b.rows.length > 0) };
+        }
+
+        return { ...prev, buckets };
+      });
+      // An import differs from what was last autosaved — mark dirty so it persists.
+      setStructureDirty(true);
+    },
+    [locked, commitData]
+  );
   return {
     selectionReady,
     loading,
@@ -1489,5 +1657,11 @@ export function useForecasterGrid(
     referenceLoading,
     save,
     discard,
+    undo,
+    redo,
+    revertAll,
+    canUndo,
+    canRedo,
+    applyBlImport,
   };
 }

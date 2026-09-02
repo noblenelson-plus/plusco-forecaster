@@ -32,10 +32,9 @@ import {
   Lock,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
-  ArrowDownAZ,
-  ArrowUpAZ,
   RotateCcw,
+  Undo2,
+  Redo2,
   FolderPlus,
   Ban,
   SplitSquareHorizontal,
@@ -47,6 +46,7 @@ import {
   Copy,
   X,
 } from "lucide-react";
+import { showForecastToast } from "../../lib/format/toast";
 import type {
   AxisConfig,
   ForecastBucket,
@@ -73,7 +73,8 @@ import {
 } from "../../lib/hooks/use-grid-selection";
 import { MONTHS } from "../../lib/types/common.types";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
-import { downloadAxisCSV } from "../../lib/format/forecast-csv";
+import ForecastSheetsExportButton from "./forecast-sheets-export-button";
+import ForecastImportButton from "./forecast-import-button";
 import { actualsTheme } from "../../lib/format/actuals-theme";
 import { fetchAnnualActuals } from "../../lib/services/annual-actuals-service";
 import { SpreadsheetCell, TotalCell } from "./editable-cell";
@@ -93,11 +94,12 @@ import {
 } from "../../lib/hooks/use-mediabox-totals";
 import {
   useBlPasteTarget,
-  TargetProjectSelect,
-  MonthPasteButton,
+
+  CopyAllCampaignsButton,
   type BlPasteApi,
 } from "./bl-paste-target";
-import type { PasteSourceRow } from "../../lib/format/mediabox-paste";
+import ActualsCampaignView, { campaignSource } from "./actuals-campaign-view";
+import { buildMediaOceanPivot, NO_CAMPAIGN } from "../../lib/format/mediaocean-pivot";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -480,7 +482,7 @@ export default function ForecastGrid({
                   </td>
                 </tr>
               ) : (
-                grid.data.buckets.map((bucket, bucketIdx) => (
+                grid.data.buckets.map((bucket) => (
                   <BucketSection
                     key={bucket.bucketId}
                     bucket={bucket}
@@ -498,13 +500,6 @@ export default function ForecastGrid({
                       config.allowMultipleBuckets &&
                       grid.data.buckets.length === 1
                     }
-                    reorderable={
-                      config.allowMultipleBuckets &&
-                      grid.data.buckets.length > 1 &&
-                      !blReadOnly
-                    }
-                    canMoveUp={bucketIdx > 0}
-                    canMoveDown={bucketIdx < grid.data.buckets.length - 1}
                   />
                 ))
               )}
@@ -906,10 +901,39 @@ function GridToolbar({
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const [addingBucket, setAddingBucket] = useState(false);
   const [bucketName, setBucketName] = useState("");
-  const [sortAsc, setSortAsc] = useState(true);
 
   // MediaBox rows for the export — same grouping as the grid section (media
   // type on the Media axis, LABS partner on Labs; empty on Revenue).
+    // Two-step confirm for "Revert all changes": first click arms, second reverts.
+  const [revertArmed, setRevertArmed] = useState(false);
+
+  // Keyboard undo/redo — Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl+Y). Skipped
+  // while typing in a field so native text-undo still works inside a cell.
+  useEffect(() => {
+    if (grid.locked) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k !== "z" && k !== "y") return;
+      const el = document.activeElement as HTMLElement | null;
+      if (
+        el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.isContentEditable)
+      )
+        return;
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        grid.undo();
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        e.preventDefault();
+        grid.redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [grid.locked, grid.undo, grid.redo]);
   const mediaboxRows = mediabox.cad
     ? config.axisId === "labs"
       ? mediabox.cad.labsByPartner
@@ -929,18 +953,6 @@ function GridToolbar({
     setAddingBucket(false);
   }
 
-  function downloadCSV() {
-    downloadAxisCSV(
-      grid.data,
-      config,
-      {
-        clientName: selectedClient?.CL_Name,
-        year: selectedYear,
-        rfqType: selectedRFQ?.type,
-      },
-      mediaboxRows
-    );
-  }
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -996,21 +1008,28 @@ function GridToolbar({
             </button>
           ))}
 
-        {!grid.locked &&
-          config.allowMultipleBuckets &&
-          grid.data.buckets.length > 1 && (
+                {!grid.locked && (
+          <div className="flex items-center">
             <button
-              onClick={() => {
-                grid.sortBuckets(sortAsc ? "asc" : "desc");
-                setSortAsc((v) => !v);
-              }}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
-              title={sortAsc ? "Sort projects A to Z" : "Sort projects Z to A"}
+              onClick={grid.undo}
+              disabled={!grid.canUndo}
+              title="Undo (Ctrl+Z)"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-l-lg bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-40 disabled:hover:bg-white transition-colors"
             >
-              {sortAsc ? <ArrowDownAZ size={14} /> : <ArrowUpAZ size={14} />}
-              Sort
+              <Undo2 size={14} />
+              Undo
             </button>
-          )}
+            <button
+              onClick={grid.redo}
+              disabled={!grid.canRedo}
+              title="Redo (Ctrl+Shift+Z)"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-l-0 border-gray-200 rounded-r-lg bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-40 disabled:hover:bg-white transition-colors"
+            >
+              <Redo2 size={14} />
+              Redo
+            </button>
+          </div>
+        )}
 
         <button
           onClick={onToggleNotes}
@@ -1024,27 +1043,48 @@ function GridToolbar({
           {showNotes ? <Eye size={14} /> : <EyeOff size={14} />}
           Notes
         </button>
-
-        <button
-          onClick={downloadCSV}
+        {!grid.locked && <ForecastImportButton grid={grid} config={config} />}
+                <ForecastSheetsExportButton
+          data={grid.data}
+          config={config}
+          mediabox={mediaboxRows}
+          context={{
+            clientName: selectedClient?.CL_Name,
+            year: selectedYear,
+            rfqType: selectedRFQ?.type,
+          }}
           disabled={!hasData}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50 transition-colors"
-          title="Download this axis as a CSV file"
-        >
-          <Download size={14} />
-          CSV
-        </button>
+        />
 
-        {grid.hasChanges && (
-          <button
-            onClick={grid.discard}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors"
-            title="Discard unsaved changes"
-          >
-            <RotateCcw size={13} />
-            Discard
-          </button>
-        )}
+                {!grid.locked && grid.canUndo &&
+          (revertArmed ? (
+            <button
+              onClick={() => {
+                grid.revertAll();
+                setRevertArmed(false);
+                showForecastToast(
+                  "Reverted to how the doc opened — Undo to restore",
+                  "success"
+                );
+              }}
+              onBlur={() => setRevertArmed(false)}
+              autoFocus
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              title="Click again to revert every change back to how this doc looked when you opened it"
+            >
+              <RotateCcw size={13} />
+              Confirm revert?
+            </button>
+          ) : (
+            <button
+              onClick={() => setRevertArmed(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              title="Revert all changes back to how this doc looked when you opened it (undoable)"
+            >
+              <RotateCcw size={13} />
+              Revert all
+            </button>
+          ))}
 
         <button
           onClick={grid.save}
@@ -1398,9 +1438,6 @@ function BucketSection({
   onToggleCollapse,
   showNotes,
   lockName,
-  reorderable,
-  canMoveUp,
-  canMoveDown,
 }: {
   bucket: ForecastBucket;
   config: AxisConfig;
@@ -1416,10 +1453,6 @@ function BucketSection({
   /** Lone project — its name is auto-managed ("General") and not editable, and
    *  it can't be removed. Lifted once a second project exists. */
   lockName: boolean;
-  /** Whether project reorder controls (up/down) are shown for this axis. */
-  reorderable: boolean;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
 }) {
   const bucketTotals = useMemo(() => monthTotals(bucket.rows), [bucket.rows]);
   const types = availableTypes(config, bucket.rows);
@@ -1438,26 +1471,6 @@ function BucketSection({
             >
               {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
             </button>
-            {reorderable && (
-              <div className="flex flex-col flex-shrink-0 -my-1">
-                <button
-                  onClick={() => grid.moveBucket(bucket.bucketId, "up")}
-                  disabled={!canMoveUp}
-                  className="rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                  title="Move project up"
-                >
-                  <ChevronUp size={13} />
-                </button>
-                <button
-                  onClick={() => grid.moveBucket(bucket.bucketId, "down")}
-                  disabled={!canMoveDown}
-                  className="rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                  title="Move project down"
-                >
-                  <ChevronDown size={13} />
-                </button>
-              </div>
-            )}
             <input
               type="text"
               value={bucket.name}
@@ -1476,7 +1489,7 @@ function BucketSection({
             {config.axisId === "media" &&
               (bucket.nonCommissionable ? (
                 <button
-                  type="button"
+                  type="button" 
                   disabled={readOnly}
                   onClick={() =>
                     grid.setBucketNonCommissionable(bucket.bucketId, false)
@@ -1746,15 +1759,29 @@ function ActualsSection({
   const totals = useMemo(() => monthTotals(actuals), [actuals]);
   // Source lines for the "paste month → BL" tool. MediaOcean actuals already key
   // by the BL rowType, so the label is the rowType itself (an exact match).
-  const pasteRows = useMemo<PasteSourceRow[]>(
-    () => actuals.map((r) => ({ label: r.rowType, byMonth: r.months })),
-    [actuals]
-  );
+
   const types = availableTypes(config, actuals);
-  const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
+    const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
   // Whole-section collapse: the header stays, the rows/total are hidden.
   const [collapsed, setCollapsed] = useState(false);
   const colCount = showNotes ? 15 : 14;
+
+  // Channel (editable, default) vs Campaign (read-only pivot) orientation, like
+  // the MediaBox strip. The pivot drives the toggle's availability and the
+  // "Copy all to BL" payload (one project per campaign; the "no campaign"
+  // bucket is never copied).
+    // Default to the Campaign view (matching the MediaBox strip's first option);
+  // fall back to the editable Channel view when there are no campaigns to pivot.
+  const [hierarchy, setHierarchy] = useState<"channel" | "campaign">("campaign");
+  const pivot = useMemo(() => buildMediaOceanPivot(actuals), [actuals]);
+  const view: "channel" | "campaign" = pivot.hasCampaigns ? hierarchy : "channel";
+  const copyAllSources = useMemo(
+    () =>
+      pivot.byCampaign
+        .filter((node) => node.label !== NO_CAMPAIGN)
+        .map(campaignSource),
+    [pivot]
+  );
   // Per-source color: MediaOcean → pink, GAIA → purple, others → grey.
   const theme = actualsTheme(config.actualsLabel);
   // Project name(s) shown next to the MediaOcean label — the "project"
@@ -1810,8 +1837,34 @@ function ActualsSection({
                 onPick={(rowType) => grid.addActualsRow(rowType)}
               />
             )}
-            {blPaste && actuals.length > 0 && (
-              <TargetProjectSelect api={blPaste} />
+                          {pivot.hasCampaigns && (
+              <div className="inline-flex overflow-hidden border border-gray-300 text-[11px] font-medium">
+                <button
+                  type="button"
+                  onClick={() => setHierarchy("campaign")}
+                  className={`px-2 py-0.5 ${
+                    view === "campaign"
+                      ? "bg-gray-900 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  Campaign › Channel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHierarchy("channel")}
+                  className={`px-2 py-0.5 ${
+                    view === "channel"
+                      ? "bg-gray-900 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  Channel › Campaign
+                </button>
+              </div>
+            )}
+            {blPaste && view === "campaign" && copyAllSources.length > 0 && (
+              <CopyAllCampaignsButton api={blPaste} campaigns={copyAllSources} />
             )}
           </div>
         </td>
@@ -1828,6 +1881,14 @@ function ActualsSection({
               : `No admin input yet — add a ${config.rowTypeLabel.toLowerCase()} above.`}
           </td>
         </tr>
+              ) : view === "campaign" ? (
+        <ActualsCampaignView
+          actuals={actuals}
+          blPaste={blPaste}
+          showNotes={showNotes}
+          colCount={colCount}
+          theme={theme}
+        />
       ) : (
         actuals.map((row) => {
           const details = row.details ?? [];
@@ -1905,23 +1966,12 @@ function ActualsSection({
           </td>
           {showNotes && <td className="bg-gray-200" />}
           {MONTHS.map((m) => (
-            <td key={m} className="px-2.5 py-2 text-right align-middle">
-              <span className="inline-flex w-full items-center justify-end gap-1">
-                {blPaste && (
-                  <MonthPasteButton
-                    api={blPaste}
-                    rows={pasteRows}
-                    month={m}
-                    sourceLabel={config.actualsLabel}
-                    typeNoun={config.rowTypeLabel.toLowerCase()}
-                  />
-                )}
-                <p className="text-sm font-bold text-gray-900 tabular-nums">
-                  {totals[m]
-                    ? Math.round(totals[m]).toLocaleString("en-CA")
-                    : "—"}
-                </p>
-              </span>
+                        <td key={m} className="px-2.5 py-2 text-right align-middle">
+              <p className="text-sm font-bold text-gray-900 tabular-nums">
+                {totals[m]
+                  ? Math.round(totals[m]).toLocaleString("en-CA")
+                  : "—"}
+              </p>
             </td>
           ))}
           <td className="px-2.5 py-2 text-right align-middle bg-gray-300">

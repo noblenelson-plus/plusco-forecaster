@@ -244,7 +244,6 @@ export default function MediaboxActualsSection({
     : [];
   // Inverted view: campaign at the top, media types / partners nested.
   const campaignGroups = groupByCampaign(typeRows);
-  const typeNoun = axisId === "labs" ? "partner" : "media type";
 
   // Short label for the toggle: media -> "Channel", labs -> "Partner".
   const typeLabelShort = axisId === "labs" ? "Partner" : "Channel";
@@ -278,21 +277,7 @@ export default function MediaboxActualsSection({
           })),
         }));
 
-  const summaryRows =
-    hierarchy === "campaign"
-      ? typeRows.map((t) => ({
-          key: `summary::${t.label}`,
-          label: t.label,
-          byMonth: t.byMonth,
-          total: t.total,
-        }))
-      : campaignGroups.map((g) => ({
-          key: `summary::${g.name}`,
-          label: g.name,
-          byMonth: g.byMonth,
-          total: g.total,
-        }));
-  const summaryNoun = hierarchy === "campaign" ? typeNoun : "campaign";
+
 
   // Grand total across every type/partner — the section's bottom line.
   const grandByMonth: MonthlyMap = {};
@@ -445,25 +430,6 @@ export default function MediaboxActualsSection({
             );
           })}
 
-          {/* Summary: total per the OTHER dimension. */}
-          <tr className="bg-gray-100 border-y border-gray-200">
-            <td
-              colSpan={colSpan}
-              className="sticky left-0 z-10 px-4 py-1.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wider"
-            >
-              Summary — total per {summaryNoun}
-            </td>
-          </tr>
-          {summaryRows.map((sRow) => (
-            <MoneyRow
-              key={sRow.key}
-              label={sRow.label}
-              byMonth={sRow.byMonth}
-              total={sRow.total}
-              showNotes={showNotes}
-              bold
-            />
-          ))}
 
           {/* Grand total — same light-gray convention as the other sections'
               total rows. */}

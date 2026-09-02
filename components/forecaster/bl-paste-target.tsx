@@ -23,6 +23,7 @@ import type {
 } from "../../lib/hooks/use-forecaster-grid";
 import {
   buildMonthPaste,
+  isSkippedChannel,
   monthSourceTotal,
   type PasteSourceRow,
 } from "../../lib/format/mediabox-paste";
@@ -152,20 +153,31 @@ export function useBlPasteTarget(
         if (hit) lookup.set(normKey(alias), hit);
       }
 
-      const unmatched = new Set<string>();
+           const unmatched = new Set<string>();
+      let skipped = 0;
       const specs: CampaignProjectPaste[] = campaigns
         .filter((c) => c.name.trim() !== "")
         .map((c) => ({
           name: c.name,
-          channels: c.types.map((t) => {
-            const hit = lookup.get(normKey(t.label));
-            if (!hit) unmatched.add(t.label);
-            return {
-              rowType: hit?.value ?? t.label,
-              label: hit?.label ?? t.label,
-              months: t.byMonth,
-            };
-          }),
+          channels: c.types
+            .filter((t) => {
+              // Catch-all source channels (e.g. "Other") aren't BL media types —
+              // skip them rather than paste a "NOT CONFIGURED" row.
+              if (isSkippedChannel(t.label)) {
+                skipped++;
+                return false;
+              }
+              return true;
+            })
+            .map((t) => {
+              const hit = lookup.get(normKey(t.label));
+              if (!hit) unmatched.add(t.label);
+              return {
+                rowType: hit?.value ?? t.label,
+                label: hit?.label ?? t.label,
+                months: t.byMonth,
+              };
+            }),
         }));
 
       if (specs.length === 0) return;
@@ -182,11 +194,14 @@ export function useBlPasteTarget(
       if (overwritten) counts.push(`${overwritten} overwritten`);
       if (counts.length) parts.push(counts.join(", "));
       let kind: ForecastToastKind = "success";
-      if (unmatched.size > 0) {
+            if (unmatched.size > 0) {
         parts.push(
           `${unmatched.size} channel${unmatched.size > 1 ? "s" : ""} unmatched`
         );
         kind = "warning";
+      }
+      if (skipped > 0) {
+        parts.push(`${skipped} Other skipped`);
       }
       parts.push("Save to keep");
       showForecastToast(parts.join(" · "), kind);

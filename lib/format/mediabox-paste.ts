@@ -46,6 +46,19 @@ function norm(s: string): string {
 }
 
 /**
+ * Source channels that are a catch-all bucket in MediaBox/MediaOcean, not a BL
+ * media type — so they're skipped on copy rather than pasted as a "NOT
+ * CONFIGURED" row. (Genuinely unmapped channels are NOT listed here: those still
+ * surface as unmatched, so real mapping gaps get noticed and fixed.)
+ */
+export const SKIP_CHANNELS = new Set(["other"]);
+
+/** True when a source channel label should be skipped entirely on copy. */
+export function isSkippedChannel(label: string): boolean {
+  return SKIP_CHANNELS.has(norm(label));
+}
+
+/**
  * Resolve a source label to a BL row type. A source line carries a display
  * label ("Social", a LABS partner name); a BL row is keyed by rowType value
  * (the MediaType enum, or a partnerId). We match the label against each
@@ -83,7 +96,8 @@ export function buildMonthPaste(
   const matched: string[] = [];
   const unmatched: string[] = [];
 
-  for (const row of sourceRows) {
+   for (const row of sourceRows) {
+    if (isSkippedChannel(row.label)) continue; // catch-all channel, not a BL type
     const raw = row.byMonth[month] ?? 0;
     const value = Math.round(raw * 100) / 100;
     const rowType = resolveRowType(options, row.label);
