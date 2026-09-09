@@ -17,20 +17,23 @@ import ExecutiveSummarySection from "./executive-summary-section";
 import InvestmentKpisSection from "./investment-kpis-section";
 import BillupsSection from "./billups-section";
 import MetaSection from "./meta-section";
-import type { Client } from "../../../lib/types/client.types";
+import LabsPacingSection from "./labs-pacing-section";
+import type { Client, Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 
 type ExecSubTab =
   | "summary"
   | "investment"
   | "meta"
+  | "labs-pacing"
   | "billups"
   | "local-media";
 
 const SUBTABS: { id: ExecSubTab; label: string }[] = [
   { id: "summary", label: "Executive Summary" },
   { id: "investment", label: "Investment Strategy KPIs" },
-  { id: "meta", label: "Meta" },
+    { id: "meta", label: "Meta" },
+  { id: "labs-pacing", label: "Labs Pacing" },
   { id: "billups", label: "Billups" },
   { id: "local-media", label: "Local Media" },
 ];
@@ -49,17 +52,21 @@ export default function ExecKpisTabs({
   comparisonData,
   clients,
   usersMap,
-  scopedClientIds,
+    scopedClientIds,
   year,
   rfqLabel,
+  currencyByClient,
+  usdToCad,
 }: {
   forecastData: ScopeForecastData;
   comparisonData: ScopeForecastData;
   clients: Client[];
   usersMap: Map<string, string>;
-  scopedClientIds: string[];
+    scopedClientIds: string[];
   year: number;
   rfqLabel?: string;
+  currencyByClient: Record<string, Currency>;
+  usdToCad?: number;
 }) {
   const [sub, setSub] = useState<ExecSubTab>("summary");
 
@@ -101,7 +108,16 @@ export default function ExecKpisTabs({
         <InvestmentKpisSection scopedClientIds={scopedClientIds} />
       )}
 
-      {sub === "meta" && <MetaSection scopedClientIds={scopedClientIds} />}
+            {sub === "meta" && <MetaSection scopedClientIds={scopedClientIds} />}
+
+      {sub === "labs-pacing" && (
+        <LabsPacingSection
+          scopedClientIds={scopedClientIds}
+          currencyByClient={currencyByClient}
+          usdToCad={usdToCad}
+          showPodBreakdown
+        />
+      )}
 
       {sub === "billups" && (
         <BillupsSection

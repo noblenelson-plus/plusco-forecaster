@@ -5,22 +5,13 @@
  * Executive Summary — the "Total Plusco" KPI band. Presentational only: the
  * section computes the numbers (for the selected source of truth + period) and
  * hands them in as pillars of metric tiles. Each tile shows the value, an
- * optional progress-to-target bar, an optional YoY pill, and a RAG status
- * (left accent + dot + bar) from exec-rag, so target achievement reads at a
- * glance in red / amber / green.
+ * optional progress-to-target bar (single accent colour, no RAG), and an
+ * optional YoY pill.
  */
 
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import {
-  ragFromPctOfTarget,
-  targetBarWidth,
-  ragText,
-  ragBar,
-  ragDot,
-  type RagStatus,
-  type RagBands,
-} from "./exec-rag";
+import { targetBarWidth, type RagStatus } from "./exec-rag";
 
 /** One metric tile. `status` (when set) wins; otherwise it's derived from pctOfTarget. */
 export interface ExecMetric {
@@ -29,9 +20,9 @@ export interface ExecMetric {
   icon?: LucideIcon;
   /** Preformatted display value, e.g. "$27,546,111" or "55%". */
   value: string;
-  /** % of target (0..1+): drives the progress bar and the derived RAG status. */
+  /** % of target (0..1+): drives the progress bar width. */
   pctOfTarget?: number | null;
-  /** Precomputed status; use for "lower is better" metrics or non-ratio rules. */
+  /** Precomputed status; retained for API compatibility (no longer colours the tile). */
   status?: RagStatus;
   /** Caption under the value (goal text, comparison delta, note). */
   sub?: ReactNode;
@@ -47,29 +38,12 @@ export interface ExecPillar {
   metrics: ExecMetric[];
 }
 
-const ACCENT: Record<RagStatus, string> = {
-  green: "border-l-emerald-500",
-  amber: "border-l-amber-500",
-  red: "border-l-red-500",
-  neutral: "border-l-border",
-};
-
-function resolveStatus(m: ExecMetric, bands?: RagBands): RagStatus {
-  if (m.status) return m.status;
-  if (m.pctOfTarget != null)
-    return ragFromPctOfTarget(m.pctOfTarget, bands ? { bands } : undefined);
-  return "neutral";
-}
-
-function KpiTile({ metric, bands }: { metric: ExecMetric; bands?: RagBands }) {
-  const status = resolveStatus(metric, bands);
+function KpiTile({ metric }: { metric: ExecMetric }) {
   const showBar = metric.pctOfTarget != null;
   const Icon = metric.icon;
 
   return (
-    <div
-      className={`rounded-xl border border-l-4 border-border bg-card p-4 transition-colors ${ACCENT[status]}`}
-    >
+    <div className="rounded-xl border border-l-4 border-border border-l-yellow-400 bg-card p-4 transition-colors">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           {Icon && (
@@ -79,12 +53,6 @@ function KpiTile({ metric, bands }: { metric: ExecMetric; bands?: RagBands }) {
             {metric.label}
           </p>
         </div>
-        {status !== "neutral" && (
-          <span
-            className={`mt-0.5 h-2 w-2 flex-shrink-0 rounded-full ${ragDot(status)}`}
-            aria-hidden
-          />
-        )}
       </div>
 
       <div className="mt-1 flex items-baseline gap-2">
@@ -108,12 +76,12 @@ function KpiTile({ metric, bands }: { metric: ExecMetric; bands?: RagBands }) {
         <div className="mt-3">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className={`h-1.5 rounded-full ${ragBar(status)}`}
+              className="h-1.5 rounded-full bg-yellow-400"
               style={{ width: targetBarWidth(metric.pctOfTarget) }}
             />
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span className={`font-semibold ${ragText(status)}`}>
+            <span className="font-semibold text-foreground">
               {metric.pctOfTarget != null && Number.isFinite(metric.pctOfTarget)
                 ? `${(metric.pctOfTarget * 100).toFixed(0)}% of target`
                 : "—"}
@@ -130,45 +98,13 @@ function KpiTile({ metric, bands }: { metric: ExecMetric; bands?: RagBands }) {
   );
 }
 
-export function RagLegend() {
-  const items: { status: RagStatus; label: string }[] = [
-    { status: "green", label: "On / above goal" },
-    { status: "amber", label: "Approaching" },
-    { status: "red", label: "Below goal" },
-  ];
-  return (
-    <div className="flex items-center gap-4">
-      {items.map((it) => (
-        <span
-          key={it.status}
-          className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-        >
-          <span className={`h-2 w-2 rounded-full ${ragDot(it.status)}`} aria-hidden />
-          {it.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 export default function ExecSummaryKpiBand({
   pillars,
-  bands,
-  legend = true,
 }: {
   pillars: ExecPillar[];
-  /** RAG threshold override, forwarded to every tile. */
-  bands?: RagBands;
-  /** Show the red/amber/green legend above the band. */
-  legend?: boolean;
 }) {
   return (
     <div className="space-y-4">
-      {legend && (
-        <div className="flex justify-end">
-          <RagLegend />
-        </div>
-      )}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {pillars.map((pillar) => (
           <div key={pillar.title} className="space-y-3">
@@ -184,7 +120,7 @@ export default function ExecSummaryKpiBand({
             </div>
             <div className="space-y-3">
               {pillar.metrics.map((metric) => (
-                <KpiTile key={metric.label} metric={metric} bands={bands} />
+                <KpiTile key={metric.label} metric={metric} />
               ))}
             </div>
           </div>

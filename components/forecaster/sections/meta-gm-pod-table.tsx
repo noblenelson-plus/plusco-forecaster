@@ -149,7 +149,7 @@ const COLUMNS: TableColumn<PodTotals, PodTotals>[] = [
   },
   {
     id: "social_forecast_rfq",
-    label: "Social Forecast (RFQ)",
+    label: "Social Forecast (RFQ2-BL)",
     group: "By GM Pod",
     kind: "money",
     align: "right",

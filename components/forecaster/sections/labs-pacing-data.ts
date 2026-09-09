@@ -247,7 +247,9 @@ export interface MatrixRow {
   partnerId: string;
   partnerName: string;
   byPod: Record<string, number | null>; // pod → % booked
+  byPodDollars: Record<string, { target: number; booked: number }>; // pod → $ (for the $ toggle)
   total: number | null; // partner overall % booked
+  bookedTotal: number; // partner overall $ booked
 }
 
 export interface GmPodMatrix {
@@ -255,6 +257,9 @@ export interface GmPodMatrix {
   rows: MatrixRow[]; // partner rows (desc by partner target)
   colTotals: Record<string, number | null>; // pod → % booked
   grandTotal: number | null;
+  // Per-pod dollar totals (for the summary table beside the heatmap).
+  podTotals: Record<string, { target: number; booked: number }>;
+  grand: { target: number; booked: number };
 }
 
 export function computeGmPodMatrix(
@@ -299,17 +304,21 @@ export function computeGmPodMatrix(
 
   const rows: MatrixRow[] = [...cellAgg.entries()]
     .map(([partnerId, inner]) => {
-      const byPod: Record<string, number | null> = {};
+            const byPod: Record<string, number | null> = {};
+      const byPodDollars: Record<string, { target: number; booked: number }> = {};
       for (const pod of pods) {
         const cell = inner.get(pod);
         byPod[pod] = cell ? pct(cell.booked, cell.target) : null;
+        byPodDollars[pod] = { target: cell?.target ?? 0, booked: cell?.booked ?? 0 };
       }
       const pt = partnerTotal.get(partnerId) ?? { target: 0, booked: 0 };
       return {
         partnerId,
         partnerName: nameById.get(partnerId) ?? partnerId,
         byPod,
+        byPodDollars,
         total: pct(pt.booked, pt.target),
+        bookedTotal: pt.booked,
       };
     })
     .sort(
@@ -319,9 +328,11 @@ export function computeGmPodMatrix(
     );
 
   const colTotals: Record<string, number | null> = {};
+  const podTotals: Record<string, { target: number; booked: number }> = {};
   for (const pod of pods) {
     const ct = colTotal.get(pod);
     colTotals[pod] = ct ? pct(ct.booked, ct.target) : null;
+    podTotals[pod] = { target: ct?.target ?? 0, booked: ct?.booked ?? 0 };
   }
 
   return {
@@ -329,6 +340,8 @@ export function computeGmPodMatrix(
     rows,
     colTotals,
     grandTotal: pct(grand.booked, grand.target),
+    podTotals,
+    grand: { target: grand.target, booked: grand.booked },
   };
 }
 

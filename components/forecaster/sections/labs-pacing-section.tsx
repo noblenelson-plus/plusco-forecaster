@@ -20,18 +20,21 @@ import {
   Loader2,
   Percent,
   TrendingUp,
-  Table2,
+    Table2,
+  BarChart3,
 } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
 import BarList from "../../dashboard/charts/bar-list";
 import LabsVarianceChart from "./labs-variance-chart";
+import LabsPodMatrix from "./labs-pod-matrix";
 import ExportSheetButton from "../table/export-sheet-button";
 import MultiSelectDropdown from "../../_shared/multi-select-dropdown";
 import { useTableSort } from "../table/use-table-sort";
 import {
   computeLabsPacing,
   buildLabsPacingColumns,
-  computeClientPacing,
+    computeClientPacing,
+  computeGmPodMatrix,
   buildClientPacingColumns,
   percentBars,
   type LabsPacingRow,
@@ -65,15 +68,18 @@ function defaultMonthsForYear(year: number | null): number[] {
 }
 
 export default function LabsPacingSection({
-  scopedClientIds,
+    scopedClientIds,
   currencyByClient,
   usdToCad,
+  showPodBreakdown = false,
 }: {
   scopedClientIds: string[];
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
   /** Ignored — the pacing section manages its own month range. */
-  selMonths?: number[];
+    selMonths?: number[];
+  /** Exec-KPI view adds the by-GM-pod breakdown chart; Labs tab leaves it off. */
+  showPodBreakdown?: boolean;
 }) {
   const { selectedYear, selectedRFQ } = useForecastSelection();
   const { clients } = useAccessibleClients();
@@ -134,9 +140,17 @@ export default function LabsPacingSection({
     [filteredCells, yearPartners]
   );
 
-  const percentData = useMemo(() => percentBars(rows), [rows]);
+   const percentData = useMemo(() => percentBars(rows), [rows]);
+  // By-GM-pod matrix for the exec-KPI breakdown chart (partner x pod % booked).
+  const gmPodMatrix = useMemo(
+    () => computeGmPodMatrix(filteredCells, yearPartners),
+    [filteredCells, yearPartners]
+  );
 
-  const targetLabel = selectedRFQ ? `Target (${selectedRFQ.type} Forecast)` : "Target";
+    // The Labs target always comes from RFQ 2-BL (labs_pacing_wide), regardless of
+  // the Time & Context RFQ selector — so the label is fixed, not dynamic, to
+  // avoid implying the target follows the selected RFQ.
+  const targetLabel = "Target (RFQ2)";
   const columns = useMemo(() => buildLabsPacingColumns({ targetLabel }), [targetLabel]);
 
   const { directionFor, toggle: toggleSort, sortRows } = useTableSort(columns);
@@ -377,10 +391,12 @@ export default function LabsPacingSection({
         <ChartCard title="% of Target Booked" icon={Percent}>
           <BarList items={percentData} valueFormat={(v) => `${Math.round(v)}%`} />
         </ChartCard>
-        <ChartCard title="$ Variance to Target" icon={TrendingUp}>
+                <ChartCard title="$ Variance to Target" icon={TrendingUp}>
           <LabsVarianceChart rows={rows} />
         </ChartCard>
       </div>
+
+                {showPodBreakdown && <LabsPodMatrix matrix={gmPodMatrix} />}
 
       <ChartCard title="By Client" icon={Table2}>
         <div className="flex items-center justify-end pb-2">

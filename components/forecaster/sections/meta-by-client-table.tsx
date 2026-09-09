@@ -214,7 +214,7 @@ const COLUMNS: TableColumn<KpiByClientRow, Totals>[] = [
   },
   {
     id: "social_forecast_rfq",
-    label: "Social Forecast (RFQ)",
+    label: "Social Forecast (RFQ2-BL)",
     group: "Meta metrics",
     kind: "money",
     align: "right",

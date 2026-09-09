@@ -37,9 +37,11 @@ export interface KpiByClientRow {
   GM_POD: string;
   meta_share_trend: string | null;
 
-  // Achieve Labs Targets
+    // Achieve Labs Targets
   labs_spend_2026: number;
   total_spend_2026: number;
+  labs_target_rfq2_2026: number;
+  labs_booked_mir_2026: number;
   prog_labs_spend_2026: number;
   ooh_spend_2026: number;
   billups_ooh_spend_2026: number;

@@ -300,7 +300,7 @@ export default function InvestmentKpisSection({
       {/* Meta Divestment */}
       <KpiGroup
         title="Meta Divestment"
-        subtitle="Target Meta Spend by client = (2026 Social Forecast RFQ1 × 2025 Meta Share of Social) × 0.70"
+        subtitle="Target Meta Spend by client = (2026 Social Forecast RFQ2-BL × 2025 Meta Share of Social) × 0.70"
         columns={4}
         footer={<MetaShareTrendStrip data={metaTrend} />}
       >
