@@ -486,7 +486,7 @@ export default function DashboardPage() {
             selMonths={selMonths}
           />
         ) : tab === "exec-kpis" ? (
-          <ExecKpisTabs
+                    <ExecKpisTabs
             forecastData={forecastData}
             comparisonData={comparisonData}
             clients={clients}
@@ -494,6 +494,8 @@ export default function DashboardPage() {
             scopedClientIds={scopedClientIds}
             year={selectedYear ?? new Date().getFullYear()}
             rfqLabel={selectedRFQ?.type ?? undefined}
+            currencyByClient={currencyByClient}
+            usdToCad={usdToCad}
           />
         ) : error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">

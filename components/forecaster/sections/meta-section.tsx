@@ -211,7 +211,7 @@ export default function MetaSection({
 
           {/* 2026 target */}
           <YearRow label="2026 Target">
-            <StatCard icon={DollarSign} label="Social Forecast (RFQ)" value={money(m.socialForecast)} />
+            <StatCard icon={DollarSign} label="Social Forecast (RFQ2-BL)" value={money(m.socialForecast)} />
             <StatCard
               icon={DollarSign}
               label="Target Meta Spend 2026 (-30%)"

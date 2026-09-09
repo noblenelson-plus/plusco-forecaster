@@ -28,7 +28,9 @@ export interface RagBands {
 }
 
 /** Plusco default bands: 100% green, 90-99% amber, <90% red. */
-export const DEFAULT_BANDS: RagBands = { green: 1, amber: 0.9 };
+// Lenient by design: near-target reads green, not red. green >=90% of goal,
+// amber >=75%, red below. (Loosened per Adriana 2026-09.)
+export const DEFAULT_BANDS: RagBands = { green: 0.9, amber: 0.75 };
 
 export interface RagOptions {
   /** Invert for "lower is better" metrics (compares target/actual instead). */

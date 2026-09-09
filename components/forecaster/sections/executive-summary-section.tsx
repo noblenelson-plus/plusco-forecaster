@@ -48,7 +48,7 @@ import {
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { Client } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
-import ExecSummaryKpiBand, { RagLegend, type ExecPillar } from "./exec-summary-kpi-band";
+import ExecSummaryKpiBand, { type ExecPillar } from "./exec-summary-kpi-band";
 import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
 import { ragStatus } from "./exec-rag";
@@ -424,7 +424,7 @@ export default function ExecutiveSummarySection({
           </div>
         </div>
 
-        <RagLegend />
+      
 
         <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
           {(
@@ -450,7 +450,7 @@ export default function ExecutiveSummarySection({
       </div>
 
       {/* Total Plusco KPI band (drives off the selected source) */}
-      <ExecSummaryKpiBand pillars={pillars} legend={false} />
+            <ExecSummaryKpiBand pillars={pillars} />
 
       {/* By GM */}
       <ExecKpisByGmTable
