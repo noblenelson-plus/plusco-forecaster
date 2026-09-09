@@ -46,6 +46,16 @@ function norm(s: string): string {
 }
 
 /**
+ * MediaBox display names that don't match any BL media-type label/value but map
+ * to a known BL rowType code. Keyed by the normalized (`norm`) source label.
+ * The campaign-copy path keeps an equivalent map in bl-paste-target.tsx; keep
+ * the two in sync when adding an alias.
+ */
+export const MEDIA_LABEL_ALIASES: Record<string, string> = {
+  "paid search": "sem",
+};
+
+/**
  * Source channels that are a catch-all bucket in MediaBox/MediaOcean, not a BL
  * media type — so they're skipped on copy rather than pasted as a "NOT
  * CONFIGURED" row. (Genuinely unmapped channels are NOT listed here: those still
@@ -76,7 +86,14 @@ export function resolveRowType(
   const byValue = options.find((o) => norm(o.value) === target);
   if (byValue) return byValue.value;
   const byLabel = options.find((o) => norm(o.label) === target);
-  return byLabel ? byLabel.value : null;
+  if (byLabel) return byLabel.value;
+  // Fall back to a known MediaBox→BL alias (e.g. "Paid Search" → "sem").
+  const aliasCode = MEDIA_LABEL_ALIASES[target];
+  if (aliasCode) {
+    const byAlias = options.find((o) => norm(o.value) === norm(aliasCode));
+    if (byAlias) return byAlias.value;
+  }
+  return null;
 }
 
 /**
