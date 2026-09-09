@@ -99,8 +99,8 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
       <div className="plus-pattern h-1.5 w-full flex-shrink-0" />
 
       {/* Logo + collapse / close buttons */}
-      <div
-        className={`border-b border-gray-100 flex items-center ${
+            <div
+        className={`flex-shrink-0 border-b border-gray-100 flex items-center ${
           collapsed ? "flex-col gap-3 px-2 py-5" : "justify-between gap-2 px-4 py-5"
         }`}
       >
@@ -144,7 +144,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
       </div>
 
       {/* Nav */}
-      <nav className={`flex-1 py-4 overflow-y-auto ${collapsed ? "px-2" : "px-3"}`}>
+            <nav className={`flex-1 min-h-0 py-4 overflow-y-auto ${collapsed ? "px-2" : "px-3"}`}>
 
         {/* Main section */}
         <ul className="space-y-1">
@@ -172,8 +172,8 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
         )}
       </nav>
 
-      {/* User block */}
-      <div className={`py-4 border-t border-gray-100 ${collapsed ? "px-2" : "px-3"}`}>
+            {/* User block */}
+      <div className={`flex-shrink-0 py-4 border-t border-gray-100 ${collapsed ? "px-2" : "px-3"}`}>
         {/* App-wide zoom — helps users whose display scaling crops the layout. */}
         <ZoomControl collapsed={collapsed} />
         <div
