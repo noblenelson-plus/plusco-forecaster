@@ -33,6 +33,8 @@ import {
 import {
   CopyCampaignButton,
   CopyAllCampaignsButton,
+  MonthPasteButton,
+  TargetProjectSelect,
   type BlPasteApi,
 } from "./bl-paste-target";
 
@@ -285,6 +287,11 @@ export default function MediaboxActualsSection({
     grandByMonth[m] = typeRows.reduce((acc, t) => acc + (t.byMonth[m] ?? 0), 0);
   const grandTotal = typeRows.reduce((acc, t) => acc + t.total, 0);
 
+  // Source lines for the per-month "paste month → BL" button: one line per media
+  // type / LABS partner, matched to a BL rowType (aliases + skips handled in the
+  // pure paste layer).
+  const pasteSources = typeRows.map((t) => ({ label: t.label, byMonth: t.byMonth }));
+
   const busy = loading || refreshing || triggering;
 
   return (
@@ -359,6 +366,7 @@ export default function MediaboxActualsSection({
                 USD not converted (no {year} rate)
               </span>
             )}
+            {blPaste && <TargetProjectSelect api={blPaste} />}
             {blPaste &&
 
               hierarchy === "campaign" &&
@@ -446,6 +454,15 @@ export default function MediaboxActualsSection({
                   className="px-2.5 py-2 text-right align-middle"
                 >
                   <span className="inline-flex w-full items-center justify-end gap-1">
+                    {blPaste && (
+                      <MonthPasteButton
+                        api={blPaste}
+                        rows={pasteSources}
+                        month={m}
+                        sourceLabel="MediaBox"
+                        typeNoun={axisId === "labs" ? "partner" : "channel"}
+                      />
+                    )}
                     <span
                       onClick={() => v && copyCellValue(v)}
                       title={v ? "Click to copy" : undefined}

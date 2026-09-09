@@ -96,6 +96,8 @@ import {
   useBlPasteTarget,
 
   CopyAllCampaignsButton,
+  MonthPasteButton,
+  TargetProjectSelect,
   type BlPasteApi,
 } from "./bl-paste-target";
 import ActualsCampaignView, { campaignSource } from "./actuals-campaign-view";
@@ -1759,6 +1761,10 @@ function ActualsSection({
   const totals = useMemo(() => monthTotals(actuals), [actuals]);
   // Source lines for the "paste month → BL" tool. MediaOcean actuals already key
   // by the BL rowType, so the label is the rowType itself (an exact match).
+  const pasteSources = useMemo(
+    () => actuals.map((r) => ({ label: r.rowType, byMonth: r.months })),
+    [actuals]
+  );
 
   const types = availableTypes(config, actuals);
     const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
@@ -1863,6 +1869,7 @@ function ActualsSection({
                 </button>
               </div>
             )}
+            {blPaste && <TargetProjectSelect api={blPaste} />}
             {blPaste && view === "campaign" && copyAllSources.length > 0 && (
               <CopyAllCampaignsButton api={blPaste} campaigns={copyAllSources} />
             )}
@@ -1967,11 +1974,22 @@ function ActualsSection({
           {showNotes && <td className="bg-gray-200" />}
           {MONTHS.map((m) => (
                         <td key={m} className="px-2.5 py-2 text-right align-middle">
-              <p className="text-sm font-bold text-gray-900 tabular-nums">
-                {totals[m]
-                  ? Math.round(totals[m]).toLocaleString("en-CA")
-                  : "—"}
-              </p>
+              <div className="flex items-center justify-end gap-1">
+                {blPaste && (
+                  <MonthPasteButton
+                    api={blPaste}
+                    rows={pasteSources}
+                    month={m}
+                    sourceLabel={config.actualsLabel}
+                    typeNoun={config.rowTypeLabel.toLowerCase()}
+                  />
+                )}
+                <p className="text-sm font-bold text-gray-900 tabular-nums">
+                  {totals[m]
+                    ? Math.round(totals[m]).toLocaleString("en-CA")
+                    : "—"}
+                </p>
+              </div>
             </td>
           ))}
           <td className="px-2.5 py-2 text-right align-middle bg-gray-300">
