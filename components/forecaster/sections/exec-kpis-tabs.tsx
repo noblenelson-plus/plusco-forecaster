@@ -18,6 +18,7 @@ import InvestmentKpisSection from "./investment-kpis-section";
 import BillupsSection from "./billups-section";
 import MetaSection from "./meta-section";
 import LabsPacingSection from "./labs-pacing-section";
+import LabsTargetVsBookedSection from "./labs-target-vs-booked-section";
 import type { Client, Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 
@@ -110,13 +111,20 @@ export default function ExecKpisTabs({
 
             {sub === "meta" && <MetaSection scopedClientIds={scopedClientIds} />}
 
-      {sub === "labs-pacing" && (
-        <LabsPacingSection
-          scopedClientIds={scopedClientIds}
-          currencyByClient={currencyByClient}
-          usdToCad={usdToCad}
-          showPodBreakdown
-        />
+            {sub === "labs-pacing" && (
+        <div className="space-y-8">
+          <LabsTargetVsBookedSection
+            scopedClientIds={scopedClientIds}
+            currencyByClient={currencyByClient}
+            usdToCad={usdToCad}
+          />
+          <LabsPacingSection
+            scopedClientIds={scopedClientIds}
+            currencyByClient={currencyByClient}
+            usdToCad={usdToCad}
+            showPodBreakdown
+          />
+        </div>
       )}
 
       {sub === "billups" && (
