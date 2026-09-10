@@ -274,16 +274,18 @@ export function computeLabsTargetVsBooked(
   });
 
   // 4) Grand totals across the displayed rows.
-  let tPlusco = 0;
+    let tPlusco = 0;
   let tBooked = 0;
   let tRfq2 = 0;
   let tRfq2Present = false;
+  let tBookedForRfq = 0; // booked only for rows that HAVE an RFQ2 target
   for (const r of rows) {
     tPlusco += r.pluscoTarget;
     tBooked += r.booked;
     if (r.rfq2Target !== null) {
       tRfq2Present = true;
       tRfq2 += r.rfq2Target;
+      tBookedForRfq += r.booked;
     }
   }
   const totalsRfq2 = tRfq2Present ? tRfq2 : null;
@@ -293,7 +295,7 @@ export function computeLabsTargetVsBooked(
     rfq2Target: totalsRfq2,
     booked: tBooked,
     pctOfPlusco: ratio(tBooked, tPlusco),
-    pctOfRfq: totalsRfq2 === null ? null : ratio(tBooked, totalsRfq2),
+    pctOfRfq: totalsRfq2 === null ? null : ratio(tBookedForRfq, totalsRfq2),
   };
 
   // 5) QA: groups with no MIR booked, and MIR booked keys claimed by no group.

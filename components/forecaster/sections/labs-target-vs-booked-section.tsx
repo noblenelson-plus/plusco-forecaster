@@ -58,12 +58,14 @@ function recomputeTotals(rows: Row[]): Totals {
   let booked = 0;
   let rfq2 = 0;
   let rfq2Present = false;
+  let bookedForRfq = 0; // booked only for rows that HAVE an RFQ2 target
   for (const r of rows) {
     pluscoTarget += r.pluscoTarget;
     booked += r.booked;
     if (r.rfq2Target !== null) {
       rfq2Present = true;
       rfq2 += r.rfq2Target;
+      bookedForRfq += r.booked;
     }
   }
   const rfq2Target = rfq2Present ? rfq2 : null;
@@ -72,7 +74,9 @@ function recomputeTotals(rows: Row[]): Totals {
     rfq2Target,
     booked,
     pctOfPlusco: pluscoTarget > 0 ? booked / pluscoTarget : null,
-    pctOfRfq: rfq2Target !== null && rfq2Target > 0 ? booked / rfq2Target : null,
+    // % of RFQ measures forecaster partners only — non-forecaster rows have
+    // booked but no RFQ target, so exclude their booked from the numerator.
+    pctOfRfq: rfq2Target !== null && rfq2Target > 0 ? bookedForRfq / rfq2Target : null,
   };
 }
 
@@ -85,7 +89,7 @@ export default function LabsTargetVsBookedSection({
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
 }) {
-  const { selectedYear, selectedRFQ } = useForecastSelection();
+    const { selectedYear } = useForecastSelection();
   const { clients } = useAccessibleClients();
   const lastSync = useLastSync();
 
@@ -106,7 +110,7 @@ export default function LabsTargetVsBookedSection({
   const { rows, tiles, loading, unmatchedTargets, rosterPartners } =
     useLabsTargetVsBooked({
       year: selectedYear,
-      rfq: selectedRFQ?.type ?? null,
+           rfq: "RFQ2",
       selMonths: [], // annual — whole year
       scopedClientIds,
       currencyByClient,

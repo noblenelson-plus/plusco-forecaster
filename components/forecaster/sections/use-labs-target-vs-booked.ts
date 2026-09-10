@@ -25,7 +25,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   useMediaoceanInvestmentMix,
-  isDealValue,
   type MediaInvestmentRow,
 } from "../../../lib/dashboard/data/use-mediaocean-investment-mix";
 import { useScopeLabsPacing } from "../../../lib/dashboard/data/use-scope-labs-pacing";
@@ -72,8 +71,7 @@ export interface UseLabsTargetVsBookedParams {
   partnerFilter?: string[];
   /** Roll-up map override (raw name → display name). Defaults to Billups/MIQ. */
   rollupMap?: Record<string, string>;
-  /** When true, F counts only "Partner Deal" MIR rows; default false (all net). */
-  onlyPartnerDeal?: boolean;
+
 }
 
 export interface UseLabsTargetVsBookedResult extends LabsTargetVsBookedResult {
@@ -116,8 +114,7 @@ export function useLabsTargetVsBooked(
     usdToCad,
     dealTypeFilter,
     partnerFilter,
-    rollupMap,
-    onlyPartnerDeal,
+       rollupMap,
   } = params;
 
   // 1) Partner targets (A–D + the forecaster flag), one doc per year.
@@ -200,18 +197,41 @@ export function useLabsTargetVsBooked(
     // monthsKey stands in for selMonths in deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mirAll, yearStr, monthsKey]);
+  
+   // The MIR docs carry PLUSCO_DEALS_Type (the LABS/LABS-BRP deal *type*, distinct
+  // from PLUSCO_2026_DEALS, the "Partner Deal" flag) only if the source table has
+  // it — the mix sync writes every column via SELECT *. Detect its presence so we
+  // can Labs-scope booked, and fall back cleanly if it's missing.
+  const dealTypePresent = useMemo(
+    () =>
+      mirScoped.some(
+        (r) =>
+          typeof r.PLUSCO_DEALS_Type === "string" &&
+          (r.PLUSCO_DEALS_Type as string).trim() !== ""
+      ),
+    [mirScoped]
+  );
 
+  // Booked (F) = MIR net per partner, Labs-scoped exactly like the deck's SQL:
+  // PLUSCO_DEALS_Type IN ('LABS','LABS - BRP'), channel != 'N/A', partner != 'MAGNITE'.
+  // When the column is absent, booked stays unfiltered (dealTypePresent === false
+  // signals the MIR sync needs PLUSCO_DEALS_Type added).
   const bookedByPartner = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of mirScoped) {
-      if (onlyPartnerDeal && !isDealValue(r.PLUSCO_2026_DEALS)) continue;
+      if (dealTypePresent) {
+        const dt = String(r.PLUSCO_DEALS_Type ?? "").toUpperCase();
+        if (dt !== "LABS" && dt !== "LABS - BRP") continue;
+        if (String(r.PLUSCO_MEDIA_CHANNEL ?? "").toUpperCase() === "N/A") continue;
+        if (String(r.PLUSCO_MEDIA_PARTNER ?? "").toUpperCase() === "MAGNITE") continue;
+      }
       const partner = (r.PLUSCO_MEDIA_PARTNER ?? "").toString().trim();
       if (partner === "") continue;
       const net = Number(r.NET_ORDERED_CAD) || 0;
       map.set(partner, (map.get(partner) ?? 0) + net);
     }
     return map;
-  }, [mirScoped, onlyPartnerDeal]);
+  }, [mirScoped, dealTypePresent]);
 
   // 5) Compose everything through the pure step-1 function.
   const dealTypeKey = (dealTypeFilter ?? []).join("|");
