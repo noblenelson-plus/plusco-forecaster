@@ -12,7 +12,11 @@
  *
  * Left card: coverage headline (% = MediaBox spend ÷ BL forecast, both CAD,
  * mapped clients only, restricted to the selected months) with a progress bar,
- * client counts and the list of unmapped clients.
+ * client counts and the list of unmapped clients. Each client's MediaBox spend
+ * is capped at its own forecast in the numerator: a client that holds MORE in
+ * MediaBox than was forecast counts as fully covered (100%) but its excess
+ * can't push the scope-wide adoption % above what was actually forecast. Those
+ * "over-reporting" clients are flagged both here and in the gaps list.
  * Right card: the mapped in-scope clients ranked by absolute $ gap between
  * their MediaBox spend and their BL forecast — red when MediaBox is missing
  * spend (below forecast), indigo when MediaBox holds more than was forecasted.
@@ -21,7 +25,7 @@
  * in-scope client, written nightly by the MediaBox project's full refresh).
  */
 
-import { Box, Scale, Loader2 } from "lucide-react";
+import { Box, Scale, Loader2, Flag } from "lucide-react";
 import ChartCard from "./charts/chart-card";
 import BarList from "./charts/bar-list";
 import { NEGATIVE_COLOR, DIGITAL_COLOR } from "./charts/colors";
@@ -70,6 +74,7 @@ export default function MediaboxCoverageSection({
       ),
     }));
   const forecastTotal = forecastByClient.reduce((acc, c) => acc + c.total, 0);
+  // Raw MediaBox spend across mapped clients — what is actually in MediaBox.
   const mediaboxTotal = mediaboxClients
     .filter((c) => c.mapped)
     .reduce((acc, c) => acc + c.total, 0);
@@ -91,7 +96,21 @@ export default function MediaboxCoverageSection({
     .filter((g) => Math.abs(g.gap) >= MIN_GAP_DOLLARS)
     .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
 
-  const coverage = forecastTotal > 0 ? mediaboxTotal / forecastTotal : null;
+  // Adoption numerator: cap each client's MediaBox spend at its own forecast.
+  // A client that holds more in MediaBox than was forecast counts as fully
+  // covered but can't inflate the scope-wide %. Those "over-reporting" clients
+  // are flagged (count + total excess dollars trimmed off the numerator).
+  let countedMediaboxTotal = 0;
+  let overReporters = 0;
+  for (const clientId of mappedIds) {
+    const forecast = forecastById.get(clientId) ?? 0;
+    const mb = mediabox.byClient[clientId]?.total ?? 0;
+    countedMediaboxTotal += Math.min(mb, forecast);
+    if (mb - forecast >= MIN_GAP_DOLLARS) overReporters++;
+  }
+  const excessTrimmed = mediaboxTotal - countedMediaboxTotal;
+
+  const coverage = forecastTotal > 0 ? countedMediaboxTotal / forecastTotal : null;
   const syncedLabel = mediabox.syncedAt
     ? new Date(mediabox.syncedAt).toLocaleDateString("en-CA")
     : null;
@@ -129,6 +148,14 @@ export default function MediaboxCoverageSection({
             {formatCompactMoney(mediaboxTotal)}
           </dd>
         </div>
+        {excessTrimmed >= MIN_GAP_DOLLARS && (
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">Counted toward adoption</dt>
+            <dd className="tabular-nums font-medium text-foreground">
+              {formatCompactMoney(countedMediaboxTotal)}
+            </dd>
+          </div>
+        )}
         <div className="flex justify-between">
           <dt className="text-muted-foreground">BL forecast</dt>
           <dd className="tabular-nums font-medium text-foreground">
@@ -159,6 +186,18 @@ export default function MediaboxCoverageSection({
               <li key={c.clientId}>{c.name}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {overReporters > 0 && (
+        <div className="mt-4 flex items-start gap-2 bg-yellow-400 px-3 py-2 text-[11px] text-gray-900">
+          <Flag size={13} className="mt-px shrink-0" />
+          <span>
+            {overReporters} client{overReporters > 1 ? "s" : ""} hold
+            {overReporters > 1 ? "" : "s"} more in MediaBox than forecast —{" "}
+            {formatCompactMoney(excessTrimmed)} of excess spend was capped so it
+            can&apos;t inflate the adoption %.
+          </span>
         </div>
       )}
 
@@ -213,15 +252,21 @@ export default function MediaboxCoverageSection({
                   className="inline-block h-2 w-2"
                   style={{ backgroundColor: DIGITAL_COLOR }}
                 />
-                MediaBox above forecast
+                MediaBox above forecast (capped)
               </span>
             </div>
             <BarList
               items={gaps.slice(0, MAX_GAP_ROWS).map((g) => ({
-                label: clientNameById[g.clientId] ?? g.clientId,
+                label:
+                  g.gap > 0
+                    ? `⚑ ${clientNameById[g.clientId] ?? g.clientId}`
+                    : (clientNameById[g.clientId] ?? g.clientId),
                 value: Math.abs(g.gap),
                 color: g.gap < 0 ? NEGATIVE_COLOR : DIGITAL_COLOR,
-                hint: `MB ${formatCompactMoney(g.mb)} · Fcst ${formatCompactMoney(g.forecast)}`,
+                hint:
+                  g.gap > 0
+                    ? `MB ${formatCompactMoney(g.mb)} · Fcst ${formatCompactMoney(g.forecast)} · capped`
+                    : `MB ${formatCompactMoney(g.mb)} · Fcst ${formatCompactMoney(g.forecast)}`,
               }))}
               valueFormat={formatCompactMoney}
             />
