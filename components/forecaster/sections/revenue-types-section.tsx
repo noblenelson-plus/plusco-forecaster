@@ -10,10 +10,10 @@
  * show Commission + Commission Overwrite merged as one "Commission" — the merge
  * and the selection are applied by selectedStreamSlices so every surface agrees.
  *
- * Official (OF) revenue is a single synthetic stream ("official") with no BL
- * stream breakdown, so a side showing OF must NOT be narrowed by the BL
- * revenue-type selection — that set never contains "official" and would zero the
- * side out. Whichever side is in Official mode selects the official key alone.
+ * Official (OF) revenue is a single untyped total, so it can't be split by
+ * revenue type. When a side is in Official mode the type breakdown falls back to
+ * that side's BL data (labelled "BL", with a note under the header) so the
+ * comparison stays meaningful — see typeBreakdownMode below.
  */
 
 import { useMemo } from "react";
@@ -39,6 +39,14 @@ const money = (v: number) => {
 };
 
 const modeLabel = (mode: RevenueMode) => (mode === "official" ? "OF" : "BL");
+
+/**
+ * The mode this table actually breaks down by type. Official revenue is a single
+ * untyped total (GAIA gives one figure, not a per-type split), so an Official
+ * side falls back to BL — otherwise every type row would be blank.
+ */
+const typeBreakdownMode = (mode: RevenueMode): RevenueMode =>
+  mode === "official" ? "blSubmission" : mode;
 
 /**
  * The stream selection a side actually uses: the page selection for BL, but the
@@ -79,11 +87,17 @@ export default function RevenueTypesSection({
 
   const hasComparison = comparisonData.hasContext;
 
+  // Official revenue isn't typed, so the type breakdown always uses BL.
+  const effPrimaryMode = typeBreakdownMode(primaryMode);
+  const effSecondaryMode = typeBreakdownMode(secondaryMode);
+  const showsBlFallback =
+    primaryMode === "official" || secondaryMode === "official";
+
   const primaryLabel = selectedRFQ
-    ? `${selectedRFQ.type}-${modeLabel(primaryMode)} · ${selectedYear}`
+    ? `${selectedRFQ.type}-${modeLabel(effPrimaryMode)} · ${selectedYear}`
     : "Primary";
   const variantLabel = comparisonRFQ
-    ? `${comparisonRFQ.type}-${modeLabel(secondaryMode)} · ${comparisonYear}`
+    ? `${comparisonRFQ.type}-${modeLabel(effSecondaryMode)} · ${comparisonYear}`
     : "Variant";
 
   // Selected + commission-merged slices for each side. A side in Official mode
@@ -92,20 +106,20 @@ export default function RevenueTypesSection({
   const primarySlices = useMemo(
     () =>
       selectedStreamSlices(
-        data.revenueByMode[primaryMode].breakdown.byStream,
-        streamSelectionFor(primaryMode, selectedStreams)
+        data.revenueByMode[effPrimaryMode].breakdown.byStream,
+        streamSelectionFor(effPrimaryMode, selectedStreams)
       ),
-    [data, primaryMode, selectedStreams]
+    [data, effPrimaryMode, selectedStreams]
   );
   const comparisonSlices = useMemo(
     () =>
       hasComparison
         ? selectedStreamSlices(
-            comparisonData.revenueByMode[secondaryMode].breakdown.byStream,
-            streamSelectionFor(secondaryMode, selectedStreams)
+            comparisonData.revenueByMode[effSecondaryMode].breakdown.byStream,
+            streamSelectionFor(effSecondaryMode, selectedStreams)
           )
         : [],
-    [comparisonData, secondaryMode, selectedStreams, hasComparison]
+    [comparisonData, effSecondaryMode, selectedStreams, hasComparison]
   );
 
   const primaryTotal = useMemo(() => sumSlices(primarySlices), [primarySlices]);
@@ -151,6 +165,12 @@ export default function RevenueTypesSection({
   return (
     <section className="space-y-4">
       <h2 className="text-base font-semibold text-foreground">Revenue Types</h2>
+      {showsBlFallback && (
+        <p className="text-xs text-muted-foreground">
+          Official revenue has no revenue-type breakdown, so this table compares
+          BL submissions.
+        </p>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
