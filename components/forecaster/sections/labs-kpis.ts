@@ -120,14 +120,25 @@ export function computeLabsKpis(
       t.partners.map((pt) => ({ partnerId: pt.partnerId, name: pt.name, annual: pt.annual }))
     );
 
-  const compMap = new Map(
-    hasComparison ? flat(comparisonData.labs).map((pt) => [pt.partnerId, pt.annual]) : []
-  );
+  // Join the comparison side by partner NAME, not partnerId. LABS partners are
+  // stored per-year (a distinct doc/id per year), so a cross-year comparison
+  // (e.g. 2027 vs 2026) never matches on id and every variant falls back to 0,
+  // blanking the $ column. Name is the partner identity here -- the same key the
+  // KPI ratios use (partnerAnnualByName) -- so the Partners table stays
+  // reconciled with the KPIs and works within-year and across-year alike.
+  const nameKey = (n: string) => n.trim().toLowerCase();
+  const compMap = new Map<string, number>();
+  if (hasComparison) {
+    for (const pt of flat(comparisonData.labs)) {
+      const k = nameKey(pt.name);
+      compMap.set(k, (compMap.get(k) ?? 0) + pt.annual);
+    }
+  }
 
   const partners: LabsPartnerRow[] = flat(data.labs)
-    .filter((pt) => pt.annual > 0 || (compMap.get(pt.partnerId) ?? 0) > 0)
+    .filter((pt) => pt.annual > 0 || (compMap.get(nameKey(pt.name)) ?? 0) > 0)
     .map((pt) => {
-      const variant = compMap.get(pt.partnerId) ?? 0;
+      const variant = compMap.get(nameKey(pt.name)) ?? 0;
       const absolute = pt.annual - variant;
       return {
         name: pt.name,
