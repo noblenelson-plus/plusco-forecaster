@@ -41,6 +41,68 @@ function parseEligible(v: unknown): boolean {
 
 type Kind = "money" | "pct" | "delta";
 
+/** Grouped Labs partners for the by-partner sub-section (Billups = OOH+Print,
+ *  MIQ = Prog+Social, AIM separate). key → the BQ column suffix. */
+const LABS_PARTNERS: { key: string; name: string; color: string }[] = [
+  { key: "billups",    name: "Billups",    color: "#2E7D32" },
+  { key: "miq",        name: "MIQ",        color: "#1D9E75" },
+  { key: "amazon",     name: "Amazon",     color: "#9CCC65" },
+  { key: "yahoo",      name: "Yahoo",      color: "#26A69A" },
+  { key: "quantcast",  name: "Quantcast",  color: "#29B6F6" },
+  { key: "reddit",     name: "Reddit",     color: "#5C6BC0" },
+  { key: "aim",        name: "AIM",        color: "#AB47BC" },
+  { key: "stackadapt", name: "StackAdapt", color: "#EC407A" },
+];
+
+/** Compact dollars for the dense partner cells ($1.2M / $430K / $0). */
+function compactMoney(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (a >= 1_000) return `$${Math.round(v / 1_000)}K`;
+  return `$${Math.round(v)}`;
+}
+
+/**
+ * One by-partner cell: a pacing bar + % booked, then a plain-language line
+ * "of <target> · <gap> behind/ahead". RAG colour follows % booked. Returns a
+ * <td>, so it drops straight into a partner row alongside the sticky label.
+ */
+function PartnerCell({ target, booked }: { target: number; booked: number }) {
+  if (target <= 0 && booked <= 0) {
+    return <td className="px-3 py-1.5 text-right text-muted-foreground">—</td>;
+  }
+  const pct = target > 0 ? (booked / target) * 100 : null;
+  const gap = booked - target; // negative = behind target
+  const behind = gap < 0;
+  const fill = pct === null ? 0 : Math.min(100, Math.max(0, pct));
+  // Text-only RAG — no cell fill. Muted on-brand tone for the %/gap text, a
+  // slightly brighter tone for the hairline bar, so the row stays as quiet as
+  // the rest of the table (the number carries the signal, not a block of colour).
+  const pctCol =
+    pct === null ? "var(--muted-foreground)" : pct >= 100 ? "#0F6E56" : pct >= 90 ? "#854F0B" : "#A32D2D";
+  const barCol =
+    pct === null ? "#B4B2A9" : pct >= 100 ? "#1D9E75" : pct >= 90 ? "#BA7517" : "#E24B4A";
+  const gapCol = behind ? "#A32D2D" : "#0F6E56";
+  return (
+    <td className="whitespace-nowrap px-3 py-1.5 text-right align-middle">
+      <div className="flex items-center justify-end gap-1.5">
+        <span className="h-1 w-8 overflow-hidden rounded-full bg-muted">
+          <span className="block h-full rounded-full" style={{ width: `${fill}%`, background: barCol }} />
+        </span>
+        <span className="text-sm font-medium tabular-nums" style={{ color: pctCol }}>
+          {pct === null ? "—" : `${Math.round(pct)}%`}
+        </span>
+      </div>
+      <div className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+        of {compactMoney(target)} ·{" "}
+        <span style={{ color: gapCol }}>
+          {compactMoney(Math.abs(gap))} {behind ? "behind" : "ahead"}
+        </span>
+      </div>
+    </td>
+  );
+}
+
 /** Column aggregate: every sum a metric might need, tallied once per column. */
 interface Agg {
   labsSpend: number;
@@ -67,6 +129,7 @@ interface Agg {
   oohEligBillups: number;
   printEligChannel: number;
   printEligBillups: number;
+  labsPartners: Record<string, { target: number; booked: number }>;
 }
 
 function emptyAgg(): Agg {
@@ -95,6 +158,9 @@ function emptyAgg(): Agg {
     oohEligBillups: 0,
     printEligChannel: 0,
     printEligBillups: 0,
+    labsPartners: Object.fromEntries(
+      LABS_PARTNERS.map((p) => [p.key, { target: 0, booked: 0 }])
+    ),
   };
 }
 
@@ -131,6 +197,10 @@ function aggregate(rows: KpiByClientRow[]): Agg {
     if (parseEligible(r.eligible_billups_print)) {
       a.printEligChannel += num(r.print_spend_2026);
       a.printEligBillups += num(r.billups_print_spend_2026);
+    }
+    for (const p of LABS_PARTNERS) {
+      a.labsPartners[p.key].target += num(r[`labs_target_${p.key}_2026`]);
+      a.labsPartners[p.key].booked += num(r[`labs_booked_${p.key}_2026`]);
     }
   }
   return a;
@@ -262,7 +332,7 @@ export default function ExecKpisByGmTable({
   bands?: RagBands;
   sourceLabel?: string;
 }) {
-    const { metricRows, gms, exportColumns, groupOrder, allMetrics } = useMemo(() => {
+    const { metricRows, gms, exportColumns, groupOrder, allMetrics, totalAgg, gmAgg } = useMemo(() => {
     // Group rows by GM.
     const byGm = new Map<string, KpiByClientRow[]>();
     for (const r of rows) {
@@ -495,8 +565,16 @@ export default function ExecKpisByGmTable({
       ),
     ];
 
-        const allMetrics = metricDefs.map((d) => ({ group: d.group, label: d.label }));
-    return { metricRows, gms, exportColumns, groupOrder, allMetrics };
+        const baseMetrics = metricDefs.map((d) => ({ group: d.group, label: d.label }));
+    const partnerMetrics = LABS_PARTNERS.map((p) => ({ group: "Labs — by partner", label: p.name }));
+    // Insert the partner group right after the Labs summary rows in the menu.
+    const afterLabs = baseMetrics.map((m) => m.group).lastIndexOf("Labs") + 1;
+    const allMetrics = [
+      ...baseMetrics.slice(0, afterLabs),
+      ...partnerMetrics,
+      ...baseMetrics.slice(afterLabs),
+    ];
+    return { metricRows, gms, exportColumns, groupOrder, allMetrics, totalAgg, gmAgg };
   }, [rows, labsShareGoal, billupsShareGoal, bands]);
 
     // Persisted show/hide selection for metric rows.
@@ -572,20 +650,20 @@ export default function ExecKpisByGmTable({
             No clients in scope.
           </p>
         ) : (
-          <div className="-mx-2 mt-2 overflow-x-auto">
+          <div className="mt-2 w-full overflow-x-auto">
             <table className="min-w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="sticky left-0 z-10 bg-muted px-3 py-2.5 text-left font-medium">
+                <tr className="sticky top-0 z-20 border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="sticky left-0 z-30 border-r border-border bg-muted px-3 py-2 text-left font-medium">
                     Metric
                   </th>
-                  <th className="whitespace-nowrap bg-muted px-3 py-2.5 text-right font-semibold text-foreground">
+                  <th className="whitespace-nowrap bg-muted px-3 py-2 text-right font-semibold text-foreground">
                     PlusCo Total
                   </th>
                   {gms.map((gm) => (
                     <th
                       key={gm}
-                      className="whitespace-nowrap px-3 py-2.5 text-right font-medium"
+                      className="whitespace-nowrap px-3 py-2 text-right font-medium"
                     >
                       {gm}
                     </th>
@@ -596,13 +674,15 @@ export default function ExecKpisByGmTable({
                                const groupRows = metricRows.filter(
                   (m) => m.group === group && !hidden.has(m.label)
                 );
-                if (groupRows.length === 0) return null;
+                const labsPartnersVisible =
+                  group === "Labs" && LABS_PARTNERS.some((p) => !hidden.has(p.name));
+                if (groupRows.length === 0 && !labsPartnersVisible) return null;
                 return (
                   <tbody key={group}>
                     <tr>
                       <td
                         colSpan={colCount}
-                        className="sticky left-0 z-10 border-b border-border bg-muted/50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+                        className="sticky left-0 z-10 border-b border-border bg-muted/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
                       >
                         {group}
                       </td>
@@ -612,10 +692,10 @@ export default function ExecKpisByGmTable({
                         key={m.label}
                         className="border-b border-border/60 transition-colors hover:bg-muted/40"
                       >
-                        <td className="sticky left-0 z-10 whitespace-nowrap bg-card px-3 py-2 text-left font-medium text-foreground">
+                        <td className="sticky left-0 z-10 whitespace-nowrap border-r border-border bg-card px-3 py-1.5 text-left font-medium text-foreground">
                           {m.label}
                         </td>
-                        <td className="whitespace-nowrap bg-muted/40 px-3 py-2 text-right font-semibold tabular-nums text-foreground">
+                        <td className="whitespace-nowrap bg-muted/40 px-3 py-1.5 text-right font-semibold tabular-nums text-foreground">
                           {m.cells[TOTAL_ID]?.display ?? "—"}
                           {m.cells[TOTAL_ID]?.yoy && (
                             <YoyBadge yoy={m.cells[TOTAL_ID]!.yoy!} />
@@ -627,7 +707,7 @@ export default function ExecKpisByGmTable({
                           return (
                             <td
                               key={gm}
-                              className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${
+                              className={`whitespace-nowrap px-3 py-1.5 text-right tabular-nums ${
                                 status !== "neutral"
                                   ? ragCell(status)
                                   : "text-foreground"
@@ -640,6 +720,53 @@ export default function ExecKpisByGmTable({
                         })}
                       </tr>
                     ))}
+                    {group === "Labs" && labsPartnersVisible && (
+                      <>
+                        <tr>
+                          <td
+                            colSpan={colCount}
+                            className="sticky left-0 z-10 border-b border-border bg-muted/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+                          >
+                            Labs — by partner
+                          </td>
+                        </tr>
+                        {LABS_PARTNERS.filter((p) => !hidden.has(p.name)).map((p) => (
+                          <tr
+                            key={p.key}
+                            className="border-b border-border/60 transition-colors hover:bg-muted/40"
+                          >
+                            <td className="sticky left-0 z-10 whitespace-nowrap border-r border-border bg-card px-3 py-1.5 text-left font-medium text-foreground">
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: 2,
+                                  background: p.color,
+                                  marginRight: 7,
+                                  verticalAlign: "middle",
+                                }}
+                              />
+                              {p.name}
+                            </td>
+                            <PartnerCell
+                              target={totalAgg.labsPartners[p.key].target}
+                              booked={totalAgg.labsPartners[p.key].booked}
+                            />
+                            {gms.map((gm) => {
+                              const ag = gmAgg.get(gm)!;
+                              return (
+                                <PartnerCell
+                                  key={gm}
+                                  target={ag.labsPartners[p.key].target}
+                                  booked={ag.labsPartners[p.key].booked}
+                                />
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </>
+                    )}
                   </tbody>
                 );
               })}

@@ -1,4 +1,4 @@
-﻿// filepath: app/(protected)/admin/targets/page.tsx
+// filepath: app/(protected)/admin/targets/page.tsx
 "use client";
 
 /**
@@ -220,7 +220,7 @@ export default function AdminTargetsPage() {
   return (
     <div>
       <PageHeader
-        title="Labs Targets"
+        title="Deal Targets"
         description="Per-year partner media-spend targets that drive the Executive Summary goals."
         actions={
           <div className="flex items-center gap-2">

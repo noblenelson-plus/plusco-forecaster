@@ -8,9 +8,9 @@
  *   - right (narrower): per-pod dollar summary (Target · Booked · Variance · %)
  * Both come from the same GmPodMatrix, so they tie out.
  *
- * The heatmap card has a % / $ toggle in its header: "%" = % of target booked;
- * "$" = the numerator, $ Booked, per cell. RAG colour is ALWAYS driven by %
- * booked, so the "who's behind" story reads the same in either mode.
+ * The heatmap card has a mode toggle in its header: % Booked · Booked $ ·
+ * Target $ · Gap $ (Gap = Target − Booked). RAG colour is ALWAYS driven by %
+ * booked, so the "who's behind" story reads the same in every mode.
  */
 
 import { useState } from "react";
@@ -19,7 +19,7 @@ import ChartCard from "../../dashboard/charts/chart-card";
 import { pacingHeat, type GmPodMatrix } from "./labs-pacing-data";
 import { formatMoney } from "../../../lib/format/money";
 
-type CellMode = "pct" | "booked";
+type CellMode = "pct" | "booked" | "target" | "gap";
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v)}%`);
 
@@ -38,6 +38,20 @@ const compact = (v: number) => {
   return `$${Math.round(v)}`;
 };
 
+/** Dollar value for a cell/total under the current $ mode. Gap = Target − Booked. */
+const dollarFor = (
+  d: { target: number; booked: number },
+  m: CellMode
+): number => (m === "target" ? d.target : m === "gap" ? d.target - d.booked : d.booked);
+
+/** The heatmap header toggle — one segment per mode. */
+const MODES: { key: CellMode; label: string }[] = [
+  { key: "pct", label: "% Booked" },
+  { key: "booked", label: "Booked $" },
+  { key: "target", label: "Target $" },
+  { key: "gap", label: "Gap $" },
+];
+
 export default function LabsPodMatrix({ matrix }: { matrix: GmPodMatrix }) {
   const { pods, rows, colTotals, grandTotal, podTotals, grand } = matrix;
   const [mode, setMode] = useState<CellMode>("pct");
@@ -51,25 +65,33 @@ export default function LabsPodMatrix({ matrix }: { matrix: GmPodMatrix }) {
     }))
     .sort((a, b) => b.target - a.target);
 
-  const cellText = (v: number | null, booked: number) =>
-    v === null ? "—" : mode === "pct" ? pct(v) : compact(booked);
+  // Per-partner target total (row grand-total column) — booked total already
+  // lives on the row; target is summed from the per-pod dollars.
+  const rowTarget = (r: (typeof rows)[number]) =>
+    pods.reduce((s, p) => s + (r.byPodDollars[p]?.target ?? 0), 0);
+
+  const cellText = (
+    v: number | null,
+    d: { target: number; booked: number } | undefined
+  ) =>
+    v === null
+      ? "—"
+      : mode === "pct"
+        ? pct(v)
+        : compact(dollarFor(d ?? { target: 0, booked: 0 }, mode));
 
   const toggle = (
     <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs font-medium">
-      <button
-        type="button"
-        onClick={() => setMode("pct")}
-        className={`px-2.5 py-1 ${mode === "pct" ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
-      >
-        %
-      </button>
-      <button
-        type="button"
-        onClick={() => setMode("booked")}
-        className={`px-2.5 py-1 ${mode === "booked" ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
-      >
-        $
-      </button>
+      {MODES.map((m) => (
+        <button
+          key={m.key}
+          type="button"
+          onClick={() => setMode(m.key)}
+          className={`px-2.5 py-1 ${mode === m.key ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+        >
+          {m.label}
+        </button>
+      ))}
     </div>
   );
 
@@ -102,11 +124,15 @@ export default function LabsPodMatrix({ matrix }: { matrix: GmPodMatrix }) {
                     </td>
                     {pods.map((pod) => (
                       <td key={pod} className="px-3 py-2 text-right tabular-nums" style={pacingHeat(row.byPod[pod])}>
-                        {cellText(row.byPod[pod], row.byPodDollars[pod]?.booked ?? 0)}
+                        {cellText(row.byPod[pod], row.byPodDollars[pod])}
                       </td>
                     ))}
                     <td className="px-3 py-2 text-right font-semibold tabular-nums" style={pacingHeat(row.total)}>
-                      {row.total === null ? "—" : mode === "pct" ? pct(row.total) : compact(row.bookedTotal)}
+                      {row.total === null
+                        ? "—"
+                        : mode === "pct"
+                          ? pct(row.total)
+                          : compact(dollarFor({ target: rowTarget(row), booked: row.bookedTotal }, mode))}
                     </td>
                   </tr>
                 ))}
@@ -116,11 +142,13 @@ export default function LabsPodMatrix({ matrix }: { matrix: GmPodMatrix }) {
                   <td className="sticky left-0 z-10 bg-muted px-3 py-2 text-left">Grand total</td>
                   {pods.map((pod) => (
                     <td key={pod} className="px-3 py-2 text-right tabular-nums" style={pacingHeat(colTotals[pod] ?? null)}>
-                      {mode === "pct" ? pct(colTotals[pod] ?? null) : compact(podTotals[pod]?.booked ?? 0)}
+                      {mode === "pct"
+                        ? pct(colTotals[pod] ?? null)
+                        : compact(dollarFor(podTotals[pod] ?? { target: 0, booked: 0 }, mode))}
                     </td>
                   ))}
                   <td className="px-3 py-2 text-right tabular-nums" style={pacingHeat(grandTotal)}>
-                    {mode === "pct" ? pct(grandTotal) : compact(grand.booked)}
+                    {mode === "pct" ? pct(grandTotal) : compact(dollarFor(grand, mode))}
                   </td>
                 </tr>
               </tfoot>

@@ -89,7 +89,7 @@ export function buildLabsTargetVsBookedColumns(): Col[] {
     },
     {
       id: "pluscoTarget",
-      label: "PLUSCO Labs Target",
+      label: "PLUSCO Deals Target",
       group: "Labs",
       kind: "money",
       align: "right",
