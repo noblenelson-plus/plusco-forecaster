@@ -227,6 +227,11 @@ export async function deleteClient(cl_id: string): Promise<void> {
 
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 
+// Forecast years exported as individual Client_Status_<year> columns. Bump this
+// when a new forecast year opens; import auto-detects any Client_Status_YYYY
+// columns in the file regardless of this list.
+const STATUS_EXPORT_YEARS = [2026, 2027] as const;
+
 const CSV_COLUMNS = [
   "cl_id",
   "CL_Name",
@@ -243,25 +248,36 @@ const CSV_COLUMNS = [
   "CL_MediaBox_IDs",
   "CL_Tier",
   "CL_Advertiser_Vertical",
-  "Client_Status_2026",
+  ...STATUS_EXPORT_YEARS.map((y) => `Client_Status_${y}`),
   "CL_Hidden",
   "Client_Notes",
 ] as const;
 
 export function exportClientsToCSV(clients: Client[]): void {
-  // The CSV keeps a single status column for round-trip simplicity: we export
-  // the status resolved for 2026 (the column header stays "Client_Status_2026").
-  // Nested fields (Forecasting_Type, Labs_Eligibility) are UI-only and omitted.
+  // One Client_Status_<year> column per STATUS_EXPORT_YEARS, copy-forward: a
+  // year uses the client's explicit status if set, else carries the most recent
+  // earlier year's value (2026 seeds from resolveClientStatus, which honors the
+  // legacy Client_Status_2026 field). So 2027 pre-fills from 2026 until an
+  // explicit 2027 status exists. Nested fields (Forecasting_Type,
+  // Labs_Eligibility) are UI-only and omitted.
   const header = CSV_COLUMNS.join(",");
-  const rows = clients.map((c) =>
-    CSV_COLUMNS.map((col) => {
-      if (col === "Client_Status_2026") return escapeCSV(resolveClientStatus(c, 2026));
+  const rows = clients.map((c) => {
+    const statusByYear: Record<number, string> = {};
+    let last: string | undefined;
+    for (const y of STATUS_EXPORT_YEARS) {
+      const val = c.Client_Status_By_Year?.[y] ?? last ?? resolveClientStatus(c, y);
+      statusByYear[y] = val;
+      last = val;
+    }
+    return CSV_COLUMNS.map((col) => {
+      const sm = /^Client_Status_(\d{4})$/.exec(col);
+      if (sm) return escapeCSV(statusByYear[Number(sm[1])]);
       if (col === "CL_Hidden") return escapeCSV(c.CL_Hidden ? "true" : "false");
       const value = c[col as keyof Client];
       if (Array.isArray(value)) return escapeCSV(value.join("|"));
       return escapeCSV(value);
-    }).join(",")
-  );
+    }).join(",");
+  });
   const csv = [header, ...rows].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -374,7 +390,6 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
     const validations: [string, string, string[]][] = [
       ["Client_Fee_Structure",    row.Client_Fee_Structure as string,    VALID_FEE_STRUCTS],
       ["CL_Currency",             row.CL_Currency as string,             VALID_CURRENCIES],
-      ["Client_Status_2026",      row.Client_Status_2026 as string,      VALID_STATUSES],
       ["CL_Agency",               row.CL_Agency as string,               VALID_AGENCIES],
       ["CL_Business_Unit_Region", row.CL_Business_Unit_Region as string, VALID_REGIONS],
       ["CL_Office",               row.CL_Office as string,               [...VALID_OFFICES, ""]],
@@ -387,6 +402,18 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
       if (value && !allowed.includes(value)) {
         errors.push(
           `Row ${lineNumber}: invalid ${field} "${value}" — allowed: ${allowed.filter(Boolean).join(", ")}`
+        );
+        hasError = true;
+      }
+    }
+    // Per-year status columns (Client_Status_YYYY): validate each present value.
+    for (const h of headers) {
+      const ym = /^Client_Status_(\d{4})$/.exec(h);
+      if (!ym) continue;
+      const sv = (row[h] as string) ?? "";
+      if (sv && !(VALID_STATUSES as readonly string[]).includes(sv)) {
+        errors.push(
+          `Row ${lineNumber}: invalid ${h} "${sv}" - allowed: ${VALID_STATUSES.join(", ")}`
         );
         hasError = true;
       }
@@ -406,14 +433,20 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
         : [];
     }
 
-    // Status: the CSV carries a single 2026 column → map it into the per-year
-    // map and drop the legacy key so docs don't keep a stale scalar. The write
-    // is a deep merge, so `{2026: …}` never touches other years; when the CSV
-    // has no status, the field is left out entirely (an empty map would WIPE
-    // the per-year map on merge).
-    const status2026 = row.Client_Status_2026 as string;
-    if (status2026) row.Client_Status_By_Year = { 2026: status2026 };
-    delete row.Client_Status_2026;
+    // Fold every Client_Status_YYYY column into the per-year map and drop the
+    // flat keys. Only non-empty cells are written, and commitCSVImport merges,
+    // so untouched years survive and an all-empty file never wipes the map.
+    const statusByYear: Record<number, string> = {};
+    for (const h of headers) {
+      const ym = /^Client_Status_(\d{4})$/.exec(h);
+      if (!ym) continue;
+      const sv = (row[h] as string) ?? "";
+      if (sv) statusByYear[Number(ym[1])] = sv;
+      delete row[h];
+    }
+    if (Object.keys(statusByYear).length > 0) {
+      row.Client_Status_By_Year = statusByYear;
+    }
 
     // Hidden flag (optional column).
     row.CL_Hidden = (row.CL_Hidden as string) === "true";

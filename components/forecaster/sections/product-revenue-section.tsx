@@ -40,6 +40,14 @@ import type { Currency } from "../../../lib/types/client.types";
 
 const modeLabel = (mode: RevenueMode) => (mode === "official" ? "OF" : "BL");
 
+/**
+ * Product Fees only exist on the BL submission; Official is a single untyped
+ * total with no per-product split. So the product breakdown always uses BL --
+ * an Official side falls back to BL, like Revenue Types' typeBreakdownMode.
+ */
+const productBreakdownMode = (mode: RevenueMode): RevenueMode =>
+  mode === "official" ? "blSubmission" : mode;
+
 /** Matches the Client Revenue focus highlight. */
 const FOCUS_BG = "bg-yellow-50";
 
@@ -80,12 +88,21 @@ export default function ProductRevenueSection({
 
   const hasComparison = comparisonYear !== null && comparisonRFQ !== null;
 
+  // Product Fees are a BL concept -- Official is a single untyped total with no
+  // per-product split, so this table always breaks down on BL for BOTH sides,
+  // regardless of the BL/OF toggle (mirrors Revenue Types' typeBreakdownMode).
+  // The toggle still drives the Client detail table + Exec Summary.
+  const effPrimaryMode = productBreakdownMode(primaryMode);
+  const effSecondaryMode = productBreakdownMode(secondaryMode);
+  const showsBlFallback =
+    primaryMode === "official" || secondaryMode === "official";
+
   const { entries, loading } = useScopeProductRevenue({
     scopedClientIds,
     primary: { year: selectedYear, rfq: selectedRFQ?.type ?? null },
-    primaryMode,
+    primaryMode: effPrimaryMode,
     comparison: { year: comparisonYear, rfq: comparisonRFQ?.type ?? null },
-    secondaryMode,
+    secondaryMode: effSecondaryMode,
     currencyByClient,
     usdToCad,
     comparisonUsdToCad,
@@ -109,10 +126,10 @@ export default function ProductRevenueSection({
   );
 
   const primaryLabel = selectedRFQ
-    ? `${selectedRFQ.type}-${modeLabel(primaryMode)} · ${selectedYear}`
+    ? `${selectedRFQ.type}-${modeLabel(effPrimaryMode)} · ${selectedYear}`
     : "Primary";
   const secondaryLabel = comparisonRFQ
-    ? `${comparisonRFQ.type}-${modeLabel(secondaryMode)} · ${comparisonYear}`
+    ? `${comparisonRFQ.type}-${modeLabel(effSecondaryMode)} · ${comparisonYear}`
     : "Secondary";
 
   const columns = useMemo(
@@ -248,6 +265,13 @@ export default function ProductRevenueSection({
           sheetTitle="Product Revenue"
         />
       </div>
+
+      {showsBlFallback && (
+        <p className="text-xs text-muted-foreground">
+          Official revenue has no per-product breakdown, so this table compares
+          BL submissions.
+        </p>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ChartCard title="Product Revenue" icon={Package} className="h-full">
