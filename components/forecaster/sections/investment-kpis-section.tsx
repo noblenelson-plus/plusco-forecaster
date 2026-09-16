@@ -8,7 +8,7 @@
  * the (filtered) client rows up to portfolio figures — no business logic is
  * recomputed here; every rule already ran in BigQuery.
  *
- * This is a fixed strategy snapshot (source = RFQ 2-BL-2026, 2025 vs 2026): it
+ * This is a fixed strategy snapshot (source = RFQ 3-BL-2026, 2025 vs 2026): it
  * intentionally does NOT react to the dashboard's Year/RFQ selectors. It is
  * scoped by the dashboard's global filter bar (the same scopedClientIds list
  * Meta and Billups use), so one filter drives every Executive-KPI sub-page; the
@@ -248,7 +248,7 @@ export default function InvestmentKpisSection({
         <h2 className="text-xl font-bold text-foreground">Investment KPIs</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           {kpis.clientCount} client{kpis.clientCount === 1 ? "" : "s"} in scope -
-          strategy snapshot (RFQ 2-BL-2026, 2025 vs 2026)
+          strategy snapshot (RFQ 3-BL-2026, 2025 vs 2026)
         </p>
       </div>
 
@@ -300,7 +300,7 @@ export default function InvestmentKpisSection({
       {/* Meta Divestment */}
       <KpiGroup
         title="Meta Divestment"
-        subtitle="Target Meta Spend by client = (2026 Social Forecast RFQ2-BL × 2025 Meta Share of Social) × 0.70"
+        subtitle="Target Meta Spend by client = (2026 Social Forecast RFQ3-BL × 2025 Meta Share of Social) × 0.70"
         columns={4}
         footer={<MetaShareTrendStrip data={metaTrend} />}
       >

@@ -150,7 +150,7 @@ export default function LabsPacingSection({
     // The Labs target always comes from RFQ 2-BL (labs_pacing_wide), regardless of
   // the Time & Context RFQ selector — so the label is fixed, not dynamic, to
   // avoid implying the target follows the selected RFQ.
-  const targetLabel = "Target (RFQ2)";
+  const targetLabel = "Target (RFQ3)";
   const columns = useMemo(() => buildLabsPacingColumns({ targetLabel }), [targetLabel]);
 
   const { directionFor, toggle: toggleSort, sortRows } = useTableSort(columns);

@@ -162,7 +162,7 @@ export default function LabsTargetVsBookedSection({
             Labs — Target vs Booked by Partner
           </h2>
           <p className="text-xs text-muted-foreground">
-            PLUSCO vs RFQ2 targets · annual booked (MIR as of {asOf})
+            PLUSCO vs RFQ3 targets · annual booked (MIR as of {asOf})
           </p>
         </div>
         {controls}

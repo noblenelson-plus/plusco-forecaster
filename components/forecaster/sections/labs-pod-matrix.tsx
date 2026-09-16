@@ -169,7 +169,7 @@ export default function LabsPodMatrix({ matrix }: { matrix: GmPodMatrix }) {
               <thead className="sticky top-0 z-10 bg-card">
                 <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
                   <th className="px-3 py-2 text-left font-medium">GM Pod</th>
-                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Target (RFQ2)</th>
+                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Target (RFQ3)</th>
                   <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Booked (MIR)</th>
                   <th className="px-3 py-2 text-right font-medium whitespace-nowrap">$ Variance</th>
                   <th className="px-3 py-2 text-right font-medium whitespace-nowrap">% Booked</th>

@@ -8,7 +8,7 @@
  * own ChartCard + sortable-table chrome — no fetching, no Looker styling.
  *
  * Columns mirror the deck: Deal Type | Included in RFQ | Partner |
- * PLUSCO Labs Target | RFQ2 Labs Target | Booked to Date | % of PLUSCO | % of RFQ.
+ * PLUSCO Labs Target | RFQ3 Labs Target | Booked to Date | % of PLUSCO | % of RFQ.
  *
  * Gating: RFQ2 target (E) and % of RFQ (H) render "—" for non-forecaster
  * partners (they carry no RFQ2 target). Forecaster ("Included in RFQ") rows get
@@ -100,7 +100,7 @@ export function buildLabsTargetVsBookedColumns(): Col[] {
     },
     {
       id: "rfq2Target",
-      label: "RFQ2 Labs Target",
+      label: "RFQ3 Labs Target",
       group: "Labs",
       kind: "money",
       align: "right",
@@ -150,7 +150,7 @@ export default function LabsTargetVsBookedTable({
   totals,
   loading = false,
   title = "Labs — Target vs Booked by Partner",
-  subtitle = "PLUSCO vs RFQ2 targets, booked to date (MIR)",
+  subtitle = "PLUSCO vs RFQ3 targets, booked to date (MIR)",
 }: {
   rows: Row[];
   totals: Totals;

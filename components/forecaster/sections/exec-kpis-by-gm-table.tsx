@@ -359,7 +359,7 @@ export default function ExecKpisByGmTable({
       },
       {
         group: "Labs",
-        label: "Labs RFQ Target (RFQ2)",
+        label: "Labs RFQ Target (RFQ3)",
         kind: "money",
         value: (a) => a.labsTarget,
       },
