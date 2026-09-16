@@ -93,7 +93,7 @@ function PartnerCell({ target, booked }: { target: number; booked: number }) {
           {pct === null ? "—" : `${Math.round(pct)}%`}
         </span>
       </div>
-      <div className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+      <div className="mt-0.5 text-xs leading-tight text-gray-600">
         of {compactMoney(target)} ·{" "}
         <span style={{ color: gapCol }}>
           {compactMoney(Math.abs(gap))} {behind ? "behind" : "ahead"}
