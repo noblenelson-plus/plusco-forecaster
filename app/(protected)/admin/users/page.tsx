@@ -25,6 +25,7 @@ import UserClientsDrawer from "../../../../components/users/user-clients-drawer"
 import AccessLevelsCard from "../../../../components/users/access-levels-card";
 import AgenciesPanel from "../../../../components/agencies/agencies-panel";
 import InviteModal from "../../../../components/users/invite-modal";
+import AccessSheetTools from "../../../../components/users/access-sheet-tools";
 import {
   Shield,
   Users,
@@ -310,6 +311,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* Segmented tabs */}
+
       <div className="inline-flex border border-gray-200 rounded-lg overflow-hidden mb-6">
         <TabButton
           active={mainTab === "team"}
@@ -417,6 +419,7 @@ export default function AdminUsersPage() {
               />
             </div>
             <div className="flex items-center gap-2">
+              <AccessSheetTools users={users} />
               <button
                 onClick={() => setRoleFilter("ALL")}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${

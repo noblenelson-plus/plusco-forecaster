@@ -1,20 +1,42 @@
-﻿// filepath: scripts/sync-meta-social-output.mjs
+// filepath: scripts/sync-meta-social-output.mjs
 /**
- * One-off sync:  BigQuery META_SOCIAL_OUTPUT_2025_vs_2026  ->  Firestore "meta_social_output"
+ * Sync:  BigQuery META_SOCIAL_OUTPUT_2025_vs_2026  ->  Firestore "meta_social_output"
  *
- * The BQ table is MONTHLY grain (one row per client x month). This script
- * AGGREGATES to one document per client (keyed by PLUSCO_CLIENT_ID):
- *   - dollar columns (SUM_FIELDS) are summed across the client's months -> annual total
- *   - every other column (dims, flags, pre-computed annual ratios) is taken from the
- *     client's first row, since those are computed on annual totals in BQ and are
- *     therefore identical on every month-row for a given client.
- * Per-month identifiers (SKIP_FIELDS) are dropped. Does NOT touch existing app data.
+ * The BQ table is MONTHLY grain (one row per client x month). This sync AGGREGATES
+ * to one document per client (keyed by PLUSCO_CLIENT_ID):
+ *   - dollar columns (SUM_FIELDS) are summed across the client's months
+ *   - every other column is taken from the client's first row (dims / flags /
+ *     pre-computed annual ratios are identical on every month-row for a client)
+ *   - per-month identifiers (SKIP_FIELDS) are dropped
+ * That aggregation is unchanged from the original sync.
  *
- * Run from repo root:  node scripts/sync-meta-social-output.mjs
+ * What changed: it now RECONCILES via scripts/lib/reconcile.mjs. After writing every
+ * current client it deletes any Firestore doc whose client id is no longer in the
+ * source, so the collection always mirrors the backend. The earlier upsert-only
+ * version left a doc behind when a client dropped out of the table.
+ *
+ * The aggregation runs first (it needs the raw monthly rows); the resulting
+ * per-client rows are handed to the engine with their exact original doc ids, so
+ * ids line up perfectly with what is already stored.
+ *
+ * WRITES BY DEFAULT (a monthly sync should just run):
+ *   node scripts/sync-meta-social-output.mjs             upsert + delete orphans
+ *   node scripts/sync-meta-social-output.mjs --dry-run   preview only, writes nothing
+ *   node scripts/sync-meta-social-output.mjs --force     bypass the orphan safety brake
+ *
+ * Needs: BigQuery Data Viewer + Job User on plusco-media-invest-solutions,
+ * read+write to Firestore in pluscoops, and a current
+ * gcloud auth application-default login.
  */
 
 import admin from "firebase-admin";
 import bigqueryPkg from "@google-cloud/bigquery";
+import {
+  reconcileCollection,
+  reconcileFlags,
+  keyDocId,
+  cleanValue,
+} from "./lib/reconcile.mjs";
 
 const { BigQuery } = bigqueryPkg;
 
@@ -24,7 +46,6 @@ const BQ_TABLE =
 const FIRESTORE_PROJECT = "pluscoops";
 const COLLECTION = "meta_social_output";
 const ID_FIELD = "PLUSCO_CLIENT_ID";
-const BATCH_SIZE = 450;
 
 // Monthly dollar columns -> summed to an annual per-client total.
 const SUM_FIELDS = [
@@ -52,39 +73,56 @@ const SKIP_FIELDS = [
   "miq_social_pacing", // monthly ratio; the app recomputes from summed totals
 ];
 
-function cleanValue(v) {
-  if (v === undefined || v === null) return null;
-  const t = typeof v;
-  if (t === "number" || t === "string" || t === "boolean") return v;
-  if (t === "bigint") return Number(v);
-  if (t === "object") {
-    if (v.value !== undefined && v.value !== null) {
-      const inner = v.value;
-      if (typeof inner === "string") {
-        const n = Number(inner);
-        return inner.trim() !== "" && !Number.isNaN(n) ? n : inner;
-      }
-      return inner;
-    }
-    return String(v);
-  }
-  return null;
-}
+// Columns shown in the orphan-preview sample (cosmetic only).
+const SAMPLE_FIELDS = [
+  { field: "PLUSCO_CLIENT_ID", label: "CLIENT_ID", width: 12 },
+  { field: "PLUSCO_CLIENT_NAME", label: "CLIENT", width: 28 },
+  { field: "meta_2026", label: "META_2026", money: true },
+];
 
+// cleanValue -> finite number (missing/null/NaN -> 0). Uses the shared cleanValue
+// so coercion is identical to every other sync.
 function toNum(v) {
   const c = cleanValue(v);
   const n = typeof c === "number" ? c : Number(c);
   return Number.isFinite(n) ? n : 0;
 }
 
-function toDocId(raw) {
-  if (raw === undefined || raw === null) return null;
-  let id = String(raw).trim();
-  if (id === "" || id.toUpperCase() === "NULL" || id === "#N/A") return null;
-  id = id.replace(/\//g, "_");
-  if (id === "." || id === "..") id = `_${id}_`;
-  if (id.length > 1400) id = id.slice(0, 1400);
-  return id;
+/**
+ * Collapse monthly rows to one row per client, exactly as the original sync did.
+ * Returns the per-client rows, a row->id map carrying each row's ORIGINAL doc id
+ * (computed from the raw client id, before cleanValue, so it matches stored ids),
+ * and the count of rows skipped for an unusable client id.
+ */
+function aggregateByClient(rows) {
+  const byId = new Map();
+  const idByRow = new Map();
+  let skipped = 0;
+
+  for (const row of rows) {
+    const id = keyDocId(row[ID_FIELD]);
+    if (!id) {
+      skipped += 1;
+      continue;
+    }
+    let agg = byId.get(id);
+    if (!agg) {
+      // First month-row for this client: seed dims / flags / annual ratios and
+      // initialise the summable dollar columns.
+      agg = {};
+      for (const [key, value] of Object.entries(row)) {
+        if (SKIP_FIELDS.includes(key)) continue;
+        agg[key] = SUM_FIELDS.includes(key) ? toNum(value) : cleanValue(value);
+      }
+      byId.set(id, agg);
+      idByRow.set(agg, id);
+    } else {
+      // Subsequent months: accumulate only the dollar columns.
+      for (const f of SUM_FIELDS) agg[f] = (agg[f] ?? 0) + toNum(row[f]);
+    }
+  }
+
+  return { clientRows: [...byId.values()], idByRow, skipped };
 }
 
 async function main() {
@@ -93,73 +131,32 @@ async function main() {
     projectId: FIRESTORE_PROJECT,
   });
   const db = admin.firestore();
-
   const bq = new BigQuery({ projectId: BQ_PROJECT });
 
   console.log(`Querying ${BQ_TABLE} ...`);
   const [rows] = await bq.query({ query: `SELECT * FROM ${BQ_TABLE}` });
   console.log(`Fetched ${rows.length} monthly row(s) from BigQuery.`);
 
-  if (rows.length === 0) {
-    console.warn("No rows returned - nothing to write. Exiting.");
-    process.exit(0);
+  const { clientRows, idByRow, skipped } = aggregateByClient(rows);
+  console.log(`Aggregated to ${clientRows.length} client document(s).`);
+  if (skipped > 0) {
+    console.log(`Skipped ${skipped} monthly row(s) with an unusable client id.`);
   }
 
-  const columnCount = Object.keys(rows[0]).length;
-  console.log(`Each row has ${columnCount} columns (monthly grain).`);
-
-  const syncedAt = new Date().toISOString();
-  const byId = new Map();
-  const skipped = [];
-
-  for (const row of rows) {
-    const id = toDocId(row[ID_FIELD]);
-    if (!id) {
-      skipped.push(row[ID_FIELD]);
-      continue;
-    }
-
-    let agg = byId.get(id);
-    if (!agg) {
-      // First month-row for this client: seed dims / flags / annual ratios,
-      // and initialise the summable dollar columns.
-      agg = {};
-      for (const [key, value] of Object.entries(row)) {
-        if (SKIP_FIELDS.includes(key)) continue;
-        agg[key] = SUM_FIELDS.includes(key) ? toNum(value) : cleanValue(value);
-      }
-      byId.set(id, agg);
-    } else {
-      // Subsequent months: accumulate only the dollar columns.
-      for (const f of SUM_FIELDS) agg[f] = (agg[f] ?? 0) + toNum(row[f]);
-    }
-  }
-
-  const docs = [...byId.entries()].map(([id, data]) => {
-    data._syncedAt = syncedAt;
-    return { id, data };
+  const { dryRun, force } = reconcileFlags();
+  const res = await reconcileCollection({
+    db,
+    collection: COLLECTION,
+    rows: clientRows,
+    // Use each client's ORIGINAL doc id (raw-id based), not one re-derived from the
+    // cleaned field -- guarantees ids match what is already stored.
+    toDocId: (r) => idByRow.get(r) ?? null,
+    sampleFields: SAMPLE_FIELDS,
+    dryRun,
+    force,
   });
-  console.log(`Aggregated to ${docs.length} client document(s).`);
-  if (skipped.length > 0) {
-    console.warn(`Note: skipped ${skipped.length} row(s) with an unusable client id.`);
-  }
-  console.log(`Sample first client: ${docs[0]?.data?.PLUSCO_CLIENT_NAME ?? "(no name)"}`);
 
-  let written = 0;
-  for (let i = 0; i < docs.length; i += BATCH_SIZE) {
-    const slice = docs.slice(i, i + BATCH_SIZE);
-    const batch = db.batch();
-    for (const { id, data } of slice) {
-      batch.set(db.collection(COLLECTION).doc(id), data);
-    }
-    await batch.commit();
-    written += slice.length;
-    console.log(`  wrote ${written}/${docs.length}`);
-  }
-
-  console.log("");
-  console.log(`Done. Synced ${written} client row(s) to Firestore collection "${COLLECTION}".`);
-  process.exit(0);
+  process.exit(res.status === "aborted" ? 1 : 0);
 }
 
 main().catch((err) => {
@@ -168,8 +165,7 @@ main().catch((err) => {
   console.error("");
   console.error("Common fixes:");
   console.error("  - Permission denied (BigQuery): account needs BigQuery Data Viewer + Job User on plusco-media-invest-solutions.");
-  console.error("  - Permission denied (Firestore): account needs write access to Firestore in pluscoops.");
-  console.error("  - 'API not enabled': enable the BigQuery API (source) / Firestore API (destination).");
+  console.error("  - Permission denied (Firestore): account needs read+write access to Firestore in pluscoops.");
   console.error("  - 'Dataset not found in location US': dataset is in another region - tell me and I'll set the location.");
   console.error("  - Not logged in: re-run  gcloud auth application-default login");
   process.exit(1);

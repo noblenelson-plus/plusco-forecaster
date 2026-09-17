@@ -42,3 +42,5 @@ next-env.d.ts
 
 # firebase deploy cache (regenerated on every deploy)
 /.firebase/
+
+*.bak-*
