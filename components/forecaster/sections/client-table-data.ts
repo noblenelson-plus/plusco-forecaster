@@ -63,6 +63,7 @@ export interface ClientTableRow {
   totalLabs: number;
   labsVar: number;
   labsShareTotalMedia: number | null;
+  labsShareVar: number | null;
   billupsShareOfPrint: number | null;
   billupsShareOfOoh: number | null;
   partners: PartnerCell[];
@@ -153,6 +154,15 @@ export function computeClientTable(
     const oohMedia = m.byLabel.get("OOH") ?? 0;
     const printMedia = m.byLabel.get("Print") ?? 0;
 
+    // Labs Share of Total Media for each submission, then the %pt gap.
+    // Uses the compare submission already loaded for the $ variances.
+    const labsShareTotalMedia = ratio(totalLabs, m.total);
+    const compLabsShare = ratio(compTotalLabs, cm?.total ?? 0);
+    const labsShareVar =
+      labsShareTotalMedia !== null && compLabsShare !== null
+        ? labsShareTotalMedia - compLabsShare
+        : null;
+
     rows.push({
       clientId: id,
       name: client?.CL_Name ?? id,
@@ -179,7 +189,8 @@ export function computeClientTable(
 
       totalLabs,
       labsVar: totalLabs - compTotalLabs,
-      labsShareTotalMedia: ratio(totalLabs, m.total),
+      labsShareTotalMedia,
+      labsShareVar,
       billupsShareOfPrint: ratio(billupsPrint, printMedia),
       billupsShareOfOoh: ratio(billupsOoh, oohMedia),
       partners: PARTNER_COLS.map((p) => ({

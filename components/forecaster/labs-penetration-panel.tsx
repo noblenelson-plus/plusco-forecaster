@@ -34,18 +34,37 @@ function pctText(coverage: number | null): string {
   return `${Math.round(coverage * 100)}%`;
 }
 
+/** Signed percentage-point change between two coverage ratios (1 decimal). Null
+ *  when either side is missing or non-finite, so nothing renders. */
+function ptsText(cur: number | null, cmp: number | null): string | null {
+  if (cur === null || !isFinite(cur) || cmp === null || !isFinite(cmp)) return null;
+  const r = Math.round((cur - cmp) * 1000) / 10;
+  if (r === 0) return "0 pts";
+  return `${r > 0 ? "+" : ""}${r.toFixed(1)} pts`;
+}
+
 interface PanelProps {
   result: LabsPenetrationResult;
   /** Editing requires an unlocked RFQ and at least one project to write into. */
   canEdit: boolean;
   onSetCoverage: (partnerId: string, pct: number) => void;
+  /** Previous submission's penetration, for the %pt variance. null when none. */
+  compare?: LabsPenetrationResult | null;
+  /** Human label of the compared submission, e.g. "RFQ2 2026". */
+  compareLabel?: string | null;
 }
 
 export default function LabsPenetrationPanel({
   result,
   canEdit,
   onSetCoverage,
+  compare = null,
+  compareLabel = null,
 }: PanelProps) {
+  const compareByType =
+    compare === null
+      ? null
+      : new Map(compare.byType.map((t) => [t.mediaType, t]));
   // Only media types with at least one Labs partner available — types that
   // carry planned media but no partner have nothing to cover and are hidden
   // here (the dashboard recap still surfaces them as coverage gaps).
@@ -53,7 +72,7 @@ export default function LabsPenetrationPanel({
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <RatioHeader result={result} />
+      <RatioHeader result={result} compare={compare ?? null} compareLabel={compareLabel ?? null} />
 
       <div className="max-h-[calc(62vh/var(--app-zoom,1))] overflow-y-auto divide-y-8 divide-gray-100">
         {types.length === 0 ? (
@@ -67,6 +86,7 @@ export default function LabsPenetrationPanel({
               type={type}
               canEdit={canEdit}
               onSetCoverage={onSetCoverage}
+              compareType={compareByType?.get(type.mediaType) ?? null}
             />
           ))
         )}
@@ -77,8 +97,17 @@ export default function LabsPenetrationPanel({
 
 // ─── Header — global Labs/Media ratio vs target ──────────────────────────────
 
-function RatioHeader({ result }: { result: LabsPenetrationResult }) {
+function RatioHeader({
+  result,
+  compare,
+  compareLabel,
+}: {
+  result: LabsPenetrationResult;
+  compare: LabsPenetrationResult | null;
+  compareLabel: string | null;
+}) {
   const { ratio, targetRatio, totalLabs, totalPlanned } = result;
+  const varText = compare ? ptsText(ratio, compare.ratio) : null;
   const reached = ratio !== null && ratio >= targetRatio;
   const fill = ratio === null ? 0 : Math.min(100, (ratio / targetRatio) * 100);
 
@@ -95,6 +124,12 @@ function RatioHeader({ result }: { result: LabsPenetrationResult }) {
             {ratio === null ? "—" : `${Math.round(ratio * 100)}%`}
           </p>
           <p className="text-[11px] text-gray-400 mt-1">Labs / Media spend</p>
+          {varText && (
+            <p className="text-[11px] text-gray-300 mt-1 tabular-nums">
+              {varText}
+              {compareLabel ? ` vs ${compareLabel}` : ""}
+            </p>
+          )}
         </div>
         <span
           className={`flex items-center gap-1 text-[11px] font-medium ${
@@ -125,13 +160,20 @@ function TypeSection({
   type,
   canEdit,
   onSetCoverage,
+  compareType,
 }: {
   type: MediaTypePenetration;
   canEdit: boolean;
   onSetCoverage: (partnerId: string, pct: number) => void;
+  compareType: MediaTypePenetration | null;
 }) {
   // A % can only resolve to dollars when there is a planned budget to apply it to.
   const editable = canEdit && type.plannedAnnual > 0;
+  const typeVar = compareType ? ptsText(type.coverage, compareType.coverage) : null;
+  const comparePartners =
+    compareType === null
+      ? null
+      : new Map(compareType.partners.map((p) => [p.partnerId, p]));
 
   return (
     <section className="pb-1">
@@ -148,12 +190,17 @@ function TypeSection({
             </span>
           )}
         </div>
-        <span
-          className={`text-sm font-bold tabular-nums ${
-            type.over ? "text-red-600" : "text-gray-900"
-          }`}
-        >
-          {pctText(type.coverage)}
+        <span className="flex items-baseline gap-1.5">
+          {typeVar && (
+            <span className="text-[11px] text-gray-400 tabular-nums">{typeVar}</span>
+          )}
+          <span
+            className={`text-sm font-bold tabular-nums ${
+              type.over ? "text-red-600" : "text-gray-900"
+            }`}
+          >
+            {pctText(type.coverage)}
+          </span>
         </span>
       </div>
 
@@ -196,6 +243,7 @@ function TypeSection({
             color={SEGMENTS[i % SEGMENTS.length]}
             editable={editable}
             onSetCoverage={onSetCoverage}
+            comparePartner={comparePartners?.get(p.partnerId) ?? null}
           />
         ))}
       </div>
@@ -210,12 +258,17 @@ function PartnerRow({
   color,
   editable,
   onSetCoverage,
+  comparePartner,
 }: {
   partner: PartnerPenetration;
   color: string;
   editable: boolean;
   onSetCoverage: (partnerId: string, pct: number) => void;
+  comparePartner: PartnerPenetration | null;
 }) {
+  const partnerVar = comparePartner
+    ? ptsText(partner.coverage, comparePartner.coverage)
+    : null;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
@@ -260,6 +313,11 @@ function PartnerRow({
       {/* Amount — fixed width, right-aligned */}
       <span className="w-20 shrink-0 text-right text-[11px] tabular-nums text-gray-400">
         {formatMoney(partner.annual)}
+      </span>
+
+      {/* %pt variance vs the compared submission (read-only) */}
+      <span className="w-14 shrink-0 text-right text-[11px] tabular-nums text-gray-400">
+        {partnerVar ?? ""}
       </span>
 
       {/* Coverage % — fixed width; the pencil keeps its box even when hidden, so

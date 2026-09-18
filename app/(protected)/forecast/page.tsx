@@ -267,6 +267,27 @@ function ForecastPageContent() {
     [labsGrid.data, mediaGrid.data, partnersForYear]
   );
 
+  // Previous-submission penetration (from the comparison already loaded by
+  // default) and its label, for the sidebar's %pt variance.
+  const comparePenetration = useMemo(
+    () =>
+      labsGrid.referenceData && mediaGrid.referenceData
+        ? computeLabsPenetration(
+            labsGrid.referenceData,
+            mediaGrid.referenceData,
+            partnersForYear
+          )
+        : null,
+    [labsGrid.referenceData, mediaGrid.referenceData, partnersForYear]
+  );
+  const compareLabel = useMemo(
+    () =>
+      labsGrid.compareRef
+        ? `${labsGrid.compareRef.rfq} ${labsGrid.compareRef.year}`
+        : null,
+    [labsGrid.compareRef]
+  );
+
   // Resolve a Labs partnerId to its configured media type (for the cat-2
   // Labs-over-media alert).
   const partnerMediaType = useCallback(
@@ -757,6 +778,8 @@ function ForecastPageContent() {
                     result={penetration}
                     canEdit={canEditPenetration}
                     onSetCoverage={setPartnerCoverage}
+                    compare={comparePenetration}
+                    compareLabel={compareLabel}
                   />
                 )}
                 {compareOpen && (

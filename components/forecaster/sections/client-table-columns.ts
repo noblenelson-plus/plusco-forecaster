@@ -139,6 +139,15 @@ export function buildClientTableColumns({
     totalRaw: getTotal,
   });
 
+  // Grand-total Labs Share Variance: portfolio current share minus portfolio
+  // compare share. Compare totals derive from the running totals already summed
+  // (compare = current - variance), so no extra pass over the rows is needed.
+  const labsShareVarTotal = (t: ClientTableTotals): number | null => {
+    const cur = ratio(t.totalLabs, t.totalMedia);
+    const cmp = ratio(t.totalLabs - t.labsVar, t.totalMedia - t.totalMediaVar);
+    return cur !== null && cmp !== null ? cur - cmp : null;
+  };
+
   // ── Frozen dimension columns ──────────────────────────────────────────────
 
   const dimensions: ClientColumn[] = [
@@ -198,6 +207,17 @@ export function buildClientTableColumns({
       (r) => r.labsVar, (t) => t.labsVar),
     percentColumn("labs-share-total-media", "LABS Share of Total Media", GROUP_LABS,
       (r) => r.labsShareTotalMedia, (t) => ratio(t.totalLabs, t.totalMedia)),
+    {
+      id: "labs-share-var",
+      label: "Labs Share Variance (%pts)",
+      group: GROUP_LABS,
+      kind: "percent",
+      align: "right",
+      raw: (row) => (hasComparison ? row.labsShareVar : null),
+      display: (row) => (hasComparison ? percent(row.labsShareVar) : "—"),
+      total: (totals) => (hasComparison ? percent(labsShareVarTotal(totals)) : "—"),
+      totalRaw: (totals) => (hasComparison ? labsShareVarTotal(totals) : null),
+    },
     percentColumn("billups-share-print", "Billups Share of Print", GROUP_LABS,
       (r) => r.billupsShareOfPrint, (t) => ratio(t.billupsPrint, t.printMedia)),
     percentColumn("billups-share-ooh", "Billups Share of OOH", GROUP_LABS,
