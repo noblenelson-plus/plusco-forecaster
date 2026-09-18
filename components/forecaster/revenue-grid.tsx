@@ -1223,7 +1223,7 @@ function AddLineControl({ onPick }: { onPick: (rowType: string) => void }) {
     <button
       onClick={() => setAdding(true)}
       className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-      title="Add a Retainer, Commission Overwrite, Project Fees or Product Fees line"
+      title="Add a Retainer, Commission Overwrite, Project Fees, Product Fees or Unallocated line"
     >
       <Plus size={12} />
       Add line

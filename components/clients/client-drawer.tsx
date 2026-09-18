@@ -16,6 +16,7 @@ import {
 } from "../../lib/types/client.types";
 import {
   CLIENT_STATUSES,
+  SELECTABLE_CLIENT_STATUSES,
   CLIENT_TIERS,
   CLIENT_AGENCIES,
   CLIENT_REGIONS,
@@ -84,6 +85,19 @@ const REQUIRED_FIELDS: Array<[keyof ClientFormData, string]> = [
   ["CL_Currency", "Currency"],
 ];
 
+/** Map any retired NEW_CLIENT status to ACTIVE (New == Active) when loading a
+ * client into the form, so the edit panel never shows a status that is no
+ * longer selectable; saving then persists ACTIVE. */
+function normalizeStatusMap(
+  m: Record<number, ClientStatus>
+): Record<number, ClientStatus> {
+  const out: Record<number, ClientStatus> = {};
+  for (const [y, v] of Object.entries(m)) {
+    out[Number(y)] = v === "NEW_CLIENT" ? "ACTIVE" : v;
+  }
+  return out;
+}
+
 export default function ClientDrawer({
   open,
   client,
@@ -138,12 +152,13 @@ export default function ClientDrawer({
         CL_Advertiser_Vertical: client.CL_Advertiser_Vertical ?? "",
         // Soft migration: seed the per-year map from the legacy 2026 scalar
         // when the map is empty, so old docs open with their status intact.
-        Client_Status_By_Year:
+        Client_Status_By_Year: normalizeStatusMap(
           client.Client_Status_By_Year && Object.keys(client.Client_Status_By_Year).length > 0
             ? client.Client_Status_By_Year
             : client.Client_Status_2026
             ? { 2026: client.Client_Status_2026 }
-            : {},
+            : {}
+        ),
         CL_Hidden: client.CL_Hidden ?? false,
         Forecasting_Type: client.Forecasting_Type ?? { ...DEFAULT_FORECASTING_TYPE },
         Labs_Eligibility: client.Labs_Eligibility ?? {},
@@ -172,6 +187,7 @@ export default function ClientDrawer({
 
   const statusYears = Object.keys(form.Client_Status_By_Year)
     .map(Number)
+    .filter((y) => y !== 2027) // 2027 has its own dedicated line below
     .sort((a, b) => b - a);
 
   function setStatusForYear(year: number, status: ClientStatus) {
@@ -589,7 +605,7 @@ export default function ClientDrawer({
                       <Select
                         value={form.Client_Status_By_Year[year]}
                         onChange={(v) => setStatusForYear(year, v as ClientStatus)}
-                        options={CLIENT_STATUSES}
+                        options={SELECTABLE_CLIENT_STATUSES}
                       />
                     </div>
                     <button
@@ -611,6 +627,29 @@ export default function ClientDrawer({
                 </button>
               </div>
             </Field>
+
+            {/* Dedicated 2027 status line — always shown; writes the same
+                Client_Status_By_Year[2027] the CSV column client_status_2027 reads. */}
+            <Field label="Status 2027">
+              <Select
+                value={form.Client_Status_By_Year[2027]}
+                onChange={(v) => setStatusForYear(2027, v as ClientStatus)}
+                options={SELECTABLE_CLIENT_STATUSES}
+                placeholder="Select status"
+              />
+            </Field>
+
+            {client?.createdAt && (
+              <Field label="Created">
+                <p className="text-sm text-gray-600">
+                  {new Date(client.createdAt).toLocaleDateString("en-CA", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </p>
+              </Field>
+            )}
           </Section>
 
           {/* Section: Forecasting type */}
