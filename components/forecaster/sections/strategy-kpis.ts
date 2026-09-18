@@ -26,7 +26,7 @@ function partnerAnnual(data: ScopeForecastData, nameLower: string): number {
 }
 
 // The Labs-Growth ratios (same definitions as the Labs section).
-const PROG_LABS = ["miq-prog", "quantcast", "yahoo", "amazon", "aim", "stackadapt"];
+const PROG_LABS = ["miq-prog", "quantcast", "yahoo", "amazon", "aim-prog", "stackadapt"];
 function progLabsAnnual(data: ScopeForecastData): number {
   return PROG_LABS.reduce((a, n) => a + partnerAnnual(data, n), 0);
 }

@@ -22,7 +22,7 @@ export const PARTNER_PALETTE = [
 ];
 
 // Adriana's PROG LABS numerator, by partner name (lower-cased for matching).
-const PROG_LABS = ["miq-prog", "quantcast", "yahoo", "amazon", "aim", "stackadapt"];
+const PROG_LABS = ["miq-prog", "quantcast", "yahoo", "amazon", "aim-prog", "stackadapt"];
 
 type RatioKey =
   | "labsShareOfTotalMedia"
