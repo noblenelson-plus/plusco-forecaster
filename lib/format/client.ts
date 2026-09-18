@@ -45,10 +45,12 @@ export function resolveClientStatus(
   client: StatusCarrier | ClientSummary,
   year: number
 ): ClientStatus {
+  // "New client" is retired and treated as Active everywhere.
+  const norm = (s: ClientStatus): ClientStatus => (s === "NEW_CLIENT" ? "ACTIVE" : s);
   const fromMap = client.Client_Status_By_Year?.[year];
-  if (fromMap) return fromMap;
+  if (fromMap) return norm(fromMap);
   if (year === 2026 && "Client_Status_2026" in client && client.Client_Status_2026) {
-    return client.Client_Status_2026;
+    return norm(client.Client_Status_2026);
   }
   return "ACTIVE";
 }

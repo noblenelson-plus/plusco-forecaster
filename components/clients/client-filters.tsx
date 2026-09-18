@@ -53,7 +53,6 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "ACTIVE",     label: "Active" },
   { value: "INACTIVE",   label: "Inactive" },
   { value: "LOSS",       label: "Loss" },
-  { value: "NEW_CLIENT", label: "New" },
 ];
 
 const AGENCY_OPTIONS = CLIENT_AGENCIES.map((a) => ({ value: a.value, label: a.label }));

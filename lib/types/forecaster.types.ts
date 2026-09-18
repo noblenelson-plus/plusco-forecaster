@@ -737,6 +737,9 @@ export const REVENUE_BL_ADDABLE_STREAMS: RevenueStream[] = [
   "commissionOverwrite",
   "projectFees",
   "productFees",
+  // Unallocated: an optional BL line (not seeded). Requested by Adriana so
+  // BL can carry unallocated revenue; it renders + totals like any BL line.
+  "unallocated",
 ];
 
 /**

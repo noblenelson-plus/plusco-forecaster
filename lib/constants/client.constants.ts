@@ -13,6 +13,15 @@ export const CLIENT_STATUSES = [
 
 export type ClientStatus = (typeof CLIENT_STATUSES)[number]["value"];
 
+/**
+ * Statuses a user may PICK. "New client" is retired -- treated as Active
+ * everywhere (resolveClientStatus normalizes NEW_CLIENT -> ACTIVE). It stays
+ * in CLIENT_STATUSES only so existing stored data remains type-valid.
+ */
+export const SELECTABLE_CLIENT_STATUSES = CLIENT_STATUSES.filter(
+  (s) => s.value !== "NEW_CLIENT"
+);
+
 // ─── Tier ─────────────────────────────────────────────────────────────────────
 
 export const CLIENT_TIERS = [
