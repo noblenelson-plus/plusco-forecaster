@@ -72,6 +72,12 @@ export interface ClientTableRow {
   labsVar: number;
   labsShareTotalMedia: number | null;
   labsShareVar: number | null;
+  labsShareOfProg: number | null;
+  labsShareOfDigital: number | null;
+  // Raw pieces so the summary row can recompute the weighted Prog share.
+  progLabsSpend: number;
+  progMediaSpend: number;
+  digitalLabsSpend: number;
   billupsShareOfPrint: number | null;
   billupsShareOfOoh: number | null;
   partners: PartnerCell[];
@@ -116,7 +122,7 @@ function labsByClient(details: ScopeForecastData["labsDetail"]): Map<string, Map
   return out;
 }
 
-const partnerSum = (
+export const partnerSum = (
   m: Map<string, number> | undefined,
   col: { names: string[]; prefix?: string }
 ): number => {
@@ -183,6 +189,24 @@ export function computeClientTable(
         ? labsShareTotalMedia - compLabsShare
         : null;
 
+    // Labs Share of Prog / Digital (Adriana's spec):
+    //   Prog    = programmatic labs partners / Programmatic-channel media
+    //   Digital = all DIGITAL labs (every labs partner except Billups OOH/Print,
+    //             the only non-digital labs) / total digital media (DD+Prog+Social+SEM)
+    // PROG_LABS_KEYS must match PROG_LABS in labs-kpis.ts (the tile's definition).
+    // Partner sets are Adriana's spec verbatim (green = Prog, yellow = Digital).
+    // PROG_LABS_KEYS must match PROG_LABS in labs-kpis.ts.
+    const PROG_LABS_KEYS = ["miq-prog", "quantcast", "yahoo", "amazon", "aim-prog", "stackadapt"];
+    const DIGITAL_LABS_KEYS = [
+      "miq-prog", "miq-social", "amazon", "yahoo", "quantcast", "reddit",
+      "stackadapt", "aim-prog", "aim-social", "aim-sem",
+    ];
+    const progLabsSpend = PROG_LABS_KEYS.reduce((a, k) => a + (lp?.get(k) ?? 0), 0);
+    const progMediaSpend = m.byLabel.get("Programmatic") ?? 0;
+    const digitalLabsSpend = DIGITAL_LABS_KEYS.reduce((a, k) => a + (lp?.get(k) ?? 0), 0);
+    const labsShareOfProg = ratio(progLabsSpend, progMediaSpend);
+    const labsShareOfDigital = ratio(digitalLabsSpend, m.digital);
+
     rows.push({
       clientId: id,
       name: client?.CL_Name ?? id,
@@ -211,6 +235,11 @@ export function computeClientTable(
       labsVar: totalLabs - compTotalLabs,
       labsShareTotalMedia,
       labsShareVar,
+      labsShareOfProg,
+      labsShareOfDigital,
+      progLabsSpend,
+      progMediaSpend,
+      digitalLabsSpend,
       billupsShareOfPrint: ratio(billupsPrint, printMedia),
       billupsShareOfOoh: ratio(billupsOoh, oohMedia),
       partners: PARTNER_COLS.map((p) => ({

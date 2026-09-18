@@ -207,6 +207,12 @@ export function buildClientTableColumns({
       (r) => r.labsVar, (t) => t.labsVar),
     percentColumn("labs-share-total-media", "LABS Share of Total Media", GROUP_LABS,
       (r) => r.labsShareTotalMedia, (t) => ratio(t.totalLabs, t.totalMedia)),
+    percentColumn("labs-share-prog", "Labs Share of Prog", GROUP_LABS,
+      (r) => r.labsShareOfProg,
+      (t) => ratio(t.progLabsSpend, t.progMediaSpend)),
+    percentColumn("labs-share-digital", "Labs Share of Digital", GROUP_LABS,
+      (r) => r.labsShareOfDigital,
+      (t) => ratio(t.digitalLabsSpend, t.digitalMedia)),
     {
       id: "labs-share-var",
       label: "Labs Share Variance (%pts)",
