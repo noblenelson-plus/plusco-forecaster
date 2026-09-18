@@ -19,7 +19,15 @@ export const CHANNEL_ORDER = [
 ];
 
 // Labs partner columns, in order. Billups combines its OOH + Print rows.
-export const PARTNER_COLS: { key: string; label: string; names: string[] }[] = [
+export const PARTNER_COLS: {
+  key: string;
+  label: string;
+  names: string[];
+  // When set, this column sums EVERY labs-partner key equal to `prefix` or
+  // starting with `prefix + "-"`. Used for AIM so its splits (AIM-Prog,
+  // AIM-Social, AIM-SEM, and any future AIM-*) always roll up into Total Labs.
+  prefix?: string;
+}[] = [
   { key: "billups", label: "Billups", names: ["billups-ooh", "billups-print"] },
   { key: "miqProg", label: "MIQ-Prog", names: ["miq-prog"] },
   { key: "miqSocial", label: "MIQ-Social", names: ["miq-social"] },
@@ -28,7 +36,7 @@ export const PARTNER_COLS: { key: string; label: string; names: string[] }[] = [
   { key: "quantcast", label: "Quantcast", names: ["quantcast"] },
   { key: "reddit", label: "Reddit", names: ["reddit"] },
   { key: "stackadapt", label: "StackAdapt", names: ["stackadapt"] },
-  { key: "aim", label: "AIM", names: ["aim"] },
+  { key: "aim", label: "AIM", names: ["aim"], prefix: "aim" },
 ];
 
 const sumM = (m?: MonthlyMap) =>
@@ -108,8 +116,20 @@ function labsByClient(details: ScopeForecastData["labsDetail"]): Map<string, Map
   return out;
 }
 
-const partnerSum = (m: Map<string, number> | undefined, names: string[]) =>
-  names.reduce((a, n) => a + (m?.get(n) ?? 0), 0);
+const partnerSum = (
+  m: Map<string, number> | undefined,
+  col: { names: string[]; prefix?: string }
+): number => {
+  if (!m) return 0;
+  if (col.prefix) {
+    let sum = 0;
+    for (const [k, v] of m) {
+      if (k === col.prefix || k.startsWith(col.prefix + "-")) sum += v || 0;
+    }
+    return sum;
+  }
+  return col.names.reduce((a, n) => a + (m.get(n) ?? 0), 0);
+};
 
 export function computeClientTable(
   data: ScopeForecastData,
@@ -146,16 +166,16 @@ export function computeClientTable(
     // Total Labs counts ONLY the main partners shown as columns (PARTNER_COLS);
     // "Other"/N/A partners are excluded (matching the Looker dashboard), so Total
     // Labs always equals the sum of the partner columns -- on screen and export.
-    const totalLabs = PARTNER_COLS.reduce((a, p) => a + partnerSum(lp, p.names), 0);
-    const compTotalLabs = PARTNER_COLS.reduce((a, p) => a + partnerSum(clp, p.names), 0);
+    const totalLabs = PARTNER_COLS.reduce((a, p) => a + partnerSum(lp, p), 0);
+    const compTotalLabs = PARTNER_COLS.reduce((a, p) => a + partnerSum(clp, p), 0);
 
     const billupsOoh = lp?.get("billups-ooh") ?? 0;
     const billupsPrint = lp?.get("billups-print") ?? 0;
     const oohMedia = m.byLabel.get("OOH") ?? 0;
     const printMedia = m.byLabel.get("Print") ?? 0;
 
-    // Labs Share of Total Media for each submission, then the %pt gap.
-    // Uses the compare submission already loaded for the $ variances.
+    // Labs Share of Total Media per submission, then the %pt gap. Uses the
+    // AIM-corrected totalLabs / compTotalLabs, so AIM splits are included here too.
     const labsShareTotalMedia = ratio(totalLabs, m.total);
     const compLabsShare = ratio(compTotalLabs, cm?.total ?? 0);
     const labsShareVar =
@@ -195,8 +215,8 @@ export function computeClientTable(
       billupsShareOfOoh: ratio(billupsOoh, oohMedia),
       partners: PARTNER_COLS.map((p) => ({
         label: p.label,
-        primary: partnerSum(lp, p.names),
-        variance: partnerSum(lp, p.names) - partnerSum(clp, p.names),
+        primary: partnerSum(lp, p),
+        variance: partnerSum(lp, p) - partnerSum(clp, p),
       })),
 
       billupsOohSpend: billupsOoh,
