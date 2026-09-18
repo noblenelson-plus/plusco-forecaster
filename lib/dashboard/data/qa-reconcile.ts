@@ -30,7 +30,7 @@
 
 import type { ScopeForecastData } from "./use-scope-forecast-data";
 import type { MonthlyMap } from "../../types/common.types";
-import { PARTNER_COLS } from "../../../components/forecaster/sections/client-table-data";
+import { PARTNER_COLS, partnerSum } from "../../../components/forecaster/sections/client-table-data";
 
 /**
  * Amounts within this many dollars are treated as equal — absorbs float noise
@@ -153,11 +153,12 @@ function labsMainByClientMap(data: ScopeForecastData): Map<string, number> {
     perClient.set(d.clientId, inner);
   }
 
-  const mainNames = PARTNER_COLS.flatMap((p) => p.names);
+  // Use the SAME prefix-aware summation the client table uses (partnerSum), so
+  // this reconciliation can never diverge from Total Labs -- including AIM's
+  // splits (AIM-Prog/Social/SEM), which roll up via the AIM column's prefix.
   const out = new Map<string, number>();
   for (const [clientId, byName] of perClient) {
-    let total = 0;
-    for (const name of mainNames) total += byName.get(name) ?? 0;
+    const total = PARTNER_COLS.reduce((a, p) => a + partnerSum(byName, p), 0);
     out.set(clientId, total);
   }
   return out;

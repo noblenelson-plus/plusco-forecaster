@@ -43,6 +43,9 @@ export interface ClientTableTotals {
   printMedia: number;
   billupsOoh: number;
   billupsPrint: number;
+  progLabsSpend: number;
+  progMediaSpend: number;
+  digitalLabsSpend: number;
 }
 
 /** Ratio guarded against a zero or absent denominator. */
@@ -70,6 +73,9 @@ export function computeClientTableTotals(
     printMedia: 0,
     billupsOoh: 0,
     billupsPrint: 0,
+    progLabsSpend: 0,
+    progMediaSpend: 0,
+    digitalLabsSpend: 0,
   };
 
   for (const row of rows) {
@@ -84,6 +90,9 @@ export function computeClientTableTotals(
     totals.printMedia += row.printMedia;
     totals.billupsOoh += row.billupsOohSpend;
     totals.billupsPrint += row.billupsPrintSpend;
+    totals.progLabsSpend += row.progLabsSpend;
+    totals.progMediaSpend += row.progMediaSpend;
+    totals.digitalLabsSpend += row.digitalLabsSpend;
 
     for (const channel of row.channels) {
       // Guard against a label the column order does not know about.

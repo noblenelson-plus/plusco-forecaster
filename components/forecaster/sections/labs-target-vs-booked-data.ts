@@ -93,7 +93,13 @@ export const DEFAULT_ROLLUP: Record<string, string> = {
   "Billups-Print": "Billups",
   "MIQ-Prog": "MIQ",
   "MIQ-Social": "MIQ",
+  // AIM (all variants) folds into MIQ on the deck. The split names must each be
+  // listed -- the rollup matches on the exact partner name, so "AIM" alone would
+  // miss AIM-Prog/Social/SEM and drop their $ entirely.
   "AIM": "MIQ",
+  "AIM-Prog": "MIQ",
+  "AIM-Social": "MIQ",
+  "AIM-SEM": "MIQ",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
