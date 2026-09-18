@@ -95,6 +95,9 @@ function normalizeStatusMap(
   for (const [y, v] of Object.entries(m)) {
     out[Number(y)] = v === "NEW_CLIENT" ? "ACTIVE" : v;
   }
+  // Always surface a 2027 row (rendered identically to 2026 by the year list),
+  // defaulting to Active when unset.
+  if (out[2027] === undefined) out[2027] = "ACTIVE";
   return out;
 }
 
@@ -187,7 +190,6 @@ export default function ClientDrawer({
 
   const statusYears = Object.keys(form.Client_Status_By_Year)
     .map(Number)
-    .filter((y) => y !== 2027) // 2027 has its own dedicated line below
     .sort((a, b) => b - a);
 
   function setStatusForYear(year: number, status: ClientStatus) {
@@ -628,20 +630,9 @@ export default function ClientDrawer({
               </div>
             </Field>
 
-            {/* Dedicated 2027 status line — always shown; writes the same
-                Client_Status_By_Year[2027] the CSV column client_status_2027 reads. */}
-            <Field label="Status 2027">
-              <Select
-                value={form.Client_Status_By_Year[2027]}
-                onChange={(v) => setStatusForYear(2027, v as ClientStatus)}
-                options={SELECTABLE_CLIENT_STATUSES}
-                placeholder="Select status"
-              />
-            </Field>
-
             {client?.createdAt && (
               <Field label="Created">
-                <p className="text-sm text-gray-600">
+                <p className="text-xs text-gray-400">
                   {new Date(client.createdAt).toLocaleDateString("en-CA", {
                     year: "numeric",
                     month: "short",
