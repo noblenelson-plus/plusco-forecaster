@@ -265,7 +265,13 @@ export function exportClientsToCSV(clients: Client[]): void {
     const statusByYear: Record<number, string> = {};
     let last: string | undefined;
     for (const y of STATUS_EXPORT_YEARS) {
-      const val = c.Client_Status_By_Year?.[y] ?? last ?? resolveClientStatus(c, y);
+      // Normalize retired NEW_CLIENT -> ACTIVE on the RAW stored value too
+      // (not only the resolveClientStatus fallback), so a year explicitly
+      // stored as "New" -- e.g. 2027, which the 2026-only conversion left
+      // untouched -- exports as Active like 2026 instead of raw "New".
+      const raw = c.Client_Status_By_Year?.[y];
+      const normalized = raw === "NEW_CLIENT" ? "ACTIVE" : raw;
+      const val = normalized ?? last ?? resolveClientStatus(c, y);
       statusByYear[y] = val;
       last = val;
     }
