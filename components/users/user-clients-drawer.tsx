@@ -88,6 +88,7 @@ export default function UserClientsDrawer({
   const [search, setSearch] = useState("");
   const [agencyFilter, setAgencyFilter] = useState<AgencyFilter>("ALL");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [regionFilter, setRegionFilter] = useState<string>("ALL");
 
   // Load clients on open
   useEffect(() => {
@@ -125,6 +126,15 @@ export default function UserClientsDrawer({
     setError("");
   }, [user, open]);
 
+  // Distinct BU regions present in the loaded clients (for the region filter).
+  const regionOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of clients) {
+      if (c.CL_Business_Unit_Region) set.add(c.CL_Business_Unit_Region);
+    }
+    return Array.from(set).sort();
+  }, [clients]);
+
   // Clients visible according to the filters
   const filteredClients = useMemo(() => {
     const q = search.toLowerCase();
@@ -140,7 +150,9 @@ export default function UserClientsDrawer({
       const matchesStatus =
         statusFilter === "ALL" ||
         resolveClientStatus(c, new Date().getFullYear()) === statusFilter;
-      return matchesSearch && matchesAgency && matchesStatus;
+      const matchesRegion =
+        regionFilter === "ALL" || c.CL_Business_Unit_Region === regionFilter;
+      return matchesSearch && matchesAgency && matchesStatus && matchesRegion;
     });
     // Pin selected (checked) clients to the top. `clients` is already sorted
     // alphabetically and Array.sort is stable, so alphabetical order is
@@ -148,7 +160,7 @@ export default function UserClientsDrawer({
     return list.sort(
       (a, b) => Number(selected.has(b.cl_id)) - Number(selected.has(a.cl_id))
     );
-  }, [clients, search, agencyFilter, statusFilter, selected]);
+  }, [clients, search, agencyFilter, statusFilter, regionFilter, selected]);
 
   const diff = useMemo(
     () => diffAssignments(initialAssignments, [...selected]),
@@ -289,6 +301,26 @@ export default function UserClientsDrawer({
                 {CLIENT_AGENCIES.map((a) => (
                   <option key={a.value} value={a.value}>
                     {a.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={13}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+            </div>
+
+            {/* BU Region filter */}
+            <div className="relative">
+              <select
+                value={regionFilter}
+                onChange={(e) => setRegionFilter(e.target.value)}
+                className="appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
+              >
+                <option value="ALL">All regions</option>
+                {regionOptions.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
                   </option>
                 ))}
               </select>
