@@ -10,7 +10,9 @@
  *     (use-grid-selection) owns the geometry, this component only reports
  *     mouse events and renders the selected / active / dirty states
  *   — editing (double-click, Enter/F2, or typing a digit) swaps in an <input>;
- *     Enter / Tab / Escape commit or cancel and move the active cell
+ *     Enter / Tab / Escape commit or cancel and move the active cell. When the
+ *     input was opened by typing a fresh value (not a double-click / F2 edit),
+ *     the arrow keys also commit and move — Google-Sheets "enter mode".
  *   — read-only when the RFQ is locked, or for ADMIN_INPUT viewed by a BL
  *
  * <TotalCell/> — read-only total (row, bucket header, grand total).
@@ -79,6 +81,29 @@ function EditingInput({
         } else if (e.key === "Tab") {
           e.preventDefault();
           commit(e.shiftKey ? "left" : "right");
+        } else if (
+          !selectOnFocus &&
+          (e.key === "ArrowUp" ||
+            e.key === "ArrowDown" ||
+            e.key === "ArrowLeft" ||
+            e.key === "ArrowRight")
+        ) {
+          // Spreadsheet-style arrow entry: when this input was opened by typing
+          // a fresh value (enter mode — never a double-click / F2 edit), an
+          // arrow commits the value and moves the active cell that way, like
+          // Google Sheets. In edit mode (selectOnFocus) arrows are left alone so
+          // they move the caret within the number and a typo can still be fixed;
+          // Enter / Tab commit from there.
+          e.preventDefault();
+          const dir: EditMove =
+            e.key === "ArrowUp"
+              ? "up"
+              : e.key === "ArrowDown"
+                ? "down"
+                : e.key === "ArrowLeft"
+                  ? "left"
+                  : "right";
+          commit(dir);
         } else if (e.key === "Escape") {
           e.preventDefault();
           done.current = true;
