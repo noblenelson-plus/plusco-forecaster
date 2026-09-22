@@ -59,24 +59,44 @@ export function computeLabsPacing(
 ): { rows: LabsPacingRow[]; totals: LabsPacingTotals } {
   const nameById = new Map(partners.map((p) => [p.partnerId, p.name]));
 
-  const byPartner = new Map<string, { target: number; booked: number }>();
+  // AIM is split into AIM-Prog / AIM-Social / AIM-SEM as separate partners,
+  // but the By-Partner view rolls them into a single "AIM" line (any "AIM-*"
+  // name folds in). Every other partner is grouped by its own id, so
+  // same-name partners are never merged.
+  type Group = {
+    partnerId: string;
+    partnerName: string;
+    target: number;
+    booked: number;
+  };
+  const byPartner = new Map<string, Group>();
   for (const c of cells) {
-    const cur = byPartner.get(c.partnerId) ?? { target: 0, booked: 0 };
+    const name = nameById.get(c.partnerId) ?? c.partnerId;
+    const isAim = name === "AIM" || name.startsWith("AIM-");
+    const key = isAim ? "__AIM__" : c.partnerId;
+    const cur =
+      byPartner.get(key) ??
+      ({
+        partnerId: isAim ? "__AIM__" : c.partnerId,
+        partnerName: isAim ? "AIM" : name,
+        target: 0,
+        booked: 0,
+      } as Group);
     cur.target += c.target;
     cur.booked += c.booked;
-    byPartner.set(c.partnerId, cur);
+    byPartner.set(key, cur);
   }
 
   let totalTarget = 0;
   let totalBooked = 0;
 
-  const rows: LabsPacingRow[] = [...byPartner.entries()]
-    .map(([partnerId, v]) => {
+  const rows: LabsPacingRow[] = [...byPartner.values()]
+    .map((v) => {
       totalTarget += v.target;
       totalBooked += v.booked;
       return {
-        partnerId,
-        partnerName: nameById.get(partnerId) ?? partnerId,
+        partnerId: v.partnerId,
+        partnerName: v.partnerName,
         target: v.target,
         booked: v.booked,
         variance: v.booked - v.target,
@@ -148,8 +168,8 @@ export function buildLabsPacingColumns({
       kind: "money",
       align: "right",
       raw: (r) => r.variance,
-      display: (r) => pacingMoney(r.variance),
-      cellStyle: (r) => varianceStyle(r.variance),
+      display: (r) => (r.booked === 0 ? "—" : pacingMoney(r.variance)),
+      cellStyle: (r) => (r.booked === 0 ? undefined : varianceStyle(r.variance)),
       total: (t) => pacingMoney(t.variance),
       totalRaw: (t) => t.variance,
     },
@@ -160,7 +180,7 @@ export function buildLabsPacingColumns({
       kind: "percent",
       align: "right",
       raw: (r) => r.percentBooked,
-      display: (r) => pacingPercent(r.percentBooked),
+      display: (r) => (r.booked === 0 ? "—" : pacingPercent(r.percentBooked)),
       total: (t) => pacingPercent(t.percentBooked),
       totalRaw: (t) => t.percentBooked,
     },
@@ -172,7 +192,7 @@ export function buildLabsPacingColumns({
 /** % of target booked, one bar per partner (desc). */
 export function percentBars(rows: LabsPacingRow[]): BarItem[] {
   return rows
-    .filter((r) => r.percentBooked !== null)
+    .filter((r) => r.percentBooked !== null && r.booked !== 0)
     .map((r) => ({ label: r.partnerName, value: r.percentBooked as number }))
     .sort((a, b) => b.value - a.value);
 }
@@ -180,6 +200,7 @@ export function percentBars(rows: LabsPacingRow[]): BarItem[] {
 /** $ variance to target, one bar per partner: magnitude with green (ahead) / red (behind). */
 export function varianceBars(rows: LabsPacingRow[]): BarItem[] {
   return rows
+    .filter((r) => r.booked !== 0)
     .map((r) => ({
       label: r.partnerName,
       value: Math.abs(r.variance),
@@ -517,7 +538,7 @@ export function buildClientPacingColumns({
       kind: "money",
       align: "right",
       raw: (r) => r.variance,
-      display: (r) => pacingMoney(r.variance),
+      display: (r) => (r.booked === 0 ? "—" : pacingMoney(r.variance)),
       total: (t) => pacingMoney(t.variance),
       totalRaw: (t) => t.variance,
     },
@@ -528,7 +549,7 @@ export function buildClientPacingColumns({
       kind: "percent",
       align: "right",
       raw: (r) => r.percentBooked,
-      display: (r) => pacingPercent(r.percentBooked),
+      display: (r) => (r.booked === 0 ? "—" : pacingPercent(r.percentBooked)),
       total: (t) => pacingPercent(t.percentBooked),
       totalRaw: (t) => t.percentBooked,
     },
@@ -539,8 +560,8 @@ export function buildClientPacingColumns({
       kind: "text",
       align: "left",
       raw: (r) => r.flag,
-      display: (r) => r.flag,
-      cellStyle: (r) => flagStyle(r.flag),
+      display: (r) => (r.booked === 0 ? "—" : r.flag),
+      cellStyle: (r) => (r.booked === 0 ? undefined : flagStyle(r.flag)),
       total: (t) => t.flag,
       totalRaw: (t) => t.flag,
     },

@@ -147,10 +147,9 @@ export default function LabsPacingSection({
     [filteredCells, yearPartners]
   );
 
-    // The Labs target always comes from RFQ 2-BL (labs_pacing_wide), regardless of
-  // the Time & Context RFQ selector — so the label is fixed, not dynamic, to
-  // avoid implying the target follows the selected RFQ.
-  const targetLabel = "Target (RFQ3)";
+  // The forecast column follows the primary submission selected in Time &
+  // Context (the pacing read is keyed by selectedRFQ), so the label is dynamic.
+  const targetLabel = `Forecast ${selectedRFQ?.type ?? "RFQ"}`;
   const columns = useMemo(() => buildLabsPacingColumns({ targetLabel }), [targetLabel]);
 
   const { directionFor, toggle: toggleSort, sortRows } = useTableSort(columns);
