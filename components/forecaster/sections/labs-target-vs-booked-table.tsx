@@ -8,10 +8,10 @@
  * own ChartCard + sortable-table chrome — no fetching, no Looker styling.
  *
  * Columns mirror the deck: Deal Type | Included in RFQ | Partner |
- * PLUSCO Labs Target | RFQ3 Labs Target | Booked to Date | % of PLUSCO | % of RFQ.
+ * PLUSCO Deals Target | {RFQ} Labs Forecast | Booked to Date | % of PLUSCO | % of RFQ.
  *
- * Gating: RFQ2 target (E) and % of RFQ (H) render "—" for non-forecaster
- * partners (they carry no RFQ2 target). The two % columns also render "—" for
+ * Gating: the RFQ labs forecast (E) and % of RFQ (H) render "—" for
+ * non-forecaster partners (no RFQ forecast). The two % columns also render "—" for
  * a row with nothing booked (0 / target is a meaningless 0%). Forecaster
  * ("Included in RFQ") rows get the deck's amber highlight on the checkbox cell.
  *
@@ -51,7 +51,7 @@ function rowPctText(frac: number | null, booked: number): string {
   return booked === 0 ? "—" : pctText(frac);
 }
 
-/** Money or "—" for a nullable target (RFQ2 is null for non-forecaster partners). */
+/** Money or "—" for a nullable value (the RFQ forecast is null for non-forecaster partners). */
 function moneyOrDash(value: number | null): string {
   return value === null ? "—" : pacingMoney(value);
 }
@@ -60,8 +60,9 @@ type Row = LabsTargetVsBookedRow;
 type Totals = LabsTargetVsBookedTotals;
 type Col = TableColumn<Row, Totals>;
 
-/** The eight deck columns, in deck order. */
-export function buildLabsTargetVsBookedColumns(): Col[] {
+/** The eight deck columns, in deck order. rfqLabel names the forecast column
+ *  after the primary submission (e.g. "RFQ3" → "RFQ3 Labs Forecast"). */
+export function buildLabsTargetVsBookedColumns(rfqLabel = "RFQ"): Col[] {
   return [
     {
       id: "dealType",
@@ -109,7 +110,7 @@ export function buildLabsTargetVsBookedColumns(): Col[] {
     },
     {
       id: "rfq2Target",
-      label: "RFQ3 Labs Target",
+      label: `${rfqLabel} Labs Forecast`,
       group: "Labs",
       kind: "money",
       align: "right",
@@ -142,7 +143,7 @@ export function buildLabsTargetVsBookedColumns(): Col[] {
     },
     {
       id: "pctOfRfq",
-      label: "% of RFQ Target",
+      label: "% of RFQ Forecast",
       group: "Labs",
       kind: "percent",
       align: "right",
@@ -158,16 +159,21 @@ export default function LabsTargetVsBookedTable({
   rows,
   totals,
   loading = false,
+  rfqLabel = "RFQ",
   title = "Labs — Target vs Booked by Partner",
-  subtitle = "PLUSCO vs RFQ3 targets, booked to date (MIR)",
+  subtitle = `PLUSCO deals target vs ${rfqLabel} labs forecast, booked to date (MIR)`,
 }: {
   rows: Row[];
   totals: Totals;
   loading?: boolean;
+  rfqLabel?: string;
   title?: string;
   subtitle?: string;
 }) {
-  const columns = useMemo(() => buildLabsTargetVsBookedColumns(), []);
+  const columns = useMemo(
+    () => buildLabsTargetVsBookedColumns(rfqLabel),
+    [rfqLabel]
+  );
   const { directionFor, toggle: toggleSort, sortRows } = useTableSort(columns);
   const sortedRows = useMemo(() => sortRows(rows), [sortRows, rows]);
 

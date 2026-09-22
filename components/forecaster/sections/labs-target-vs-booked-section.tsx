@@ -89,9 +89,13 @@ export default function LabsTargetVsBookedSection({
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
 }) {
-    const { selectedYear } = useForecastSelection();
+    const { selectedYear, selectedRFQ } = useForecastSelection();
   const { clients } = useAccessibleClients();
   const lastSync = useLastSync();
+
+  // Label the forecast column + caption after the primary submission (Time &
+  // Context), e.g. "RFQ3" → "RFQ3 Labs Forecast". Falls back to "RFQ".
+  const rfqLabel = selectedRFQ?.type ?? "RFQ";
 
   const gmPodByClient = useMemo(
     () => Object.fromEntries(clients.map((c) => [c.cl_id, c.GM_Pod || "—"])),
@@ -110,7 +114,7 @@ export default function LabsTargetVsBookedSection({
   const { rows, tiles, loading, unmatchedTargets, rosterPartners } =
     useLabsTargetVsBooked({
       year: selectedYear,
-           rfq: "RFQ2",
+      rfq: selectedRFQ?.type ?? null,
       selMonths: [], // annual — whole year
       scopedClientIds,
       currencyByClient,
@@ -162,7 +166,7 @@ export default function LabsTargetVsBookedSection({
             Labs — Target vs Booked by Partner
           </h2>
           <p className="text-xs text-muted-foreground">
-            PLUSCO vs RFQ3 targets · annual booked (MIR as of {asOf})
+            PLUSCO vs {rfqLabel} forecast · annual booked (MIR as of {asOf})
           </p>
         </div>
         {controls}
@@ -193,6 +197,7 @@ export default function LabsTargetVsBookedSection({
         rows={visibleRows}
         totals={visibleTotals}
         loading={loading}
+        rfqLabel={rfqLabel}
       />
 
       {unmatchedTargets.length > 0 && (
