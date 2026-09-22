@@ -239,7 +239,11 @@ function axisRows(
   productNameById: Map<string, string>,
   lastChecked: string,
   blLevelByMonth: Record<number, BlSubmissionLevel> | null,
-  extra: ExtraFn = null
+  extra: ExtraFn = null,
+  // "Type" cell resolver. For Labs it maps a row's partnerId (rowType) to
+  // the partner's CURRENT name from the config, so renames/splits (e.g. AIM
+  // -> AIM-Prog) flow into exports; other axes keep the stored label.
+  typeOf: (row: ForecastRow) => string = (row) => row.label
 ): ReportRow[] {
   const rows: ReportRow[] = [];
 
@@ -275,7 +279,7 @@ function axisRows(
       rows.push(finish([
         ...baseCells,
         `${submission}-BL`,
-        axisLabel, "BL Input", bucket.name, row.label, productName(row.productId),
+        axisLabel, "BL Input", bucket.name, typeOf(row), productName(row.productId),
         ...monthCells(maskToLevel(row.months, "BL")),
       ]));
     }
@@ -372,6 +376,13 @@ async function buildReportRows(
 
         for (const axis of axes) {
           const data = dataByAxis[axis.axisId];
+          // Labs resolves each row's partnerId to the partner's current name
+          // (config is the source of truth); other axes keep the stored label.
+          const typeOf =
+            axis.axisId === "labs"
+              ? (row: ForecastRow) =>
+                  ref.partnersByYear.get(year)?.get(row.rowType) ?? row.label
+              : undefined;
           if (axis.axisId === "revenue") {
             // GAIA rides in the same doc; the level helper owns the per-month
             // "detail wins over BL" priority used to mask each cell to its
@@ -380,7 +391,7 @@ async function buildReportRows(
               ...axisRows(
                 baseCells, submission, axis.label, axis.adminLabel,
                 data, data.actuals, ref.productNameById, lastChecked,
-                blSubmissionLevelByMonth(data), extra
+                blSubmissionLevelByMonth(data), extra, typeOf
               )
             );
           } else {
@@ -390,7 +401,7 @@ async function buildReportRows(
             rows.push(
               ...axisRows(
                 baseCells, submission, axis.label, axis.adminLabel,
-                data, [], ref.productNameById, lastChecked, null, extra
+                data, [], ref.productNameById, lastChecked, null, extra, typeOf
               )
             );
           }
@@ -403,6 +414,13 @@ async function buildReportRows(
       // detail lines is exploded into them (no roll-up parent) to avoid
       // double-counting, like the Revenue admin lines.
       for (const axis of annualAxes) {
+        // Labs annual actuals resolve the partner's current name from its id,
+        // like the BL rows; Media keeps its stored label.
+        const typeOf =
+          axis.axisId === "labs"
+            ? (row: ForecastRow) =>
+                ref.partnersByYear.get(year)?.get(row.rowType) ?? row.label
+            : (row: ForecastRow) => row.label;
         for (const row of annualByAxis[axis.axisId]) {
           for (const leaf of adminLeaves(row)) {
             // Annual MediaOcean actuals carry no product; Product Name stays "".
@@ -412,7 +430,7 @@ async function buildReportRows(
             rows.push([
               ...appendExtra([
                 client.cl_id, client.CL_Name, year, ANNUAL_RFQ_SENTINEL, "",
-                axis.label, axis.adminLabel, leaf.project, row.label, product,
+                axis.label, axis.adminLabel, leaf.project, typeOf(row), product,
                 ...monthCells(leaf.months),
               ], extra),
               lastChecked,
