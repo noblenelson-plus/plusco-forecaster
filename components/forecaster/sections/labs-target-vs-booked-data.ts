@@ -20,9 +20,11 @@
  * Roll-up: split admin partners are merged for display and for both target and
  * booked, via a canonical key (lowercase, strip spaces/punctuation, apply the
  * roll-up map). Billups-OOH + Billups-Print → "Billups"; MIQ-Prog + MIQ-Social
- * + AIM → "MIQ". AIM has an RFQ2 forecast but no PLUSCO target row, so E is
- * aggregated by canonical key (like booked) rather than per target row — that
- * way AIM's forecast still folds into MIQ.
+ * → "MIQ". AIM is broken out as its own row: its forecaster RFQ splits
+ * (AIM-Prog / AIM-Social / AIM-SEM) roll up to a single "AIM" row, while the
+ * PLUSCO side carries one "AIM" target row. E (RFQ target) is aggregated by
+ * canonical key (like booked) rather than per target row, so those splits
+ * still combine onto that row.
  */
 
 import {
@@ -93,13 +95,15 @@ export const DEFAULT_ROLLUP: Record<string, string> = {
   "Billups-Print": "Billups",
   "MIQ-Prog": "MIQ",
   "MIQ-Social": "MIQ",
-  // AIM (all variants) folds into MIQ on the deck. The split names must each be
-  // listed -- the rollup matches on the exact partner name, so "AIM" alone would
-  // miss AIM-Prog/Social/SEM and drop their $ entirely.
-  "AIM": "MIQ",
-  "AIM-Prog": "MIQ",
-  "AIM-Social": "MIQ",
-  "AIM-SEM": "MIQ",
+  // AIM is its OWN row (broken out of MIQ). partner_targets carries a single
+  // "AIM" PLUSCO target row, while the forecaster splits its RFQ target across
+  // AIM-Prog / AIM-Social / AIM-SEM -- each split name maps to the "AIM" display
+  // key so they combine onto that one row instead of folding into MIQ. Booked
+  // (MediaOcean) has no separate AIM figure for now, so AIM's Booked reads "—"
+  // and its % columns read 0%.
+  "AIM-Prog": "AIM",
+  "AIM-Social": "AIM",
+  "AIM-SEM": "AIM",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -159,8 +163,8 @@ export function computeLabsTargetVsBooked(
   const canonical = makeCanonical(rollup);
 
   // RFQ2 target (E) aggregated by CANONICAL key, mirroring booked — so partners
-  // that roll into a group but have no PLUSCO target row (e.g. AIM → MIQ) still
-  // contribute their forecast.
+  // that roll into a group but have no PLUSCO target row (e.g. the AIM-Prog /
+  // AIM-Social / AIM-SEM splits → AIM) still contribute their forecast.
   const rfq2ByCanonical = new Map<string, number>();
   for (const [name, target] of rfq2TargetByPartner) {
     const key = canonical(name);
