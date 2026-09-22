@@ -395,7 +395,9 @@ export default function LabsPacingSection({
         </ChartCard>
       </div>
 
-                {showPodBreakdown && <LabsPodMatrix matrix={gmPodMatrix} />}
+                {showPodBreakdown && (
+                  <LabsPodMatrix matrix={gmPodMatrix} targetLabel={targetLabel} />
+                )}
 
       <ChartCard title="By Client" icon={Table2}>
         <div className="flex items-center justify-end pb-2">
