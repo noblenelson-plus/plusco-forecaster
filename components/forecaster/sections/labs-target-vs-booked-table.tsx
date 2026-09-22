@@ -11,8 +11,9 @@
  * PLUSCO Labs Target | RFQ3 Labs Target | Booked to Date | % of PLUSCO | % of RFQ.
  *
  * Gating: RFQ2 target (E) and % of RFQ (H) render "—" for non-forecaster
- * partners (they carry no RFQ2 target). Forecaster ("Included in RFQ") rows get
- * the deck's amber highlight on the checkbox cell.
+ * partners (they carry no RFQ2 target). The two % columns also render "—" for
+ * a row with nothing booked (0 / target is a meaningless 0%). Forecaster
+ * ("Included in RFQ") rows get the deck's amber highlight on the checkbox cell.
  *
  * Units: pctOfPlusco / pctOfRfq arrive as FRACTIONS (0.6146), so the % columns
  * multiply by 100 here via `pctText`. Money reuses the app's `pacingMoney`.
@@ -40,6 +41,14 @@ const PCT_DECIMALS = 1;
 /** Format a 0..1 fraction as a percent string; null → "—" (the gating dash). */
 function pctText(frac: number | null): string {
   return frac === null ? "—" : `${(frac * 100).toFixed(PCT_DECIMALS)}%`;
+}
+
+/**
+ * Row-level percent: "—" when the row has nothing booked (0 / target is a
+ * meaningless 0%, e.g. AIM before MediaOcean reports it), else the normal %.
+ */
+function rowPctText(frac: number | null, booked: number): string {
+  return booked === 0 ? "—" : pctText(frac);
 }
 
 /** Money or "—" for a nullable target (RFQ2 is null for non-forecaster partners). */
@@ -127,7 +136,7 @@ export function buildLabsTargetVsBookedColumns(): Col[] {
       kind: "percent",
       align: "right",
       raw: (r) => r.pctOfPlusco,
-      display: (r) => pctText(r.pctOfPlusco),
+      display: (r) => rowPctText(r.pctOfPlusco, r.booked),
       total: (t) => pctText(t.pctOfPlusco),
       totalRaw: (t) => t.pctOfPlusco,
     },
@@ -138,7 +147,7 @@ export function buildLabsTargetVsBookedColumns(): Col[] {
       kind: "percent",
       align: "right",
       raw: (r) => r.pctOfRfq,
-      display: (r) => pctText(r.pctOfRfq),
+      display: (r) => rowPctText(r.pctOfRfq, r.booked),
       total: (t) => pctText(t.pctOfRfq),
       totalRaw: (t) => t.pctOfRfq,
     },
