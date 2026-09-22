@@ -23,6 +23,7 @@ import type {
 import {
   CHANNEL_ORDER,
   PARTNER_COLS,
+  SPLIT_PARTNER_COLS,
   type ClientTableRow,
 } from "./client-table-data";
 import { ratio, type ClientTableTotals } from "./client-table-totals";
@@ -36,6 +37,9 @@ export const GROUP_MEDIA = "Media";
 export const GROUP_CHANNELS = "Media channels";
 export const GROUP_LABS = "Labs";
 export const GROUP_PARTNERS = "Labs partners";
+// Optional Billups OOH/Print split columns. Deliberately NOT in the presets
+// below, so they appear in the Columns selector but are OFF by default.
+export const GROUP_PARTNERS_SPLIT = "Labs partners (split)";
 
 const MEDIA_GROUPS = [GROUP_MEDIA, GROUP_CHANNELS];
 const LABS_GROUPS = [GROUP_LABS, GROUP_PARTNERS];
@@ -239,7 +243,17 @@ export function buildClientTableColumns({
       (t) => t.partners[partner.label]?.variance ?? 0),
   ]);
 
-  return [...dimensions, ...media, ...channels, ...labs, ...partners];
+  // Optional Billups OOH/Print split — same shape, own group (off by default).
+  const partnersSplit: ClientColumn[] = SPLIT_PARTNER_COLS.flatMap((partner) => [
+    moneyColumn(`partner-${partner.key}`, partner.label, GROUP_PARTNERS_SPLIT,
+      (r) => partnerCell(r, partner.label)?.primary ?? 0,
+      (t) => t.partners[partner.label]?.primary ?? 0),
+    varianceColumn(`partner-${partner.key}-var`, `${partner.label} Var $`, GROUP_PARTNERS_SPLIT,
+      (r) => partnerCell(r, partner.label)?.variance ?? 0,
+      (t) => t.partners[partner.label]?.variance ?? 0),
+  ]);
+
+  return [...dimensions, ...media, ...channels, ...labs, ...partners, ...partnersSplit];
 }
 
 /**

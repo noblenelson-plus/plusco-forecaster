@@ -39,6 +39,14 @@ export const PARTNER_COLS: {
   { key: "aim", label: "AIM", names: ["aim"], prefix: "aim" },
 ];
 
+// Optional Billups OOH / Print split — DISPLAY-ONLY extra columns (off by
+// default in the Columns selector). NOT part of PARTNER_COLS, so Total Labs
+// still counts the combined Billups exactly once (no double-count).
+export const SPLIT_PARTNER_COLS: { key: string; label: string; names: string[] }[] = [
+  { key: "billups-ooh", label: "Billups-OOH", names: ["billups-ooh"] },
+  { key: "billups-print", label: "Billups-Print", names: ["billups-print"] },
+];
+
 const sumM = (m?: MonthlyMap) =>
   Object.values(m ?? {}).reduce((a, b) => a + (Number(b) || 0), 0);
 const ratio = (a: number, b: number): number | null => (b > 0 ? a / b : null);
@@ -242,11 +250,19 @@ export function computeClientTable(
       digitalLabsSpend,
       billupsShareOfPrint: ratio(billupsPrint, printMedia),
       billupsShareOfOoh: ratio(billupsOoh, oohMedia),
-      partners: PARTNER_COLS.map((p) => ({
-        label: p.label,
-        primary: partnerSum(lp, p),
-        variance: partnerSum(lp, p) - partnerSum(clp, p),
-      })),
+      partners: [
+        ...PARTNER_COLS.map((p) => ({
+          label: p.label,
+          primary: partnerSum(lp, p),
+          variance: partnerSum(lp, p) - partnerSum(clp, p),
+        })),
+        // Display-only Billups OOH/Print split (optional columns).
+        ...SPLIT_PARTNER_COLS.map((p) => ({
+          label: p.label,
+          primary: partnerSum(lp, p),
+          variance: partnerSum(lp, p) - partnerSum(clp, p),
+        })),
+      ],
 
       billupsOohSpend: billupsOoh,
       billupsPrintSpend: billupsPrint,

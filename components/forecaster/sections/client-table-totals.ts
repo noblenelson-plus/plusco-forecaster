@@ -15,6 +15,7 @@
 import {
   CHANNEL_ORDER,
   PARTNER_COLS,
+  SPLIT_PARTNER_COLS,
   type ClientTableRow,
 } from "./client-table-data";
 
@@ -67,7 +68,10 @@ export function computeClientTableTotals(
     totalLabs: 0,
     labsVar: 0,
     partners: Object.fromEntries(
-      PARTNER_COLS.map((p) => [p.label, { primary: 0, variance: 0 }])
+      [...PARTNER_COLS, ...SPLIT_PARTNER_COLS].map((p) => [
+        p.label,
+        { primary: 0, variance: 0 },
+      ])
     ),
     oohMedia: 0,
     printMedia: 0,
