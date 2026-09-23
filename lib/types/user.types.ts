@@ -35,6 +35,12 @@ export interface AppUser {
   // CL_Agency is listed here — including clients added later. Optional so
   // pre-migration docs (missing the field) read as "no agency access".
   assignedAgencies?: string[]; // Array of ClientAgency values
+  // Derived, admin-maintained: the distinct CL_Agency of `assignedClients`.
+  // Security rules can't look up each assigned client's agency, so they check
+  // this list to let a user read agency-scoped data (MediaOcean tab, Reports)
+  // for the agencies their clients belong to. Refreshed by every assignment
+  // write (assignment-service.ts); repair with scripts/backfill-client-agencies.mjs.
+  clientAgencies?: string[];
   disabled?: boolean; // When true, access is revoked (blocked at the layout gate)
   displayName?: string;
   photoURL?: string;

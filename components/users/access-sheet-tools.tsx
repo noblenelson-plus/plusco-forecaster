@@ -22,6 +22,7 @@ import {
   extractSpreadsheetId,
 } from "../../lib/services/google-sheets-service";
 import { fetchInvites } from "../../lib/services/invite-service";
+import { agenciesOfClients } from "../../lib/services/assignment-service";
 import {
   computeAccessSync,
   buildExportRows,
@@ -157,7 +158,10 @@ export default function AccessSheetTools({ users }: { users: AccessUser[] }) {
     setModalErr("");
     try {
       for (const wr of plan.writes) {
-        const patch: Record<string, unknown> = { assignedClients: wr.assignedClients };
+        const patch: Record<string, unknown> = {
+          assignedClients: wr.assignedClients,
+          clientAgencies: await agenciesOfClients(wr.assignedClients),
+        };
         if (wr.clearAgencies) patch.assignedAgencies = [];
         await updateDoc(doc(db, "users", wr.uid), patch);
       }

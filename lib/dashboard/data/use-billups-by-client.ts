@@ -29,8 +29,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../../firebase";
+import { useAgencyScope } from "../../hooks/use-agency-scope";
+import { fetchAgencyScopedDocs } from "./agency-scoped-query";
 
 // ─── Source + unified row shape ───────────────────────────────────────────────
 
@@ -125,7 +125,8 @@ export interface BillupsRowsResult {
 }
 
 /**
- * One-shot read of the whole `mo_kpi_by_client` collection (~163 docs), mapped
+ * One-shot read of `mo_kpi_by_client` (~163 docs, within the user's agency
+ * scope — every agency for Admin/Exec, who are the ones seeing this), mapped
  * to BillupsClientRow. Small enough to load in full and filter/roll-up in
  * memory, which keeps the page filters instant.
  */
@@ -133,18 +134,20 @@ export function useBillupsMirRows(): BillupsRowsResult {
   const [rows, setRows] = useState<BillupsClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { scope, loading: scopeLoading } = useAgencyScope();
 
   useEffect(() => {
+    if (scopeLoading) return;
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const snap = await getDocs(collection(db, MIR_COLLECTION));
+        const docs = await fetchAgencyScopedDocs(MIR_COLLECTION, scope);
         if (cancelled) return;
 
-        const out: BillupsClientRow[] = snap.docs.map((d) => {
+        const out: BillupsClientRow[] = docs.map((d) => {
           const raw = d.data() as Record<string, unknown>;
           return {
             clientId: d.id,
@@ -180,9 +183,9 @@ export function useBillupsMirRows(): BillupsRowsResult {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [scope, scopeLoading]);
 
-  return { rows, loading, error };
+  return { rows, loading: loading || scopeLoading, error };
 }
 
 // ─── Forecast source: map the app's forecast client rows ──────────────────────

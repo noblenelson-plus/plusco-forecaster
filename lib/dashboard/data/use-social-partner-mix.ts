@@ -23,8 +23,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../../firebase";
+import { useAgencyScope } from "../../hooks/use-agency-scope";
+import { fetchAgencyScopedDocs } from "./agency-scoped-query";
 
 const COLLECTION = "social_partner_mix";
 
@@ -53,7 +53,8 @@ export interface SocialPartnerResult {
 }
 
 /**
- * One-shot read of the whole `social_partner_mix` collection (~2.7k docs). Small,
+ * One-shot read of `social_partner_mix` (~2.7k docs), limited to the user's
+ * agency scope (Admin/Exec: every agency — see agency-scoped-query.ts). Small,
  * so read in full and filter/roll-up in memory (same pattern as the other
  * dashboard data modules).
  */
@@ -61,17 +62,19 @@ export function useSocialPartnerMix(): SocialPartnerResult {
   const [rows, setRows] = useState<SocialPartnerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { scope, loading: scopeLoading } = useAgencyScope();
 
   useEffect(() => {
+    if (scopeLoading) return;
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const snap = await getDocs(collection(db, COLLECTION));
+        const docs = await fetchAgencyScopedDocs(COLLECTION, scope);
         if (cancelled) return;
-        const out = snap.docs.map((d) => ({
+        const out = docs.map((d) => ({
           id: d.id,
           ...(d.data() as Record<string, unknown>),
         })) as SocialPartnerRow[];
@@ -92,9 +95,9 @@ export function useSocialPartnerMix(): SocialPartnerResult {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [scope, scopeLoading]);
 
-  return { rows, loading, error };
+  return { rows, loading: loading || scopeLoading, error };
 }
 
 // ─── Numeric helpers ───────────────────────────────────────────────────────────

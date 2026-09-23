@@ -231,7 +231,58 @@ you can't deploy.
 
 ---
 
-## 7. Quick cheat-sheet
+## 7. One-time rollout: agency-scoped MediaOcean + Reports
+
+The MediaOcean and Reports tabs read agency-partitioned data (see CLAUDE.md,
+"Agency-partitioned data"). Rolling that out needs a few one-time steps, **in
+this order**. Rules before hosting: the new app code needs the new rules, while
+the old code keeps working under them.
+
+1. **Merge the PR** and pull `master` (section 3.6).
+2. **Allow browser downloads from the bucket (CORS)**, once:
+   ```bash
+   gcloud storage buckets update gs://pluscoops.firebasestorage.app --cors-file=storage-cors.json
+   ```
+3. **Run the monthly sync** so every MediaOcean doc gets its `_agency` tag and
+   the per-agency Reports snapshots get published to Storage:
+   ```bash
+   node scripts/sync-all.mjs
+   ```
+   Your gcloud account needs write access to Storage in `pluscoops`, in
+   addition to the existing BigQuery + Firestore access. Check the "Agency
+   split" lines in the output: `_unassigned` rows are visible only to Admin/Exec.
+4. **Backfill `clientAgencies`** on existing user profiles:
+   ```bash
+   node scripts/backfill-client-agencies.mjs --dry-run   # review
+   node scripts/backfill-client-agencies.mjs
+   ```
+5. **Check the agency ↔ domain mapping** (Admin → Access → Agencies):
+   `cossettemedia.com` on **both** Cossette Media and Showroom,
+   `jungle-media.ca` on Jungle, `mekanismmedia.com` on Mekanism. Check the
+   company-wide domain list: a domain there grants **every** agency to all its
+   users, Viewers included. Then run "Sync agencies" for existing users.
+   Remember that sync only *adds* agencies, so remove any wrong grants by hand.
+6. **Diff the rules file against the live rules** (Firebase console →
+   Firestore → Rules). The file had drifted from the console before this change.
+   Anything live that is missing from `firestoreRules.txt` would be dropped by the
+   deploy.
+7. **Deploy the rules:**
+   ```bash
+   firebase deploy --only firestore:rules,storage
+   ```
+   The first time Storage rules read Firestore, the CLI or console asks you to
+   grant that access. Approve it.
+8. **Deploy hosting** (`firebase deploy --only hosting`) and verify:
+   - As an Admin, Reports shows every agency.
+   - As an agency Viewer, only their agency's rows appear.
+   - A brand-new sign-in still lands on the right screen. The rules now
+     validate self-created profiles.
+
+After this, the monthly routine is unchanged: `node scripts/sync-all.mjs`.
+
+---
+
+## 8. Quick cheat-sheet
 
 ```bash
 # --- ship a normal code change ---

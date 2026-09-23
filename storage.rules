@@ -1,17 +1,59 @@
 rules_version = '2';
 
-// Cloud Storage rules — the bucket only holds client logos, uploaded from the
-// admin-only client drawer. Reads require sign-in (the app displays logos via
-// tokened download URLs anyway); writes require the ADMIN role, checked
-// against the caller's Firestore user doc (cross-service rules).
+// Cloud Storage rules. Role and agency checks read the caller's Firestore user
+// doc (cross-service rules).
+//   - client-logos/: uploaded from the admin-only client drawer.
+//   - reports/: the per-agency Reports snapshots published by the monthly sync
+//     (scripts/lib/report-snapshot.mjs). Only the Admin SDK writes them.
 service firebase.storage {
   match /b/{bucket}/o {
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    function isAdminOrExec() {
+      return userDoc().role in ['ADMIN', 'EXEC'];
+    }
+    // Mirrors canReadAgencyData in firestoreRules.txt: Admin/Exec read every
+    // agency; everyone else their email-domain agencies (assignedAgencies) plus
+    // their assigned clients' agencies (clientAgencies). Disabled users: none.
+    function canReadAgency(agency) {
+      return request.auth != null && (
+        isAdminOrExec() || (
+          userDoc().get('disabled', false) != true &&
+          (agency in userDoc().get('assignedAgencies', []) ||
+           agency in userDoc().get('clientAgencies', []))
+        )
+      );
+    }
+    // Any approved, active user (the layout's access gate, enforced here).
+    function isActiveUser() {
+      return request.auth != null &&
+        userDoc().get('disabled', false) != true && (
+          isAdminOrExec() ||
+          userDoc().get('assignedAgencies', []).size() > 0 ||
+          userDoc().get('clientAgencies', []).size() > 0 ||
+          userDoc().get('assignedClients', []).size() > 0
+        );
+    }
+
     match /client-logos/{fileName} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == "ADMIN"
+        && userDoc().role == "ADMIN"
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+    }
+
+    // Which agencies exist per report table + the sync time. No row data.
+    match /reports/manifest.json {
+      allow read: if isActiveUser();
+      allow write: if false;
+    }
+
+    // One agency's rows: reports/{table}/{agency}/data.json.gz
+    match /reports/{table}/{agency}/{fileName} {
+      allow read: if canReadAgency(agency);
+      allow write: if false;
     }
 
     // Everything else is locked down.

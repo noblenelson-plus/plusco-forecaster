@@ -43,17 +43,20 @@ export const FORECASTER_TABS: { id: ForecasterTab; label: string; icon: LucideIc
 // Tabs surfacing revenue figures — hidden from users without revenue access
 // (agency Viewers). The Summary leads with revenue KPIs, so it goes too.
 const REVENUE_TABS: ForecasterTab[] = ["exec", "revenue"];
-// The high-level, all-clients dashboards — Exec and Admin only. Reports (MIR
-// Raw Data + Billing Summary) carries the same gating its two former tabs had.
-const GLOBAL_DASHBOARD_TABS: ForecasterTab[] = ["exec-kpis", "reports"];
+// The high-level, all-clients dashboards — Exec and Admin only.
+const GLOBAL_DASHBOARD_TABS: ForecasterTab[] = ["exec-kpis"];
 
 /**
  * The dashboard tabs a user may see, from their capability flags:
  *   - Viewer (no revenue, no global) → Media Spend, Labs, Product, MediaBox,
- *     MediaOcean.
+ *     MediaOcean, Reports.
  *   - Business Lead (revenue) → the above + Forecast Summary + Revenue.
- *   - Exec / Admin (revenue + global) → the full set incl. Executive KPIs and
- *     Reports.
+ *   - Exec / Admin (revenue + global) → the full set incl. Executive KPIs.
+ *
+ * MediaOcean and Reports are open to everyone because their data is
+ * agency-partitioned: each user only receives their own agencies' rows
+ * (Admin/Exec: all), enforced by Firestore/Storage rules — see
+ * lib/format/agency-scope.ts.
  */
 export function visibleForecasterTabs(perms: {
   canViewRevenue: boolean;

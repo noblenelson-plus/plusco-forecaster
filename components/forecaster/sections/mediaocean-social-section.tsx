@@ -230,7 +230,8 @@ export default function MediaoceanSocialSection({
     () =>
       rows.filter((r) => {
         if (
-          scopedNames.size > 0 &&
+          // Strict: an empty scope (filters exclude every client) shows nothing,
+          // never "everything".
           !scopedNames.has(String(r.PLUSCO_CLIENT_NAME).trim().toLowerCase())
         )
           return false;

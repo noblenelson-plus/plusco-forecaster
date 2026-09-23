@@ -3,6 +3,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   updateDoc,
@@ -11,7 +12,7 @@ import {
   arrayRemove,
 } from "firebase/firestore";
 import { db } from "../firebase";
-import { UserProfile } from "./user-service";
+import type { UserProfile } from "./user-service";
 import type { Client } from "../types/client.types";
 
 /**
@@ -33,8 +34,8 @@ import type { Client } from "../types/client.types";
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 /**
- * Ajoute un ou plusieurs clients aux assignations d'un utilisateur.
- * Utilise arrayUnion → idempotent, pas de doublons.
+ * Adds one or more clients to a user's assignments.
+ * Uses arrayUnion → idempotent, no duplicates. Refreshes `clientAgencies`.
  */
 export async function assignClientsToUser(
   uid: string,
@@ -44,11 +45,12 @@ export async function assignClientsToUser(
   await updateDoc(doc(db, "users", uid), {
     assignedClients: arrayUnion(...clIds),
   });
+  await refreshClientAgencies(uid);
 }
 
 /**
- * Retire un ou plusieurs clients des assignations d'un utilisateur.
- * Utilise arrayRemove → idempotent.
+ * Removes one or more clients from a user's assignments.
+ * Uses arrayRemove → idempotent. Refreshes `clientAgencies`.
  */
 export async function removeClientsFromUser(
   uid: string,
@@ -58,12 +60,14 @@ export async function removeClientsFromUser(
   await updateDoc(doc(db, "users", uid), {
     assignedClients: arrayRemove(...clIds),
   });
+  await refreshClientAgencies(uid);
 }
 
 /**
  * Replaces a user's explicit client assignments (write grants for a Business
- * Lead). `assignedAgencies` is intentionally left untouched — it is derived
- * from the user's email domain at sign-in, not edited by hand.
+ * Lead), together with the derived `clientAgencies`. `assignedAgencies` is
+ * intentionally left untouched — it is derived from the user's email domain at
+ * sign-in, not edited by hand.
  */
 export async function setUserAssignments(
   uid: string,
@@ -71,7 +75,50 @@ export async function setUserAssignments(
 ): Promise<void> {
   await updateDoc(doc(db, "users", uid), {
     assignedClients: clIds,
+    clientAgencies: await agenciesOfClients(clIds),
   });
+}
+
+// ─── Derived clientAgencies ───────────────────────────────────────────────────
+//
+// `users.clientAgencies` = the distinct agencies (CL_Agency) of the user's
+// assigned clients. Security rules can't look up each assigned client's agency,
+// so this denormalized list is what they check to let a user read agency-scoped
+// data (MediaOcean tab, Reports snapshots) for the agencies their clients belong
+// to. Admin-only field (see firestoreRules.txt). Every code path that changes
+// `assignedClients` — or a client's CL_Agency — must refresh it; to backfill
+// or repair everyone, run scripts/backfill-client-agencies.mjs.
+
+/**
+ * Distinct, sorted CL_Agency values of the given clients (unknown ids are
+ * ignored). Reads the client docs, so the caller needs read access to them —
+ * in practice an admin, the only role that edits assignments.
+ */
+export async function agenciesOfClients(clIds: string[]): Promise<string[]> {
+  const ids = [...new Set(clIds)];
+  if (ids.length === 0) return [];
+  const snaps = await Promise.all(
+    chunk(ids, IN_QUERY_LIMIT).map((batch) =>
+      getDocs(query(collection(db, "clients"), where("__name__", "in", batch)))
+    )
+  );
+  const agencies = new Set<string>();
+  snaps.forEach((s) =>
+    s.docs.forEach((d) => {
+      const a = d.data().CL_Agency;
+      if (typeof a === "string" && a) agencies.add(a);
+    })
+  );
+  return [...agencies].sort();
+}
+
+/** Recomputes one user's `clientAgencies` from their current assignments. */
+export async function refreshClientAgencies(uid: string): Promise<void> {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const assigned = (snap.data().assignedClients as string[] | undefined) ?? [];
+  await updateDoc(ref, { clientAgencies: await agenciesOfClients(assigned) });
 }
 
 // ─── Effective accessible clients ─────────────────────────────────────────────
@@ -185,14 +232,13 @@ export function filterWritableClients(
   return clients.filter((c) => canWriteClient(c, profile, isAdmin));
 }
 
-// ─── Lectures / helpers (en mémoire, pas de requête Firestore) ────────────────
+// ─── Reads / helpers (in memory, no Firestore query) ──────────────────────────
 
 /**
- * Inverse la relation : retourne tous les utilisateurs ayant accès
- * à un client donné.
+ * Inverts the relation: returns every user with access to a given client.
  *
- * @param users Liste complète des users (déjà chargée, ex. page admin)
- * @param clId  ID du client ciblé
+ * @param users Full user list (already loaded, e.g. the admin page)
+ * @param clId  Target client id
  */
 export function getUsersForClient(
   users: UserProfile[],
@@ -202,8 +248,8 @@ export function getUsersForClient(
 }
 
 /**
- * Retourne les utilisateurs n'ayant PAS accès au client — utile pour
- * alimenter le combobox "Add person" sans proposer de doublons.
+ * Returns the users who do NOT have access to the client — used to populate
+ * the "Add person" combobox without offering duplicates.
  */
 export function getUsersNotOnClient(
   users: UserProfile[],
@@ -213,8 +259,8 @@ export function getUsersNotOnClient(
 }
 
 /**
- * Calcule le diff entre l'état initial et l'état édité d'une liste
- * d'assignations — pour afficher "+3 / −1" dans l'UI avant Save.
+ * Computes the diff between the initial and edited assignment lists — to show
+ * "+3 / −1" in the UI before Save.
  */
 export function diffAssignments(
   initial: string[],

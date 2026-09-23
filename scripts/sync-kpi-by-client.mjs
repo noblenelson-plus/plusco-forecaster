@@ -28,6 +28,7 @@ import {
   reconcileFlags,
   keyDocId,
 } from "./lib/reconcile.mjs";
+import { normalizeAgency, countByAgency, logAgencySplit } from "./lib/agency.mjs";
 
 const { BigQuery } = bigqueryPkg;
 
@@ -53,8 +54,12 @@ async function main() {
   const bq = new BigQuery({ projectId: BQ_PROJECT });
 
   console.log(`Querying ${BQ_TABLE} ...`);
-  const [rows] = await bq.query({ query: `SELECT * FROM ${BQ_TABLE}` });
-  console.log(`Fetched ${rows.length} row(s) from BigQuery.`);
+  const [bqRows] = await bq.query({ query: `SELECT * FROM ${BQ_TABLE}` });
+  console.log(`Fetched ${bqRows.length} row(s) from BigQuery.`);
+
+  // `_agency` is what Firestore rules scope reads on (see scripts/lib/agency.mjs).
+  const rows = bqRows.map((r) => ({ ...r, _agency: normalizeAgency(r.AGENCY) }));
+  logAgencySplit(COLLECTION, countByAgency(rows, (r) => r._agency));
 
   const { dryRun, force } = reconcileFlags();
   const res = await reconcileCollection({
