@@ -27,6 +27,8 @@ export interface UserProfile {
   // Agency-scoped access — see AppUser.assignedAgencies. Optional: absent on
   // pre-migration docs, treated as "no agency access".
   assignedAgencies?: string[];
+  // Derived: distinct agencies of assignedClients — see AppUser.clientAgencies.
+  clientAgencies?: string[];
   // When true, access is revoked: the user is blocked at the layout gate even
   // if their domain would otherwise grant agency access. Reversible by an admin.
   disabled?: boolean;
@@ -63,6 +65,9 @@ export async function ensureUserProfile(user: User): Promise<UserProfile> {
       role: invite?.role ?? "VIEWER",
       assignedClients: invite?.assignedClients ?? [],
       assignedAgencies: agencies,
+      // Precomputed on the invite by the admin — a new user can't read client
+      // docs yet. Firestore rules require it to match the invite exactly.
+      clientAgencies: invite?.clientAgencies ?? [],
       createdAt: serverTimestamp(),
       lastLoginAt: serverTimestamp(),
     };

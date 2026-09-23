@@ -3,19 +3,19 @@
 
 /**
  * Shared scaffold for the RAW data pages (MIR Raw Data, Billing Summary), backed
- * by the /api/raw-table BigQuery route.
+ * by the per-agency report snapshots the monthly sync publishes to Firebase
+ * Storage (lib/dashboard/data/report-snapshot.ts). No BigQuery: nobody needs
+ * BigQuery access, and each user only ever downloads their own agencies' files
+ * (Admin/Exec: all agencies) — storage.rules enforce that.
  *
  * A real filter bar: each filterable field is an independent multi-select, and
- * they combine freely (AND across fields, OR within a field) â€” like Looker. No
- * "scope" concept. The preview table shows the first 10 matching rows in the
- * team's column order; export (CSV or Google Sheets) pulls the FULL filtered
- * result from BigQuery (never held in the browser until the moment of export).
+ * they combine freely (AND across fields, OR within a field) — like Looker. The
+ * preview table shows the first 10 matching rows in the team's column order;
+ * export (CSV or Google Sheets) writes the FULL filtered result.
  *
- * Data flow:
- *   - on mount: POST {action:"options"} -> distinct values for every filter field.
- *   - on filter change: POST {action:"query", mode:"preview"} -> 10 rows.
- *   - on export click: POST {action:"query", mode:"full"} -> whole slice, then
- *     build the export matrix and hand it to CSV / Sheets.
+ * Data flow: on mount (or when the user's agency scope changes) the snapshot is
+ * downloaded once and held column-encoded in memory; filter options, the match
+ * count, the preview and exports are all computed locally from it.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -36,12 +36,23 @@ import {
   isConnected,
   isGoogleConfigured,
 } from "../../../lib/services/google-sheets-service";
+import { useAgencyScope } from "../../../lib/hooks/use-agency-scope";
+import { agencyScopeLabel } from "../../../lib/format/agency-scope";
+import {
+  distinctValues,
+  filterRowIndices,
+  loadReport,
+  rowAt,
+  type LoadedReport,
+  type ReportTable,
+} from "../../../lib/dashboard/data/report-snapshot";
 
 type RawRow = Record<string, unknown>;
 type RawColumn = TableColumn<RawRow, Record<string, never>>;
 
 const NO_TOTALS = {} as Record<string, never>;
 const HIDDEN_FIELDS = new Set(["id", "_rowIndex", "_syncBatchId"]);
+const PREVIEW_LIMIT = 10;
 
 export interface RawFilterDef {
   field: string;
@@ -51,9 +62,9 @@ export interface RawFilterDef {
 export interface RawTablePageProps {
   title: string;
   icon: LucideIcon;
-  /** Route table key: "mir" | "billing". */
-  tableKey: string;
-  /** Filter fields shown in the bar (must match the route's allowlist). */
+  /** Snapshot table: "mir" | "billing". */
+  tableKey: ReportTable;
+  /** Filter fields shown in the bar (column names in the snapshot). */
   filters: RawFilterDef[];
   /** Preferred column order for preview + export (present fields first). */
   columnOrder: string[];
@@ -72,21 +83,6 @@ function text(v: unknown): string {
   return v === null || v === undefined ? "" : String(v);
 }
 
-async function postRoute(body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetch("/api/raw-table", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json()) as Record<string, unknown>;
-  if (!res.ok) {
-    const msg =
-      (data && (data.error as string)) || `Request failed (${res.status}).`;
-    throw new Error(msg);
-  }
-  return data;
-}
-
 export default function RawTablePage({
   title,
   icon: Icon,
@@ -96,51 +92,28 @@ export default function RawTablePage({
   moneyFields,
   exportTitle,
 }: RawTablePageProps) {
-  const [options, setOptions] = useState<Record<string, string[]>>({});
+  const { scope, loading: scopeLoading } = useAgencyScope();
+  const [report, setReport] = useState<LoadedReport | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
-  const [rows, setRows] = useState<RawRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState<"" | "csv" | "sheets">("");
   const [exportError, setExportError] = useState<string | null>(null);
 
-  // Load filter option lists once.
+  // Download the snapshot for the user's agencies (cached across sub-tabs).
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await postRoute({ table: tableKey, action: "options" });
-        if (cancelled) return;
-        setOptions((data.options as Record<string, string[]>) || {});
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load filters.");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tableKey]);
-
-  // Fetch the 10-row preview whenever the selected filters change.
-  useEffect(() => {
+    if (scopeLoading) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const data = await postRoute({
-          table: tableKey,
-          action: "query",
-          mode: "preview",
-          filters: selected,
-        });
-        if (cancelled) return;
-        setRows((data.rows as RawRow[]) || []);
+        const loaded = await loadReport(tableKey, scope);
+        if (!cancelled) setReport(loaded);
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load rows.");
+          setReport(null);
+          setError(e instanceof Error ? e.message : "Failed to load the report.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -149,7 +122,26 @@ export default function RawTablePage({
     return () => {
       cancelled = true;
     };
-  }, [tableKey, selected]);
+  }, [tableKey, scope, scopeLoading]);
+
+  const table = report?.table ?? null;
+
+  // Dropdown values per filter field, from the loaded rows only.
+  const options = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    if (table) for (const f of filters) out[f.field] = distinctValues(table, f.field);
+    return out;
+  }, [table, filters]);
+
+  const matched = useMemo(
+    () => (table ? filterRowIndices(table, selected) : []),
+    [table, selected]
+  );
+
+  const rows = useMemo<RawRow[]>(
+    () => (table ? matched.slice(0, PREVIEW_LIMIT).map((r) => rowAt(table, r)) : []),
+    [table, matched]
+  );
 
   const setFilter = (field: string, vals: string[]) =>
     setSelected((prev) => ({ ...prev, [field]: vals }));
@@ -226,15 +218,11 @@ export default function RawTablePage({
     [columnOrder, moneyFields]
   );
 
+  // Every matching row, materialized only at export time.
   const fetchFull = useCallback(async (): Promise<RawRow[]> => {
-    const data = await postRoute({
-      table: tableKey,
-      action: "query",
-      mode: "full",
-      filters: selected,
-    });
-    return (data.rows as RawRow[]) || [];
-  }, [tableKey, selected]);
+    if (!table) return [];
+    return matched.map((r) => rowAt(table, r));
+  }, [table, matched]);
 
   const exportCsv = async () => {
     setExportError(null);
@@ -293,7 +281,7 @@ export default function RawTablePage({
     }
   };
 
-  const busy = exporting !== "";
+  const busy = exporting !== "" || loading || !table || matched.length === 0;
 
   return (
     <div data-scroll-section data-scroll-label={title} className="space-y-6">
@@ -337,11 +325,20 @@ export default function RawTablePage({
 
       {/* Actions bar: sample note + export buttons, directly above the table. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          {anyFilter
-            ? "Previewing the first 10 matching rows. Export downloads the full filtered result."
-            : "Showing a sample of the first 10 rows (all columns). Apply filters above to narrow, then export the full result."}
-        </p>
+        <div className="space-y-0.5">
+          <p className="text-xs text-muted-foreground">
+            {anyFilter
+              ? `${matched.length.toLocaleString("en-CA")} matching rows. Previewing the first ${PREVIEW_LIMIT}; export writes all of them.`
+              : `${matched.length.toLocaleString("en-CA")} rows. Showing a sample of the first ${PREVIEW_LIMIT} (all columns). Apply filters above to narrow, then export.`}
+          </p>
+          {report && (
+            <p className="text-xs text-muted-foreground">
+              Agencies: {scope.all ? agencyScopeLabel(scope) : report.agencies.join(", ") || "none"}
+              {report.syncedAt &&
+                ` · Data as of ${new Date(report.syncedAt).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })}`}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -378,14 +375,8 @@ export default function RawTablePage({
           <Loader2 size={20} className="animate-spin" />
         </div>
       ) : error ? (
-        <div className="space-y-2">
-          <div className="border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
-            Couldn&apos;t load {title}: {error}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            This view queries BigQuery server-side. If this is an auth error, the
-            host needs Application Default Credentials or a service account.
-          </p>
+        <div className="border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
+          Couldn&apos;t load {title}: {error}
         </div>
       ) : (
         <div className="overflow-auto max-h-[600px] rounded-xl border border-border bg-card shadow-sm">
@@ -429,7 +420,9 @@ export default function RawTablePage({
                     colSpan={previewFields.length || 1}
                     className="px-3 py-6 text-center text-muted-foreground"
                   >
-                    No rows match the current filters.
+                    {report && report.agencies.length === 0
+                      ? "No report data is available for your agency."
+                      : "No rows match the current filters."}
                   </td>
                 </tr>
               )}

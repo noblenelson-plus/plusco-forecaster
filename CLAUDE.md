@@ -45,7 +45,7 @@ The visual identity follows the Plus Company Brand Guidelines 2024. Everything i
 
 ### Auth & access control (entirely client-side)
 
-`middleware.ts` is intentionally a no-op pass-through: Firebase Auth stores the session in localStorage (not cookies), so server-side route protection isn't possible without the Admin SDK + custom session cookies (planned "Phase 2", not yet built). **All route/role protection is client-side** and must be treated as UX, not a security boundary — real enforcement belongs in Firestore security rules. Those rules live in `firestoreRules.txt` (kept in sync by hand; deploy them with the Firebase console/CLI). When you change a collection's shape or who may read/write it, update that file too.
+`middleware.ts` is intentionally a no-op pass-through: Firebase Auth stores the session in localStorage (not cookies), so server-side route protection isn't possible without the Admin SDK + custom session cookies (planned "Phase 2", not yet built). **All route/role protection is client-side** and must be treated as UX, not a security boundary — real enforcement belongs in Firestore security rules. Those rules live in `firestoreRules.txt` and `storage.rules` (kept in sync by hand; deploy them with the Firebase console/CLI). When you change a collection's shape or who may read/write it, update that file too.
 
 The chain:
 1. `AuthProvider` (`lib/auth-context.tsx`) wraps the app, exposes `useAuth()`, and on every auth state change calls `ensureUserProfile()` to create/update the Firestore `users/{uid}` doc. New users default to role `VIEWER`, and their `assignedAgencies` is seeded by matching their email domain against the `agencies` collection (a company-wide domain, in `config/company_domains`, grants every agency) — see `agency-service.ts`.
@@ -56,6 +56,10 @@ The chain:
 A user's **accessible clients** (read scope) come from two fields on the user doc, unioned:
 - `assignedClients: string[]` — explicit per-client grants (a BL's *editable* clients).
 - `assignedAgencies: string[]` — agency-wide access: the user automatically sees **every** client whose `CL_Agency` is listed, *including clients added later*. Populated from the email domain, not edited by hand.
+
+A third, **derived** field, `clientAgencies: string[]`, holds the distinct `CL_Agency` of the user's `assignedClients`. Security rules can't look up each assigned client's agency, so they check this list for agency-partitioned data (below). It is admin-only (like `role`/`assignedClients`/`assignedAgencies`) and refreshed by every code path that changes assignments or a client's agency (`setUserAssignments`, `assignClientsToUser`/`removeClientsFromUser`, `refreshClientAgencies` in `assignment-service.ts`; client delete/agency change/CSV import in `client-service.ts`; the access-sheet import; invites precompute it). Repair everyone with `node scripts/backfill-client-agencies.mjs [--dry-run]`.
+
+**Self-created profiles are validated by the rules.** The first sign-in writes its own `users/{uid}` doc; `isValidSelfCreatedProfile` in `firestoreRules.txt` only allows the pending invite's role/clients (or `VIEWER` with none) and `assignedAgencies` whose agency docs list the caller's email domain (or any, for a company-wide domain). If you add a field to the profile `ensureUserProfile` creates, add it to that rule's key whitelist.
 
 The single place that resolves the effective client list is `fetchAccessibleClients(profile, isAdmin)` in `assignment-service.ts` (admin → all; else assigned ∪ agency clients, deduped) — used by `use-accessible-clients.ts`, `forecast-selectors.tsx` and the Clients page. Read scope is the same for everyone; **write scope differs by role** and is enforced in Firestore rules by `canWriteClient` (admin → all; exec → agency-wide; BL → assigned clients only; viewer → none). The admin **Access** page (`/admin/users`, `agencies` merged in) edits only `assignedClients` (via `setUserAssignments`) and the agency↔domain mapping; roles are set with the role dropdown. Never duplicate assignments onto client docs.
 
@@ -110,6 +114,15 @@ The app's home page (`app/(protected)/page.tsx`) is a read-only analytics dashbo
 - **Widgets** (`lib/dashboard/widgets/`): shared chart primitives live in `components/dashboard/charts/`; the current tabs compose them directly (the older `WIDGETS`/`dashboard-grid` registry and the `components/dashboard/tabs/` wrappers were retired in the merge — the still-live tab UI is under `components/forecaster/`).
 
 The dashboard reads the same global Year + RFQ from `forecast-selection.store.ts`; its client scope is local filter state, independent of the editing page's selected client.
+
+### Agency-partitioned data (MediaOcean + Reports tabs)
+
+The **MediaOcean** and **Reports** tabs are visible to every role and used across agencies, so their data is partitioned by agency and the partition is enforced by security rules, not the UI. Admin/Exec read every agency; everyone else reads `assignedAgencies ∪ clientAgencies` (`resolveAgencyScope` in `lib/format/agency-scope.ts`, mirrored by `canReadAgencyData` in `firestoreRules.txt` and `canReadAgency` in `storage.rules` — keep all three in sync). Rows whose agency isn't one of the app agencies are tagged `_unassigned` (Admin/Exec only).
+
+- **Tagging happens at sync time.** `scripts/lib/agency.mjs` maps a raw agency value to the app agency names (`CLIENT_AGENCIES`). MIR and the MediaOcean tables use `AGENCY`; Billing Summary uses `PLUSCO_AGENCY` (its `AGENCY` is the buying entity).
+- **MediaOcean collections** (`mo_kpi_by_client`, `mediaocean_investment_mix`, `social_partner_mix`) carry `_agency`. Read them only through `fetchAgencyScopedDocs` (`lib/dashboard/data/agency-scoped-query.ts`): whole collection for Admin/Exec, otherwise one `where("_agency", "==", a)` query per agency (rules reject unfiltered queries).
+- **Reports** (MIR Raw Data, Billing Summary) never touch BigQuery from the app. The monthly sync publishes one gzipped, column-encoded snapshot per agency to Storage (`reports/{table}/{agency}/data.json.gz` + `reports/manifest.json`, encoder `scripts/lib/report-snapshot.mjs`, decoder `lib/dashboard/data/report-snapshot.ts` — keep the format in sync). The page downloads the user's files and filters/exports in memory. Direct browser downloads need the bucket CORS config in `storage-cors.json`.
+- There is no server-side BigQuery access in the app; only the sync scripts (run by the admins with their own credentials) read BigQuery.
 
 ## Firebase configuration
 

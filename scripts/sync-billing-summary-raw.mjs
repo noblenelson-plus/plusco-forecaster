@@ -11,15 +11,20 @@
  *   2) ~31.7k rows. Batched writes; a syncBatchId stamp + stale-doc cleanup keeps
  *      the collection mirroring the table across re-runs.
  *
- * The app never loads the whole collection into the browser; the page queries a
- * single-field slice (by PLUSCO_CLIENT_NAME or AGENCY) server-side.
+ * What the app reads: the per-agency Storage snapshots published first by
+ * publishReportSnapshots (scripts/lib/report-snapshot.mjs), split on
+ * PLUSCO_AGENCY. The Firestore mirror is kept for now but nothing in the app
+ * reads it.
  *
  * Run from repo root, AFTER the Billing_summary_master rebuild:
  *   node scripts/sync-billing-summary-raw.mjs
+ *   node scripts/sync-billing-summary-raw.mjs --snapshot-only   (skip the Firestore mirror)
  */
 
 import admin from "firebase-admin";
 import bigqueryPkg from "@google-cloud/bigquery";
+import { publishReportSnapshots } from "./lib/report-snapshot.mjs";
+import { normalizeAgency } from "./lib/agency.mjs";
 
 const { BigQuery } = bigqueryPkg;
 
@@ -51,7 +56,7 @@ function cleanValue(v) {
 }
 
 async function main() {
-  admin.initializeApp({
+  const app = admin.initializeApp({
     credential: admin.credential.applicationDefault(),
     projectId: FIRESTORE_PROJECT,
   });
@@ -70,6 +75,22 @@ async function main() {
 
   const columnCount = Object.keys(rows[0]).length;
   console.log(`Each row has ${columnCount} columns.`);
+
+  // ── Per-agency snapshots for the Reports tab (what the app reads) ──
+  // Split on PLUSCO_AGENCY (the client's agency), not AGENCY, which here is the
+  // buying entity (e.g. "JUNGLE MEDIA CANADA" also buys for Mekanism clients).
+  console.log("Publishing per-agency report snapshots to Storage...");
+  await publishReportSnapshots({
+    app,
+    table: "billing",
+    rawRows: rows,
+    agencyOf: (r) => normalizeAgency(r.PLUSCO_AGENCY),
+  });
+
+  if (process.argv.includes("--snapshot-only")) {
+    console.log("--snapshot-only: skipping the Firestore mirror.");
+    process.exit(0);
+  }
 
   const syncBatchId = Date.now();
   const pad = (n) => String(n).padStart(8, "0");

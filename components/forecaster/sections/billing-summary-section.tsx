@@ -2,19 +2,21 @@
 "use client";
 
 /**
- * BILLING SUMMARY page. Thin config over RawTablePage (BigQuery-backed). Column
- * order follows the Looker dimension order from the report screenshots; filters
- * match the route's billing allowlist. Live-only extras (forecaster_client_*,
+ * BILLING SUMMARY page. Thin config over RawTablePage (per-agency Storage
+ * snapshots, split on PLUSCO_AGENCY). Column order follows the Looker dimension
+ * order from the report screenshots. Live-only extras (forecaster_client_*,
  * mb_2_0_*, INVOICE_MONTH) append after the ordered columns.
  */
 
 import { Receipt } from "lucide-react";
 import RawTablePage, { type RawFilterDef } from "./raw-table-page";
 
-// Filter bar fields — must match the route's billing allowlist.
+// Filter bar fields (snapshot column names). PLUSCO_AGENCY is the client's
+// agency; AGENCY is the MediaOcean buying entity (e.g. "JUNGLE MEDIA CANADA").
 const FILTERS: RawFilterDef[] = [
   { field: "PLUSCO_CLIENT_NAME", label: "Client" },
-  { field: "AGENCY", label: "Agency" },
+  { field: "PLUSCO_AGENCY", label: "Agency" },
+  { field: "AGENCY", label: "Buying Agency" },
   { field: "PLUSCO_BU_REGION", label: "Region" },
   { field: "PLUSCO_BUSINESS_LEAD", label: "Business Lead" },
   { field: "INVOICE_MONTH", label: "Invoice Month" },

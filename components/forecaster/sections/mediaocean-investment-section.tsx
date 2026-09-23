@@ -162,7 +162,8 @@ export default function MediaoceanInvestmentSection({
       rows.filter((r) => {
         if (String(r.PLUSCO_YEAR) !== yearStr) return false;
         if (
-          scopedNames.size > 0 &&
+          // Strict: an empty scope (filters exclude every client) shows nothing,
+          // never "everything".
           !scopedNames.has(String(r.PLUSCO_CLIENT_NAME).trim().toLowerCase())
         )
           return false;

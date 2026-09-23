@@ -15,16 +15,19 @@
  *      (if the table shrinks, leftover higher-index docs from a prior run are
  *      deleted).
  *
- * The app NEVER loads this whole collection into the browser. The page queries a
- * single-field slice (by Agency or Client) server-side; this sync just mirrors
- * the table.
+ * What the app reads: the per-agency Storage snapshots published first by
+ * publishReportSnapshots (scripts/lib/report-snapshot.mjs), split on AGENCY. The
+ * Firestore mirror is kept for now but nothing in the app reads it.
  *
  * Run from repo root, AFTER the monthly NATIVE rebuild:
  *   node scripts/sync-mir-raw.mjs
+ *   node scripts/sync-mir-raw.mjs --snapshot-only   (skip the Firestore mirror)
  */
 
 import admin from "firebase-admin";
 import bigqueryPkg from "@google-cloud/bigquery";
+import { publishReportSnapshots } from "./lib/report-snapshot.mjs";
+import { normalizeAgency } from "./lib/agency.mjs";
 
 const { BigQuery } = bigqueryPkg;
 
@@ -58,7 +61,7 @@ function cleanValue(v) {
 }
 
 async function main() {
-  admin.initializeApp({
+  const app = admin.initializeApp({
     credential: admin.credential.applicationDefault(),
     projectId: FIRESTORE_PROJECT,
   });
@@ -77,6 +80,20 @@ async function main() {
 
   const columnCount = Object.keys(rows[0]).length;
   console.log(`Each row has ${columnCount} columns.`);
+
+  // ── Per-agency snapshots for the Reports tab (what the app reads) ──
+  console.log("Publishing per-agency report snapshots to Storage...");
+  await publishReportSnapshots({
+    app,
+    table: "mir",
+    rawRows: rows,
+    agencyOf: (r) => normalizeAgency(r.AGENCY),
+  });
+
+  if (process.argv.includes("--snapshot-only")) {
+    console.log("--snapshot-only: skipping the Firestore mirror.");
+    process.exit(0);
+  }
 
   const syncBatchId = Date.now();
   const pad = (n) => String(n).padStart(8, "0");

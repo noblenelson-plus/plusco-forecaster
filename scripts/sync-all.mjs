@@ -9,7 +9,9 @@
  * collection that did not actually refresh.
  *
  * WHY THIS EXISTS
- *   The dashboard reads Firestore, not BigQuery. Rebuilding the BigQuery tables
+ *   The dashboard reads Firestore (and, for the Reports tab, the per-agency
+ *   snapshots mir-raw / billing-summary-raw publish to Storage), never
+ *   BigQuery. Rebuilding the BigQuery tables
  *   does nothing to the app until these syncs run. Running six scripts by hand,
  *   in order, and noticing if one quietly failed is exactly where a half-updated
  *   dashboard comes from. This makes the whole push one command, all-or-nothing.

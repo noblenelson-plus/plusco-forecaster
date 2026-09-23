@@ -26,6 +26,7 @@
 
 import admin from "firebase-admin";
 import bigqueryPkg from "@google-cloud/bigquery";
+import { normalizeAgency, countByAgency, logAgencySplit } from "./lib/agency.mjs";
 import {
   reconcileCollection,
   reconcileFlags,
@@ -70,8 +71,13 @@ async function main() {
   const bq = new BigQuery({ projectId: BQ_PROJECT });
 
   console.log(`Querying ${BQ_TABLE} ...`);
-  const [rows] = await bq.query({ query: `SELECT * FROM ${BQ_TABLE}` });
-  console.log(`Fetched ${rows.length} row(s) from BigQuery.`);
+  const [bqRows] = await bq.query({ query: `SELECT * FROM ${BQ_TABLE}` });
+  console.log(`Fetched ${bqRows.length} row(s) from BigQuery.`);
+
+  // `_agency` is what Firestore rules scope reads on (see scripts/lib/agency.mjs).
+  // Not a grain field, so doc ids are unchanged.
+  const rows = bqRows.map((r) => ({ ...r, _agency: normalizeAgency(r.AGENCY) }));
+  logAgencySplit(COLLECTION, countByAgency(rows, (r) => r._agency));
 
   const { dryRun, force } = reconcileFlags();
   const res = await reconcileCollection({

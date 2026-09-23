@@ -2,9 +2,10 @@
 "use client";
 
 /**
- * MIR RAW DATA page. Thin config over RawTablePage (BigQuery-backed): the
- * filter bar fields, the team's exact column order (from the sample CSV), and
- * the money fields. All data + export handled by the scaffold via /api/raw-table.
+ * MIR RAW DATA page. Thin config over RawTablePage (per-agency Storage
+ * snapshots, split on AGENCY): the filter bar fields, the team's exact column
+ * order (from the sample CSV), and the money fields. All data + export handled
+ * by the scaffold.
  *
  * Column order note: uses the live NATIVE spelling "Labs_Partners" (the CSV's
  * "LABS_PARTNERS" casing) and "MCPE_Match" is in the CSV but not the live table,
@@ -15,7 +16,7 @@
 import { Database } from "lucide-react";
 import RawTablePage, { type RawFilterDef } from "./raw-table-page";
 
-// Filter bar fields — must match the route's MIR allowlist.
+// Filter bar fields (snapshot column names).
 const FILTERS: RawFilterDef[] = [
   { field: "PLUSCO_YEAR", label: "Year" },
   { field: "MONTH", label: "Month" },

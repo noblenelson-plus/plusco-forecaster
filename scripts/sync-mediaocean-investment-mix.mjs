@@ -38,6 +38,7 @@
 import crypto from "crypto";
 import admin from "firebase-admin";
 import bigqueryPkg from "@google-cloud/bigquery";
+import { normalizeAgency, countByAgency, logAgencySplit } from "./lib/agency.mjs";
 
 const { BigQuery } = bigqueryPkg;
 
@@ -146,9 +147,13 @@ async function main() {
       data[key] = cleanValue(value);
     }
     data._syncedAt = syncedAt;
+    // What Firestore rules scope reads on (see scripts/lib/agency.mjs). Not a
+    // grain field, so doc ids are unchanged.
+    data._agency = normalizeAgency(data.AGENCY);
     current.set(id, data);
   }
   console.log(`Unique current grain id(s): ${current.size}`);
+  logAgencySplit(COLLECTION, countByAgency([...current.values()], (d) => d._agency));
   if (bqDuplicates > 0) {
     console.warn(
       `Note: ${bqDuplicates} BQ row(s) shared a grain hash (collapsed, last kept).`

@@ -1,4 +1,4 @@
--// filepath: lib/dashboard/data/use-mo-kpi-by-client.ts
+// filepath: lib/dashboard/data/use-mo-kpi-by-client.ts
 "use client";
 
 /**
@@ -20,8 +20,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../../firebase";
+import { useAgencyScope } from "../../hooks/use-agency-scope";
+import { fetchAgencyScopedDocs } from "./agency-scoped-query";
 
 const COLLECTION = "mo_kpi_by_client";
 
@@ -85,7 +85,8 @@ export interface MoKpiByClientResult {
 }
 
 /**
- * One-shot read of the whole `mo_kpi_by_client` collection (~163 docs). Small
+ * One-shot read of `mo_kpi_by_client` (~163 docs), limited to the user's agency
+ * scope (Admin/Exec: every agency — see agency-scoped-query.ts). Small
  * enough to load in full and filter/roll-up in memory, which is what keeps the
  * dashboard filters instant.
  */
@@ -93,17 +94,19 @@ export function useMoKpiByClient(): MoKpiByClientResult {
   const [rows, setRows] = useState<KpiByClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { scope, loading: scopeLoading } = useAgencyScope();
 
   useEffect(() => {
+    if (scopeLoading) return;
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const snap = await getDocs(collection(db, COLLECTION));
+        const docs = await fetchAgencyScopedDocs(COLLECTION, scope);
         if (cancelled) return;
-        const out = snap.docs.map((d) => ({
+        const out = docs.map((d) => ({
           PLUSCO_CLIENT_ID: d.id,
           ...(d.data() as Record<string, unknown>),
         })) as KpiByClientRow[];
@@ -122,9 +125,9 @@ export function useMoKpiByClient(): MoKpiByClientResult {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [scope, scopeLoading]);
 
-  return { rows, loading, error };
+  return { rows, loading: loading || scopeLoading, error };
 }
 
 // ─── Filters ────────────────────────────────────────────────────────────────
