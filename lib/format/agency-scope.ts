@@ -11,8 +11,10 @@ import type { UserRole } from "../types/user.types";
  * rules would reject.
  *
  *   - ADMIN / EXEC → every agency, including UNASSIGNED_AGENCY rows.
- *   - Everyone else → assignedAgencies (from their email domain) ∪
- *     clientAgencies (the agencies of their assigned clients).
+ *   - Everyone else → the agencies their email domain maps to right now (the
+ *     agencies ↔ domains mapping, resolved live — see use-agency-scope.ts) ∪
+ *     assignedAgencies ∪ clientAgencies (the agencies of their assigned
+ *     clients).
  */
 
 // Tag for rows without a recognized agency — Admin/Exec only. Must match
@@ -33,7 +35,9 @@ export function resolveAgencyScope(
     role: UserRole;
     assignedAgencies?: string[];
     clientAgencies?: string[];
-  } | null
+  } | null,
+  /** Agencies the user's email domain maps to (live mapping). */
+  domainAgencies: string[] = []
 ): AgencyScope {
   if (!profile) return EMPTY_AGENCY_SCOPE;
   if (profile.role === "ADMIN" || profile.role === "EXEC") {
@@ -41,10 +45,13 @@ export function resolveAgencyScope(
   }
   const agencies = [
     ...new Set([
+      ...domainAgencies,
       ...(profile.assignedAgencies ?? []),
       ...(profile.clientAgencies ?? []),
     ]),
-  ].sort();
+  ]
+    .filter((a) => a !== UNASSIGNED_AGENCY)
+    .sort();
   return { all: false, agencies };
 }
 
