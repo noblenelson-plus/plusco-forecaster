@@ -4,8 +4,9 @@
 /**
  * Detailed Labs data table — one sortable row per (client × partner), with the
  * partner's channel (media type), the 12 monthly BL spend values and an annual
- * total, plus a one-click CSV export of the same data. Built on TanStack Table +
- * the shared shadcn Table primitives, mirroring the Media detail table.
+ * total, plus a one-click Google Sheets export of the same data. Built on
+ * TanStack Table + the shared shadcn Table primitives, mirroring the Media
+ * detail table.
  */
 
 import { useMemo, useState } from "react";
@@ -17,7 +18,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowDown, ArrowUp, Download, Table2 } from "lucide-react";
+import { ArrowUpDown, ArrowDown, ArrowUp, Table2 } from "lucide-react";
 import { MONTHS } from "../../lib/types/common.types";
 import { MEDIA_TYPE_LABELS } from "../../lib/types/forecaster.types";
 import { MEDIA_TYPE_COLORS } from "./charts/colors";
@@ -40,18 +41,13 @@ import {
   TableRow,
   TableCell,
 } from "../ui/table";
-import { Button } from "../ui/button";
+import SheetExportButton from "./sheet-export-button";
+import type { CellValue } from "../forecaster/table/table-export";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
-
-/** Quote a CSV field when it contains a comma, quote or newline. */
-function csvField(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 /** The two leading columns are text; everything else is a money column. */
 const isTextColumn = (id: string) =>
@@ -162,35 +158,29 @@ export default function LabsDataTable({
     getSortedRowModel: getSortedRowModel(),
   });
 
-  function downloadCsv() {
-    const header = ["Client", "Partner", "Channel", ...MONTH_LABELS, "Total"];
-    const body = rows.map((r) => [
+  function buildSheetMatrix(): CellValue[][] {
+    const header: CellValue[] = [
+      "Client",
+      "Partner",
+      "Channel",
+      ...MONTH_LABELS,
+      "Total",
+    ];
+    const body: CellValue[][] = rows.map((r) => [
       r.client,
       r.partnerName,
       r.channel,
       ...MONTHS.map((m) => Math.round(r.months[m] ?? 0)),
       Math.round(r.total),
     ]);
-    const footer = [
+    const footer: CellValue[] = [
       "Total",
       "",
       "",
       ...MONTHS.map((m) => Math.round(totals.monthly[m])),
       Math.round(totals.grand),
     ];
-    const lines = [header, ...body, footer].map((row) =>
-      row.map(csvField).join(",")
-    );
-    const csv = lines.join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `labs-forecast${fileLabel ? `-${fileLabel}` : ""}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return [header, ...body, footer];
   }
 
   return (
@@ -207,15 +197,12 @@ export default function LabsDataTable({
           </div>
         </div>
         <CardAction>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={downloadCsv}
+          <SheetExportButton
+            title={`Labs spend detail${fileLabel ? ` — ${fileLabel}` : ""}`}
+            sheetTitle="Labs spend detail"
+            buildMatrix={buildSheetMatrix}
             disabled={rows.length === 0}
-          >
-            <Download />
-            Download CSV
-          </Button>
+          />
         </CardAction>
       </CardHeader>
       <CardContent className="px-0 pb-0">

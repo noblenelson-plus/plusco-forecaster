@@ -4,8 +4,8 @@
 /**
  * Detailed product tracking table — one sortable row per (client × product)
  * entry, with the pipeline status, expected timing and the BL's note, plus a
- * one-click CSV export. Built on TanStack Table + the shared shadcn Table
- * primitives, mirroring the Media/Labs detail tables.
+ * one-click Google Sheets export. Built on TanStack Table + the shared shadcn
+ * Table primitives, mirroring the Media/Labs detail tables.
  */
 
 import { useMemo, useState } from "react";
@@ -17,7 +17,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowDown, ArrowUp, Download, Table2 } from "lucide-react";
+import { ArrowUpDown, ArrowDown, ArrowUp, Table2 } from "lucide-react";
 import {
   PRODUCT_STATUS_LABELS,
   PRODUCT_STATUS_ORDER,
@@ -40,13 +40,8 @@ import {
   TableRow,
   TableCell,
 } from "../ui/table";
-import { Button } from "../ui/button";
-
-/** Quote a CSV field when it contains a comma, quote or newline. */
-function csvField(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+import SheetExportButton from "./sheet-export-button";
+import type { CellValue } from "../forecaster/table/table-export";
 
 /** Flat status chips — same palette as the Product grid's status buttons. */
 const STATUS_CHIP: Record<ProductStatus, string> = {
@@ -170,26 +165,16 @@ export default function ProductDataTable({
     getSortedRowModel: getSortedRowModel(),
   });
 
-  function downloadCsv() {
-    const header = ["Client", "Product", "Status", "Timing", "Note"];
-    const body = rows.map((r) => [
+  function buildSheetMatrix(): CellValue[][] {
+    const header: CellValue[] = ["Client", "Product", "Status", "Timing", "Note"];
+    const body: CellValue[][] = rows.map((r) => [
       r.client,
       r.product,
       r.status ? PRODUCT_STATUS_LABELS[r.status] : "",
       r.timing ?? "",
       r.note ?? "",
     ]);
-    const lines = [header, ...body].map((row) => row.map(csvField).join(","));
-    const csv = lines.join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "product-tracking.csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return [header, ...body];
   }
 
   return (
@@ -206,15 +191,12 @@ export default function ProductDataTable({
           </div>
         </div>
         <CardAction>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={downloadCsv}
+          <SheetExportButton
+            title="Product tracking detail"
+            sheetTitle="Product tracking detail"
+            buildMatrix={buildSheetMatrix}
             disabled={rows.length === 0}
-          >
-            <Download />
-            Download CSV
-          </Button>
+          />
         </CardAction>
       </CardHeader>
       <CardContent className="px-0 pb-0">

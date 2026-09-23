@@ -3,9 +3,9 @@
 
 /**
  * Per-client media data table — one sortable row per (client × media type),
- * with the 12 monthly BL spend values and an annual total, plus a one-click CSV
- * export of the same data. Built on TanStack Table + the shared shadcn Table
- * primitives so sorting/columns stay declarative.
+ * with the 12 monthly BL spend values and an annual total, plus a one-click
+ * Google Sheets export of the same data. Built on TanStack Table + the shared
+ * shadcn Table primitives so sorting/columns stay declarative.
  */
 
 import { useMemo, useState } from "react";
@@ -17,7 +17,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowDown, ArrowUp, Download, Table2 } from "lucide-react";
+import { ArrowUpDown, ArrowDown, ArrowUp, Table2 } from "lucide-react";
 import { MEDIA_TYPES, MONTHS, type MediaType } from "../../lib/types/common.types";
 import { MEDIA_TYPE_LABELS } from "../../lib/types/forecaster.types";
 import { MEDIA_TYPE_COLORS } from "./charts/colors";
@@ -40,7 +40,8 @@ import {
   TableRow,
   TableCell,
 } from "../ui/table";
-import { Button } from "../ui/button";
+import SheetExportButton from "./sheet-export-button";
+import type { CellValue } from "../forecaster/table/table-export";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -55,12 +56,6 @@ interface MediaRow {
   color: string;
   months: Record<number, number>;
   total: number;
-}
-
-/** Quote a CSV field when it contains a comma, quote or newline. */
-function csvField(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /** Every column except the two text columns is a right-aligned money column. */
@@ -172,33 +167,21 @@ export default function MediaDataTable({
     getSortedRowModel: getSortedRowModel(),
   });
 
-  function downloadCsv() {
-    const header = ["Client", "Media Type", ...MONTH_LABELS, "Total"];
-    const body = rows.map((r) => [
+  function buildSheetMatrix(): CellValue[][] {
+    const header: CellValue[] = ["Client", "Media Type", ...MONTH_LABELS, "Total"];
+    const body: CellValue[][] = rows.map((r) => [
       r.client,
       r.label,
       ...MONTHS.map((m) => Math.round(r.months[m])),
       Math.round(r.total),
     ]);
-    const footer = [
+    const footer: CellValue[] = [
       "Total",
       "",
       ...MONTHS.map((m) => Math.round(totals.monthly[m])),
       Math.round(totals.grand),
     ];
-    const lines = [header, ...body, footer].map((row) =>
-      row.map(csvField).join(",")
-    );
-    const csv = lines.join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `media-forecast${fileLabel ? `-${fileLabel}` : ""}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return [header, ...body, footer];
   }
 
   return (
@@ -215,15 +198,12 @@ export default function MediaDataTable({
           </div>
         </div>
         <CardAction>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={downloadCsv}
+          <SheetExportButton
+            title={`Media spend detail${fileLabel ? ` — ${fileLabel}` : ""}`}
+            sheetTitle="Media spend detail"
+            buildMatrix={buildSheetMatrix}
             disabled={rows.length === 0}
-          >
-            <Download />
-            Download CSV
-          </Button>
+          />
         </CardAction>
       </CardHeader>
       <CardContent className="px-0 pb-0">
