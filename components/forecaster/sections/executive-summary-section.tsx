@@ -24,6 +24,7 @@ import { Loader2, Calendar, PieChart, DollarSign, AlertTriangle } from "lucide-r
 import { computeClientTable } from "./client-table-data";
 import {
   useMoKpiByClient,
+  metaShareTrendBreakdown,
   computeInvestmentKpis,
 } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 import {
@@ -49,6 +50,7 @@ import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { Client } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import ExecSummaryKpiBand, { type ExecPillar } from "./exec-summary-kpi-band";
+import MetaShareTrendStrip from "./meta-share-trend-strip";
 import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
 import { ragStatus } from "./exec-rag";
@@ -126,6 +128,58 @@ export default function ExecutiveSummarySection({
   const bookedLabsSpend = useMemo(
     () => scopedKpiRows.reduce((acc, r) => acc + num(r.labs_spend_2026), 0),
     [scopedKpiRows]
+  );
+
+  // -- Digital media-mix scorecards (booked; MIR-only). Aggregated from the
+  // same mo_kpi_by_client rows and computed identically to the by-GM Digital
+  // section (safeDiv semantics), so the totals tie out. ------------------------
+  const digital = useMemo(() => {
+    let dig = 0,
+      dig25 = 0,
+      dd = 0,
+      dd25 = 0,
+      ddNd = 0,
+      prog = 0,
+      prog25 = 0,
+      progNd = 0;
+    for (const r of scopedKpiRows) {
+      dig += num(r.digital_spend_2026);
+      dig25 += num(r.digital_spend_2025);
+      dd += num(r.digital_direct_spend_2026);
+      dd25 += num(r.digital_direct_spend_2025);
+      ddNd += num(r.dd_nondeal_spend_2026);
+      prog += num(r.prog_spend_2026);
+      prog25 += num(r.prog_spend_2025);
+      progNd += num(r.prog_nondeal_spend_2026);
+    }
+    const div = (n: number, d: number): number | null => (d !== 0 ? n / d : null);
+    const ddShare = div(dd, dig);
+    const ddShare25 = div(dd25, dig25);
+    const progShare = div(prog, dig);
+    const progShare25 = div(prog25, dig25);
+    return {
+      ddShare,
+      progShare,
+      ddNonDeal: ddNd,
+      progNonDeal: progNd,
+      ddYoyPpt:
+        ddShare != null && ddShare25 != null ? ddShare - ddShare25 : null,
+      progYoyPpt:
+        progShare != null && progShare25 != null ? progShare - progShare25 : null,
+    };
+  }, [scopedKpiRows]);
+
+  const metaTrend = useMemo(
+    () => metaShareTrendBreakdown(scopedKpiRows),
+    [scopedKpiRows]
+  );
+
+  // MIQ-Social Labs deal target (Deal Targets page) — the MIR-toggle goal.
+  const miqSocialTarget = useMemo(
+    () =>
+      targets?.partners.find((p) => p.partner === "MIQ-Social")
+        ?.mediaSpendTarget ?? null,
+    [targets]
   );
 
   // -- Billups: booked (MIR) + forecast, same path as the Billups section -----
@@ -260,7 +314,11 @@ export default function ExecutiveSummarySection({
             icon: AlertTriangle,
             label: "Missed Opportunity",
             value: money(billupsBooked.combined.missed),
-            sub: "Eligible $ not captured by Billups",
+            // OOH + Print split of the missed $ (small caption). The two
+            // eligibleMissed values sum to combined.missed.
+            sub: `OOH ${moneyCompact(
+              billupsBooked.ooh.eligibleMissed
+            )} · Print ${moneyCompact(billupsBooked.print.eligibleMissed)}`,
           },
         ],
       },
@@ -300,6 +358,59 @@ export default function ExecutiveSummarySection({
             icon: DollarSign,
             label: "MIQ-Social Spend",
             value: money(inv.meta.miqSocialSpend2026),
+            // % booked vs the MIQ-Social Labs deal target (Deal Targets page).
+            pctOfTarget: ratioTo(
+              inv.meta.miqSocialSpend2026,
+              miqSocialTarget
+            ),
+            goalLabel:
+              miqSocialTarget != null
+                ? `Target ${moneyCompact(miqSocialTarget)}`
+                : undefined,
+          },
+        ],
+      },
+      {
+        title: "Digital",
+        subtitle: "Booked to date (MIR)",
+        metrics: [
+          {
+            icon: PieChart,
+            label: "Digital Direct Share of Digital",
+            value: pct(digital.ddShare),
+            yoy:
+              digital.ddYoyPpt != null
+                ? {
+                    label: `${digital.ddYoyPpt >= 0 ? "+" : ""}${(
+                      digital.ddYoyPpt * 100
+                    ).toFixed(0)}pt`,
+                    favorable: digital.ddYoyPpt < 0,
+                  }
+                : null,
+          },
+          {
+            icon: DollarSign,
+            label: "Digital Direct $ Non-Deal",
+            value: money(digital.ddNonDeal),
+          },
+          {
+            icon: PieChart,
+            label: "Prog Share of Digital",
+            value: pct(digital.progShare),
+            yoy:
+              digital.progYoyPpt != null
+                ? {
+                    label: `${digital.progYoyPpt >= 0 ? "+" : ""}${(
+                      digital.progYoyPpt * 100
+                    ).toFixed(0)}pt`,
+                    favorable: digital.progYoyPpt > 0,
+                  }
+                : null,
+          },
+          {
+            icon: DollarSign,
+            label: "Prog $ Non-Deal",
+            value: money(digital.progNonDeal),
           },
         ],
       },
@@ -361,6 +472,12 @@ export default function ExecutiveSummarySection({
             icon: DollarSign,
             label: "MIQ-Social Forecast",
             value: money(inv.meta.miqSocialForecast2026),
+            // % of the latest RFQ forecast that's booked (MIR) to date.
+            pctOfTarget: ratioTo(
+              inv.meta.miqSocialSpend2026,
+              inv.meta.miqSocialForecast2026
+            ),
+            goalLabel: `Booked ${moneyCompact(inv.meta.miqSocialSpend2026)}`,
           },
         ],
       },
@@ -379,6 +496,8 @@ export default function ExecutiveSummarySection({
     goals,
     labsShareGoal,
     metaYoyPpt,
+    digital,
+    miqSocialTarget,
   ]);
 
   // -- Period / "as of" label (source-aware) ----------------------------------
@@ -451,6 +570,11 @@ export default function ExecutiveSummarySection({
 
       {/* Total Plusco KPI band (drives off the selected source) */}
             <ExecSummaryKpiBand pillars={pillars} />
+
+      {/* Meta Share Trend — client-status snapshot, below the scorecards */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <MetaShareTrendStrip data={metaTrend} />
+      </div>
 
       {/* By GM */}
       <ExecKpisByGmTable
