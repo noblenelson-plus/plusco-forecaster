@@ -483,7 +483,8 @@ service cloud.firestore {
     // A date label only, no client data: any signed-in user may read it.
     match /dashboard_meta/{docId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if false;
+      allow create, update: if false;
+      allow delete: if isAdmin();
     }
     // mir_raw / billing_summary_raw — raw Firestore mirrors kept by the syncs;
     // the app reads the per-agency Storage snapshots instead (storage.rules).
