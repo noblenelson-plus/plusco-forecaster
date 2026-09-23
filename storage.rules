@@ -13,15 +13,34 @@ service firebase.storage {
     function isAdminOrExec() {
       return userDoc().role in ['ADMIN', 'EXEC'];
     }
+    // The caller's (verified) email domain maps to this agency in the agencies
+    // ↔ domains mapping, directly or via a company-wide domain. Never grants
+    // the "_unassigned" bucket.
+    function emailDomain() {
+      return request.auth.token.email.lower().split('@')[1];
+    }
+    function isEmailDomainAgency(agency) {
+      return agency != '_unassigned' &&
+        request.auth.token.email_verified == true && (
+          (firestore.exists(/databases/(default)/documents/agencies/$(agency)) &&
+            emailDomain() in firestore.get(/databases/(default)/documents/agencies/$(agency))
+              .data.get('domains', [])) ||
+          (firestore.exists(/databases/(default)/documents/config/company_domains) &&
+            emailDomain() in firestore.get(/databases/(default)/documents/config/company_domains)
+              .data.get('domains', []))
+        );
+    }
     // Mirrors canReadAgencyData in firestoreRules.txt: Admin/Exec read every
-    // agency; everyone else their email-domain agencies (assignedAgencies) plus
-    // their assigned clients' agencies (clientAgencies). Disabled users: none.
+    // agency; everyone else their email domain's agencies (live mapping) plus
+    // assignedAgencies plus their assigned clients' agencies (clientAgencies).
+    // Disabled users: none.
     function canReadAgency(agency) {
       return request.auth != null && (
         isAdminOrExec() || (
           userDoc().get('disabled', false) != true &&
           (agency in userDoc().get('assignedAgencies', []) ||
-           agency in userDoc().get('clientAgencies', []))
+           agency in userDoc().get('clientAgencies', []) ||
+           isEmailDomainAgency(agency))
         )
       );
     }

@@ -72,14 +72,26 @@ service cloud.firestore {
     // `_agency` by their sync scripts; storage.rules mirrors this for the
     // Reports snapshots):
     //   - Admin / Exec → every agency (senior leadership), incl. "_unassigned".
-    //   - Everyone else → their email-domain agencies (assignedAgencies) plus
-    //     the agencies of their assigned clients (clientAgencies, a derived list
-    //     only admins write). Disabled users get nothing.
+    //   - Everyone else → the agencies their email domain maps to, checked live
+    //     against the agencies ↔ domains mapping (so it's automatic: no sync,
+    //     and a sheet import clearing assignedAgencies doesn't remove it), plus
+    //     assignedAgencies, plus the agencies of their assigned clients
+    //     (clientAgencies, a derived list only admins write). Disabled users get
+    //     nothing.
     // Non-admin queries must filter `_agency == <agency>` for rules to allow them.
     function canReadAgencyData(agency) {
       return isAdmin() || isExec() ||
         (isAuthenticated() && !isDisabled() &&
-          (agency in userAssignedAgencies() || agency in userClientAgencies()));
+          (agency in userAssignedAgencies() ||
+           agency in userClientAgencies() ||
+           isEmailDomainAgency(agency)));
+    }
+    // The caller's (verified) email domain maps to this agency, directly or via
+    // a company-wide domain. Never grants the "_unassigned" bucket.
+    function isEmailDomainAgency(agency) {
+      return agency != '_unassigned' &&
+        request.auth.token.email_verified == true &&
+        (domainOwnsAgency(agency) || isCompanyDomain());
     }
     // ─── self-created profile validation (users create) ──────────────────────
     // A first sign-in creates its own users/{uid} doc (ensureUserProfile). Without
