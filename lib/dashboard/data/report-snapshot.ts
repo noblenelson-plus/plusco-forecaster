@@ -9,7 +9,11 @@
  *   reports/{table}/{agency}/data.json.gz   one agency's rows, column-encoded
  *
  * Only the agency files inside the user's scope are requested; storage.rules
- * reject any other (the real enforcement). Files are merged into one in-memory
+ * reject any other (the real enforcement). Files are fetched straight from the
+ * Firebase Storage REST endpoint with the user's ID token rather than the SDK's
+ * getBlob: same rules, but no opaque 30s retry budget (lib/firebase.ts sets
+ * maxOperationRetryTime for uploads) — a slow or blocked request surfaces its
+ * real HTTP status / network error instead of "retry-limit-exceeded". Files are merged into one in-memory
  * columnar table — each column is a dictionary of distinct values plus one
  * index per row — which keeps ~126k × 70 MIR cells to a few tens of MB and
  * makes filtering a scan over integer arrays. Row objects are only built for
@@ -18,8 +22,7 @@
  * No BigQuery anywhere: users never need (or see errors about) BigQuery access.
  */
 
-import { getBlob, ref } from "firebase/storage";
-import { storage } from "../../firebase";
+import { auth } from "../../firebase";
 import type { AgencyScope } from "../../format/agency-scope";
 
 export type ReportTable = "mir" | "billing";
@@ -71,25 +74,50 @@ const SUPPORTED_VERSION = 1;
 
 // ─── Download + decode ────────────────────────────────────────────────────────
 
-function describeStorageError(e: unknown, what: string): ReportLoadError {
-  const code = (e as { code?: string })?.code ?? "";
-  if (code === "storage/object-not-found") {
-    return new ReportLoadError(
-      `${what} hasn't been published yet. It appears after the next monthly data sync.`
-    );
+const STORAGE_BUCKET = auth.app.options.storageBucket;
+const RETRY_DELAYS_MS = [1000, 3000];
+
+/**
+ * Downloads one Storage object as the signed-in user (rules enforced by the
+ * Storage REST endpoint, exactly as with the SDK). Retries network errors and
+ * 5xx/429 twice; 403/404 fail immediately with a plain-language message.
+ */
+async function downloadObject(path: string, what: string): Promise<Response> {
+  const user = auth.currentUser;
+  if (!user) throw new ReportLoadError("Your session expired. Reload the page to sign in again.");
+  const url = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(path)}?alt=media`;
+
+  let lastError = "";
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
+    let res: Response;
+    try {
+      const token = await user.getIdToken();
+      res = await fetch(url, { headers: { Authorization: `Firebase ${token}` }, cache: "no-store" });
+    } catch (e) {
+      lastError = `network error (${e instanceof Error ? e.message : String(e)})`;
+      continue;
+    }
+    if (res.ok) return res;
+    if (res.status === 404) {
+      throw new ReportLoadError(
+        `${what.charAt(0).toUpperCase()}${what.slice(1)} hasn't been published yet. It appears after the next monthly data sync.`
+      );
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new ReportLoadError(
+        `You don't have access to ${what}. If you think you should, contact an admin.`
+      );
+    }
+    lastError = `HTTP ${res.status}`;
+    if (res.status !== 429 && res.status < 500) break; // not retryable
   }
-  if (code === "storage/unauthorized") {
-    return new ReportLoadError(
-      `You don't have access to ${what}. If you think you should, contact an admin.`
-    );
-  }
-  return new ReportLoadError(
-    `Couldn't download ${what}: ${e instanceof Error ? e.message : String(e)}`
-  );
+  throw new ReportLoadError(`Couldn't download ${what}: ${lastError}. Try reloading the page.`);
 }
 
-async function gunzipText(blob: Blob): Promise<string> {
-  const stream = blob.stream().pipeThrough(new DecompressionStream("gzip"));
+async function gunzipText(res: Response): Promise<string> {
+  if (!res.body) throw new ReportLoadError("Empty response from Storage.");
+  const stream = res.body.pipeThrough(new DecompressionStream("gzip"));
   return new Response(stream).text();
 }
 
@@ -110,12 +138,8 @@ function decodeIndices(b64: string, width: 1 | 2 | 4, rowCount: number): Uint32A
 }
 
 async function fetchManifest(): Promise<ManifestJson> {
-  try {
-    const blob = await getBlob(ref(storage, "reports/manifest.json"));
-    return JSON.parse(await blob.text()) as ManifestJson;
-  } catch (e) {
-    throw describeStorageError(e, "This report");
-  }
+  const res = await downloadObject("reports/manifest.json", "this report");
+  return (await res.json()) as ManifestJson;
 }
 
 // Decoded agency files, keyed by path + sync time so a new monthly sync is
@@ -132,11 +156,15 @@ function loadAgencyFile(
   let p = fileCache.get(key);
   if (!p) {
     p = (async () => {
+      const res = await downloadObject(path, `the ${agency} report`);
       let json: SnapshotJson;
       try {
-        json = JSON.parse(await gunzipText(await getBlob(ref(storage, path))));
+        json = JSON.parse(await gunzipText(res));
       } catch (e) {
-        throw describeStorageError(e, `the ${agency} report`);
+        if (e instanceof ReportLoadError) throw e;
+        throw new ReportLoadError(
+          `The ${agency} report couldn't be read (${e instanceof Error ? e.message : String(e)}). Try reloading the page.`
+        );
       }
       if (json.v !== SUPPORTED_VERSION) {
         throw new ReportLoadError(
