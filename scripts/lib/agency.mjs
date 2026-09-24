@@ -17,7 +17,7 @@
 // Keep in sync with CLIENT_AGENCIES in lib/constants/client.constants.ts.
 export const APP_AGENCIES = ["Cossette Media", "Showroom", "Jungle", "Mekanism"];
 
-// Tag for rows with no recognizable agency (Admin/Exec only). Starts with "_"
+// Tag for rows with no recognizable agency (Admin only). Starts with "_"
 // so it can never collide with a real agency name.
 export const UNASSIGNED_AGENCY = "_unassigned";
 
@@ -30,12 +30,12 @@ export function normalizeAgency(raw) {
   return BY_KEY.get(key) ?? UNASSIGNED_AGENCY;
 }
 
-/** Logs a per-agency row count, flagging rows that only Admin/Exec will see. */
+/** Logs a per-agency row count, flagging rows that only Admins will see. */
 export function logAgencySplit(label, counts) {
   console.log(`Agency split for ${label}:`);
   for (const [agency, n] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
     const note =
-      agency === UNASSIGNED_AGENCY ? "  (no recognized agency -> Admin/Exec only)" : "";
+      agency === UNASSIGNED_AGENCY ? "  (no recognized agency -> Admin only)" : "";
     console.log(`  ${agency.padEnd(16)} ${String(n).padStart(8)}${note}`);
   }
 }

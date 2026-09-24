@@ -30,17 +30,14 @@ service firebase.storage {
               .data.get('domains', []))
         );
     }
-    // Mirrors canReadAgencyData in firestoreRules.txt: Admin/Exec read every
-    // agency; everyone else their email domain's agencies (live mapping) plus
-    // assignedAgencies plus their assigned clients' agencies (clientAgencies).
-    // Disabled users: none.
+    // Mirrors canReadAgencyData in firestoreRules.txt: Admin reads every
+    // agency; everyone else (Execs included) strictly their email domain's
+    // agencies (live mapping, company-wide domains included). Disabled: none.
     function canReadAgency(agency) {
       return request.auth != null && (
-        isAdminOrExec() || (
+        userDoc().role == 'ADMIN' || (
           userDoc().get('disabled', false) != true &&
-          (agency in userDoc().get('assignedAgencies', []) ||
-           agency in userDoc().get('clientAgencies', []) ||
-           isEmailDomainAgency(agency))
+          isEmailDomainAgency(agency)
         )
       );
     }

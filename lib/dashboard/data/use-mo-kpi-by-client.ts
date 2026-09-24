@@ -86,7 +86,7 @@ export interface MoKpiByClientResult {
 
 /**
  * One-shot read of `mo_kpi_by_client` (~163 docs), limited to the user's agency
- * scope (Admin/Exec: every agency — see agency-scoped-query.ts). Small
+ * scope (Admin: every agency — see agency-scoped-query.ts). Small
  * enough to load in full and filter/roll-up in memory, which is what keeps the
  * dashboard filters instant.
  */

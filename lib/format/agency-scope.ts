@@ -10,19 +10,19 @@ import type { UserRole } from "../types/user.types";
  * mirror only decides what the app asks for, so it never issues a read the
  * rules would reject.
  *
- *   - ADMIN / EXEC → every agency, including UNASSIGNED_AGENCY rows.
- *   - Everyone else → the agencies their email domain maps to right now (the
- *     agencies ↔ domains mapping, resolved live — see use-agency-scope.ts) ∪
- *     assignedAgencies ∪ clientAgencies (the agencies of their assigned
- *     clients).
+ *   - ADMIN → every agency, including UNASSIGNED_AGENCY rows.
+ *   - Everyone else, Execs included → strictly the agencies their email domain
+ *     maps to right now (agencies ↔ domains mapping + company-wide domains,
+ *     resolved live — see use-agency-scope.ts). Same model as the former
+ *     per-agency Looker dashboards.
  */
 
-// Tag for rows without a recognized agency — Admin/Exec only. Must match
+// Tag for rows without a recognized agency — Admin only. Must match
 // UNASSIGNED_AGENCY in scripts/lib/agency.mjs.
 export const UNASSIGNED_AGENCY = "_unassigned";
 
 export interface AgencyScope {
-  /** True for Admin/Exec: read every agency. */
+  /** True for Admin: read every agency. */
   all: boolean;
   /** When `all` is false, the agencies the user may read (sorted, deduped). */
   agencies: string[];
@@ -31,25 +31,13 @@ export interface AgencyScope {
 export const EMPTY_AGENCY_SCOPE: AgencyScope = { all: false, agencies: [] };
 
 export function resolveAgencyScope(
-  profile: {
-    role: UserRole;
-    assignedAgencies?: string[];
-    clientAgencies?: string[];
-  } | null,
+  profile: { role: UserRole } | null,
   /** Agencies the user's email domain maps to (live mapping). */
   domainAgencies: string[] = []
 ): AgencyScope {
   if (!profile) return EMPTY_AGENCY_SCOPE;
-  if (profile.role === "ADMIN" || profile.role === "EXEC") {
-    return { all: true, agencies: [] };
-  }
-  const agencies = [
-    ...new Set([
-      ...domainAgencies,
-      ...(profile.assignedAgencies ?? []),
-      ...(profile.clientAgencies ?? []),
-    ]),
-  ]
+  if (profile.role === "ADMIN") return { all: true, agencies: [] };
+  const agencies = [...new Set(domainAgencies)]
     .filter((a) => a !== UNASSIGNED_AGENCY)
     .sort();
   return { all: false, agencies };

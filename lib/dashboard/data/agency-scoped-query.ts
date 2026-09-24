@@ -13,7 +13,7 @@ import type { AgencyScope } from "../../format/agency-scope";
 /**
  * Reads an agency-tagged dashboard collection (docs carry `_agency`, written by
  * the sync scripts) within the user's agency scope:
- *   - Admin/Exec → the whole collection.
+ *   - Admin → the whole collection.
  *   - Others     → only docs whose `_agency` is one of theirs, one equality
  *                  query per agency (there are only a handful). The `where`
  *                  clause is required: Firestore rules reject any query that

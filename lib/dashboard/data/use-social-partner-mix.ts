@@ -54,7 +54,7 @@ export interface SocialPartnerResult {
 
 /**
  * One-shot read of `social_partner_mix` (~2.7k docs), limited to the user's
- * agency scope (Admin/Exec: every agency — see agency-scoped-query.ts). Small,
+ * agency scope (Admin: every agency — see agency-scoped-query.ts). Small,
  * so read in full and filter/roll-up in memory (same pattern as the other
  * dashboard data modules).
  */

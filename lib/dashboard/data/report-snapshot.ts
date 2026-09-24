@@ -276,7 +276,7 @@ function mergeTables(parts: ColumnarTable[]): ColumnarTable {
 }
 
 /**
- * Loads one report table for the user's agency scope. Admin/Exec get every
+ * Loads one report table for the user's agency scope. Admins get every
  * published agency (incl. rows without a recognized agency); everyone else
  * gets the intersection of their agencies with what was published.
  */
