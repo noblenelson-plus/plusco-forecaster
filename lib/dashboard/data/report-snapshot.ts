@@ -9,12 +9,14 @@
  *   reports/{table}/{agency}/data.json.gz   one agency's rows, column-encoded
  *
  * Only the agency files inside the user's scope are requested; storage.rules
- * reject any other (the real enforcement). Files are fetched straight from the
- * Firebase Storage REST endpoint with the user's ID token rather than the SDK's
- * getBlob: same rules, but no opaque 30s retry budget (lib/firebase.ts sets
- * maxOperationRetryTime for uploads) — a slow or blocked request surfaces its
- * real HTTP status / network error instead of "retry-limit-exceeded". Files are merged into one in-memory
- * columnar table — each column is a dictionary of distinct values plus one
+ * reject any other (the real enforcement). Files are downloaded with the user's
+ * ID token — first through the same-origin pass-through /api/report-file
+ * (some networks/extensions block firebasestorage.googleapis.com), falling back
+ * to the Storage REST endpoint directly if that route is unavailable. Either
+ * way storage.rules decide access. (Not the SDK's getBlob: its opaque 30s retry
+ * budget turned slow or blocked requests into "retry-limit-exceeded".)
+ *
+ * Files are merged into one in-memory columnar table — each column is a dictionary of distinct values plus one
  * index per row — which keeps ~126k × 70 MIR cells to a few tens of MB and
  * makes filtering a scan over integer arrays. Row objects are only built for
  * the 10-row preview and at export time.
@@ -77,42 +79,77 @@ const SUPPORTED_VERSION = 1;
 const STORAGE_BUCKET = auth.app.options.storageBucket;
 const RETRY_DELAYS_MS = [1000, 3000];
 
+type Attempt =
+  | { kind: "ok"; res: Response }
+  | { kind: "final"; status: number } // a definitive answer (403, 404, …)
+  | { kind: "retry"; error: string }; // network error / 5xx / 429
+
+async function attemptDownload(url: string, token: string, viaProxy: boolean): Promise<Attempt> {
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { Authorization: `Firebase ${token}` }, cache: "no-store" });
+  } catch (e) {
+    return { kind: "retry", error: `network error (${e instanceof Error ? e.message : String(e)})` };
+  }
+  // A response without our marker means the route itself is missing (e.g. an
+  // older deploy) — treat like a network failure so we fall back to direct.
+  if (viaProxy && res.headers.get("x-report-proxy") !== "1") {
+    return { kind: "retry", error: `report route unavailable (HTTP ${res.status})` };
+  }
+  if (res.ok) return { kind: "ok", res };
+  if (res.status === 429 || res.status >= 500) return { kind: "retry", error: `HTTP ${res.status}` };
+  // Through the route, only Storage's own 403/404 are definitive; anything
+  // else (e.g. 401 if the token didn't reach the route) → try direct instead.
+  if (viaProxy && res.status !== 403 && res.status !== 404) {
+    return { kind: "retry", error: `report route unavailable (HTTP ${res.status})` };
+  }
+  return { kind: "final", status: res.status };
+}
+
 /**
- * Downloads one Storage object as the signed-in user (rules enforced by the
- * Storage REST endpoint, exactly as with the SDK). Retries network errors and
- * 5xx/429 twice; 403/404 fail immediately with a plain-language message.
+ * Downloads one report object as the signed-in user. Tries the same-origin
+ * route, then Storage directly, each up to three times on network errors /
+ * 5xx / 429. 403/404 are definitive and fail at once with a plain message.
  */
 async function downloadObject(path: string, what: string): Promise<Response> {
   const user = auth.currentUser;
   if (!user) throw new ReportLoadError("Your session expired. Reload the page to sign in again.");
-  const url = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(path)}?alt=media`;
+  const routes: [string, boolean][] = [
+    [`/api/report-file?path=${encodeURIComponent(path)}`, true],
+    [`https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(path)}?alt=media`, false],
+  ];
 
-  let lastError = "";
-  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
-    let res: Response;
-    try {
-      const token = await user.getIdToken();
-      res = await fetch(url, { headers: { Authorization: `Firebase ${token}` }, cache: "no-store" });
-    } catch (e) {
-      lastError = `network error (${e instanceof Error ? e.message : String(e)})`;
-      continue;
+  const errors: string[] = [];
+  for (const [url, viaProxy] of routes) {
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
+      const out = await attemptDownload(url, await user.getIdToken(), viaProxy);
+      if (out.kind === "ok") return out.res;
+      if (out.kind === "final") {
+        if (out.status === 404) {
+          throw new ReportLoadError(
+            `${what.charAt(0).toUpperCase()}${what.slice(1)} hasn't been published yet. It appears after the next monthly data sync.`
+          );
+        }
+        if (out.status === 401 || out.status === 403) {
+          throw new ReportLoadError(
+            `You don't have access to ${what}. If you think you should, contact an admin.`
+          );
+        }
+        errors.push(`HTTP ${out.status}`);
+        break; // other 4xx: not retryable on this route
+      }
+      // A missing/misbehaving route won't recover on retry — go straight to direct.
+      if (out.error.startsWith("report route unavailable")) {
+        errors.push(out.error);
+        break;
+      }
+      if (attempt === RETRY_DELAYS_MS.length) errors.push(out.error);
     }
-    if (res.ok) return res;
-    if (res.status === 404) {
-      throw new ReportLoadError(
-        `${what.charAt(0).toUpperCase()}${what.slice(1)} hasn't been published yet. It appears after the next monthly data sync.`
-      );
-    }
-    if (res.status === 401 || res.status === 403) {
-      throw new ReportLoadError(
-        `You don't have access to ${what}. If you think you should, contact an admin.`
-      );
-    }
-    lastError = `HTTP ${res.status}`;
-    if (res.status !== 429 && res.status < 500) break; // not retryable
   }
-  throw new ReportLoadError(`Couldn't download ${what}: ${lastError}. Try reloading the page.`);
+  throw new ReportLoadError(
+    `Couldn't download ${what}: ${errors.join("; ")}. Try reloading the page.`
+  );
 }
 
 async function gunzipText(res: Response): Promise<string> {
