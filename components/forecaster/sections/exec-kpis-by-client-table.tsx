@@ -447,8 +447,9 @@ export default function ExecKpisByClientTable({
           </p>
         ) : (
           <>
-            {/* Metric-group filter: all columns show by default; a tab narrows to one group. */}
-            <div className="mb-3 inline-flex flex-wrap gap-1 rounded-lg border border-border bg-card p-0.5">
+            {/* Metric-group filter (right-aligned): all columns show by default; a tab narrows to one group. */}
+            <div className="mb-3 flex justify-end">
+            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-card p-0.5">
               {GROUP_TABS.map((t) => (
                 <button
                   key={t}
@@ -463,6 +464,7 @@ export default function ExecKpisByClientTable({
                   {t}
                 </button>
               ))}
+            </div>
             </div>
             <div className="-mx-2 mt-2 max-h-[560px] overflow-auto">
             <table className="min-w-full border-collapse text-sm">
