@@ -60,10 +60,6 @@ service cloud.firestore {
           (isAssignedToClient(clientId) || isAgencyAssignedForClient(clientId))) ||
         (isBusinessLead() && isAssignedToClient(clientId));
     }
-    function userClientAgencies() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid))
-        .data.get('clientAgencies', []);
-    }
     function isDisabled() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid))
         .data.get('disabled', false) == true;
@@ -71,20 +67,17 @@ service cloud.firestore {
     // Agency-partitioned dashboard data (MediaOcean tab collections, tagged
     // `_agency` by their sync scripts; storage.rules mirrors this for the
     // Reports snapshots):
-    //   - Admin / Exec → every agency (senior leadership), incl. "_unassigned".
-    //   - Everyone else → the agencies their email domain maps to, checked live
-    //     against the agencies ↔ domains mapping (so it's automatic: no sync,
-    //     and a sheet import clearing assignedAgencies doesn't remove it), plus
-    //     assignedAgencies, plus the agencies of their assigned clients
-    //     (clientAgencies, a derived list only admins write). Disabled users get
-    //     nothing.
+    //   - Admin → every agency, incl. "_unassigned".
+    //   - Everyone else (Execs included) → strictly the agencies their email
+    //     domain maps to, checked live against the agencies ↔ domains mapping
+    //     and company-wide domains — the same model as the former per-agency
+    //     Looker dashboards (@cossettemedia.com → Cossette Media + Showroom,
+    //     @jungle-media.ca → Jungle, …; @pluscompany.com → all via the company
+    //     domain). Automatic: no sync. Disabled users get nothing.
     // Non-admin queries must filter `_agency == <agency>` for rules to allow them.
     function canReadAgencyData(agency) {
-      return isAdmin() || isExec() ||
-        (isAuthenticated() && !isDisabled() &&
-          (agency in userAssignedAgencies() ||
-           agency in userClientAgencies() ||
-           isEmailDomainAgency(agency)));
+      return isAdmin() ||
+        (isAuthenticated() && !isDisabled() && isEmailDomainAgency(agency));
     }
     // The caller's (verified) email domain maps to this agency, directly or via
     // a company-wide domain. Never grants the "_unassigned" bucket.

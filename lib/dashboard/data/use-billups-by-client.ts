@@ -126,7 +126,7 @@ export interface BillupsRowsResult {
 
 /**
  * One-shot read of `mo_kpi_by_client` (~163 docs, within the user's agency
- * scope — every agency for Admin/Exec, who are the ones seeing this), mapped
+ * scope — every agency for Admin, the email domain's agencies otherwise), mapped
  * to BillupsClientRow. Small enough to load in full and filter/roll-up in
  * memory, which keeps the page filters instant.
  */

@@ -41,7 +41,7 @@ export function useAgencyScope(): {
 } {
   const { profile, loading: profileLoading } = useUserProfile();
   const email = profile?.email ?? "";
-  const privileged = profile?.role === "ADMIN" || profile?.role === "EXEC";
+  const privileged = profile?.role === "ADMIN";
   const [domain, setDomain] = useState<{ email: string; agencies: string[] } | null>(null);
 
   useEffect(() => {

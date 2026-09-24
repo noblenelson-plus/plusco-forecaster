@@ -6,7 +6,7 @@
  * by the per-agency report snapshots the monthly sync publishes to Firebase
  * Storage (lib/dashboard/data/report-snapshot.ts). No BigQuery: nobody needs
  * BigQuery access, and each user only ever downloads their own agencies' files
- * (Admin/Exec: all agencies) — storage.rules enforce that.
+ * (Admin: all agencies) — storage.rules enforce that.
  *
  * A real filter bar: each filterable field is an independent multi-select, and
  * they combine freely (AND across fields, OR within a field) — like Looker. The

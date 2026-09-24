@@ -68,7 +68,7 @@ export interface MediaInvestmentResult {
 
 /**
  * One-shot read of `mediaocean_investment_mix` (~21.8k docs), limited to the
- * user's agency scope (Admin/Exec: every agency — see agency-scoped-query.ts).
+ * user's agency scope (Admin: every agency — see agency-scoped-query.ts).
  * Read in full and filter/roll-up in memory (same pattern as useMoKpiByClient),
  * which keeps the dashboard filters instant and avoids per-interaction queries.
  */
