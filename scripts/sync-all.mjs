@@ -1,6 +1,6 @@
 // filepath: scripts/sync-all.mjs
 /**
- * Monthly orchestrator:  BigQuery  ->  Firestore  (all collections, in one go).
+ * Monthly orchestrator:  BigQuery  ->  Firestore + Storage  (everything, in one go).
  *
  * Runs every per-collection sync script in sequence, FAILS FAST on the first
  * error, and ONLY after all of them succeed writes a single freshness stamp
@@ -53,14 +53,15 @@ const META_COLLECTION = "dashboard_meta";
 const META_DOC = "last_sync";
 
 // The six monthly syncs, in run order. Each already reads one built BigQuery
-// table and writes one Firestore collection; each exits non-zero on failure.
+// table and writes one Firestore collection (or, for the two raw report tables,
+// per-agency Storage snapshots); each exits non-zero on failure.
 const SYNCS = [
-  "sync-mir-raw.mjs", // PCC_Dashboard_NATIVE               -> mir_raw
+  "sync-mir-raw.mjs", // PCC_Dashboard_NATIVE               -> Storage reports/mir/*
   "sync-kpi-by-client.mjs", // KPI_BY_CLIENT_2025_vs_2026         -> mo_kpi_by_client
   "sync-meta-social-output.mjs", // META_SOCIAL_OUTPUT_2025_vs_2026    -> meta_social_output
   "sync-mediaocean-investment-mix.mjs", // MEDIAOCEAN_INVESTMENT_MIX          -> mediaocean_investment_mix
   "sync-social-partner-mix.mjs", // SOCIAL_PARTNER_MIX_2025_vs_2026    -> social_partner_mix
-  "sync-billing-summary-raw.mjs", // Billing_summary_master             -> billing_summary_raw
+  "sync-billing-summary-raw.mjs", // Billing_summary_master             -> Storage reports/billing/*
 ];
 
 const __filename = fileURLToPath(import.meta.url);

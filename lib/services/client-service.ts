@@ -2,7 +2,6 @@
 
 import {
   doc,
-  getDoc,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -35,7 +34,6 @@ import type { RFQType } from "../types/rfq.types";
 import { configuredYears, detectUniformRate } from "./commission-service";
 import { fetchAxisData } from "./data-entry-service";
 import { fetchCurrencyRateForYear } from "./currency-service";
-import { refreshClientAgencies } from "./assignment-service";
 
 // ─── Valid value sets for CSV validation ──────────────────────────────────────
 
@@ -156,10 +154,6 @@ export async function saveClient(
   const id = cl_id ?? generateClientId();
   const docRef = doc(db, "clients", id);
   const now = new Date().toISOString();
-  // Previous agency, to detect a move (assigned users' clientAgencies follow it).
-  const previousAgency = cl_id
-    ? ((await getDoc(docRef)).data()?.CL_Agency as string | undefined)
-    : undefined;
   const payload = {
     ...formData,
     updatedAt: now,
@@ -177,15 +171,6 @@ export async function saveClient(
       Client_Status_By_Year: formData.Client_Status_By_Year,
       Labs_Eligibility: formData.Labs_Eligibility ?? {},
     });
-
-    // Agency changed: users assigned to this client read agency-scoped data
-    // through their derived clientAgencies, so recompute theirs.
-    if (formData.CL_Agency && formData.CL_Agency !== previousAgency) {
-      const assigned = await getDocs(
-        query(collection(db, "users"), where("assignedClients", "array-contains", id))
-      );
-      await Promise.all(assigned.docs.map((d) => refreshClientAgencies(d.id)));
-    }
   }
 
   return { cl_id: id, ...payload } as Client;
@@ -232,10 +217,9 @@ export async function deleteClient(cl_id: string): Promise<void> {
     query(collection(db, "users"), where("assignedClients", "array-contains", cl_id))
   );
   await Promise.all(
-    assigned.docs.map(async (d) => {
-      await updateDoc(d.ref, { assignedClients: arrayRemove(cl_id) });
-      await refreshClientAgencies(d.id);
-    })
+    assigned.docs.map((d) =>
+      updateDoc(d.ref, { assignedClients: arrayRemove(cl_id) })
+    )
   );
 
   await deleteDoc(doc(db, "clients", cl_id));
@@ -619,19 +603,6 @@ export async function commitCSVImport(validRows: ValidatedRow[]): Promise<Import
     await batch.commit();
   }
 
-  // The import may have moved clients to another agency: recompute the derived
-  // clientAgencies of every user assigned to an imported client.
-  const importedIds = new Set(validRows.map((r) => r.id));
-  const users = await getDocs(collection(db, "users"));
-  await Promise.all(
-    users.docs
-      .filter((d) =>
-        ((d.data().assignedClients as string[] | undefined) ?? []).some((c) =>
-          importedIds.has(c)
-        )
-      )
-      .map((d) => refreshClientAgencies(d.id))
-  );
 
   return {
     imported: validRows.length,

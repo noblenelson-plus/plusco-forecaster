@@ -12,7 +12,6 @@ import {
 import { db } from "../firebase";
 import type { Invite } from "../types/invite.types";
 import type { UserRole } from "../types/user.types";
-import { agenciesOfClients } from "./assignment-service";
 
 /**
  * Pending-invite service (pre-provisioned access, keyed by lowercased email).
@@ -43,9 +42,6 @@ export async function createInvite(
     email: id,
     role,
     assignedClients,
-    // Copied onto the profile at first sign-in; Firestore rules require the
-    // new profile's clientAgencies to equal this (see users create rule).
-    clientAgencies: await agenciesOfClients(assignedClients),
     createdBy: createdBy ?? null,
     createdAt: serverTimestamp(),
   });

@@ -3,7 +3,6 @@
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   query,
   updateDoc,
@@ -35,7 +34,7 @@ import type { Client } from "../types/client.types";
 
 /**
  * Adds one or more clients to a user's assignments.
- * Uses arrayUnion → idempotent, no duplicates. Refreshes `clientAgencies`.
+ * Uses arrayUnion → idempotent, no duplicates.
  */
 export async function assignClientsToUser(
   uid: string,
@@ -45,12 +44,11 @@ export async function assignClientsToUser(
   await updateDoc(doc(db, "users", uid), {
     assignedClients: arrayUnion(...clIds),
   });
-  await refreshClientAgencies(uid);
 }
 
 /**
  * Removes one or more clients from a user's assignments.
- * Uses arrayRemove → idempotent. Refreshes `clientAgencies`.
+ * Uses arrayRemove → idempotent.
  */
 export async function removeClientsFromUser(
   uid: string,
@@ -60,14 +58,12 @@ export async function removeClientsFromUser(
   await updateDoc(doc(db, "users", uid), {
     assignedClients: arrayRemove(...clIds),
   });
-  await refreshClientAgencies(uid);
 }
 
 /**
  * Replaces a user's explicit client assignments (write grants for a Business
- * Lead), together with the derived `clientAgencies`. `assignedAgencies` is
- * intentionally left untouched — it is derived from the user's email domain at
- * sign-in, not edited by hand.
+ * Lead). `assignedAgencies` is intentionally left untouched — it is derived
+ * from the user's email domain at sign-in, not edited by hand.
  */
 export async function setUserAssignments(
   uid: string,
@@ -75,51 +71,9 @@ export async function setUserAssignments(
 ): Promise<void> {
   await updateDoc(doc(db, "users", uid), {
     assignedClients: clIds,
-    clientAgencies: await agenciesOfClients(clIds),
   });
 }
 
-// ─── Derived clientAgencies ───────────────────────────────────────────────────
-//
-// `users.clientAgencies` = the distinct agencies (CL_Agency) of the user's
-// assigned clients. Security rules can't look up each assigned client's agency,
-// so this denormalized list is what they check to let a user read agency-scoped
-// data (MediaOcean tab, Reports snapshots) for the agencies their clients belong
-// to. Admin-only field (see firestoreRules.txt). Every code path that changes
-// `assignedClients` — or a client's CL_Agency — must refresh it; to backfill
-// or repair everyone, run scripts/backfill-client-agencies.mjs.
-
-/**
- * Distinct, sorted CL_Agency values of the given clients (unknown ids are
- * ignored). Reads the client docs, so the caller needs read access to them —
- * in practice an admin, the only role that edits assignments.
- */
-export async function agenciesOfClients(clIds: string[]): Promise<string[]> {
-  const ids = [...new Set(clIds)];
-  if (ids.length === 0) return [];
-  const snaps = await Promise.all(
-    chunk(ids, IN_QUERY_LIMIT).map((batch) =>
-      getDocs(query(collection(db, "clients"), where("__name__", "in", batch)))
-    )
-  );
-  const agencies = new Set<string>();
-  snaps.forEach((s) =>
-    s.docs.forEach((d) => {
-      const a = d.data().CL_Agency;
-      if (typeof a === "string" && a) agencies.add(a);
-    })
-  );
-  return [...agencies].sort();
-}
-
-/** Recomputes one user's `clientAgencies` from their current assignments. */
-export async function refreshClientAgencies(uid: string): Promise<void> {
-  const ref = doc(db, "users", uid);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return;
-  const assigned = (snap.data().assignedClients as string[] | undefined) ?? [];
-  await updateDoc(ref, { clientAgencies: await agenciesOfClients(assigned) });
-}
 
 // ─── Effective accessible clients ─────────────────────────────────────────────
 
