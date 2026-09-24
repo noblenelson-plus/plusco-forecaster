@@ -251,11 +251,7 @@ the old code keeps working under them.
    Your gcloud account needs write access to Storage in `pluscoops`, in
    addition to the existing BigQuery + Firestore access. Check the "Agency
    split" lines in the output: `_unassigned` rows are visible only to Admin/Exec.
-4. **Backfill `clientAgencies`** on existing user profiles:
-   ```bash
-   node scripts/backfill-client-agencies.mjs --dry-run   # review
-   node scripts/backfill-client-agencies.mjs
-   ```
+4. *(Removed — the `clientAgencies` backfill is no longer needed: access follows the email domain.)*
 5. **Check the agency ↔ domain mapping** (Admin → Access → Agencies):
    `cossettemedia.com` on **both** Cossette Media and Showroom,
    `jungle-media.ca` on Jungle, `mekanismmedia.com` on Mekanism. Check the

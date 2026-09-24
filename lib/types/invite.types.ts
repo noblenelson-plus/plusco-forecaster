@@ -17,9 +17,6 @@ export interface Invite {
   email: string;
   role: UserRole;
   assignedClients?: string[];
-  // Agencies of assignedClients, precomputed by the admin (see
-  // AppUser.clientAgencies); copied onto the profile at first sign-in.
-  clientAgencies?: string[];
   createdBy?: string | null;
   createdAt?: unknown; // Firestore ServerTimestamp
 }
