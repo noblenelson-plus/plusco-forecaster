@@ -21,13 +21,15 @@ import MediaoceanInvestmentSection from "./mediaocean-investment-section";
 import MediaoceanTopPartnersSection from "./mediaocean-top-partners-section";
 import MediaoceanSocialSection from "./mediaocean-social-section";
 import type { Client } from "../../../lib/types/client.types";
+import {
+  MEDIAOCEAN_SUBTABS,
+  visibleSubtabs,
+  type MediaOceanSubTab,
+} from "../dashboard-pages.config";
 
-export type MediaOceanSubTab = "kpis" | "investments";
+export type { MediaOceanSubTab };
 
-const SUBTABS: { id: MediaOceanSubTab; label: string }[] = [
-  { id: "investments", label: "Media Investments" },
-  { id: "kpis", label: "KPIs Media and Labs" },
-];
+const NO_HIDDEN: ReadonlySet<string> = new Set();
 
 export default function MediaOceanTabs({
   sub,
@@ -36,6 +38,7 @@ export default function MediaOceanTabs({
   clients,
   year,
   selMonths,
+  hidden = NO_HIDDEN,
 }: {
   sub: MediaOceanSubTab;
   onSubChange: (s: MediaOceanSubTab) => void;
@@ -43,19 +46,25 @@ export default function MediaOceanTabs({
   clients: Client[];
   year: number;
   selMonths: number[];
+  /** Page ids hidden by an admin (Admin → Dashboard Pages). */
+  hidden?: ReadonlySet<string>;
 }) {
+  const subtabs = visibleSubtabs("mediaocean", MEDIAOCEAN_SUBTABS, hidden);
+  // If an admin hid the chosen sub-tab, show the first visible one instead.
+  const active = subtabs.some((t) => t.id === sub) ? sub : (subtabs[0]?.id ?? sub);
+
   return (
     <div className="space-y-6">
       {/* Sub-tab bar — matches the Executive KPIs sub-tab strip. */}
       <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {SUBTABS.map((t) => {
-          const active = sub === t.id;
+        {subtabs.map((t) => {
+          const isActive = active === t.id;
           return (
             <button
               key={t.id}
               onClick={() => onSubChange(t.id)}
               className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                active
+                isActive
                   ? "border-primary text-gray-900"
                   : "border-transparent text-gray-500 hover:text-gray-800"
               }`}
@@ -67,11 +76,11 @@ export default function MediaOceanTabs({
       </div>
 
       {/* Active sub-page */}
-      {sub === "kpis" && (
+      {active === "kpis" && (
         <InvestmentKpisSection scopedClientIds={scopedClientIds} />
       )}
 
-      {sub === "investments" && (
+      {active === "investments" && (
         <div className="space-y-10">
           <MediaoceanInvestmentSection
             scopedClientIds={scopedClientIds}

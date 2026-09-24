@@ -39,6 +39,8 @@ import ReportsTabs from "../../components/forecaster/sections/reports-tabs";
 import BillupsSection from "../../components/forecaster/sections/billups-section";
 import ExecKpisTabs from "../../components/forecaster/sections/exec-kpis-tabs";
 import MediaOceanTabs, { type MediaOceanSubTab } from "../../components/forecaster/sections/mediaocean-tabs";
+import { isTabVisible } from "../../components/forecaster/dashboard-pages.config";
+import { useHiddenDashboardPages } from "../../lib/hooks/use-hidden-dashboard-pages";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
@@ -265,10 +267,13 @@ export default function DashboardPage() {
   const [selMonths, setSelMonths] = useState<number[]>([]);
   const [tab, setTab] = useState<ForecasterTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
-  // Tabs the current user may see (Viewers lose the revenue + global tabs).
+  // Pages an admin has hidden (Admin → Dashboard Pages), live.
+  const { hidden: hiddenPages } = useHiddenDashboardPages();
+  // Tabs the current user may see (Viewers lose the revenue + global tabs),
+  // minus any an admin has hidden.
   const visibleTabs = useMemo(
-    () => visibleForecasterTabs(permissions),
-    [permissions]
+    () => visibleForecasterTabs(permissions).filter((t) => isTabVisible(t.id, hiddenPages)),
+    [permissions, hiddenPages]
   );
   // If the active tab isn't visible for this role (e.g. a Viewer defaulting to
   // the hidden Summary), fall back to the first tab they can see. Wait for the
@@ -484,6 +489,7 @@ export default function DashboardPage() {
             clients={clients}
             year={selectedYear ?? new Date().getFullYear()}
             selMonths={selMonths}
+            hidden={hiddenPages}
           />
         ) : tab === "exec-kpis" ? (
                     <ExecKpisTabs
@@ -496,6 +502,7 @@ export default function DashboardPage() {
             rfqLabel={selectedRFQ?.type ?? undefined}
             currencyByClient={currencyByClient}
             usdToCad={usdToCad}
+            hidden={hiddenPages}
           />
         ) : error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
@@ -595,7 +602,7 @@ export default function DashboardPage() {
             clientNameById={clientNameById}
           />
         ) : tab === "reports" ? (
-          <ReportsTabs />
+          <ReportsTabs hidden={hiddenPages} />
         ) : (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
             {activeLabel} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â coming soon

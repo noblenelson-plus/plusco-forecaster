@@ -16,29 +16,37 @@
 import { useState } from "react";
 import MirRawSection from "./mir-raw-section";
 import BillingSummarySection from "./billing-summary-section";
+import {
+  REPORTS_SUBTABS,
+  visibleSubtabs,
+  type ReportsSubTab,
+} from "../dashboard-pages.config";
 
-type ReportsSubTab = "mir-raw" | "billing";
+const NO_HIDDEN: ReadonlySet<string> = new Set();
 
-const SUBTABS: { id: ReportsSubTab; label: string }[] = [
-  { id: "mir-raw", label: "Mediaocean Data (MIR)" },
-  { id: "billing", label: "Mediaocean Billing Summary" },
-];
-
-export default function ReportsTabs() {
+export default function ReportsTabs({
+  hidden = NO_HIDDEN,
+}: {
+  /** Page ids hidden by an admin (Admin → Dashboard Pages). */
+  hidden?: ReadonlySet<string>;
+}) {
   const [sub, setSub] = useState<ReportsSubTab>("mir-raw");
+  const subtabs = visibleSubtabs("reports", REPORTS_SUBTABS, hidden);
+  // If an admin hid the chosen sub-tab, show the first visible one instead.
+  const active = subtabs.some((t) => t.id === sub) ? sub : (subtabs[0]?.id ?? sub);
 
   return (
     <div className="space-y-6">
       {/* Sub-tab bar — matches the Executive KPIs / MediaOcean sub-tab strip. */}
       <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {SUBTABS.map((t) => {
-          const active = sub === t.id;
+        {subtabs.map((t) => {
+          const isActive = active === t.id;
           return (
             <button
               key={t.id}
               onClick={() => setSub(t.id)}
               className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                active
+                isActive
                   ? "border-primary text-gray-900"
                   : "border-transparent text-gray-500 hover:text-gray-800"
               }`}
@@ -50,8 +58,8 @@ export default function ReportsTabs() {
       </div>
 
       {/* Active sub-page — each keeps its own filters and export controls. */}
-      {sub === "mir-raw" && <MirRawSection />}
-      {sub === "billing" && <BillingSummarySection />}
+      {active === "mir-raw" && <MirRawSection />}
+      {active === "billing" && <BillingSummarySection />}
     </div>
   );
 }
