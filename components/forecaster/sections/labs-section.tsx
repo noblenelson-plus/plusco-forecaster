@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import { FlaskConical, PieChart, Table, BarChart3 } from "lucide-react";
 import ForecasterPieChart from "../charts/pie-chart";
 import GroupedBarChart from "../charts/grouped-bar-chart";
-import { computeLabsKpis, type LabsPartnerRow } from "./labs-kpis";
+import { computeLabsKpis, PARTNER_PALETTE, type LabsPartnerRow } from "./labs-kpis";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
 import VarianceTable from "../table/variance-table";
@@ -111,7 +111,18 @@ export default function LabsSection({
   }
 
   const grand = computeVariance(result.totalLabs, result.compTotalLabs);
-  const barData = result.partners.map((p) => ({ name: p.name, primary: p.primary, variant: p.variant }));
+  // Pie + bar follow the Detailed/Grouped toggle too; the rest of the page stays put.
+  const shownPartners = view === "Grouped" ? groupedPartners : result.partners;
+  const barData = shownPartners.map((p) => ({
+    name: p.name,
+    primary: p.primary,
+    variant: p.variant,
+  }));
+  const groupedSegments = groupedPartners.map((p, i) => ({
+    label: p.name,
+    value: p.primary,
+    color: PARTNER_PALETTE[i % PARTNER_PALETTE.length],
+  }));
 
   return (
     <section className="space-y-4">
@@ -132,7 +143,10 @@ export default function LabsSection({
             }
           />
           <ChartCard title="Labs Media Investment ($)" icon={PieChart}>
-            <ForecasterPieChart segments={result.segments} valueFormat={money} />
+            <ForecasterPieChart
+              segments={view === "Grouped" ? groupedSegments : result.segments}
+              valueFormat={money}
+            />
           </ChartCard>
           <LabsEligibilityTable
             year={selectedYear}
