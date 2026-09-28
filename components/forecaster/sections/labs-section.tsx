@@ -8,11 +8,11 @@
  * table is the shared sortable/exportable VarianceTable.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { FlaskConical, PieChart, Table, BarChart3 } from "lucide-react";
 import ForecasterPieChart from "../charts/pie-chart";
 import GroupedBarChart from "../charts/grouped-bar-chart";
-import { computeLabsKpis } from "./labs-kpis";
+import { computeLabsKpis, type LabsPartnerRow } from "./labs-kpis";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
 import VarianceTable from "../table/variance-table";
@@ -64,6 +64,43 @@ export default function LabsSection({
 
   const hasComparison = comparisonData.hasContext;
   const result = useMemo(() => computeLabsKpis(data, comparisonData), [data, comparisonData]);
+
+  // Partners table view: "Detailed" (per split partner, default) or "Grouped"
+  // (Billups-*, MIQ-*, AIM-* rolled to Billups / MIQ / AIM; standalone partners
+  // unchanged). Variance $ and % are RE-COMPUTED on the combined totals, not
+  // averaged, so the rolled numbers stay honest.
+  const [view, setView] = useState<"Detailed" | "Grouped">("Detailed");
+  const groupedPartners = useMemo<LabsPartnerRow[]>(() => {
+    const PARENTS = ["Billups", "MIQ", "AIM"];
+    const parentOf = (name: string) =>
+      PARENTS.find((prefix) => name.startsWith(prefix)) ?? name;
+    const byParent = new Map<string, { primary: number; variant: number }>();
+    const order: string[] = [];
+    for (const pt of result.partners) {
+      const key = parentOf(pt.name);
+      const existing = byParent.get(key);
+      if (existing) {
+        existing.primary += pt.primary;
+        existing.variant += pt.variant;
+      } else {
+        byParent.set(key, { primary: pt.primary, variant: pt.variant });
+        order.push(key);
+      }
+    }
+    return order
+      .map((name) => {
+        const g = byParent.get(name) ?? { primary: 0, variant: 0 };
+        const absolute = g.primary - g.variant;
+        return {
+          name,
+          primary: g.primary,
+          variant: g.variant,
+          absolute,
+          relative: g.variant > 0 ? (absolute / g.variant) * 100 : null,
+        };
+      })
+      .sort((a, b) => b.primary - a.primary);
+  }, [result.partners]);
 
   if (result.totalLabs === 0) {
     return (
@@ -120,7 +157,7 @@ export default function LabsSection({
           <VarianceTable
             title="Partners"
             icon={Table}
-            rows={result.partners}
+            rows={view === "Grouped" ? groupedPartners : result.partners}
             totals={{
               primary: result.totalLabs,
               variant: result.compTotalLabs,
@@ -132,7 +169,27 @@ export default function LabsSection({
             primaryLabel={primaryLabel}
             variantLabel={variantLabel}
             hasComparison={hasComparison}
-            exportTitle={`Labs Partners — ${primaryLabel}`}
+            exportTitle={`Labs Partners${
+              view === "Grouped" ? " (Grouped)" : ""
+            } — ${primaryLabel}`}
+            action={
+              <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+                {(["Detailed", "Grouped"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setView(v)}
+                    className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                      view === v
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            }
           />
         </div>
       </div>

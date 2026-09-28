@@ -14,7 +14,7 @@
  * inferred from the rows here.
  */
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, type LucideIcon } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
 import { useTableSort } from "./use-table-sort";
@@ -57,6 +57,7 @@ export default function VarianceTable<Row extends VarianceRow>({
   variantLabel,
   hasComparison,
   exportTitle,
+  action,
 }: {
   /** ChartCard title, e.g. "Media Channels". */
   title: string;
@@ -72,6 +73,8 @@ export default function VarianceTable<Row extends VarianceRow>({
   hasComparison: boolean;
   /** Spreadsheet file name. Defaults to the card title. */
   exportTitle?: string;
+  /** Optional control(s) rendered beside the export button (e.g. a view toggle). */
+  action?: ReactNode;
 }) {
   const columns = useMemo<TableColumn<Row, VarianceTotals>[]>(
     () => [
@@ -142,13 +145,16 @@ export default function VarianceTable<Row extends VarianceRow>({
       title={title}
       icon={icon}
       action={
-        <ExportSheetButton
-          columns={columns}
-          rows={sortedRows}
-          totals={totals}
-          title={exportTitle ?? title}
-          sheetTitle={title}
-        />
+        <div className="flex items-center gap-2">
+          {action}
+          <ExportSheetButton
+            columns={columns}
+            rows={sortedRows}
+            totals={totals}
+            title={exportTitle ?? title}
+            sheetTitle={title}
+          />
+        </div>
       }
     >
       <table className="w-full text-sm">
