@@ -49,6 +49,8 @@ import {
   REVENUE_GAIA_FORECAST_TYPE,
   REVENUE_PRODUCT_FEES_TYPE,
   buildLabsAxisConfig,
+  buildDataEntryId,
+  buildAnnualActualsId,
   type AxisConfig,
   type RevenueStream,
 } from "../types/forecaster.types";
@@ -97,6 +99,12 @@ import {
   ANNUAL_RFQ_SENTINEL,
 } from "../format/bulk-forecast";
 import * as sheets from "./google-sheets-service";
+import {
+  type BackupActor,
+  type BackupUnit,
+  createBackup,
+  finalizeBackup,
+} from "./bulk-backup-service";
 
 // ─── Axis registry (tab title ↔ axis + config) ──────────────────────────────
 
@@ -592,6 +600,8 @@ export interface AxisPrepared {
 export interface PreparedImport {
   axes: AxisPrepared[];
   ref: BulkReference;
+  /** Source sheet — recorded on the automatic backup. */
+  spreadsheetId?: string;
 }
 
 const submKey = (clientId: string, year: number, rfq: RFQType) =>
@@ -708,7 +718,7 @@ export async function prepareImport(
     });
   }
 
-  return { axes, ref };
+  return { axes, ref, spreadsheetId };
 }
 
 function emptyRecord(): BulkRecord {
@@ -1142,6 +1152,214 @@ function buildActualsRows(
   return [...out.values()];
 }
 
+// ─── Plan (pure: exactly what a commit would write) ─────────────────────────
+
+/** One section write a commit will perform, with its value before and after. */
+export type PlannedWrite =
+  | {
+      kind: "bl";
+      axisId: AxisId;
+      clientId: string;
+      year: number;
+      rfq: RFQType;
+      before: AxisData;
+      /** The whole axis as saved (Revenue keeps its actuals; Media/Labs none). */
+      after: AxisData;
+    }
+  | {
+      kind: "submissionActuals";
+      axisId: AxisId;
+      clientId: string;
+      year: number;
+      rfq: RFQType;
+      before: ForecastRow[];
+      after: ForecastRow[];
+    }
+  | {
+      kind: "annualActuals";
+      axisId: AxisId;
+      clientId: string;
+      year: number;
+      before: ForecastRow[];
+      after: ForecastRow[];
+    };
+
+export interface ImportPlan {
+  writes: PlannedWrite[];
+  /** Submissions whose Media or Revenue BL changes → commission re-sync. */
+  commissionTargets: { clientId: string; year: number; rfq: RFQType }[];
+}
+
+/**
+ * Builds every section write of an import without touching Firestore. Both the
+ * review preview (dollar impact) and the commit use it, so what is previewed is
+ * exactly what gets written.
+ */
+export function planImport(prepared: PreparedImport, mode: ImportMode): ImportPlan {
+  const writes: PlannedWrite[] = [];
+  const commission = new Map<string, { clientId: string; year: number; rfq: RFQType }>();
+
+  for (const axis of prepared.axes) {
+    const { axisId, labelOf } = axis;
+
+    for (const g of axis.grouped.bl) {
+      const existing =
+        axis.existingBL.get(submKey(g.clientId, g.year, g.rfq)) ?? { buckets: [], actuals: [] };
+      const buckets = buildBLBuckets(existing, g, mode, labelOf, axis.config.allowDuplicateRowTypes);
+      // Revenue keeps BL + actuals in one doc: preserve actuals and normalize
+      // the fixed shape (the commission re-sync then fixes the computed row).
+      // Media/Labs actuals live in annual_actuals — BL is written with empty
+      // actuals here (mirrors the grid), keeping the doc clean.
+      const after =
+        axisId === "revenue"
+          ? ensureRevenueShape({ buckets, actuals: existing.actuals })
+          : { buckets, actuals: [] };
+      writes.push({ kind: "bl", axisId, clientId: g.clientId, year: g.year, rfq: g.rfq, before: existing, after });
+      if (axisId === "revenue" || axisId === "media")
+        commission.set(submKey(g.clientId, g.year, g.rfq), { clientId: g.clientId, year: g.year, rfq: g.rfq });
+    }
+
+    // Revenue per-submission actuals (GAIA) + their details.
+    for (const g of axis.grouped.submissionActuals) {
+      const existing = axis.existingRevActuals.get(submKey(g.clientId, g.year, g.rfq)) ?? [];
+      writes.push({
+        kind: "submissionActuals",
+        axisId,
+        clientId: g.clientId,
+        year: g.year,
+        rfq: g.rfq,
+        before: existing,
+        after: buildActualsRows(existing, g.rows, g.details, mode, labelOf, g.year),
+      });
+    }
+
+    // Annual actuals (Media/Labs MediaOcean) + their details.
+    for (const g of axis.grouped.annualActuals) {
+      const existing = axis.existingAnnualActuals.get(annKey(g.clientId, g.year)) ?? [];
+      writes.push({
+        kind: "annualActuals",
+        axisId,
+        clientId: g.clientId,
+        year: g.year,
+        before: existing,
+        after: buildActualsRows(existing, g.rows, g.details, mode, labelOf, g.year),
+      });
+    }
+  }
+
+  return { writes, commissionTargets: [...commission.values()] };
+}
+
+/** The Firestore sections a plan writes — what the automatic backup captures. */
+function backupUnitsForPlan(plan: ImportPlan, ref: BulkReference): BackupUnit[] {
+  const nameOf = (id: string) => ref.clientsById.get(id)?.CL_Name ?? id;
+  const units = new Map<string, BackupUnit>();
+  const add = (u: BackupUnit) => units.set(`${u.collection}|${u.docId}|${u.axisId}`, u);
+  for (const w of plan.writes) {
+    if (w.kind === "annualActuals") {
+      add({
+        collection: "annual_actuals",
+        docId: buildAnnualActualsId(w.clientId, w.year),
+        axisId: w.axisId,
+        clientId: w.clientId,
+        clientName: nameOf(w.clientId),
+        year: w.year,
+        rfq: null,
+      });
+    } else {
+      add({
+        collection: "data_entries",
+        docId: buildDataEntryId(w.clientId, w.year, w.rfq),
+        axisId: w.axisId,
+        clientId: w.clientId,
+        clientName: nameOf(w.clientId),
+        year: w.year,
+        rfq: w.rfq,
+      });
+    }
+  }
+  // The commission re-sync rewrites the submission's Revenue axis.
+  for (const t of plan.commissionTargets) {
+    add({
+      collection: "data_entries",
+      docId: buildDataEntryId(t.clientId, t.year, t.rfq),
+      axisId: "revenue",
+      clientId: t.clientId,
+      clientName: nameOf(t.clientId),
+      year: t.year,
+      rfq: t.rfq,
+    });
+  }
+  return [...units.values()];
+}
+
+// ─── Dollar impact (review preview) ──────────────────────────────────────────
+
+export type ImpactFlag = "new" | "cleared" | "big";
+
+/** One replaced section's total before vs after the import. */
+export interface ImpactRow {
+  clientId: string;
+  clientName: string;
+  currency: string;
+  year: number;
+  rfq: RFQType | null;
+  axisId: AxisId;
+  section: "BL" | "ADMIN";
+  before: number;
+  after: number;
+  flag: ImpactFlag | null;
+}
+
+/** A relative change at least this large is flagged for a second look. */
+export const IMPACT_BIG_CHANGE = 0.25;
+
+const rowsTotal = (rows: ForecastRow[], skipComputed: boolean) =>
+  rows.reduce(
+    (sum, r) =>
+      skipComputed && r.rowType === REVENUE_COMMISSION_TYPE
+        ? sum
+        : sum + MONTHS.reduce((s, m) => s + (r.months?.[m] ?? 0), 0),
+    0
+  );
+const bucketsTotal = (data: AxisData) =>
+  rowsTotal(data.buckets.flatMap((b) => b.rows), true);
+
+function impactFlag(before: number, after: number): ImpactFlag | null {
+  const b = Math.round(before);
+  const a = Math.round(after);
+  if (b === 0 && a === 0) return null;
+  if (b === 0) return "new";
+  if (a === 0) return "cleared";
+  return Math.abs(a - b) / Math.abs(b) >= IMPACT_BIG_CHANGE ? "big" : null;
+}
+
+/**
+ * Per-section dollar totals before vs after the import (Jan–Dec sum). The BL
+ * Revenue Commission is excluded on both sides — it is recomputed from Media
+ * after the write.
+ */
+export function importImpact(prepared: PreparedImport, mode: ImportMode): ImpactRow[] {
+  const plan = planImport(prepared, mode);
+  return plan.writes.map((w) => {
+    const client = prepared.ref.clientsById.get(w.clientId);
+    const before = w.kind === "bl" ? bucketsTotal(w.before) : rowsTotal(w.before, false);
+    const after = w.kind === "bl" ? bucketsTotal(w.after) : rowsTotal(w.after, false);
+    return {
+      clientId: w.clientId,
+      clientName: client?.CL_Name ?? w.clientId,
+      currency: client?.CL_Currency ?? "",
+      year: w.year,
+      rfq: w.kind === "annualActuals" ? null : w.rfq,
+      axisId: w.axisId,
+      section: w.kind === "bl" ? "BL" : "ADMIN",
+      before,
+      after,
+      flag: impactFlag(before, after),
+    };
+  });
+}
+
 // ─── Commit ──────────────────────────────────────────────────────────────────
 
 export interface CommitResult {
@@ -1149,6 +1367,10 @@ export interface CommitResult {
   actualsWrites: number;
   commissionsRecalculated: number;
   errors: string[];
+  /** The automatic pre-import backup (undoable from Bulk Edits → History). */
+  backupId?: string;
+  /** Set when the backup's final bookkeeping failed (the data writes did not). */
+  backupWarning?: string;
 }
 
 /**
@@ -1156,104 +1378,57 @@ export interface CommitResult {
  * re-syncs the derived Revenue BL commission for every submission whose Media OR
  * Revenue BL changed (a Revenue-only Replace would otherwise blank the computed
  * row). Each save stamps its side's "last updated" via the underlying services.
+ *
+ * Before any write, every section the import touches is backed up
+ * (bulk-backup-service). If the backup fails, the import is aborted and
+ * nothing is written.
  */
 export async function commitImport(
   prepared: PreparedImport,
   mode: ImportMode,
-  userUid?: string
+  actor: BackupActor = {}
 ): Promise<CommitResult> {
+  const userUid = actor.uid;
   const errors: string[] = [];
   let blWrites = 0;
   let actualsWrites = 0;
 
-  // Submissions whose Media or Revenue BL changed → need a commission re-sync.
-  const commissionTargets = new Map<string, { clientId: string; year: number; rfq: RFQType }>();
+  const plan = planImport(prepared, mode);
+  const units = backupUnitsForPlan(plan, prepared.ref);
+  let backupId: string;
+  try {
+    backupId = await createBackup("IMPORT", units, actor, prepared.spreadsheetId);
+  } catch (err) {
+    throw new Error(`Backup failed — nothing was imported. ${msg(err)}`);
+  }
 
-  for (const axis of prepared.axes) {
-    const { axisId, labelOf } = axis;
-
-    // BL writes.
-    for (const g of axis.grouped.bl) {
-      try {
-        const existing =
-          axis.existingBL.get(submKey(g.clientId, g.year, g.rfq)) ?? {
-            buckets: [],
-            actuals: [],
-          };
-        const buckets = buildBLBuckets(
-          existing,
-          g,
-          mode,
-          labelOf,
-          axis.config.allowDuplicateRowTypes
-        );
-
-        if (axisId === "revenue") {
-          // Revenue keeps BL + actuals in one doc; preserve actuals, normalize
-          // the fixed shape, then let the commission re-sync fix the computed row.
-          const merged = ensureRevenueShape({ buckets, actuals: existing.actuals });
-          await saveAxisData(g.clientId, g.year, g.rfq, "revenue", merged, userUid, {
-            touchedBL: true,
-            touchedActuals: false,
-          });
-          commissionTargets.set(submKey(g.clientId, g.year, g.rfq), {
-            clientId: g.clientId,
-            year: g.year,
-            rfq: g.rfq,
-          });
-        } else {
-          // Media/Labs: actuals live in annual_actuals — write BL with empty
-          // actuals here (mirrors the grid), keeping the doc clean.
-          await saveAxisData(
-            g.clientId,
-            g.year,
-            g.rfq,
-            axisId,
-            { buckets, actuals: [] },
-            userUid,
-            { touchedBL: true, touchedActuals: false }
-          );
-          if (axisId === "media")
-            commissionTargets.set(submKey(g.clientId, g.year, g.rfq), {
-              clientId: g.clientId,
-              year: g.year,
-              rfq: g.rfq,
-            });
-        }
+  for (const w of plan.writes) {
+    try {
+      if (w.kind === "bl") {
+        await saveAxisData(w.clientId, w.year, w.rfq, w.axisId, w.after, userUid, {
+          touchedBL: true,
+          touchedActuals: false,
+        });
         blWrites++;
-      } catch (err) {
-        errors.push(`BL ${axisId} ${g.clientId}/${g.year}/${g.rfq}: ${msg(err)}`);
-      }
-    }
-
-    // Revenue per-submission actuals (GAIA) + their details.
-    for (const g of axis.grouped.submissionActuals) {
-      try {
-        const existing = axis.existingRevActuals.get(submKey(g.clientId, g.year, g.rfq)) ?? [];
-        const rows = buildActualsRows(existing, g.rows, g.details, mode, labelOf, g.year);
-        await saveAxisActuals(g.clientId, g.year, g.rfq, axisId, rows, userUid);
+      } else if (w.kind === "submissionActuals") {
+        await saveAxisActuals(w.clientId, w.year, w.rfq, w.axisId, w.after, userUid);
         actualsWrites++;
-      } catch (err) {
-        errors.push(`Actuals ${axisId} ${g.clientId}/${g.year}/${g.rfq}: ${msg(err)}`);
-      }
-    }
-
-    // Annual actuals (Media/Labs MediaOcean) + their details.
-    for (const g of axis.grouped.annualActuals) {
-      try {
-        const existing = axis.existingAnnualActuals.get(annKey(g.clientId, g.year)) ?? [];
-        const rows = buildActualsRows(existing, g.rows, g.details, mode, labelOf, g.year);
-        await saveAnnualActuals(g.clientId, g.year, axisId, rows, userUid);
+      } else {
+        await saveAnnualActuals(w.clientId, w.year, w.axisId, w.after, userUid);
         actualsWrites++;
-      } catch (err) {
-        errors.push(`Annual actuals ${axisId} ${g.clientId}/${g.year}: ${msg(err)}`);
       }
+    } catch (err) {
+      const where =
+        w.kind === "annualActuals"
+          ? `Annual actuals ${w.axisId} ${w.clientId}/${w.year}`
+          : `${w.kind === "bl" ? "BL" : "Actuals"} ${w.axisId} ${w.clientId}/${w.year}/${w.rfq}`;
+      errors.push(`${where}: ${msg(err)}`);
     }
   }
 
   // Re-sync derived Revenue BL commission for every touched submission.
   let commissionsRecalculated = 0;
-  for (const { clientId, year, rfq } of commissionTargets.values()) {
+  for (const { clientId, year, rfq } of plan.commissionTargets) {
     try {
       const client = prepared.ref.clientsById.get(clientId);
       const yearRates: Partial<Record<MediaType, MonthlyMap>> | undefined =
@@ -1265,7 +1440,14 @@ export async function commitImport(
     }
   }
 
-  return { blWrites, actualsWrites, commissionsRecalculated, errors };
+  let backupWarning: string | undefined;
+  try {
+    await finalizeBackup(backupId, units, errors);
+  } catch (err) {
+    backupWarning = `The backup was saved, but its final check failed (${msg(err)}) — undo will ask you to confirm each section.`;
+  }
+
+  return { blWrites, actualsWrites, commissionsRecalculated, errors, backupId, backupWarning };
 }
 
 function msg(err: unknown): string {
@@ -1436,6 +1618,9 @@ export interface DeleteResult {
   sectionsCleared: number;
   commissionsRecalculated: number;
   errors: string[];
+  /** The automatic pre-delete backup (undoable from Bulk Edits → History). */
+  backupId?: string;
+  backupWarning?: string;
 }
 
 /**
@@ -1448,8 +1633,9 @@ export interface DeleteResult {
 export async function commitBulkDelete(
   prepared: PreparedDelete,
   ref: BulkReference,
-  userUid?: string
+  actor: BackupActor = {}
 ): Promise<DeleteResult> {
+  const userUid = actor.uid;
   const errors: string[] = [];
   let sectionsCleared = 0;
 
@@ -1488,6 +1674,42 @@ export async function commitBulkDelete(
     string,
     { clientId: string; year: number; rfq: RFQType }
   >();
+
+  // Back up every section about to be cleared (plus the Revenue axis the
+  // commission re-sync rewrites). No backup → nothing is deleted.
+  const nameOf = (id: string) => ref.clientsById.get(id)?.CL_Name ?? id;
+  const units = new Map<string, BackupUnit>();
+  const addUnit = (u: BackupUnit) => units.set(`${u.collection}|${u.docId}|${u.axisId}`, u);
+  for (const g of byTripletAxis.values()) {
+    const base = {
+      collection: "data_entries" as const,
+      docId: buildDataEntryId(g.clientId, g.year, g.rfq),
+      clientId: g.clientId,
+      clientName: nameOf(g.clientId),
+      year: g.year,
+      rfq: g.rfq,
+    };
+    addUnit({ ...base, axisId: g.axisId });
+    if (g.axisId === "media") addUnit({ ...base, axisId: "revenue" });
+  }
+  for (const t of annualTargets) {
+    addUnit({
+      collection: "annual_actuals",
+      docId: buildAnnualActualsId(t.clientId, t.year),
+      axisId: t.axisId,
+      clientId: t.clientId,
+      clientName: t.clientName,
+      year: t.year,
+      rfq: null,
+    });
+  }
+  const backupUnits = [...units.values()];
+  let backupId: string;
+  try {
+    backupId = await createBackup("DELETE", backupUnits, actor);
+  } catch (err) {
+    throw new Error(`Backup failed — nothing was deleted. ${msg(err)}`);
+  }
 
   for (const g of byTripletAxis.values()) {
     try {
@@ -1536,5 +1758,12 @@ export async function commitBulkDelete(
     }
   }
 
-  return { sectionsCleared, commissionsRecalculated, errors };
+  let backupWarning: string | undefined;
+  try {
+    await finalizeBackup(backupId, backupUnits, errors);
+  } catch (err) {
+    backupWarning = `The backup was saved, but its final check failed (${msg(err)}) — undo will ask you to confirm each section.`;
+  }
+
+  return { sectionsCleared, commissionsRecalculated, errors, backupId, backupWarning };
 }
