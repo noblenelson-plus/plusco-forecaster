@@ -5,8 +5,9 @@
  * QA + confirmation step for a bulk import. Imports are always REPLACE: each
  * targeted client × submission × section is overwritten by the sheet's rows.
  * The modal shows the validation outcome, preview chips of exactly which
- * targets get replaced, and the per-row error list — nothing is written until
- * the user confirms.
+ * targets get replaced with their dollar totals before vs after, and the
+ * per-row error list — nothing is written until the user confirms. The commit
+ * takes an automatic backup first, so the import can be undone from History.
  */
 
 import { useMemo, useState } from "react";
@@ -23,18 +24,19 @@ import {
   type CommitResult,
   summarizeImport,
   commitImport,
-  replaceTargets,
+  importImpact,
 } from "../../lib/services/bulk-import-service";
-import TargetChips from "./target-chips";
+import type { BackupActor } from "../../lib/services/bulk-backup-service";
+import ImpactTable from "./impact-table";
 
 export default function ReviewModal({
   prepared,
-  userUid,
+  actor,
   onClose,
   onImported,
 }: {
   prepared: PreparedImport;
-  userUid?: string;
+  actor: BackupActor;
   onClose: () => void;
   onImported: () => void;
 }) {
@@ -43,7 +45,7 @@ export default function ReviewModal({
   const [result, setResult] = useState<CommitResult | null>(null);
 
   const summary = useMemo(() => summarizeImport(prepared, "REPLACE"), [prepared]);
-  const targets = useMemo(() => replaceTargets(prepared), [prepared]);
+  const impact = useMemo(() => importImpact(prepared, "REPLACE"), [prepared]);
 
   const canCommit = !importing && summary.readyRows > 0;
 
@@ -51,7 +53,7 @@ export default function ReviewModal({
     setImporting(true);
     setError("");
     try {
-      const res = await commitImport(prepared, "REPLACE", userUid);
+      const res = await commitImport(prepared, "REPLACE", actor);
       setResult(res);
       if (res.errors.length === 0) {
         // Brief success view, then let the parent refresh.
@@ -130,7 +132,8 @@ export default function ReviewModal({
                 <p className="text-sm text-gray-800 leading-relaxed">
                   <span className="font-semibold">Replace</span> — each section
                   below is overwritten by the sheet&apos;s rows. Anything in
-                  those sections that isn&apos;t in the sheet is removed.
+                  those sections that isn&apos;t in the sheet is removed. A backup is
+                  saved automatically first, so you can undo it from History.
                 </p>
               </div>
               {/* Line-level impact vs the live data, spelled out */}
@@ -154,18 +157,11 @@ export default function ReviewModal({
                   desc="In the app but missing from the sheet — deleted by the replace."
                 />
               </div>
-              {targets.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                    Sections being replaced
-                  </p>
-                  {/* Capped + scrollable so a large import can't squeeze the
-                      error list below out of the modal. */}
-                  <div className="max-h-52 overflow-y-auto">
-                    <TargetChips targets={targets} />
-                  </div>
-                </div>
-              )}
+              {/* One line per replaced section with its $ before → after.
+                  The table caps its own height so a large import can't
+                  squeeze the error list below out of the modal. */}
+              <ImpactTable rows={impact} />
+
             </div>
           )}
 
@@ -360,6 +356,14 @@ function ResultView({ result }: { result: CommitResult }) {
           <p className="text-xs text-amber-700 mt-1">
             Completed with {result.errors.length} error{result.errors.length !== 1 ? "s" : ""}.
           </p>
+        )}
+        {result.backupId && (
+          <p className="text-xs text-gray-500 mt-1">
+            A backup was saved — undo this import any time from History on this page.
+          </p>
+        )}
+        {result.backupWarning && (
+          <p className="text-xs text-amber-700 mt-1">{result.backupWarning}</p>
         )}
       </div>
       {result.errors.map((e, i) => (

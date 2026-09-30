@@ -17,6 +17,7 @@ import {
   prepareImport,
 } from "../../lib/services/bulk-import-service";
 import { extractSpreadsheetId } from "../../lib/services/google-sheets-service";
+import type { BackupActor } from "../../lib/services/bulk-backup-service";
 
 const AXES: { id: AxisId; label: string }[] = [
   { id: "media", label: "Media" },
@@ -27,12 +28,12 @@ const AXES: { id: AxisId; label: string }[] = [
 export default function ImportPanel({
   reference,
   connected,
-  userUid,
+  actor,
   onImported,
 }: {
   reference: BulkReference;
   connected: boolean;
-  userUid?: string;
+  actor: BackupActor;
   onImported: () => void;
 }) {
   const [input, setInput] = useState("");
@@ -139,7 +140,7 @@ export default function ImportPanel({
       {prepared && (
         <ReviewModal
           prepared={prepared}
-          userUid={userUid}
+          actor={actor}
           onClose={() => setPrepared(null)}
           onImported={() => {
             setPrepared(null);

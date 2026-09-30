@@ -29,6 +29,7 @@ import {
   prepareBulkDelete,
   commitBulkDelete,
 } from "../../lib/services/bulk-import-service";
+import type { BackupActor } from "../../lib/services/bulk-backup-service";
 
 const AXES: { id: AxisId; label: string }[] = [
   { id: "media", label: "Media" },
@@ -62,11 +63,11 @@ function Chip({
 
 export default function DeletePanel({
   reference,
-  userUid,
+  actor,
   onDeleted,
 }: {
   reference: BulkReference;
-  userUid?: string;
+  actor: BackupActor;
   onDeleted: () => void;
 }) {
   const years = useMemo(
@@ -131,7 +132,7 @@ export default function DeletePanel({
     setDeleting(true);
     setError("");
     try {
-      const res = await commitBulkDelete(prepared, reference, userUid);
+      const res = await commitBulkDelete(prepared, reference, actor);
       setResult(res);
       setPrepared(null);
       if (res.errors.length === 0) onDeleted();
@@ -293,6 +294,8 @@ export default function DeletePanel({
               result.commissionsRecalculated !== 1 ? "s" : ""
             }`}
           {result.errors.length > 0 && ` · ${result.errors.length} error(s): ${result.errors[0]}`}
+          {result.backupId && " · Backup saved — undo it from History below."}
+          {result.backupWarning && ` · ${result.backupWarning}`}
         </div>
       )}
 

@@ -5,10 +5,11 @@
  * Bulk Edit (admin-only) — export forecast data to a Google Sheet, edit it
  * there, then import it back with a QA + add/replace review. Reuses the
  * single-submission services so commission re-sync and "last updated" stamps
- * behave exactly like the per-client editing page.
+ * behave exactly like the per-client editing page. Every import / delete is
+ * backed up automatically and can be undone from the History panel.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import PageHeader from "../../../components/_shared/page-header";
@@ -16,6 +17,7 @@ import GoogleConnect from "../../../components/bulk-edit/google-connect";
 import ExportPanel from "../../../components/bulk-edit/export-panel";
 import ImportPanel from "../../../components/bulk-edit/import-panel";
 import DeletePanel from "../../../components/bulk-edit/delete-panel";
+import HistoryPanel from "../../../components/bulk-edit/history-panel";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import { useAuth } from "../../../lib/auth-context";
 import {
@@ -34,8 +36,10 @@ export default function BulkEditsPage() {
   const [refError, setRefError] = useState("");
   // Lazy init reflects an existing in-session Google grant without an effect.
   const [connected, setConnected] = useState(() => isConnected());
-  // Bumped after a successful import so panels can reset/reflect fresh data.
-  const [, setImportNonce] = useState(0);
+  // Bumped after an import / delete / undo so panels reflect fresh data.
+  const [importNonce, setImportNonce] = useState(0);
+  // Who runs the bulk operations — recorded on their automatic backups.
+  const actor = useMemo(() => ({ uid: user?.uid, email: user?.email }), [user?.uid, user?.email]);
 
   // Guard — redirect non-admins.
   useEffect(() => {
@@ -94,14 +98,20 @@ export default function BulkEditsPage() {
             <ImportPanel
               reference={reference}
               connected={connected}
-              userUid={user?.uid}
+              actor={actor}
               onImported={() => setImportNonce((n) => n + 1)}
             />
             {/* Bulk delete works straight against Firestore — no Google needed. */}
             <DeletePanel
               reference={reference}
-              userUid={user?.uid}
+              actor={actor}
               onDeleted={() => setImportNonce((n) => n + 1)}
+            />
+            <HistoryPanel
+              reference={reference}
+              actor={actor}
+              refreshKey={importNonce}
+              onRestored={() => setImportNonce((n) => n + 1)}
             />
           </>
         )}
