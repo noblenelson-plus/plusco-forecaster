@@ -10,15 +10,13 @@
  * Same source and math as the by-GM matrix (scoped mo_kpi_by_client, sum/sum
  * shares, the shared Billups eligibility rule), so Total ties to the matrix.
  * RAG (red/amber/green) colors the target metrics; the rest stay neutral.
- * Exports to Google Sheets or CSV from one shared set of column descriptors.
+ * Exports to Google Sheets from one shared set of column descriptors.
  */
 
 import { useMemo, useState } from "react";
-import { Users, Download } from "lucide-react";
+import { Users } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
-import { Button } from "../../ui/button";
 import ExportSheetButton from "../table/export-sheet-button";
-import { buildExportMatrix } from "../table/table-export";
 import type { TableColumn } from "../table/table-column.types";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 import { ragStatus, ragCell, type RagStatus, type RagBands } from "./exec-rag";
@@ -50,10 +48,6 @@ function pptOf(v: number | null): string {
 function textOf(v: unknown): string {
   const s = (v ?? "").toString().trim();
   return s === "" ? "—" : s;
-}
-function csvField(value: unknown): string {
-  const s = value === null || value === undefined ? "" : String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 // Per-client metric readers (one KpiByClientRow == one client).
@@ -400,20 +394,6 @@ export default function ExecKpisByClientTable({
     [columns]
   );
 
-  function downloadCsv() {
-    const matrix = buildExportMatrix(exportColumns, sorted, agg, true);
-    const csv = matrix.map((row) => row.map(csvField).join(",")).join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "exec-kpis-by-client.csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
   return (
     <div data-scroll-section data-scroll-label="Exec KPIs by client">
       <ChartCard
@@ -424,20 +404,14 @@ export default function ExecKpisByClientTable({
         icon={Users}
         action={
           rows.length > 0 ? (
-            <div className="flex items-center gap-2">
-              <ExportSheetButton
-                columns={exportColumns}
-                rows={sorted}
-                totals={agg}
-                title="Exec KPIs by Client"
-                sheetTitle="Exec KPIs by Client"
-                includeTotals
-              />
-              <Button variant="outline" size="sm" onClick={downloadCsv}>
-                <Download />
-                CSV
-              </Button>
-            </div>
+            <ExportSheetButton
+              columns={exportColumns}
+              rows={sorted}
+              totals={agg}
+              title="Exec KPIs by Client"
+              sheetTitle="Exec KPIs by Client"
+              includeTotals
+            />
           ) : undefined
         }
       >

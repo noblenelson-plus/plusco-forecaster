@@ -9,7 +9,7 @@
  * row). The total row sums the DOLLAR columns and computes the CORRECT portfolio
  * rate for each percentage column (sum numerator / sum denominator) — never an
  * average of per-client percentages — so the footer cross-checks 1:1 with
- * Looker's total and with the scorecards above. Exports every synced column.
+ * Looker's total and with the scorecards above.
  *
  * Columns are organized into groups (Meta / Digital Direct / Programmatic /
  * Labs / Billups); a chip row lets the user show or hide each group so a wide
@@ -28,7 +28,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Table2, Download, ArrowUp, ArrowDown } from "lucide-react";
+import { Table2, ArrowUp, ArrowDown } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -37,7 +37,6 @@ import {
   CardAction,
   CardContent,
 } from "../../ui/card";
-import { Button } from "../../ui/button";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
 import ExportSheetButton from "../table/export-sheet-button";
 import type { TableColumn } from "../table/table-column.types";
@@ -468,11 +467,6 @@ const EXPORT_COLUMNS: TableColumn<KpiByClientRow, KpiByClientRow[]>[] = COLUMNS.
   })
 );
 
-function csvField(value: unknown): string {
-  const s = value === null || value === undefined ? "" : String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
 // --- Component ----------------------------------------------------------------
 
 export default function InvestmentKpisTable({
@@ -548,24 +542,6 @@ export default function InvestmentKpisTable({
     });
   };
 
-  function downloadCsv() {
-    const keySet = new Set<string>();
-    for (const r of rows) for (const k of Object.keys(r)) keySet.add(k);
-    const keys = [...keySet];
-    const header = keys.join(",");
-    const body = rows.map((r) => keys.map((k) => csvField(r[k])).join(","));
-    const csv = [header, ...body].join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "investment-kpis-by-client.csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
   const cellPad = "px-3 py-2 whitespace-nowrap border-b border-border";
   const headBase =
     "px-3 py-2 whitespace-nowrap border-b border-border bg-muted text-xs font-medium text-muted-foreground";
@@ -596,15 +572,6 @@ export default function InvestmentKpisTable({
                 includeTotals
               />
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={downloadCsv}
-              disabled={rows.length === 0}
-            >
-              <Download />
-              Download CSV
-            </Button>
           </CardAction>
         </CardHeader>
 
