@@ -301,7 +301,7 @@ export default function DeletePanel({
 
       <div className="flex items-center justify-between gap-3 pt-1">
         <p className="text-xs text-gray-400">
-          Includes locked RFQs (admin tool). This cannot be undone.
+          Includes locked RFQs (admin tool). A backup is saved first — undo it from History below.
         </p>
         <div className="flex items-center gap-2">
           <button
