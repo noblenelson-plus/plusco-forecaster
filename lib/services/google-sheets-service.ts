@@ -384,24 +384,29 @@ async function putRows(
 export async function writeValues(
   spreadsheetId: string,
   sheetTitle: string,
-  values: (string | number)[][]
+  values: (string | number)[][],
+  /** Called after each request with (chunks written, total chunks). */
+  onProgress?: (done: number, total: number) => void
 ): Promise<void> {
   const width = values.reduce((max, row) => Math.max(max, row.length), 1);
   const rowsPerChunk = Math.max(1, Math.floor(WRITE_CHUNK_CELLS / width));
   if (values.length <= rowsPerChunk) {
     await putRows(spreadsheetId, sheetTitle, 1, values);
+    onProgress?.(1, 1);
     return;
   }
   // A single write grows the grid to fit, but a chunk whose start row lies
   // beyond the grid is rejected — so size the tab before writing in pieces.
   await ensureGridSize(spreadsheetId, sheetTitle, values.length, width);
-  for (let start = 0; start < values.length; start += rowsPerChunk) {
+  const total = Math.ceil(values.length / rowsPerChunk);
+  for (let start = 0, done = 0; start < values.length; start += rowsPerChunk) {
     await putRows(
       spreadsheetId,
       sheetTitle,
       start + 1,
       values.slice(start, start + rowsPerChunk)
     );
+    onProgress?.(++done, total);
   }
 }
 

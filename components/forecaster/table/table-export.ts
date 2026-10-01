@@ -30,14 +30,18 @@ export type CellValue = string | number;
 /** Label of the pinned summary row, matching the table footer. */
 const TOTAL_LABEL = "Grand total";
 
-/** Coerces one cell for Sheets. Nulls become empty cells, never "—". */
+/**
+ * Coerces one cell for Sheets. Nulls become empty cells, never "—". `display`
+ * is a thunk: only percentages need the formatted string, and formatting every
+ * cell of a large table is the slow part of building the matrix.
+ */
 function exportCell<R, T>(
   column: TableColumn<R, T>,
   raw: number | string | null,
-  display: string
+  display: () => string
 ): CellValue {
   if (raw === null) return "";
-  if (column.kind === "percent" || column.kind === "share") return display;
+  if (column.kind === "percent" || column.kind === "share") return display();
   return raw;
 }
 
@@ -56,7 +60,7 @@ export function buildExportMatrix<R, T>(
 
   const body: CellValue[][] = rows.map((row) =>
     columns.map((column) =>
-      exportCell(column, column.raw(row), column.display(row))
+      exportCell(column, column.raw(row), () => column.display(row))
     )
   );
 
@@ -66,7 +70,7 @@ if (!includeTotals) return [header, ...body];
     if (!column.total) return index === 0 ? TOTAL_LABEL : "";
     const display = column.total(totals);
     const raw = column.totalRaw ? column.totalRaw(totals) : display;
-    return exportCell(column, raw, display);
+    return exportCell(column, raw, () => display);
   });
 
   return [header, ...body, totalRow];
@@ -120,12 +124,15 @@ export async function exportToNewSheet({
   title,
   sheetTitle,
   matrix,
+  onProgress,
 }: {
   /** Spreadsheet file name, e.g. "Client detail — 2026 RFQ2 vs 2025 Final". */
   title: string;
   /** Tab name inside the file. Keep it short. */
   sheetTitle: string;
   matrix: CellValue[][];
+  /** Upload progress: (requests written, total requests). */
+  onProgress?: (done: number, total: number) => void;
 }): Promise<string> {
   if (!isGoogleConfigured()) {
     throw new SheetsUnavailableError(
@@ -141,7 +148,7 @@ export async function exportToNewSheet({
   const spreadsheet = await createSpreadsheet(title, [
     { title: sheetTitle, rowCount: rows, columnCount: cols },
   ]);
-  await writeValues(spreadsheet.spreadsheetId, sheetTitle, matrix);
+  await writeValues(spreadsheet.spreadsheetId, sheetTitle, matrix, onProgress);
   return spreadsheet.url;
 }
 

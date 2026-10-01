@@ -18,18 +18,17 @@
  * count, the preview and exports are all computed locally from it.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Sheet as SheetIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ExternalLink, Loader2, Sheet as SheetIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import MultiSelectDropdown, {
   type Option,
 } from "../../_shared/multi-select-dropdown";
-import type { TableColumn } from "../table/table-column.types";
 import {
   assertSizesFitInSheets,
-  buildExportMatrix,
   exportToNewSheet,
   SheetsUnavailableError,
+  type CellValue,
 } from "../table/table-export";
 import {
   connect,
@@ -43,14 +42,13 @@ import {
   filterRowIndices,
   loadReport,
   rowAt,
+  type ColumnarTable,
   type LoadedReport,
   type ReportTable,
 } from "../../../lib/dashboard/data/report-snapshot";
 
 type RawRow = Record<string, unknown>;
-type RawColumn = TableColumn<RawRow, Record<string, never>>;
 
-const NO_TOTALS = {} as Record<string, never>;
 const HIDDEN_FIELDS = new Set(["id", "_rowIndex", "_syncBatchId"]);
 const PREVIEW_LIMIT = 10;
 
@@ -83,6 +81,51 @@ function text(v: unknown): string {
   return v === null || v === undefined ? "" : String(v);
 }
 
+/** Visible fields: `preferred` order first (when present), then the rest. */
+function orderFields(columns: string[], preferred: string[]): string[] {
+  const present = new Set(columns.filter((c) => !HIDDEN_FIELDS.has(c)));
+  const ordered = preferred.filter((f, i) => present.has(f) && preferred.indexOf(f) === i);
+  const seen = new Set(ordered);
+  for (const f of present) if (!seen.has(f)) ordered.push(f);
+  return ordered;
+}
+
+/** Rows built between yields to the browser while preparing an export. */
+const BUILD_BATCH_ROWS = 5_000;
+
+/**
+ * The raw export matrix (header + one row per matching row), read straight
+ * from the columnar snapshot: no per-row objects and no display formatting —
+ * numbers stay numbers, everything else goes out as text, nulls as empty
+ * cells. Built in batches that yield to the browser, so the page stays
+ * responsive and can show progress on large exports.
+ */
+async function buildRawMatrix(
+  table: ColumnarTable,
+  rowIndices: number[],
+  fields: string[],
+  onProgress: (pct: number) => void
+): Promise<CellValue[][]> {
+  const cols = fields.map((f) => ({ dict: table.dicts[f], idx: table.idx[f] }));
+  const matrix: CellValue[][] = [fields];
+  for (let start = 0; start < rowIndices.length; start += BUILD_BATCH_ROWS) {
+    const end = Math.min(start + BUILD_BATCH_ROWS, rowIndices.length);
+    for (let i = start; i < end; i++) {
+      const r = rowIndices[i];
+      matrix.push(
+        cols.map(({ dict, idx }) => {
+          const v = dict[idx[r]];
+          if (v === null || v === undefined) return "";
+          return typeof v === "number" ? v : String(v);
+        })
+      );
+    }
+    onProgress(Math.round((end / rowIndices.length) * 100));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return matrix;
+}
+
 export default function RawTablePage({
   title,
   icon: Icon,
@@ -97,7 +140,10 @@ export default function RawTablePage({
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState<"" | "sheets">("");
+  /** Export progress label ("" = idle), shown on the button. */
+  const [exportStage, setExportStage] = useState("");
+  /** The last exported sheet — a link, since the auto-opened tab is often blocked. */
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
   // Download the snapshot for the user's agencies (cached across sub-tabs).
@@ -143,12 +189,18 @@ export default function RawTablePage({
     [table, matched]
   );
 
-  const setFilter = (field: string, vals: string[]) =>
+  // A filter change invalidates the last export's "Open sheet" link.
+  const setFilter = (field: string, vals: string[]) => {
+    setSheetUrl(null);
     setSelected((prev) => ({ ...prev, [field]: vals }));
+  };
 
   const anyFilter = Object.values(selected).some((v) => v.length > 0);
 
-  const clearFilters = () => setSelected({});
+  const clearFilters = () => {
+    setSheetUrl(null);
+    setSelected({});
+  };
 
   // Ordered field list for the preview: preferred order first, then the rest.
   const previewFields = useMemo(() => {
@@ -174,77 +226,43 @@ export default function RawTablePage({
     return ordered;
   }, [rows, columnOrder]);
 
-  // Build export column descriptors for a given set of rows.
-  const buildColumns = useCallback(
-    (data: RawRow[]): RawColumn[] => {
-      const present = new Set<string>();
-      for (const r of data) for (const k of Object.keys(r)) present.add(k);
-      HIDDEN_FIELDS.forEach((h) => present.delete(h));
-
-      const ordered: string[] = [];
-      const seen = new Set<string>();
-      for (const f of columnOrder) {
-        if (present.has(f) && !seen.has(f)) {
-          seen.add(f);
-          ordered.push(f);
-        }
-      }
-      for (const f of present) {
-        if (!seen.has(f)) {
-          seen.add(f);
-          ordered.push(f);
-        }
-      }
-
-      return ordered.map((field) => {
-        const isMoney = moneyFields.has(field);
-        return {
-          id: field,
-          label: field,
-          group: "Raw",
-          kind: isMoney ? "money" : "text",
-          align: isMoney ? "right" : "left",
-          raw: (row: RawRow) => {
-            const v = row[field];
-            if (v === null || v === undefined) return null;
-            return typeof v === "number" ? v : String(v);
-          },
-          display: isMoney
-            ? (row: RawRow) => money(row[field])
-            : (row: RawRow) => text(row[field]),
-        } as RawColumn;
-      });
-    },
-    [columnOrder, moneyFields]
+  // Export columns: preferred order first, then the rest. Every row carries
+  // every snapshot column, so this comes from the table's shape, not its rows.
+  const exportFields = useMemo(
+    () => (table ? orderFields(table.columns, columnOrder) : []),
+    [table, columnOrder]
   );
 
   const exportSheets = async () => {
     setExportError(null);
+    setSheetUrl(null);
     if (!isGoogleConfigured()) {
       setExportError("Google Sheets export is not configured for this environment.");
       return;
     }
+    if (!table) return;
     try {
-      // Size check first, from the snapshot's shape alone (every row carries
-      // every column): an over-limit export is rejected instantly, before the
-      // matrix is built (which freezes the page for large tables) and before
-      // the Google popup — nobody should sign in just to be told it's too big.
-      if (table) {
-        const cols = table.columns.filter((c) => !HIDDEN_FIELDS.has(c)).length;
-        assertSizesFitInSheets([{ rows: matched.length + 1, cols }]);
-      }
-      // Every matching row, materialized only at export time.
-      const full = table ? matched.map((r) => rowAt(table, r)) : [];
-      const matrix = buildExportMatrix(buildColumns(full), full, NO_TOTALS, false);
-      // Open the connect popup inside the click gesture (survives popup blockers)
-      // before any await, so the later export call finds a live session.
+      // Instant size check from the shape alone, so an over-limit export is
+      // rejected before the Google popup — nobody should sign in just to be
+      // told it's too big.
+      assertSizesFitInSheets([{ rows: matched.length + 1, cols: exportFields.length }]);
+      // Open the connect popup straight from the click (any slow work before
+      // it delays the popup and risks the popup blocker).
       if (!isConnected()) await connect();
-      setExporting("sheets");
+      setExportStage("Preparing…");
+      const matrix = await buildRawMatrix(table, matched, exportFields, (pct) =>
+        setExportStage(`Preparing ${pct}%…`)
+      );
       const url = await exportToNewSheet({
         title: exportTitle,
         sheetTitle: title,
         matrix,
+        onProgress: (done, total) =>
+          setExportStage(total > 1 ? `Uploading ${done}/${total}…` : "Uploading…"),
       });
+      setSheetUrl(url);
+      // Usually blocked after a long upload (no longer tied to the click), so
+      // the "Open sheet" link below is the reliable way in.
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (e) {
       const msg =
@@ -255,11 +273,11 @@ export default function RawTablePage({
           : "Sheets export failed.";
       setExportError(msg);
     } finally {
-      setExporting("");
+      setExportStage("");
     }
   };
 
-  const busy = exporting !== "" || loading || !table || matched.length === 0;
+  const busy = exportStage !== "" || loading || !table || matched.length === 0;
 
   return (
     <div data-scroll-section data-scroll-label={title} className="space-y-6">
@@ -318,18 +336,29 @@ export default function RawTablePage({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {sheetUrl && (
+            <a
+              href={sheetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-900 bg-gray-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-700"
+            >
+              <ExternalLink size={14} />
+              Open sheet
+            </a>
+          )}
           <button
             type="button"
             onClick={exportSheets}
             disabled={busy}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {exporting === "sheets" ? (
+            {exportStage ? (
               <Loader2 size={14} className="animate-spin" />
             ) : (
               <SheetIcon size={14} />
             )}
-            {exporting === "sheets" ? "Exporting..." : "Export to Sheets"}
+            {exportStage || "Export to Sheets"}
           </button>
         </div>
       </div>
