@@ -149,6 +149,16 @@ async function getToken(): Promise<string> {
 
 // ─── REST helpers ────────────────────────────────────────────────────────────
 
+/** A non-2xx Google API response; `status` lets callers retry transient ones. */
+export class GoogleApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+  }
+}
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const token = await getToken();
   const resp = await fetch(url, {
@@ -170,8 +180,9 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       // ignore non-JSON error bodies
     }
-    throw new Error(
-      `Google API error ${resp.status}${detail ? `: ${detail}` : ""}`
+    throw new GoogleApiError(
+      `Google API error ${resp.status}${detail ? `: ${detail}` : ""}`,
+      resp.status
     );
   }
   return (await resp.json()) as T;
@@ -186,14 +197,34 @@ export interface CreatedSpreadsheet {
   sheetIdsByTitle: Record<string, number>;
 }
 
-/** Creates a spreadsheet with the given tab titles, returns id + URL + sheetIds. */
+/**
+ * A tab to create: a bare title (Google's default 1000×26 grid), or a title
+ * with an exact grid size so a large write fits without expanding the sheet.
+ */
+export type SheetSpec =
+  | string
+  | { title: string; rowCount: number; columnCount: number };
+
+/** Creates a spreadsheet with the given tabs, returns id + URL + sheetIds. */
 export async function createSpreadsheet(
   title: string,
-  sheetTitles: string[]
+  sheets: SheetSpec[]
 ): Promise<CreatedSpreadsheet> {
   const body = {
     properties: { title },
-    sheets: sheetTitles.map((t) => ({ properties: { title: t } })),
+    sheets: sheets.map((s) =>
+      typeof s === "string"
+        ? { properties: { title: s } }
+        : {
+            properties: {
+              title: s.title,
+              gridProperties: {
+                rowCount: Math.max(1, s.rowCount),
+                columnCount: Math.max(1, s.columnCount),
+              },
+            },
+          }
+    ),
   };
   const res = await api<{
     spreadsheetId: string;
@@ -256,17 +287,122 @@ export async function applyDataValidations(
   });
 }
 
-/** Writes a matrix into a tab starting at A1 (USER_ENTERED so numbers stay numbers). */
+/**
+ * Google Sheets' hard cap on cells per spreadsheet (all tabs, whole grid).
+ * Writes past it fail, so large exports are checked against it up front.
+ */
+export const SHEETS_CELL_LIMIT = 10_000_000;
+
+/**
+ * Cells sent per write request. One PUT of a very large matrix (tens of MB of
+ * JSON) makes the API fail with a 500, so big writes go out in row chunks of
+ * roughly this many cells (~2 MB each). Small writes stay a single request.
+ */
+const WRITE_CHUNK_CELLS = 200_000;
+
+/** Statuses worth retrying: rate limit (per-minute write quota) and transient server errors. */
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 4;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Grows a tab's grid to at least `rows` × `cols` (never shrinks it). */
+async function ensureGridSize(
+  spreadsheetId: string,
+  sheetTitle: string,
+  rows: number,
+  cols: number
+): Promise<void> {
+  const res = await api<{
+    sheets?: {
+      properties?: {
+        sheetId?: number;
+        title?: string;
+        gridProperties?: { rowCount?: number; columnCount?: number };
+      };
+    }[];
+  }>(
+    `${SHEETS_API}/${spreadsheetId}?fields=sheets.properties(sheetId,title,gridProperties)`
+  );
+  const props = res.sheets?.find((s) => s.properties?.title === sheetTitle)
+    ?.properties;
+  if (props?.sheetId == null) return;
+  const rowCount = props.gridProperties?.rowCount ?? 0;
+  const columnCount = props.gridProperties?.columnCount ?? 0;
+  if (rowCount >= rows && columnCount >= cols) return;
+  await api(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({
+      requests: [
+        {
+          updateSheetProperties: {
+            properties: {
+              sheetId: props.sheetId,
+              gridProperties: {
+                rowCount: Math.max(rowCount, rows),
+                columnCount: Math.max(columnCount, cols),
+              },
+            },
+            fields: "gridProperties(rowCount,columnCount)",
+          },
+        },
+      ],
+    }),
+  });
+}
+
+/** PUTs one block of rows at `startRow` (1-based), retrying transient failures with backoff. */
+async function putRows(
+  spreadsheetId: string,
+  sheetTitle: string,
+  startRow: number,
+  values: (string | number)[][]
+): Promise<void> {
+  const range = `${quoteSheet(sheetTitle)}!A${startRow}`;
+  const url = `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(
+    range
+  )}?valueInputOption=USER_ENTERED`;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await api(url, { method: "PUT", body: JSON.stringify({ values }) });
+      return;
+    } catch (error) {
+      const retryable =
+        error instanceof GoogleApiError && RETRYABLE_STATUSES.has(error.status);
+      if (!retryable || attempt >= MAX_ATTEMPTS) throw error;
+      // 2 s, 4 s, 8 s — long enough for the per-minute write quota to refill.
+      await sleep(1000 * 2 ** attempt);
+    }
+  }
+}
+
+/**
+ * Writes a matrix into a tab starting at A1 (USER_ENTERED so numbers stay
+ * numbers). Large matrices are split into sequential row chunks; the tab must
+ * already be big enough (see the sized `SheetSpec` in createSpreadsheet).
+ */
 export async function writeValues(
   spreadsheetId: string,
   sheetTitle: string,
   values: (string | number)[][]
 ): Promise<void> {
-  const range = `${quoteSheet(sheetTitle)}!A1`;
-  const url = `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(
-    range
-  )}?valueInputOption=USER_ENTERED`;
-  await api(url, { method: "PUT", body: JSON.stringify({ values }) });
+  const width = values.reduce((max, row) => Math.max(max, row.length), 1);
+  const rowsPerChunk = Math.max(1, Math.floor(WRITE_CHUNK_CELLS / width));
+  if (values.length <= rowsPerChunk) {
+    await putRows(spreadsheetId, sheetTitle, 1, values);
+    return;
+  }
+  // A single write grows the grid to fit, but a chunk whose start row lies
+  // beyond the grid is rejected — so size the tab before writing in pieces.
+  await ensureGridSize(spreadsheetId, sheetTitle, values.length, width);
+  for (let start = 0; start < values.length; start += rowsPerChunk) {
+    await putRows(
+      spreadsheetId,
+      sheetTitle,
+      start + 1,
+      values.slice(start, start + rowsPerChunk)
+    );
+  }
 }
 
 /** Reads a whole tab back as a raw matrix (unformatted, so numbers are numbers). */

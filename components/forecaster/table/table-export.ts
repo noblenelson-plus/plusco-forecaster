@@ -21,6 +21,7 @@ import {
   createSpreadsheet,
   isConnected,
   isGoogleConfigured,
+  SHEETS_CELL_LIMIT,
   writeValues,
 } from "../../../lib/services/google-sheets-service";
 
@@ -74,6 +75,31 @@ if (!includeTotals) return [header, ...body];
 /** Thrown when the feature is unavailable rather than merely failing. */
 export class SheetsUnavailableError extends Error {}
 
+/** Grid size of a matrix: its rows × its widest row. */
+function matrixSize(matrix: CellValue[][]): { rows: number; cols: number } {
+  const cols = matrix.reduce((max, row) => Math.max(max, row.length), 1);
+  return { rows: Math.max(1, matrix.length), cols };
+}
+
+/**
+ * Rejects an export that cannot fit in one spreadsheet, before any file is
+ * created. The message is shown to the user as-is.
+ */
+export function assertFitsInSheets(matrices: CellValue[][][]): void {
+  const sizes = matrices.map(matrixSize);
+  const cells = sizes.reduce((sum, s) => sum + s.rows * s.cols, 0);
+  if (cells <= SHEETS_CELL_LIMIT) return;
+  const shape =
+    sizes.length === 1
+      ? ` (${(sizes[0].rows - 1).toLocaleString("en-CA")} rows × ${sizes[0].cols} columns)`
+      : "";
+  throw new SheetsUnavailableError(
+    `Too large for Google Sheets: ${cells.toLocaleString("en-CA")} cells${shape}, ` +
+      `over Google's ${SHEETS_CELL_LIMIT.toLocaleString("en-CA")}-cell limit per file. ` +
+      `Apply a filter to narrow the rows, then export again.`
+  );
+}
+
 /**
  * Pushes a matrix to a brand-new spreadsheet and returns its URL.
  *
@@ -98,9 +124,14 @@ export async function exportToNewSheet({
     );
   }
 
+  assertFitsInSheets([matrix]);
+
   if (!isConnected()) await connect();
 
-  const spreadsheet = await createSpreadsheet(title, [sheetTitle]);
+  const { rows, cols } = matrixSize(matrix);
+  const spreadsheet = await createSpreadsheet(title, [
+    { title: sheetTitle, rowCount: rows, columnCount: cols },
+  ]);
   await writeValues(spreadsheet.spreadsheetId, sheetTitle, matrix);
   return spreadsheet.url;
 }
@@ -129,11 +160,16 @@ export async function exportToNewSheetWithTabs({
     throw new SheetsUnavailableError("Nothing to export.");
   }
 
+  assertFitsInSheets(tabs.map((t) => t.matrix));
+
   if (!isConnected()) await connect();
 
   const spreadsheet = await createSpreadsheet(
     title,
-    tabs.map((t) => t.sheetTitle)
+    tabs.map((t) => {
+      const { rows, cols } = matrixSize(t.matrix);
+      return { title: t.sheetTitle, rowCount: rows, columnCount: cols };
+    })
   );
   for (const tab of tabs) {
     await writeValues(spreadsheet.spreadsheetId, tab.sheetTitle, tab.matrix);

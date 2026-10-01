@@ -26,6 +26,7 @@ import MultiSelectDropdown, {
 } from "../../_shared/multi-select-dropdown";
 import type { TableColumn } from "../table/table-column.types";
 import {
+  assertFitsInSheets,
   buildExportMatrix,
   exportToNewSheet,
   SheetsUnavailableError,
@@ -217,12 +218,6 @@ export default function RawTablePage({
     [columnOrder, moneyFields]
   );
 
-  // Every matching row, materialized only at export time.
-  const fetchFull = useCallback(async (): Promise<RawRow[]> => {
-    if (!table) return [];
-    return matched.map((r) => rowAt(table, r));
-  }, [table, matched]);
-
   const exportSheets = async () => {
     setExportError(null);
     if (!isGoogleConfigured()) {
@@ -230,13 +225,16 @@ export default function RawTablePage({
       return;
     }
     try {
+      // Every matching row, materialized only at export time. Built
+      // synchronously so an over-limit export is rejected before the Google
+      // popup — nobody should sign in just to be told it's too big.
+      const full = table ? matched.map((r) => rowAt(table, r)) : [];
+      const matrix = buildExportMatrix(buildColumns(full), full, NO_TOTALS, false);
+      assertFitsInSheets([matrix]);
       // Open the connect popup inside the click gesture (survives popup blockers)
       // before any await, so the later export call finds a live session.
       if (!isConnected()) await connect();
       setExporting("sheets");
-      const full = await fetchFull();
-      const cols = buildColumns(full);
-      const matrix = buildExportMatrix(cols, full, NO_TOTALS, false);
       const url = await exportToNewSheet({
         title: exportTitle,
         sheetTitle: title,
