@@ -6,8 +6,10 @@
  * A client's team — its Business Lead, Digital Lead and the GM of its GM Pod —
  * automatically has access to it (`users.assignedClients`). The rules, agreed
  * with the team:
- *   - Being on a client's team grants that client. Someone who hasn't signed
- *     in yet gets a pending invite instead, applied on their first sign-in.
+ *   - Being put on a client's team grants that client: the whole team of a
+ *     new client, and on an existing client only a newly added member (saving
+ *     other fields grants nothing). Someone who hasn't signed in yet gets a
+ *     pending invite instead, applied on their first sign-in.
  *   - A Viewer on a team is upgraded to Business Lead (an invite created here
  *     is Business Lead). Exec and Admin roles are never changed; Admins see
  *     every client already, so they are left alone; revoked users too.
@@ -140,16 +142,18 @@ export function planTeamAccess(input: {
 
   for (const { after, before } of input.changes) {
     const now = new Set(clientTeamKeys(after));
+    // An existing client grants only members newly put on its team: saving
+    // other fields never re-grants the current team (access is left as set).
+    const was = new Set(before ? clientTeamKeys(before) : []);
     for (const key of now) {
+      if (was.has(key)) continue;
       const t = target(key);
       if (t) bump(adds, t, after.cl_id);
     }
-    if (before) {
-      for (const key of clientTeamKeys(before)) {
-        if (now.has(key)) continue;
-        const t = target(key);
-        if (t) bump(removes, t, after.cl_id);
-      }
+    for (const key of was) {
+      if (now.has(key)) continue;
+      const t = target(key);
+      if (t) bump(removes, t, after.cl_id);
     }
   }
 

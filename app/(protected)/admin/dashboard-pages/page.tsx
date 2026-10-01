@@ -2,54 +2,60 @@
 "use client";
 
 /**
- * Admin → Dashboard Pages — show/hide each dashboard tab and sub-tab.
+ * Admin → Dashboard Pages — choose, per role, who sees each dashboard tab and
+ * sub-tab. Applies to open dashboards as soon as it's saved; nothing is
+ * deleted, and a page switched off for every role is simply hidden. Stored in
+ * config/dashboard_pages (dashboard-pages-service.ts); the pages, their default
+ * roles and the locked combinations come from
+ * components/forecaster/dashboard-pages.config.ts.
  *
- * Hidden pages disappear for everyone (admins included) as soon as this is
- * saved; nothing is deleted, and switching a page back on restores it. Stored
- * in config/dashboard_pages (dashboard-pages-service.ts); the list of pages
- * comes from components/forecaster/dashboard-pages.config.ts.
- *
- * Guardrail: at least one tab that Agency Viewers can see must stay visible
- * (Viewers see the fewest tabs, so every role keeps at least one).
+ * Guardrails: revenue pages stay off for Viewers (the data rules don't hide
+ * revenue figures), and every role keeps at least one tab.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, RotateCcw, Save } from "lucide-react";
 import PageHeader from "../../../../components/_shared/page-header";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import { useAuth } from "../../../../lib/auth-context";
 import {
-  saveHiddenPages,
-  subscribeToHiddenPages,
+  saveDashboardPages,
+  subscribeToDashboardPages,
 } from "../../../../lib/services/dashboard-pages-service";
 import {
   DASHBOARD_PAGES,
+  hiddenPagesForRole,
   isTabVisible,
+  resolvePageAccess,
 } from "../../../../components/forecaster/dashboard-pages.config";
 import {
-  visibleForecasterTabs,
-  type DashboardPerms,
-  type ForecasterTab,
+  DASHBOARD_ROLES,
+  FORECASTER_TABS,
 } from "../../../../components/forecaster/forecaster-tabs.config";
+import type { UserRole } from "../../../../lib/types/user.types";
 
-// The tabs an Agency Viewer (fewest permissions) can see.
-const VIEWER_PERMS: DashboardPerms = {
-  canViewRevenue: false,
-  canViewGlobalDashboard: false,
+const ROLE_LABELS: Record<UserRole, string> = {
+  VIEWER: "Viewer",
+  BUSINESS_LEAD: "Business Lead",
+  EXEC: "Exec",
+  ADMIN: "Admin",
 };
-const VIEWER_TABS = visibleForecasterTabs(VIEWER_PERMS);
+
+type AccessMap = Record<string, UserRole[]>;
 
 function Switch({
   on,
   onChange,
   label,
   disabled = false,
+  title,
 }: {
   on: boolean;
   onChange: () => void;
   label: string;
   disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
@@ -57,9 +63,10 @@ function Switch({
       role="switch"
       aria-checked={on}
       aria-label={label}
+      title={title}
       disabled={disabled}
       onClick={onChange}
-      className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center transition-colors disabled:opacity-40 ${
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
         on ? "bg-green-500" : "bg-gray-300"
       }`}
     >
@@ -81,7 +88,8 @@ export default function AdminDashboardPagesPage() {
     if (!profileLoading && !isAdmin) router.replace("/");
   }, [isAdmin, profileLoading, router]);
 
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // The full effective role map for every page (defaults filled in).
+  const [access, setAccess] = useState<AccessMap>(() => resolvePageAccess({}));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -92,8 +100,8 @@ export default function AdminDashboardPagesPage() {
   const dirtyRef = useRef(false);
 
   useEffect(() => {
-    return subscribeToHiddenPages((ids) => {
-      if (!dirtyRef.current) setHidden(new Set(ids));
+    return subscribeToDashboardPages(({ access: saved, hidden }) => {
+      if (!dirtyRef.current) setAccess(resolvePageAccess(saved, new Set(hidden)));
       setLoading(false);
     });
   }, []);
@@ -103,30 +111,38 @@ export default function AdminDashboardPagesPage() {
     setDirty(next);
   };
 
-  const toggle = (id: string) => {
+  const toggle = (pageId: string, role: UserRole) => {
     markDirty(true);
     setSaveError(null);
-    setHidden((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+    setAccess((prev) => {
+      const roles = prev[pageId] ?? [];
+      const next = roles.includes(role) ? roles.filter((r) => r !== role) : [...roles, role];
+      return { ...prev, [pageId]: DASHBOARD_ROLES.filter((r) => next.includes(r)) };
     });
   };
 
-  // Guardrail: Viewers must keep at least one tab — counting only the
-  // sub-tabs they may see (not Forecast Summary / Revenues).
-  const viewerHasTab = useMemo(
-    () => VIEWER_TABS.some((t) => isTabVisible(t.id, hidden, VIEWER_PERMS)),
-    [hidden]
+  const resetToDefaults = () => {
+    markDirty(true);
+    setSaveError(null);
+    setAccess(resolvePageAccess({}));
+  };
+
+  // Guardrail: every role must keep at least one tab.
+  const rolesWithoutTab = useMemo(
+    () =>
+      DASHBOARD_ROLES.filter((role) => {
+        const hidden = hiddenPagesForRole(role, access);
+        return !FORECASTER_TABS.some((t) => isTabVisible(t.id, hidden));
+      }),
+    [access]
   );
 
   const save = async () => {
-    if (!viewerHasTab) return;
+    if (rolesWithoutTab.length) return;
     setSaving(true);
     setSaveError(null);
     try {
-      await saveHiddenPages([...hidden], user?.uid);
+      await saveDashboardPages(access, user?.uid);
       markDirty(false);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Save failed.");
@@ -134,8 +150,6 @@ export default function AdminDashboardPagesPage() {
       setSaving(false);
     }
   };
-
-  const hiddenCount = hidden.size;
 
   if (profileLoading || !isAdmin) {
     return (
@@ -145,31 +159,68 @@ export default function AdminDashboardPagesPage() {
     );
   }
 
+  const cell = (
+    page: { id: string; label: string; lockedRoles: readonly UserRole[] },
+    role: UserRole,
+    parentOn: boolean
+  ) => {
+    const locked = page.lockedRoles.includes(role);
+    return (
+      <td key={role} className="px-3 py-2 text-center">
+        <span className="inline-flex justify-center">
+          <Switch
+            on={!locked && (access[page.id] ?? []).includes(role)}
+            onChange={() => toggle(page.id, role)}
+            label={`${page.label} — ${ROLE_LABELS[role]}`}
+            disabled={locked || !parentOn}
+            title={
+              locked
+                ? "Viewers have no revenue access, so revenue pages stay off for them."
+                : !parentOn
+                  ? `The tab is off for ${ROLE_LABELS[role]}s.`
+                  : undefined
+            }
+          />
+        </span>
+      </td>
+    );
+  };
+
   return (
     <div className="flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col bg-muted">
       <header className="sticky top-14 lg:top-0 z-20 bg-white">
         <PageHeader
           title="Dashboard Pages"
-          description="Choose which dashboard tabs and sub-tabs are shown. Hidden pages disappear for everyone, including admins. Nothing is deleted — switch a page back on anytime."
+          description="Choose which roles see each dashboard tab and sub-tab. Changes apply to open dashboards right after saving. Nothing is deleted — a page off for every role is just hidden."
           actions={
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={!dirty || saving || !viewerHasTab}
-              className="flex items-center gap-1.5 border border-gray-900 bg-gray-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-40"
-            >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              Save
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={resetToDefaults}
+                className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <RotateCcw size={14} />
+                Reset to defaults
+              </button>
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={!dirty || saving || rolesWithoutTab.length > 0}
+                className="flex items-center gap-1.5 border border-gray-900 bg-gray-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-40"
+              >
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Save
+              </button>
+            </div>
           }
         />
       </header>
 
-      <main className="mx-auto w-full max-w-[900px] flex-1 space-y-4 p-6 md:p-8">
-        {!viewerHasTab && (
+      <main className="mx-auto w-full max-w-[1000px] flex-1 space-y-4 p-6 md:p-8">
+        {rolesWithoutTab.length > 0 && (
           <div className="border border-red-500 bg-red-500 px-4 py-2 text-sm text-white">
-            At least one of these tabs must stay visible so Agency Viewers still have a page:{" "}
-            {VIEWER_TABS.map((t) => t.label).join(", ")}.
+            Every role needs at least one tab. Turn a tab back on for:{" "}
+            {rolesWithoutTab.map((r) => ROLE_LABELS[r]).join(", ")}.
           </div>
         )}
         {saveError && (
@@ -183,55 +234,50 @@ export default function AdminDashboardPagesPage() {
             <Loader2 size={20} className="animate-spin" />
           </div>
         ) : (
-          <div className="border border-gray-200 bg-white">
-            <div className="flex items-center justify-between bg-gray-900 px-4 py-2 text-sm font-semibold text-white">
-              <span>Page</span>
-              <span>Shown</span>
-            </div>
-            {DASHBOARD_PAGES.map((page) => {
-              const tabOn = !hidden.has(page.id);
-              const tabEffective = isTabVisible(page.id as ForecasterTab, hidden);
-              return (
-                <div key={page.id} className="border-b border-gray-100 last:border-b-0">
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{page.label}</p>
-                      {tabOn && !tabEffective && (
-                        <p className="text-xs text-gray-500">
-                          Hidden, because all of its sub-tabs are hidden.
-                        </p>
-                      )}
-                    </div>
-                    <Switch on={tabOn} onChange={() => toggle(page.id)} label={`Show ${page.label}`} />
-                  </div>
-                  {page.children.map((child) => (
-                    <div
-                      key={child.id}
-                      className="flex items-center justify-between border-t border-gray-50 py-2 pl-10 pr-4"
-                    >
-                      <p className={`text-sm ${tabOn ? "text-gray-700" : "text-gray-400"}`}>
-                        {child.label}
-                      </p>
-                      <Switch
-                        on={!hidden.has(child.id)}
-                        onChange={() => toggle(child.id)}
-                        label={`Show ${page.label} → ${child.label}`}
-                        disabled={!tabOn}
-                      />
-                    </div>
+          <div className="overflow-x-auto border border-gray-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-900 text-white">
+                <tr>
+                  <th className="px-4 py-2 text-left font-semibold">Page</th>
+                  {DASHBOARD_ROLES.map((r) => (
+                    <th key={r} className="px-3 py-2 text-center font-semibold whitespace-nowrap">
+                      {ROLE_LABELS[r]}
+                    </th>
                   ))}
-                </div>
-              );
-            })}
+                </tr>
+              </thead>
+              <tbody>
+                {DASHBOARD_PAGES.map((page) => (
+                  <PageRows key={page.id}>
+                    <tr className="border-t border-gray-200">
+                      <td className="px-4 py-3 font-semibold text-gray-900">{page.label}</td>
+                      {DASHBOARD_ROLES.map((role) => cell(page, role, true))}
+                    </tr>
+                    {page.children.map((child) => (
+                      <tr key={child.id} className="border-t border-gray-50">
+                        <td className="py-2 pl-10 pr-4 text-gray-700">{child.label}</td>
+                        {DASHBOARD_ROLES.map((role) =>
+                          cell(child, role, (access[page.id] ?? []).includes(role))
+                        )}
+                      </tr>
+                    ))}
+                  </PageRows>
+                ))}
+              </tbody>
+            </table>
             <p className="border-t border-gray-100 px-4 py-2 text-[11px] text-gray-400">
-              {hiddenCount === 0
-                ? "Every page is shown."
-                : `${hiddenCount} page${hiddenCount === 1 ? "" : "s"} hidden.`}{" "}
-              Changes apply to open dashboards immediately after saving.
+              A sub-tab shows only when its tab is on for that role, and a tab whose sub-tabs are
+              all off is hidden. Showing a page never widens data access: each user still only
+              sees the clients and agencies the security rules allow.
             </p>
           </div>
         )}
       </main>
     </div>
   );
+}
+
+/** Groups a tab row with its sub-tab rows (a fragment with a stable key). */
+function PageRows({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }
