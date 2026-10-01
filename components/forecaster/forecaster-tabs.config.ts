@@ -43,22 +43,25 @@ export const ALL_DASHBOARD_PERMS: DashboardPerms = {
   canViewGlobalDashboard: true,
 };
 
-// The high-level, all-clients dashboards — Exec and Admin only.
-const GLOBAL_DASHBOARD_TABS: ForecasterTab[] = ["exec-kpis"];
+// Exec and Admin only: the high-level KPI dashboard, and MediaBox Adoption
+// ("Execs for now").
+const GLOBAL_DASHBOARD_TABS: ForecasterTab[] = ["exec-kpis", "mediabox"];
 
 /**
  * The top-level tabs a user may see, from their capability flags:
  *   - Viewer (no revenue, no global) → Forecaster Dashboard (Media, Labs,
  *     Product only — see the revenue sub-tabs in dashboard-pages.config.ts),
- *     Labs Pacing, Media Investments Report, MediaBox, Reports.
+ *     Labs Pacing, Media Investments Report, Reports.
  *   - Business Lead (revenue) → the above, with Forecast Summary + Revenues.
- *   - Exec / Admin (revenue + global) → the full set incl. Exec KPI Dashboard.
+ *   - Exec / Admin (revenue + global) → the full set incl. Exec KPI Dashboard
+ *     and MediaBox Adoption.
  *
- * Labs Pacing reads the same forecast data as the Labs sub-tab (each user's
- * accessible clients only). The Media Investments Report and Reports are open
- * to everyone because their data is agency-partitioned: each user only
- * receives their own agencies' rows (Admin: all), enforced by Firestore/Storage
- * rules — see lib/format/agency-scope.ts.
+ * Which clients each tab covers is decided in app/(protected)/page.tsx: the
+ * Forecaster Dashboard shows the user's assigned clients (Admin: all); every
+ * other tab shows the agencies their email domain maps to (Admin and
+ * company-wide domains: all). The Media Investments Report and Reports data is
+ * agency-partitioned and enforced by Firestore/Storage rules — see
+ * lib/format/agency-scope.ts.
  */
 export function visibleForecasterTabs(perms: DashboardPerms) {
   return FORECASTER_TABS.filter(

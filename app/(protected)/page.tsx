@@ -53,6 +53,7 @@ import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
 import { useProducts } from "../../lib/hooks/use-products";
 import { useAccessibleClients } from "../../lib/hooks/use-accessible-clients";
+import { useAgencyScope } from "../../lib/hooks/use-agency-scope";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
@@ -117,14 +118,36 @@ function ModeToggle({
 
 export default function DashboardPage() {
   const { clients: allClients, loading, error } = useAccessibleClients();
-  const { profile, permissions } = useUserProfile();
+  const { profile, permissions, isAdmin } = useUserProfile();
+  const { scope: agencyScope } = useAgencyScope();
+  // Top-level tab — declared up here because it picks the client universe.
+  const [topTab, setTopTab] = useState<ForecasterTab>("forecaster");
   // Test clients are hidden from the dashboard only (they stay in the editing
   // grid). Filtering here removes them from every tab, chart, KPI and table,
   // since the whole dashboard scope derives from this list.
-  const clients = useMemo(
+  const dashboardClients = useMemo(
     () => allClients.filter((c) => !isTestClient(c.CL_Name)),
     [allClients]
   );
+  // Each tab group has its own client universe (presentation only — the
+  // security rules still govern what can be read):
+  //   - Forecaster Dashboard → the clients explicitly assigned to the user
+  //     (Admin: all). Agency-wide access does not widen it.
+  //   - Every other tab → the agencies the user's email domain maps to
+  //     (Admin and company-wide domains: all), like the agency-partitioned
+  //     Media Investments / Reports data.
+  // The filter bar, forecast data and charts all derive from this list.
+  const assignedClientIds = profile?.assignedClients;
+  const clients = useMemo(() => {
+    if (topTab === "forecaster") {
+      if (isAdmin) return dashboardClients;
+      const assigned = new Set(assignedClientIds ?? []);
+      return dashboardClients.filter((c) => assigned.has(c.cl_id));
+    }
+    if (agencyScope.all) return dashboardClients;
+    const agencies = new Set(agencyScope.agencies);
+    return dashboardClients.filter((c) => agencies.has(c.CL_Agency));
+  }, [topTab, isAdmin, assignedClientIds, agencyScope, dashboardClients]);
   const usersMap = useUsersMap();
 
   const { selectedYear, selectedRFQ, setRFQ } = useForecastSelection();
@@ -272,8 +295,7 @@ export default function DashboardPage() {
   );
 
   const [selMonths, setSelMonths] = useState<number[]>([]);
-  // Top-level tab, and the sub-tab chosen inside the Forecaster Dashboard.
-  const [topTab, setTopTab] = useState<ForecasterTab>("forecaster");
+  // The sub-tab chosen inside the Forecaster Dashboard (top tab: see above).
   const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
   // Pages an admin has hidden (Admin → Dashboard Pages), live.
@@ -562,7 +584,9 @@ export default function DashboardPage() {
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
             {viewCurrency === "USD"
               ? "No USD clients are in scope for this selection."
-              : "No clients are available for your account yet."}
+              : topTab === "forecaster"
+                ? "The Forecaster Dashboard shows the clients assigned to you, and none are assigned yet."
+                : "No clients are available for your account yet."}
           </div>
         ) : forecastData.error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
