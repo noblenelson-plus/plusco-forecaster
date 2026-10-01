@@ -11,7 +11,7 @@
  * A real filter bar: each filterable field is an independent multi-select, and
  * they combine freely (AND across fields, OR within a field) — like Looker. The
  * preview table shows the first 10 matching rows in the team's column order;
- * export (CSV or Google Sheets) writes the FULL filtered result.
+ * the Google Sheets export writes the FULL filtered result.
  *
  * Data flow: on mount (or when the user's agency scope changes) the snapshot is
  * downloaded once and held column-encoded in memory; filter options, the match
@@ -19,13 +19,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Download, Sheet as SheetIcon } from "lucide-react";
+import { Loader2, Sheet as SheetIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import MultiSelectDropdown, {
   type Option,
 } from "../../_shared/multi-select-dropdown";
 import type { TableColumn } from "../table/table-column.types";
-import { downloadTableCsv } from "../table/table-csv-export";
 import {
   buildExportMatrix,
   exportToNewSheet,
@@ -97,7 +96,7 @@ export default function RawTablePage({
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState<"" | "csv" | "sheets">("");
+  const [exporting, setExporting] = useState<"" | "sheets">("");
   const [exportError, setExportError] = useState<string | null>(null);
 
   // Download the snapshot for the user's agencies (cached across sub-tabs).
@@ -224,30 +223,6 @@ export default function RawTablePage({
     return matched.map((r) => rowAt(table, r));
   }, [table, matched]);
 
-  const exportCsv = async () => {
-    setExportError(null);
-    setExporting("csv");
-    try {
-      const full = await fetchFull();
-      const cols = buildColumns(full);
-      const filterBits = Object.values(selected)
-        .flat()
-        .slice(0, 2)
-        .join("-");
-      downloadTableCsv({
-        columns: cols,
-        rows: full,
-        totals: NO_TOTALS,
-        filename: filterBits ? `${exportTitle} - ${filterBits}` : exportTitle,
-        includeTotals: false,
-      });
-    } catch (e) {
-      setExportError(e instanceof Error ? e.message : "CSV export failed.");
-    } finally {
-      setExporting("");
-    }
-  };
-
   const exportSheets = async () => {
     setExportError(null);
     if (!isGoogleConfigured()) {
@@ -340,19 +315,6 @@ export default function RawTablePage({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={exportCsv}
-            disabled={busy}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {exporting === "csv" ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Download size={14} />
-            )}
-            {exporting === "csv" ? "Preparing..." : "Download CSV"}
-          </button>
           <button
             type="button"
             onClick={exportSheets}
