@@ -29,14 +29,16 @@ import {
 } from "../../../../components/forecaster/dashboard-pages.config";
 import {
   visibleForecasterTabs,
+  type DashboardPerms,
   type ForecasterTab,
 } from "../../../../components/forecaster/forecaster-tabs.config";
 
 // The tabs an Agency Viewer (fewest permissions) can see.
-const VIEWER_TABS = visibleForecasterTabs({
+const VIEWER_PERMS: DashboardPerms = {
   canViewRevenue: false,
   canViewGlobalDashboard: false,
-});
+};
+const VIEWER_TABS = visibleForecasterTabs(VIEWER_PERMS);
 
 function Switch({
   on,
@@ -112,9 +114,10 @@ export default function AdminDashboardPagesPage() {
     });
   };
 
-  // Guardrail: Viewers must keep at least one tab.
+  // Guardrail: Viewers must keep at least one tab — counting only the
+  // sub-tabs they may see (not Forecast Summary / Revenues).
   const viewerHasTab = useMemo(
-    () => VIEWER_TABS.some((t) => isTabVisible(t.id, hidden)),
+    () => VIEWER_TABS.some((t) => isTabVisible(t.id, hidden, VIEWER_PERMS)),
     [hidden]
   );
 

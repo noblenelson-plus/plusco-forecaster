@@ -16,6 +16,7 @@
 import { useState } from "react";
 import MirRawSection from "./mir-raw-section";
 import BillingSummarySection from "./billing-summary-section";
+import SubTabBar from "../sub-tab-bar";
 import {
   REPORTS_SUBTABS,
   visibleSubtabs,
@@ -37,25 +38,7 @@ export default function ReportsTabs({
 
   return (
     <div className="space-y-6">
-      {/* Sub-tab bar — matches the Executive KPIs / MediaOcean sub-tab strip. */}
-      <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {subtabs.map((t) => {
-          const isActive = active === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setSub(t.id)}
-              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? "border-primary text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <SubTabBar tabs={subtabs} active={active} onSelect={setSub} />
 
       {/* Active sub-page — each keeps its own filters and export controls. */}
       {active === "mir-raw" && <MirRawSection />}

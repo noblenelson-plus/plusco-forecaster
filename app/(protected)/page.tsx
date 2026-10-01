@@ -2,7 +2,7 @@
 "use client";
 
 /**
- * Dashboard ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the app's home. A read-only comparison dashboard (Looker replica)
+ * Dashboard — the app's home. A read-only comparison dashboard (Looker replica)
  * over the filtered client scope for the globally-selected Year + RFQ.
  * CAD/USD view toggle in the header (USD = USD clients, native values).
  * Revenue also exposes two BL/OF "Type" dropdowns: the primary Type applies to
@@ -39,13 +39,21 @@ import ReportsTabs from "../../components/forecaster/sections/reports-tabs";
 import BillupsSection from "../../components/forecaster/sections/billups-section";
 import ExecKpisTabs from "../../components/forecaster/sections/exec-kpis-tabs";
 import MediaOceanTabs, { type MediaOceanSubTab } from "../../components/forecaster/sections/mediaocean-tabs";
-import { isTabVisible } from "../../components/forecaster/dashboard-pages.config";
+import LabsPacingPage from "../../components/forecaster/sections/labs-pacing-page";
+import SubTabBar from "../../components/forecaster/sub-tab-bar";
+import {
+  FORECASTER_SUBTABS,
+  isTabVisible,
+  visibleSubtabs,
+  type ForecasterSubTab,
+} from "../../components/forecaster/dashboard-pages.config";
 import { useHiddenDashboardPages } from "../../lib/hooks/use-hidden-dashboard-pages";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
 import { useProducts } from "../../lib/hooks/use-products";
 import { useAccessibleClients } from "../../lib/hooks/use-accessible-clients";
+import { useAgencyScope } from "../../lib/hooks/use-agency-scope";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
@@ -66,7 +74,7 @@ import type { Currency } from "../../lib/types/client.types";
 import type { RevenueMode } from "../../lib/dashboard/data/use-scope-forecast-data";
 import { allStreamKeys } from "../../components/forecaster/sections/revenue-types-data";
 
-// Header Type options ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ the hook's RevenueMode.
+// Header Type options → the hook's RevenueMode.
 const MODE_OPTIONS: { label: string; value: RevenueMode }[] = [
   { label: "BL", value: "blSubmission" },
   { label: "OF", value: "official" },
@@ -98,7 +106,7 @@ function ModeToggle({
 }
 
 /**
- * Test clients are excluded from the dashboard only ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â they remain available in
+ * Test clients are excluded from the dashboard only — they remain available in
  * the Forecast editing grid. A client counts as a test client when the word
  * "TEST" appears in its name as a standalone token, which catches names like
  * "1_TEST CLIENT" and "TEST CLIENT" while leaving real names such as "Contest"
@@ -110,14 +118,36 @@ function ModeToggle({
 
 export default function DashboardPage() {
   const { clients: allClients, loading, error } = useAccessibleClients();
-  const { profile, permissions } = useUserProfile();
+  const { profile, permissions, isAdmin } = useUserProfile();
+  const { scope: agencyScope } = useAgencyScope();
+  // Top-level tab — declared up here because it picks the client universe.
+  const [topTab, setTopTab] = useState<ForecasterTab>("forecaster");
   // Test clients are hidden from the dashboard only (they stay in the editing
   // grid). Filtering here removes them from every tab, chart, KPI and table,
   // since the whole dashboard scope derives from this list.
-  const clients = useMemo(
+  const dashboardClients = useMemo(
     () => allClients.filter((c) => !isTestClient(c.CL_Name)),
     [allClients]
   );
+  // Each tab group has its own client universe (presentation only — the
+  // security rules still govern what can be read):
+  //   - Forecaster Dashboard → the clients explicitly assigned to the user
+  //     (Admin: all). Agency-wide access does not widen it.
+  //   - Every other tab → the agencies the user's email domain maps to
+  //     (Admin and company-wide domains: all), like the agency-partitioned
+  //     Media Investments / Reports data.
+  // The filter bar, forecast data and charts all derive from this list.
+  const assignedClientIds = profile?.assignedClients;
+  const clients = useMemo(() => {
+    if (topTab === "forecaster") {
+      if (isAdmin) return dashboardClients;
+      const assigned = new Set(assignedClientIds ?? []);
+      return dashboardClients.filter((c) => assigned.has(c.cl_id));
+    }
+    if (agencyScope.all) return dashboardClients;
+    const agencies = new Set(agencyScope.agencies);
+    return dashboardClients.filter((c) => agencies.has(c.CL_Agency));
+  }, [topTab, isAdmin, assignedClientIds, agencyScope, dashboardClients]);
   const usersMap = useUsersMap();
 
   const { selectedYear, selectedRFQ, setRFQ } = useForecastSelection();
@@ -137,7 +167,7 @@ export default function DashboardPage() {
   // from the primary breakdown, then "all on".
   const [selectedStreams, setSelectedStreams] = useState<Set<string> | null>(null);
 
-  // ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ Default Time & Context to the current submission ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬
+  // ─── Default Time & Context to the current submission ─────────────────────
   // Subscribe to the RFQ list (the same source the selectors use) so the
   // default can be derived from whichever submissions actually exist.
   const [rfqs, setRFQs] = useState<RFQ[]>([]);
@@ -148,10 +178,10 @@ export default function DashboardPage() {
 
   // Set the default Time & Context once the RFQ list has arrived. A reporting
   // dashboard should open on the latest submission, so we FORCE the current
-  // submission on each mount rather than only filling an empty selection ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
+  // submission on each mount rather than only filling an empty selection —
   // otherwise a previously-persisted (localStorage) primary would pin an older
-  // round. Primary ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ current submission (latest year + highest round);
-  // comparison ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ the round immediately before it. A manual change made after
+  // round. Primary → current submission (latest year + highest round);
+  // comparison → the round immediately before it. A manual change made after
   // mount still sticks, because the ref stops this from running again.
   const seededDefaultsRef = useRef(false);
   useEffect(() => {
@@ -167,7 +197,7 @@ export default function DashboardPage() {
       setComparisonYear(comparison.year);
       setComparisonRFQ(comparison);
     } else {
-      // No earlier round exists ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â clear any stale comparison.
+      // No earlier round exists — clear any stale comparison.
       setComparisonYear(null);
     }
 
@@ -204,7 +234,7 @@ export default function DashboardPage() {
   }, [clients, usersMap]);
 
   // In USD mode, feed only USD clients into the (already dynamic) filter engine
-  // so every dropdown cascades to USD clients ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â matching Looker's behavior.
+  // so every dropdown cascades to USD clients — matching Looker's behavior.
   const currencyClients = useMemo(
     () => (viewCurrency === "USD" ? clients.filter((c) => (c.CL_Currency ?? "CAD") === "USD") : clients),
     [viewCurrency, clients]
@@ -216,7 +246,7 @@ export default function DashboardPage() {
   // Filters already run on the currency-scoped set, so this IS the final scope.
   const scopedClientIds = filteredClientIds;
 
-  // A focused client that leaves the scope (filter change, CADÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢USD) is ignored
+  // A focused client that leaves the scope (filter change, CAD→USD) is ignored
   // rather than cleared, so the focus returns if the scope widens again.
   const activeFocusId = useMemo(
     () =>
@@ -236,7 +266,7 @@ export default function DashboardPage() {
   );
 
   // Single-client scopes. Empty while nothing is focused, which disables the
-  // hook entirely ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no reads until a row is actually clicked.
+  // hook entirely — no reads until a row is actually clicked.
   const focusScope = useMemo<DashboardScope>(
     () => ({
       clientIds: activeFocusId ? [activeFocusId] : [],
@@ -265,43 +295,63 @@ export default function DashboardPage() {
   );
 
   const [selMonths, setSelMonths] = useState<number[]>([]);
-  const [tab, setTab] = useState<ForecasterTab>("exec");
+  // The sub-tab chosen inside the Forecaster Dashboard (top tab: see above).
+  const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
   // Pages an admin has hidden (Admin → Dashboard Pages), live.
   const { hidden: hiddenPages } = useHiddenDashboardPages();
-  // Tabs the current user may see (Viewers lose the revenue + global tabs),
-  // minus any an admin has hidden.
+  // Tabs the current user may see (Viewers lose the global tab, and the
+  // Forecaster Dashboard's revenue sub-tabs), minus any an admin has hidden.
   const visibleTabs = useMemo(
-    () => visibleForecasterTabs(permissions).filter((t) => isTabVisible(t.id, hiddenPages)),
+    () =>
+      visibleForecasterTabs(permissions).filter((t) =>
+        isTabVisible(t.id, hiddenPages, permissions)
+      ),
     [permissions, hiddenPages]
   );
-  // If the active tab isn't visible for this role (e.g. a Viewer defaulting to
-  // the hidden Summary), fall back to the first tab they can see. Wait for the
-  // profile to load first, else the empty-permissions window would bounce an
-  // admin/BL off the Summary onto Media Spend.
+  const forecasterSubtabs = useMemo(
+    () => visibleSubtabs("forecaster", FORECASTER_SUBTABS, hiddenPages, permissions),
+    [hiddenPages, permissions]
+  );
+  // If the active tab isn't visible for this role, fall back to the first tab
+  // they can see. Wait for the profile to load first, else the
+  // empty-permissions window would bounce an admin off their tab.
   useEffect(() => {
     if (!profile) return;
-    if (visibleTabs.length && !visibleTabs.some((t) => t.id === tab)) {
-      setTab(visibleTabs[0].id);
+    if (visibleTabs.length && !visibleTabs.some((t) => t.id === topTab)) {
+      setTopTab(visibleTabs[0].id);
     }
-  }, [profile, visibleTabs, tab]);
-  // Read-only flags drawer ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â available on the per-axis tabs only.
+  }, [profile, visibleTabs, topTab]);
+  // A hidden / role-blocked sub-tab (e.g. a Viewer on the Summary) shows the
+  // first visible one instead — derived, so the choice returns once allowed.
+  const activeForecasterSub = forecasterSubtabs.some((t) => t.id === forecasterSub)
+    ? forecasterSub
+    : (forecasterSubtabs[0]?.id ?? forecasterSub);
+  // The page on screen: a Forecaster Dashboard sub-tab, or the top-level tab.
+  const tab: ForecasterSubTab | Exclude<ForecasterTab, "forecaster"> =
+    topTab === "forecaster" ? activeForecasterSub : topTab;
+  // Read-only flags drawer — available on the per-axis pages only.
   const [flagsOpen, setFlagsOpen] = useState(false);
-  const isFlagTab = tab === "media" || tab === "labs" || tab === "revenue";
+  const isFlagView = (v: string) => v === "media" || v === "labs" || v === "revenue";
+  const isFlagTab = isFlagView(tab);
   const flagAxis = tab === "labs" ? "labs" : tab === "revenue" ? "revenue" : "media";
 
-  // Switch tabs and close the flags drawer when leaving a per-axis tab (it has
-  // no meaning on Executive Summary / Product / MediaBox).
+  // Switch pages and close the flags drawer when leaving a per-axis page (it
+  // has no meaning on Forecast Summary / Product / the other tabs).
   const selectTab = (id: ForecasterTab) => {
-    setTab(id);
-    if (!(id === "media" || id === "labs" || id === "revenue")) setFlagsOpen(false);
+    setTopTab(id);
+    if (!isFlagView(id === "forecaster" ? activeForecasterSub : id)) setFlagsOpen(false);
+  };
+  const selectForecasterSub = (id: ForecasterSubTab) => {
+    setForecasterSub(id);
+    if (!isFlagView(id)) setFlagsOpen(false);
   };
 
   const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad, selMonths);
   const comparisonData = useScopeForecastData(comparisonScope, currencyByClient, comparisonUsdToCad, selMonths);
-  // MediaBox totals for the same scope ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â feeds the coverage card (Media & Labs).
+  // MediaBox totals for the same scope — feeds the coverage card (Media & Labs).
   const mediaboxData = useScopeMediaboxTotals(scope, usdToCad, selMonths);
-  // Flags for the scope on the active axis ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â feeds the tab's Flags button
+  // Flags for the scope on the active axis — feeds the tab's Flags button
   // count and the read-only drawer. Only loads on the per-axis tabs.
   const scopeFlags = useScopeFlags(
     scopedClientIds,
@@ -334,7 +384,8 @@ export default function DashboardPage() {
     [clients, activeFocusId]
   );
 
-  const activeLabel = FORECASTER_TABS.find((t) => t.id === tab)?.label ?? "";
+  const activeLabel =
+    [...FORECASTER_SUBTABS, ...FORECASTER_TABS].find((t) => t.id === tab)?.label ?? "";
   const showTypeControls = tab === "revenue";
 
   return (
@@ -418,7 +469,7 @@ export default function DashboardPage() {
           <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {visibleTabs.map((t) => {
               const Icon = t.icon;
-              const active = tab === t.id;
+              const active = topTab === t.id;
               return (
                 <button
                   key={t.id}
@@ -436,7 +487,7 @@ export default function DashboardPage() {
             })}
           </div>
 
-          {/* Read-only flags viewer ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â per-axis tabs only. Turns yellow with a
+          {/* Read-only flags viewer — per-axis tabs only. Turns yellow with a
               count when the scope has flags still to justify. */}
           {isFlagTab && (
             <button
@@ -466,7 +517,18 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto w-full max-w-[1700px] flex-1 p-6 md:p-8 lg:pr-16">
-        {/* Focused-client notes ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the same submission note BLs edit on the
+        {/* Forecaster Dashboard sub-tabs. The other grouped tabs render their
+            own bar inside their container. */}
+        {topTab === "forecaster" && (
+          <div className="mb-6">
+            <SubTabBar
+              tabs={forecasterSubtabs}
+              active={activeForecasterSub}
+              onSelect={selectForecasterSub}
+            />
+          </div>
+        )}
+        {/* Focused-client notes — the same submission note BLs edit on the
             Forecast page, shown for the primary Year/RFQ on Media & Labs and
             Revenue. Appears when a client is focused; closing clears focus. */}
         {activeFocusId &&
@@ -491,8 +553,14 @@ export default function DashboardPage() {
             selMonths={selMonths}
             hidden={hiddenPages}
           />
+        ) : tab === "labs-pacing" ? (
+          <LabsPacingPage
+            scopedClientIds={scopedClientIds}
+            currencyByClient={currencyByClient}
+            usdToCad={usdToCad}
+          />
         ) : tab === "exec-kpis" ? (
-                    <ExecKpisTabs
+          <ExecKpisTabs
             forecastData={forecastData}
             comparisonData={comparisonData}
             clients={clients}
@@ -516,7 +584,9 @@ export default function DashboardPage() {
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
             {viewCurrency === "USD"
               ? "No USD clients are in scope for this selection."
-              : "No clients are available for your account yet."}
+              : topTab === "forecaster"
+                ? "The Forecaster Dashboard shows the clients assigned to you, and none are assigned yet."
+                : "No clients are available for your account yet."}
           </div>
         ) : forecastData.error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
@@ -605,12 +675,12 @@ export default function DashboardPage() {
           <ReportsTabs hidden={hiddenPages} />
         ) : (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
-            {activeLabel} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â coming soon
+            {activeLabel} — coming soon
           </div>
         )}
       </main>
 
-      {/* Right-edge section navigator ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â reads the `data-scroll-section`
+      {/* Right-edge section navigator — reads the `data-scroll-section`
           markers rendered by the active tab. */}
       <SectionScrollNav />
 
