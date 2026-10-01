@@ -8,6 +8,8 @@ import { Briefcase, Loader2 } from "lucide-react";
 interface ClientGridProps {
   clients: Client[];
   loading: boolean;
+  /** Year the status badges show (labelled on each card). */
+  statusYear: number;
   isAdmin: boolean;
   onEditClient: (client: Client) => void;
 }
@@ -15,6 +17,7 @@ interface ClientGridProps {
 export default function ClientGrid({
   clients,
   loading,
+  statusYear,
   isAdmin,
   onEditClient,
 }: ClientGridProps) {
@@ -49,6 +52,7 @@ export default function ClientGrid({
         <ClientCard
           key={client.cl_id}
           client={client}
+          statusYear={statusYear}
           isAdmin={isAdmin}
           onEdit={onEditClient}
         />

@@ -12,15 +12,19 @@ import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import ClientDrawer from "../../../components/clients/client-drawer";
 import PageHeader from "../../../components/_shared/page-header";
 import type { ClientStatus } from "../../../lib/constants/client.constants";
-import { resolveClientStatus, isClientHidden } from "../../../lib/format/client";
-import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
+import {
+  currentStatusYear,
+  resolveClientStatus,
+  isClientHidden,
+} from "../../../lib/format/client";
 
 export default function ClientsPage() {
   const { profile, isAdmin } = useUserProfile();
 
-  // Status badge/filter follow the globally selected year (fallback: current year).
-  const selectedYear = useForecastSelection((s) => s.selectedYear);
-  const year = selectedYear ?? new Date().getFullYear();
+  // The year every card badge and the status filter use. The calendar year
+  // (not the persisted dashboard year), so it rolls over on Jan 1; other
+  // years are in each client's drawer. A year toggle would replace this value.
+  const year = currentStatusYear();
 
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,6 +207,7 @@ export default function ClientsPage() {
         <ClientGrid
           clients={filteredClients}
           loading={loading}
+          statusYear={year}
           isAdmin={isAdmin}
           onEditClient={handleEditClient}
         />
