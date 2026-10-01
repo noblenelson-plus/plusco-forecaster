@@ -25,7 +25,6 @@ import DashboardContextBar from "../../components/dashboard/dashboard-context-ba
 import DashboardFilterBar from "../../components/dashboard/filters/dashboard-filter-bar";
 import {
   FORECASTER_TABS,
-  visibleForecasterTabs,
   type ForecasterTab,
 } from "../../components/forecaster/forecaster-tabs.config";
 import ExecSummaryTab from "../../components/forecaster/tabs/exec-summary-tab";
@@ -43,11 +42,12 @@ import LabsPacingPage from "../../components/forecaster/sections/labs-pacing-pag
 import SubTabBar from "../../components/forecaster/sub-tab-bar";
 import {
   FORECASTER_SUBTABS,
+  hiddenPagesForRole,
   isTabVisible,
   visibleSubtabs,
   type ForecasterSubTab,
 } from "../../components/forecaster/dashboard-pages.config";
-import { useHiddenDashboardPages } from "../../lib/hooks/use-hidden-dashboard-pages";
+import { useDashboardPageSettings } from "../../lib/hooks/use-dashboard-page-settings";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
@@ -118,7 +118,7 @@ function ModeToggle({
 
 export default function DashboardPage() {
   const { clients: allClients, loading, error } = useAccessibleClients();
-  const { profile, permissions, isAdmin } = useUserProfile();
+  const { profile, isAdmin } = useUserProfile();
   const { scope: agencyScope } = useAgencyScope();
   // Top-level tab — declared up here because it picks the client universe.
   const [topTab, setTopTab] = useState<ForecasterTab>("forecaster");
@@ -298,24 +298,30 @@ export default function DashboardPage() {
   // The sub-tab chosen inside the Forecaster Dashboard (top tab: see above).
   const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
-  // Pages an admin has hidden (Admin → Dashboard Pages), live.
-  const { hidden: hiddenPages } = useHiddenDashboardPages();
-  // Tabs the current user may see (Viewers lose the global tab, and the
-  // Forecaster Dashboard's revenue sub-tabs), minus any an admin has hidden.
-  const visibleTabs = useMemo(
+  // The pages this user's role does not see — the per-role access set in
+  // Admin → Dashboard Pages, live. Until the profile loads, treat the user as a
+  // Viewer (fewest pages) so nothing flashes that they may not see.
+  const { settings: pageSettings } = useDashboardPageSettings();
+  const hiddenPages = useMemo(
     () =>
-      visibleForecasterTabs(permissions).filter((t) =>
-        isTabVisible(t.id, hiddenPages, permissions)
+      hiddenPagesForRole(
+        profile?.role ?? "VIEWER",
+        pageSettings.access,
+        new Set(pageSettings.hidden)
       ),
-    [permissions, hiddenPages]
+    [profile?.role, pageSettings]
+  );
+  const visibleTabs = useMemo(
+    () => FORECASTER_TABS.filter((t) => isTabVisible(t.id, hiddenPages)),
+    [hiddenPages]
   );
   const forecasterSubtabs = useMemo(
-    () => visibleSubtabs("forecaster", FORECASTER_SUBTABS, hiddenPages, permissions),
-    [hiddenPages, permissions]
+    () => visibleSubtabs("forecaster", FORECASTER_SUBTABS, hiddenPages),
+    [hiddenPages]
   );
   // If the active tab isn't visible for this role, fall back to the first tab
   // they can see. Wait for the profile to load first, else the
-  // empty-permissions window would bounce an admin off their tab.
+  // provisional Viewer view would bounce an admin off their tab.
   useEffect(() => {
     if (!profile) return;
     if (visibleTabs.length && !visibleTabs.some((t) => t.id === topTab)) {
