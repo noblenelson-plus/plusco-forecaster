@@ -20,8 +20,8 @@ const FILTERS: RawFilterDef[] = [
   { field: "PLUSCO_YEAR", label: "Year" },
   { field: "MONTH", label: "Month" },
   { field: "AGENCY", label: "Agency" },
-  { field: "BU_REGION", label: "Region" },
   { field: "GM_POD", label: "GM Pod" },
+  { field: "BU_REGION", label: "Region" },
   { field: "BUSINESS_LEAD", label: "Business Lead" },
   { field: "PLUSCO_CLIENT_NAME", label: "Client" },
 ];
