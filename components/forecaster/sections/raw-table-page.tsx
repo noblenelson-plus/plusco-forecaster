@@ -66,6 +66,11 @@ export interface RawTablePageProps {
   filters: RawFilterDef[];
   /** Preferred column order for preview + export (present fields first). */
   columnOrder: string[];
+  /**
+   * Show/export only the `columnOrder` fields. Off (default): any other
+   * snapshot column is appended after them.
+   */
+  onlyListedColumns?: boolean;
   /** Fields rendered right-aligned / $-formatted. */
   moneyFields: Set<string>;
   /** File-name stem for exports. */
@@ -81,10 +86,18 @@ function text(v: unknown): string {
   return v === null || v === undefined ? "" : String(v);
 }
 
-/** Visible fields: `preferred` order first (when present), then the rest. */
-function orderFields(columns: string[], preferred: string[]): string[] {
+/**
+ * Visible fields: `preferred` order first (when present), then — unless
+ * `onlyListed` — every other snapshot column.
+ */
+function orderFields(
+  columns: string[],
+  preferred: string[],
+  onlyListed = false
+): string[] {
   const present = new Set(columns.filter((c) => !HIDDEN_FIELDS.has(c)));
   const ordered = preferred.filter((f, i) => present.has(f) && preferred.indexOf(f) === i);
+  if (onlyListed) return ordered;
   const seen = new Set(ordered);
   for (const f of present) if (!seen.has(f)) ordered.push(f);
   return ordered;
@@ -132,6 +145,7 @@ export default function RawTablePage({
   tableKey,
   filters,
   columnOrder,
+  onlyListedColumns = false,
   moneyFields,
   exportTitle,
 }: RawTablePageProps) {
@@ -202,36 +216,14 @@ export default function RawTablePage({
     setSelected({});
   };
 
-  // Ordered field list for the preview: preferred order first, then the rest.
-  const previewFields = useMemo(() => {
-    if (rows.length === 0) return [];
-    const present = new Set<string>();
-    for (const r of rows) for (const k of Object.keys(r)) present.add(k);
-    HIDDEN_FIELDS.forEach((h) => present.delete(h));
-
-    const ordered: string[] = [];
-    const seen = new Set<string>();
-    for (const f of columnOrder) {
-      if (present.has(f) && !seen.has(f)) {
-        seen.add(f);
-        ordered.push(f);
-      }
-    }
-    for (const f of present) {
-      if (!seen.has(f)) {
-        seen.add(f);
-        ordered.push(f);
-      }
-    }
-    return ordered;
-  }, [rows, columnOrder]);
-
-  // Export columns: preferred order first, then the rest. Every row carries
-  // every snapshot column, so this comes from the table's shape, not its rows.
+  // Columns shown in the preview and written by the export (one list, so the
+  // two always match). Every row carries every snapshot column, so this comes
+  // from the table's shape, not its rows.
   const exportFields = useMemo(
-    () => (table ? orderFields(table.columns, columnOrder) : []),
-    [table, columnOrder]
+    () => (table ? orderFields(table.columns, columnOrder, onlyListedColumns) : []),
+    [table, columnOrder, onlyListedColumns]
   );
+  const previewFields = rows.length > 0 ? exportFields : [];
 
   const exportSheets = async () => {
     setExportError(null);
