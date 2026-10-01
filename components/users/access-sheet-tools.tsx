@@ -22,6 +22,7 @@ import {
   extractSpreadsheetId,
 } from "../../lib/services/google-sheets-service";
 import { fetchInvites } from "../../lib/services/invite-service";
+import { teamClientsByEmail, type ClientTeamFields } from "../../lib/format/client-team";
 import {
   computeAccessSync,
   buildExportRows,
@@ -139,10 +140,20 @@ export default function AccessSheetTools({ users }: { users: AccessUser[] }) {
       }
       const snap = await getDocs(collection(db, "clients"));
       const validClientIds = snap.docs.map((d) => d.id);
+      // Team members (BL / DL / GM) always keep their own clients.
+      const teamClients = teamClientsByEmail(
+        snap.docs.map((d) => ({ ...(d.data() as Omit<ClientTeamFields, "cl_id">), cl_id: d.id }))
+      );
       const invites = await fetchInvites();
       const pendingInviteEmails = invites.map((v) => v.email);
       setPlan(
-        computeAccessSync({ sheetRows, users, validClientIds, pendingInviteEmails })
+        computeAccessSync({
+          sheetRows,
+          users,
+          validClientIds,
+          pendingInviteEmails,
+          teamClientsByEmail: teamClients,
+        })
       );
     } catch (err) {
       setModalErr(err instanceof Error ? err.message : "Preview failed.");
