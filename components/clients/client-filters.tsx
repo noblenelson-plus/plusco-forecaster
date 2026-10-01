@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Search, Plus, Upload, Download, Percent, RefreshCw, ChevronDown, Users, Copy } from "lucide-react";
+import { Search, Plus, Upload, Download, Percent, RefreshCw, ChevronDown, Users, Copy, UserCheck } from "lucide-react";
 import { Client } from "../../lib/types/client.types";
 import {
   ClientStatus,
@@ -19,6 +19,7 @@ import {
 } from "../../lib/services/client-service";
 import ImportModal from "./import-modal";
 import RecomputeTiersModal from "./recompute-tiers-modal";
+import TeamAccessModal from "./team-access-modal";
 import CopyCommissionsModal from "./copy-commissions-modal";
 import MultiSelectDropdown from "../_shared/multi-select-dropdown";
 
@@ -93,6 +94,7 @@ export default function ClientFilters({
   const [modalOpen, setModalOpen] = useState(false);
   const [importError, setImportError] = useState("");
   const [tiersModalOpen, setTiersModalOpen] = useState(false);
+  const [teamAccessModalOpen, setTeamAccessModalOpen] = useState(false);
   const [copyRatesModalOpen, setCopyRatesModalOpen] = useState(false);
 
   // Export dropdown (client list / commission rates) — closes on outside click.
@@ -262,6 +264,16 @@ export default function ClientFilters({
               <span className="hidden sm:inline">Tiers</span>
             </button>
 
+            {/* Give every client's team (BL / DL / GM) access — one-time backfill */}
+            <button
+              onClick={() => setTeamAccessModalOpen(true)}
+              title="Give each client's Business Lead, Digital Lead and GM access to it"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
+            >
+              <UserCheck size={14} />
+              <span className="hidden sm:inline">Team access</span>
+            </button>
+
             {/* Import */}
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -372,6 +384,15 @@ export default function ClientFilters({
         onClose={() => setTiersModalOpen(false)}
         onApplied={() => window.location.reload()}
       />
+
+      {/* Team access backfill — same refresh strategy. */}
+      {teamAccessModalOpen && (
+        <TeamAccessModal
+          clients={clients}
+          onClose={() => setTeamAccessModalOpen(false)}
+          onApplied={() => window.location.reload()}
+        />
+      )}
 
       {/* Commission rates year → year copy — same refresh strategy. */}
       <CopyCommissionsModal

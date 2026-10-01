@@ -34,6 +34,8 @@ import {
 } from "../../lib/format/client";
 import { saveClient, deleteClient, uploadClientLogo } from "../../lib/services/client-service";
 import { triggerMediaboxRefresh } from "../../lib/services/mediabox-totals-service";
+import { syncTeamAccess } from "../../lib/services/team-access-service";
+import { useAuth } from "../../lib/auth-context";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import {
   subscribeToLabsPartners,
@@ -125,6 +127,7 @@ export default function ClientDrawer({
 
   // Year used when a MediaBox-IDs change triggers a totals refresh.
   const { selectedYear } = useForecastSelection();
+  const { user } = useAuth();
 
   const [form, setForm] = useState<ClientFormData>(EMPTY_FORM);
   const [gaiaInput, setGaiaInput] = useState("");
@@ -333,6 +336,23 @@ export default function ClientDrawer({
         triggerMediaboxRefresh(saved.cl_id, year, true).catch((err) =>
           console.warn("MediaBox refresh after mapping change failed:", err)
         );
+      }
+
+      // The client's team (BL, DL, GM) gets access to it automatically, and a
+      // replaced member loses it. Admins only (they own users/invites writes,
+      // and only they can edit the team fields). On failure the drawer stays
+      // open: the client is saved, and Save again retries the access update.
+      if (isAdmin) {
+        try {
+          await syncTeamAccess([{ after: saved, before: client }], user?.uid);
+        } catch (err) {
+          setError(
+            "Client saved, but its team's access couldn't be updated: " +
+              (err instanceof Error ? err.message : "Unknown error") +
+              ". Save again to retry."
+          );
+          return;
+        }
       }
 
       onSaved(saved);

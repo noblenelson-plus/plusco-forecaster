@@ -79,6 +79,20 @@ export const CLIENT_GM_PODS = [
 
 export type ClientGMPod = (typeof CLIENT_GM_PODS)[number]["value"];
 
+/**
+ * The sign-in email(s) of each GM Pod's GM — a client's GM Pod is stored as a
+ * name, so this is how the GM gets access to their pod's clients
+ * (lib/format/client-team.ts). Some GMs have one account per agency domain;
+ * every account listed gets access. Add the GM here when adding a pod.
+ */
+export const GM_POD_EMAILS: Record<ClientGMPod, readonly string[]> = {
+  "Brooke Leland": ["brooke.leland@jungle-media.ca", "brooke.leland@mekanismmedia.com"],
+  "Andrew Butts": ["andrew.butts@cossettemedia.com"],
+  "Danick Archambault": ["danick.archambault@jungle-media.ca", "danick.archambault@mekanismmedia.com"],
+  "Martin Soubeyran": ["martin.soubeyran@cossettemedia.com"],
+  "Marc-Antoine Grenier": ["marc-antoine.grenier@cossettemedia.com"],
+};
+
 // ─── Currency ─────────────────────────────────────────────────────────────────
 
 export const CLIENT_CURRENCIES: { value: Currency; label: string }[] = [

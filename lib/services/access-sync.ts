@@ -16,9 +16,10 @@
  *  - NEVER touches ADMIN or EXEC users (assigned manually), disabled/revoked
  *    accounts, or emails that aren't a user yet (invite-first gate).
  *  - Full sync: for a managed user, assignedClients becomes EXACTLY their sheet
- *    rows — additions AND removals. A managed BL who is absent from the sheet
- *    entirely has all their client access removed (the "person left / was
- *    reassigned — delete their rows" case).
+ *    rows plus the clients they are on the team of (BL / DL / GM — team access
+ *    is automatic, see lib/format/client-team.ts) — additions AND removals. A
+ *    managed BL who is absent from the sheet entirely keeps only their team
+ *    clients (the "person left / was reassigned — delete their rows" case).
  *  - Clears any assignedAgencies blanket on a managed user (the Kevin fix), so a
  *    synced person's access is exactly their sheet clients, never agency-wide.
  *  - Client ids are matched on the client DOCUMENT id (not CL_ID, which is
@@ -95,6 +96,10 @@ export interface AccessSyncInput {
   users: AccessUser[];
   validClientIds: Iterable<string>; // all real client document ids
   pendingInviteEmails?: Iterable<string>; // emails with a pending invite
+  // email -> clients that person is on the team of (BL / DL / GM). Always kept:
+  // a full sync never removes a team member from their own client
+  // (lib/format/client-team.ts teamClientsByEmail).
+  teamClientsByEmail?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 const norm = (email: string): string => email.trim().toLowerCase();
@@ -106,6 +111,9 @@ function sortedUnique(ids: Iterable<string>): string[] {
 export function computeAccessSync(input: AccessSyncInput): AccessSyncPlan {
   const validIds = new Set(input.validClientIds);
   const pending = new Set([...(input.pendingInviteEmails ?? [])].map(norm));
+  // A managed user's own team clients (always part of their final access).
+  const teamOf = (email: string): string[] =>
+    [...(input.teamClientsByEmail?.get(norm(email)) ?? [])].filter((id) => validIds.has(id));
 
   // Index users by normalized email. A disabled user is tracked separately so
   // we can give a precise "restore first" message instead of "not a user".
@@ -142,7 +150,7 @@ export function computeAccessSync(input: AccessSyncInput): AccessSyncPlan {
 
   // 1. Walk every email named in the sheet.
   for (const [email, desiredSet] of sheetByEmail) {
-    const desired = sortedUnique(desiredSet);
+    const sheetIds = sortedUnique(desiredSet);
     const user = activeByEmail.get(email);
 
     if (!user) {
@@ -151,16 +159,17 @@ export function computeAccessSync(input: AccessSyncInput): AccessSyncPlan {
         : pending.has(email)
         ? "pending-invite"
         : "not-a-user";
-      skipped.push({ email, reason, clientIdsInSheet: desired });
+      skipped.push({ email, reason, clientIdsInSheet: sheetIds });
       continue;
     }
 
     if (user.role === "ADMIN" || user.role === "EXEC") {
-      skipped.push({ email, reason: "admin-exec", clientIdsInSheet: desired });
+      skipped.push({ email, reason: "admin-exec", clientIdsInSheet: sheetIds });
       continue;
     }
 
-    // Managed: BUSINESS_LEAD or VIEWER.
+    // Managed: BUSINESS_LEAD or VIEWER. Final access = sheet rows + own team clients.
+    const desired = sortedUnique([...sheetIds, ...teamOf(email)]);
     const current = new Set(user.assignedClients);
     const desiredKeep = new Set(desired);
     const add = desired.filter((id) => !current.has(id));
@@ -187,32 +196,37 @@ export function computeAccessSync(input: AccessSyncInput): AccessSyncPlan {
   }
 
   // 2. Full-sync removals: active managed users (VIEWER or BUSINESS_LEAD) NOT in
-  //    the sheet at all lose their client access (row deleted = access removed).
-  //    Role and disabled stay as-is (level is a manual admin decision); we empty
-  //    their clients and clear any agency blanket so the revoke is complete.
+  //    the sheet at all lose their client access (row deleted = access removed),
+  //    except their own team clients, which they always keep. Role and disabled
+  //    stay as-is (level is a manual admin decision); we clear any agency
+  //    blanket so the revoke is complete.
   for (const user of input.users) {
     if (user.disabled) continue;
     if (user.role !== "BUSINESS_LEAD" && user.role !== "VIEWER") continue;
     const e = norm(user.email);
     if (sheetByEmail.has(e)) continue; // handled above
 
-    const hadClients = user.assignedClients.length > 0;
+    const keep = sortedUnique(teamOf(e));
+    const keepSet = new Set(keep);
+    const current = new Set(user.assignedClients);
+    const add = keep.filter((id) => !current.has(id));
+    const remove = [...current].filter((id) => !keepSet.has(id)).sort();
     const hadAgencies = (user.assignedAgencies?.length ?? 0) > 0;
-    if (!hadClients && !hadAgencies) continue; // already empty — nothing to do
+    if (!add.length && !remove.length && !hadAgencies) continue; // nothing to do
 
     changes.push({
       uid: user.uid,
       email: user.email,
       role: user.role,
       clearAgencies: hadAgencies,
-      addClientIds: [],
-      removeClientIds: [...user.assignedClients].sort(),
-      finalClientIds: [],
+      addClientIds: add,
+      removeClientIds: remove,
+      finalClientIds: keep,
     });
     writes.push({
       uid: user.uid,
       email: user.email,
-      assignedClients: [],
+      assignedClients: keep,
       ...(hadAgencies ? { clearAgencies: true } : {}),
     });
   }

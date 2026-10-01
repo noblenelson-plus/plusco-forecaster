@@ -4,6 +4,10 @@
 import { useState } from "react";
 import { X, AlertTriangle, CheckCircle2, Loader2, FileText } from "lucide-react";
 import { CSVValidationResult, commitCSVImport } from "../../lib/services/client-service";
+import { fetchAccessibleClients } from "../../lib/services/assignment-service";
+import { syncTeamAccess } from "../../lib/services/team-access-service";
+import type { ClientTeamFields } from "../../lib/format/client-team";
+import { useAuth } from "../../lib/auth-context";
 
 interface ImportModalProps {
   open: boolean;
@@ -20,6 +24,7 @@ export default function ImportModal({
 }: ImportModalProps) {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
+  const { user } = useAuth();
 
   if (!open || !validation) return null;
 
@@ -29,8 +34,33 @@ export default function ImportModal({
   async function handleConfirm() {
     setImporting(true);
     setError("");
+    const rows = validation!.validRows;
     try {
-      await commitCSVImport(validation!.validRows);
+      // Snapshot the clients first so the team-access sync can tell who was
+      // replaced (the import merges into existing docs).
+      const before = new Map(
+        (await fetchAccessibleClients(null, true)).map((c) => [c.cl_id, c])
+      );
+      await commitCSVImport(rows);
+      try {
+        await syncTeamAccess(
+          rows.map(({ id, data }) => {
+            const prev = before.get(id) ?? null;
+            return {
+              after: { ...prev, ...data, cl_id: id } as ClientTeamFields,
+              before: prev,
+            };
+          }),
+          user?.uid
+        );
+      } catch (err) {
+        setError(
+          "Clients imported, but their teams' access couldn't be updated: " +
+            (err instanceof Error ? err.message : "Unknown error") +
+            '. Use "Sync team access" on the Clients page to retry.'
+        );
+        return;
+      }
       onImported();
     } catch (err: any) {
       setError("Import failed: " + (err?.message ?? "Unknown error"));
