@@ -26,7 +26,12 @@ import {
   CLIENT_FEE_STRUCTURES,
   CLIENT_ADVERTISER_VERTICALS,
 } from "../../lib/constants/client.constants";
-import { DEFAULT_FORECASTING_TYPE, isEligibleForPartner } from "../../lib/format/client";
+import {
+  DEFAULT_FORECASTING_TYPE,
+  currentStatusYear,
+  isEligibleForPartner,
+  resolveClientStatus,
+} from "../../lib/format/client";
 import { saveClient, deleteClient, uploadClientLogo } from "../../lib/services/client-service";
 import { triggerMediaboxRefresh } from "../../lib/services/mediabox-totals-service";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
@@ -89,15 +94,22 @@ const REQUIRED_FIELDS: Array<[keyof ClientFormData, string]> = [
  * client into the form, so the edit panel never shows a status that is no
  * longer selectable; saving then persists ACTIVE. */
 function normalizeStatusMap(
-  m: Record<number, ClientStatus>
+  m: Record<number, ClientStatus>,
+  client: Client
 ): Record<number, ClientStatus> {
   const out: Record<number, ClientStatus> = {};
   for (const [y, v] of Object.entries(m)) {
     out[Number(y)] = v === "NEW_CLIENT" ? "ACTIVE" : v;
   }
-  // Always surface a 2027 row (rendered identically to 2026 by the year list),
-  // defaulting to Active when unset.
-  if (out[2027] === undefined) out[2027] = "ACTIVE";
+  // Always surface rows for this year and next (e.g. 2026 + 2027, rolling to
+  // 2027 + 2028 on Jan 1). A missing row starts at the client's effective
+  // status for that year — what its card shows — so opening and saving the
+  // drawer never silently changes a status (e.g. one still read from the
+  // legacy 2026 field).
+  const year = currentStatusYear();
+  for (const y of [year, year + 1]) {
+    if (out[y] === undefined) out[y] = resolveClientStatus(client, y);
+  }
   return out;
 }
 
@@ -160,7 +172,8 @@ export default function ClientDrawer({
             ? client.Client_Status_By_Year
             : client.Client_Status_2026
             ? { 2026: client.Client_Status_2026 }
-            : {}
+            : {},
+          client
         ),
         CL_Hidden: client.CL_Hidden ?? false,
         Forecasting_Type: client.Forecasting_Type ?? { ...DEFAULT_FORECASTING_TYPE },

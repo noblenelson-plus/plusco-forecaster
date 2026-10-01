@@ -9,7 +9,6 @@ import {
   STATUS_DOT_COLORS,
 } from "../../lib/constants/client.constants";
 import { resolveClientStatus, isClientHidden } from "../../lib/format/client";
-import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 
 const STATUS_LABELS: Record<string, string> = Object.fromEntries(
   CLIENT_STATUSES.map((s) => [s.value, s.label])
@@ -17,6 +16,8 @@ const STATUS_LABELS: Record<string, string> = Object.fromEntries(
 
 interface ClientCardProps {
   client: Client;
+  /** Year the status badge reflects, printed under it. */
+  statusYear: number;
   isAdmin: boolean;
   onEdit: (client: Client) => void;
 }
@@ -33,7 +34,7 @@ const TIER_COLORS: Record<string, string> = {
   TIER_3: "bg-gray-100 text-gray-600",
 };
 
-export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps) {
+export default function ClientCard({ client, statusYear, onEdit }: ClientCardProps) {
   // Generate initials from client name
   const initials = client.CL_Name
     .split(" ")
@@ -59,10 +60,8 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
     bgColors.length;
   const avatarBg = bgColors[colorIndex];
 
-  // Status badge follows the globally selected year (fallback: current year).
-  const selectedYear = useForecastSelection((s) => s.selectedYear);
-  const year = selectedYear ?? new Date().getFullYear();
-  const status = resolveClientStatus(client, year);
+  // Status for the page's status year (labelled under the badge).
+  const status = resolveClientStatus(client, statusYear);
   const hidden = isClientHidden(client);
 
   return (
@@ -87,24 +86,33 @@ export default function ClientCard({ client, isAdmin, onEdit }: ClientCardProps)
             <span className="text-gray-900 text-sm font-bold">{initials}</span>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
-          {hidden && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
-              <EyeOff size={10} />
-              Hidden
-            </span>
-          )}
-          <span
-            className={`inline-flex items-center px-2 py-0.5 text-xs font-medium border ${
-              STATUS_BADGE_COLORS[status] ?? "bg-gray-100 text-gray-500 border-gray-200"
-            }`}
-          >
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1.5">
+            {hidden && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                <EyeOff size={10} />
+                Hidden
+              </span>
+            )}
             <span
-              className={`w-1.5 h-1.5 mr-1.5 ${
-                STATUS_DOT_COLORS[status] ?? "bg-gray-400"
+              className={`inline-flex items-center px-2 py-0.5 text-xs font-medium border ${
+                STATUS_BADGE_COLORS[status] ?? "bg-gray-100 text-gray-500 border-gray-200"
               }`}
-            />
-            {STATUS_LABELS[status] ?? status}
+            >
+              <span
+                className={`w-1.5 h-1.5 mr-1.5 ${
+                  STATUS_DOT_COLORS[status] ?? "bg-gray-400"
+                }`}
+              />
+              {STATUS_LABELS[status] ?? status}
+            </span>
+          </div>
+          {/* Which year the status is for — other years are in the drawer. */}
+          <span
+            className="text-[10px] font-medium text-gray-400 tabular-nums"
+            title={`Status for ${statusYear}`}
+          >
+            {statusYear}
           </span>
         </div>
       </div>

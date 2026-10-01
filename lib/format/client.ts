@@ -36,6 +36,15 @@ export function isTestClient(name: string | undefined | null): boolean {
 type StatusCarrier = Pick<Client, "Client_Status_By_Year" | "Client_Status_2026">;
 
 /**
+ * The year client statuses are shown for by default: the calendar year, so
+ * badges roll over to the new year on Jan 1 with no code change. The single
+ * place to change if a year toggle is ever added to the Clients page.
+ */
+export function currentStatusYear(now: Date = new Date()): number {
+  return now.getFullYear();
+}
+
+/**
  * Effective status for a given year.
  *
  * Resolution order: per-year map → legacy `Client_Status_2026` (only for 2026,
