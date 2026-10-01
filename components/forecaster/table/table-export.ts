@@ -86,7 +86,16 @@ function matrixSize(matrix: CellValue[][]): { rows: number; cols: number } {
  * created. The message is shown to the user as-is.
  */
 export function assertFitsInSheets(matrices: CellValue[][][]): void {
-  const sizes = matrices.map(matrixSize);
+  assertSizesFitInSheets(matrices.map(matrixSize));
+}
+
+/**
+ * Same check from grid sizes alone (`rows` includes the header row), so a
+ * caller holding a huge table can reject it without materializing the matrix.
+ */
+export function assertSizesFitInSheets(
+  sizes: { rows: number; cols: number }[]
+): void {
   const cells = sizes.reduce((sum, s) => sum + s.rows * s.cols, 0);
   if (cells <= SHEETS_CELL_LIMIT) return;
   const shape =

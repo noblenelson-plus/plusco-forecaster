@@ -26,7 +26,7 @@ import MultiSelectDropdown, {
 } from "../../_shared/multi-select-dropdown";
 import type { TableColumn } from "../table/table-column.types";
 import {
-  assertFitsInSheets,
+  assertSizesFitInSheets,
   buildExportMatrix,
   exportToNewSheet,
   SheetsUnavailableError,
@@ -225,12 +225,17 @@ export default function RawTablePage({
       return;
     }
     try {
-      // Every matching row, materialized only at export time. Built
-      // synchronously so an over-limit export is rejected before the Google
-      // popup — nobody should sign in just to be told it's too big.
+      // Size check first, from the snapshot's shape alone (every row carries
+      // every column): an over-limit export is rejected instantly, before the
+      // matrix is built (which freezes the page for large tables) and before
+      // the Google popup — nobody should sign in just to be told it's too big.
+      if (table) {
+        const cols = table.columns.filter((c) => !HIDDEN_FIELDS.has(c)).length;
+        assertSizesFitInSheets([{ rows: matched.length + 1, cols }]);
+      }
+      // Every matching row, materialized only at export time.
       const full = table ? matched.map((r) => rowAt(table, r)) : [];
       const matrix = buildExportMatrix(buildColumns(full), full, NO_TOTALS, false);
-      assertFitsInSheets([matrix]);
       // Open the connect popup inside the click gesture (survives popup blockers)
       // before any await, so the later export call finds a live session.
       if (!isConnected()) await connect();
