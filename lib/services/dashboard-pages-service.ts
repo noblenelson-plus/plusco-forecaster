@@ -17,9 +17,26 @@ import { db } from "../firebase";
 const CONFIG_COLLECTION = "config";
 const DASHBOARD_PAGES_DOC = "dashboard_pages";
 
+/**
+ * Ids saved before the Forecaster Dashboard grouping, when Forecast Summary /
+ * Revenue / Media Spend / Labs / Product were top-level tabs, mapped to their
+ * sub-tab ids — so those pages stay hidden after the regroup. The next admin
+ * save writes the new ids.
+ */
+const LEGACY_PAGE_IDS: Record<string, string> = {
+  exec: "forecaster/exec",
+  revenue: "forecaster/revenue",
+  media: "forecaster/media",
+  labs: "forecaster/labs",
+  product: "forecaster/product",
+};
+
 function normalizeHidden(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
-  return [...new Set(raw.filter((x): x is string => typeof x === "string" && x !== ""))].sort();
+  const ids = raw
+    .filter((x): x is string => typeof x === "string" && x !== "")
+    .map((id) => LEGACY_PAGE_IDS[id] ?? id);
+  return [...new Set(ids)].sort();
 }
 
 /**

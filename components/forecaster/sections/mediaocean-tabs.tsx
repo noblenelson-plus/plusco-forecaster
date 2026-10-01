@@ -2,7 +2,7 @@
 "use client";
 
 /**
- * MediaOcean — sub-tab container. Splits the MediaOcean tab into two sub-pages:
+ * Media Investments Report (Mediaocean) — sub-tab container. Two sub-pages:
  *   KPIs Media and Labs · Media Investments
  *
  * "KPIs Media and Labs" is the same Investment Strategy KPIs page shown under
@@ -20,6 +20,7 @@ import InvestmentKpisSection from "./investment-kpis-section";
 import MediaoceanInvestmentSection from "./mediaocean-investment-section";
 import MediaoceanTopPartnersSection from "./mediaocean-top-partners-section";
 import MediaoceanSocialSection from "./mediaocean-social-section";
+import SubTabBar from "../sub-tab-bar";
 import type { Client } from "../../../lib/types/client.types";
 import {
   MEDIAOCEAN_SUBTABS,
@@ -55,25 +56,7 @@ export default function MediaOceanTabs({
 
   return (
     <div className="space-y-6">
-      {/* Sub-tab bar — matches the Executive KPIs sub-tab strip. */}
-      <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {subtabs.map((t) => {
-          const isActive = active === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => onSubChange(t.id)}
-              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? "border-primary text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <SubTabBar tabs={subtabs} active={active} onSelect={onSubChange} />
 
       {/* Active sub-page */}
       {active === "kpis" && (

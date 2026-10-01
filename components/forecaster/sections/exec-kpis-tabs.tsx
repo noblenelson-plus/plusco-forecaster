@@ -2,9 +2,10 @@
 "use client";
 
 /**
- * Executive KPIs — sub-tab container. Splits the (formerly very long) Exec KPIs
- * page into navigable sub-pages so each area reads on its own:
- *   Executive Summary · Investment Strategy KPIs · Meta · Billups · Local Media
+ * Exec KPI Dashboard — sub-tab container. Splits the (formerly very long) Exec
+ * KPIs page into navigable sub-pages so each area reads on its own:
+ *   Executive Summary · Investment Strategy KPIs · Meta · Labs Pacing ·
+ *   Billups · Local Media
  *
  * Summary and Billups take the page's forecast scope (dashboard filters +
  * currency already applied). Investment Strategy KPIs, Meta and Billups are all
@@ -17,8 +18,8 @@ import ExecutiveSummarySection from "./executive-summary-section";
 import InvestmentKpisSection from "./investment-kpis-section";
 import BillupsSection from "./billups-section";
 import MetaSection from "./meta-section";
-import LabsPacingSection from "./labs-pacing-section";
-import LabsTargetVsBookedSection from "./labs-target-vs-booked-section";
+import LabsPacingPage from "./labs-pacing-page";
+import SubTabBar from "../sub-tab-bar";
 import type { Client, Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import {
@@ -70,25 +71,7 @@ export default function ExecKpisTabs({
 
   return (
     <div className="space-y-6">
-      {/* Sub-tab bar — a lighter, secondary strip under the main purple tabs. */}
-      <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {subtabs.map((t) => {
-          const isActive = active === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setSub(t.id)}
-              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? "border-primary text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <SubTabBar tabs={subtabs} active={active} onSelect={setSub} />
 
       {/* Active sub-page */}
       {active === "summary" && (
@@ -106,22 +89,14 @@ export default function ExecKpisTabs({
         <InvestmentKpisSection scopedClientIds={scopedClientIds} />
       )}
 
-            {active === "meta" && <MetaSection scopedClientIds={scopedClientIds} />}
+      {active === "meta" && <MetaSection scopedClientIds={scopedClientIds} />}
 
-            {active === "labs-pacing" && (
-        <div className="space-y-8">
-          <LabsTargetVsBookedSection
-            scopedClientIds={scopedClientIds}
-            currencyByClient={currencyByClient}
-            usdToCad={usdToCad}
-          />
-          <LabsPacingSection
-            scopedClientIds={scopedClientIds}
-            currencyByClient={currencyByClient}
-            usdToCad={usdToCad}
-            showPodBreakdown
-          />
-        </div>
+      {active === "labs-pacing" && (
+        <LabsPacingPage
+          scopedClientIds={scopedClientIds}
+          currencyByClient={currencyByClient}
+          usdToCad={usdToCad}
+        />
       )}
 
       {active === "billups" && (
