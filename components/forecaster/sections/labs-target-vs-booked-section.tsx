@@ -27,6 +27,12 @@ import StatCard from "../../dashboard/charts/stat-card";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
+import {
+  describeMonthPeriod,
+  filterSummary,
+  joinNote,
+  mirAsOf,
+} from "../../../lib/format/period";
 import { useLabsTargetVsBooked } from "./use-labs-target-vs-booked";
 import LabsTargetVsBookedTable from "./labs-target-vs-booked-table";
 import { pacingMoney } from "./labs-pacing-data";
@@ -141,6 +147,18 @@ export default function LabsTargetVsBookedSection({
 
   const asOf = lastSync.labelShort ?? MIR_AS_OF_FALLBACK;
 
+  // What this table covers, shown under it and written atop its export.
+  const periodNote = joinNote([
+    `Period: ${describeMonthPeriod([], selectedYear)} (annual booked)`,
+    `Target vs ${rfqLabel} forecast`,
+    mirAsOf(lastSync.labelShort),
+    `${scopedClientIds.length} client${scopedClientIds.length === 1 ? "" : "s"} in scope`,
+  ]);
+  const filterNote = joinNote([
+    `Deal types: ${filterSummary(dealTypes)}`,
+    `Partners: ${filterSummary(partnerSel)}`,
+  ]);
+
   const controls = (
     <div className="flex flex-wrap items-center gap-2">
       <MultiSelectDropdown
@@ -198,6 +216,8 @@ export default function LabsTargetVsBookedSection({
         totals={visibleTotals}
         loading={loading}
         rfqLabel={rfqLabel}
+        subtitle={`${periodNote} · ${filterNote}`}
+        notes={[periodNote, filterNote]}
       />
 
       {unmatchedTargets.length > 0 && (

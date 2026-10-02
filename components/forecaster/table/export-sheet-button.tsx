@@ -38,6 +38,7 @@ export default function ExportSheetButton<R, T>({
   title,
   sheetTitle,
   includeTotals = true,
+  notes,
 }: {
   /** Visible columns, in display order. */
   columns: TableColumn<R, T>[];
@@ -50,13 +51,19 @@ export default function ExportSheetButton<R, T>({
   sheetTitle: string;
   /** Append the grand-total row. Off for tables with no footer. */
   includeTotals?: boolean;
+  /**
+   * Context lines (e.g. the period covered and the MIR date) written as the
+   * first rows of the sheet, one per row, then a blank row before the table.
+   */
+  notes?: string[];
 }) {
   const [status, setStatus] = useState<Status>({ state: "idle" });
 
   const run = async () => {
     setStatus({ state: "working" });
     try {
-      const matrix = buildExportMatrix(columns, rows, totals, includeTotals);
+      const table = buildExportMatrix(columns, rows, totals, includeTotals);
+      const matrix = notes?.length ? [...notes.map((n) => [n]), [""], ...table] : table;
       const url = await exportToNewSheet({ title, sheetTitle, matrix });
       setStatus({ state: "done", url });
       window.open(url, "_blank", "noopener,noreferrer");
