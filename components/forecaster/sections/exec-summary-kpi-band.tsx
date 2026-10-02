@@ -30,6 +30,8 @@ export interface ExecMetric {
   goalLabel?: string;
   /** Optional YoY pill; `favorable` colors it green (true) or red (false). */
   yoy?: { label: string; favorable: boolean } | null;
+  /** Optional per-part split listed under the value (e.g. Labs spend by partner). */
+  breakdown?: { label: string; value: string }[];
 }
 
 export interface ExecPillar {
@@ -93,6 +95,17 @@ function KpiTile({ metric }: { metric: ExecMetric }) {
 
       {metric.sub && (
         <p className="mt-2 text-[11px] text-muted-foreground">{metric.sub}</p>
+      )}
+
+      {metric.breakdown && metric.breakdown.length > 0 && (
+        <dl className="mt-3 space-y-0.5 border-t border-border pt-2 text-[11px]">
+          {metric.breakdown.map((b) => (
+            <div key={b.label} className="flex items-baseline justify-between gap-2">
+              <dt className="truncate text-muted-foreground">{b.label}</dt>
+              <dd className="tabular-nums font-medium text-foreground">{b.value}</dd>
+            </div>
+          ))}
+        </dl>
       )}
     </div>
   );

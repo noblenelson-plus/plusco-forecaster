@@ -36,6 +36,11 @@ import {
 } from "../../../lib/types/partner-targets.types";
 import type { ExecPillar } from "./exec-summary-kpi-band";
 import { ragStatus } from "./exec-rag";
+import {
+  subscribeToLabsPartners,
+  getLabsPartnersForYear,
+} from "../../../lib/services/labs-partner-service";
+import type { LabsPartner } from "../../../lib/types/labs.types";
 import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
 
 // --- Formatting -------------------------------------------------------------
@@ -65,7 +70,19 @@ export const ratioTo = (actual: number | null, goal: number | null): number | nu
 // shown only when the last-sync record is unavailable.
 const MIR_AS_OF_LABEL = "Jul 27, 2026";
 
-export function useBookedExecKpis(scopedClientIds: string[], year: number) {
+export function useBookedExecKpis(
+  scopedClientIds: string[],
+  year: number,
+  options: {
+    /**
+     * Show the portfolio-wide dollar goals (Total LABS Spend, MIQ-Social
+     * Spend). They aren't tied to clients, so a client-filtered page should
+     * turn them off. Share goals and per-client targets are unaffected.
+     */
+    dollarTargets?: boolean;
+  } = {}
+) {
+  const { dollarTargets = true } = options;
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
   const lastSync = useLastSync();
 
@@ -90,6 +107,37 @@ export function useBookedExecKpis(scopedClientIds: string[], year: number) {
     () => scopedKpiRows.reduce((acc, r) => acc + num(r.labs_spend_2026), 0),
     [scopedKpiRows]
   );
+
+  // -- Labs spend by partner (the Total LABS Spend breakdown) ------------------
+  // Every configured Labs partner of the year (Admin → LABS), named by family
+  // ("Billups-OOH" → "Billups"), so a partner with no booked spend shows $0.
+  const [labsPartners, setLabsPartners] = useState<LabsPartner[]>([]);
+  useEffect(() => {
+    const unsubscribe = subscribeToLabsPartners(setLabsPartners);
+    return () => unsubscribe();
+  }, []);
+  const labsByPartner = useMemo(() => {
+    const label = new Map<string, string>(); // MIR family (upper) -> display name
+    for (const p of getLabsPartnersForYear(labsPartners, year)) {
+      const family = p.name.split("-")[0].trim();
+      if (family && !label.has(family.toUpperCase())) label.set(family.toUpperCase(), family);
+    }
+    const total = new Map<string, number>([...label.keys()].map((k) => [k, 0]));
+    for (const r of scopedKpiRows) {
+      if (!r.labs_by_partner_2026) continue;
+      try {
+        for (const { p, v } of JSON.parse(r.labs_by_partner_2026) as { p: string; v: number }[]) {
+          const key = String(p).toUpperCase();
+          total.set(key, (total.get(key) ?? 0) + num(v));
+        }
+      } catch {
+        // A malformed value only drops that client's split, never the page.
+      }
+    }
+    return [...total.entries()]
+      .map(([key, value]) => ({ label: label.get(key) ?? key, value }))
+      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+  }, [labsPartners, year, scopedKpiRows]);
 
   // -- Digital media-mix scorecards (booked; MIR-only). Aggregated from the
   // same mo_kpi_by_client rows and computed identically to the by-GM Digital
@@ -165,9 +213,16 @@ export function useBookedExecKpis(scopedClientIds: string[], year: number) {
             icon: DollarSign,
             label: "Total LABS Spend",
             value: money(bookedLabsSpend),
-            pctOfTarget: ratioTo(bookedLabsSpend, goals.labsSpend),
-            goalLabel:
-              goals.labsSpend != null ? `Goal ${moneyCompact(goals.labsSpend)}` : undefined,
+            ...(dollarTargets
+              ? {
+                  pctOfTarget: ratioTo(bookedLabsSpend, goals.labsSpend),
+                  goalLabel:
+                    goals.labsSpend != null
+                      ? `Goal ${moneyCompact(goals.labsSpend)}`
+                      : undefined,
+                }
+              : {}),
+            breakdown: labsByPartner.map((b) => ({ label: b.label, value: money(b.value) })),
           },
         ],
       },
@@ -240,9 +295,15 @@ export function useBookedExecKpis(scopedClientIds: string[], year: number) {
             label: "MIQ-Social Spend",
             value: money(inv.meta.miqSocialSpend2026),
             // % booked vs the MIQ-Social Labs deal target (Deal Targets page).
-            pctOfTarget: ratioTo(inv.meta.miqSocialSpend2026, miqSocialTarget),
-            goalLabel:
-              miqSocialTarget != null ? `Target ${moneyCompact(miqSocialTarget)}` : undefined,
+            ...(dollarTargets
+              ? {
+                  pctOfTarget: ratioTo(inv.meta.miqSocialSpend2026, miqSocialTarget),
+                  goalLabel:
+                    miqSocialTarget != null
+                      ? `Target ${moneyCompact(miqSocialTarget)}`
+                      : undefined,
+                }
+              : {}),
           },
         ],
       },
@@ -291,7 +352,18 @@ export function useBookedExecKpis(scopedClientIds: string[], year: number) {
         ],
       },
     ],
-    [inv, bookedLabsSpend, billupsBooked, goals, labsShareGoal, metaYoyPpt, digital, miqSocialTarget]
+    [
+      inv,
+      bookedLabsSpend,
+      labsByPartner,
+      dollarTargets,
+      billupsBooked,
+      goals,
+      labsShareGoal,
+      metaYoyPpt,
+      digital,
+      miqSocialTarget,
+    ]
   );
 
   const mirSourceLabel = `Booked to date (MIR) · as of ${lastSync.labelShort ?? MIR_AS_OF_LABEL}`;
