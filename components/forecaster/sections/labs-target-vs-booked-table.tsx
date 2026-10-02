@@ -162,6 +162,7 @@ export default function LabsTargetVsBookedTable({
   rfqLabel = "RFQ",
   title = "Labs — Target vs Booked by Partner",
   subtitle = `PLUSCO deals target vs ${rfqLabel} labs forecast, booked to date (MIR)`,
+  notes,
 }: {
   rows: Row[];
   totals: Totals;
@@ -169,6 +170,8 @@ export default function LabsTargetVsBookedTable({
   rfqLabel?: string;
   title?: string;
   subtitle?: string;
+  /** Period / MIR-date lines, written above the table in the Sheets export. */
+  notes?: string[];
 }) {
   const columns = useMemo(
     () => buildLabsTargetVsBookedColumns(rfqLabel),
@@ -273,6 +276,7 @@ export default function LabsTargetVsBookedTable({
           totals={totals}
           title={title}
           sheetTitle="Labs Target vs Booked"
+          notes={notes}
         />
       }
     >

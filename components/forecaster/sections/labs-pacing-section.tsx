@@ -50,6 +50,13 @@ import {
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
+import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
+import {
+  describeMonthPeriod,
+  filterSummary,
+  joinNote,
+  mirAsOf,
+} from "../../../lib/format/period";
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { Currency } from "../../../lib/types/client.types";
 
@@ -176,6 +183,22 @@ export default function LabsPacingSection({
     [clientSort, client.rows]
   );
 
+  // What these tables cover, shown under each and written atop their exports.
+  const lastSync = useLastSync();
+  const partnerNames = useMemo(() => {
+    const byId = new Map(partnerOptions.map((p) => [p.value, p.label]));
+    return partnerIds.map((id) => byId.get(id) ?? id);
+  }, [partnerOptions, partnerIds]);
+  const periodNote = joinNote([
+    `Period: ${describeMonthPeriod(months, selectedYear)}`,
+    `Target: ${targetLabel}`,
+    mirAsOf(lastSync.labelShort),
+    `${scopedClientIds.length} client${scopedClientIds.length === 1 ? "" : "s"} in scope`,
+  ]);
+  const filterNote = `Partners: ${filterSummary(partnerNames)}`;
+  const tableNote = `${periodNote} · ${filterNote}`;
+  const exportNotes = [periodNote, filterNote];
+
   const controls = (
     <div className="flex items-center gap-2">
       <MultiSelectDropdown
@@ -196,6 +219,7 @@ export default function LabsPacingSection({
         totals={totals}
         title={`Labs Pacing — ${targetLabel}`}
         sheetTitle="Labs Pacing"
+        notes={exportNotes}
       />
     </div>
   );
@@ -362,7 +386,7 @@ export default function LabsPacingSection({
     <section className="space-y-6">
       {header}
 
-      <ChartCard title="By Partner" icon={FlaskConical}>
+      <ChartCard title="By Partner" subtitle={tableNote} icon={FlaskConical}>
         <div className="overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-card">
@@ -395,11 +419,11 @@ export default function LabsPacingSection({
         </ChartCard>
       </div>
 
-                {showPodBreakdown && (
-                  <LabsPodMatrix matrix={gmPodMatrix} targetLabel={targetLabel} />
-                )}
+      {showPodBreakdown && (
+        <LabsPodMatrix matrix={gmPodMatrix} targetLabel={targetLabel} note={tableNote} />
+      )}
 
-      <ChartCard title="By Client" icon={Table2}>
+      <ChartCard title="By Client" subtitle={tableNote} icon={Table2}>
         <div className="flex items-center justify-end pb-2">
           <ExportSheetButton
             columns={clientColumns}
@@ -407,6 +431,7 @@ export default function LabsPacingSection({
             totals={client.totals}
             title={`Labs Pacing by Client — ${targetLabel}`}
             sheetTitle="Labs Pacing by Client"
+            notes={exportNotes}
           />
         </div>
         <div className="max-h-[520px] overflow-auto">

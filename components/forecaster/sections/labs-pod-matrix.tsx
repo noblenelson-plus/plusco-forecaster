@@ -55,10 +55,13 @@ const MODES: { key: CellMode; label: string }[] = [
 export default function LabsPodMatrix({
   matrix,
   targetLabel,
+  note,
 }: {
   matrix: GmPodMatrix;
   /** Dynamic forecast-column label (e.g. "Forecast RFQ3"), from the section. */
   targetLabel: string;
+  /** Period / MIR-date note from the section, shown under each card title. */
+  note?: string;
 }) {
   const { pods, rows, colTotals, grandTotal, podTotals, grand } = matrix;
   const [mode, setMode] = useState<CellMode>("pct");
@@ -106,7 +109,7 @@ export default function LabsPodMatrix({
     // Left card wider than the right (heatmap needs the room).
     <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       {/* ── Heatmap card ───────────────────────────────────────────────────── */}
-      <ChartCard title="By GM Pod — % of Target Booked" icon={BarChart3} action={toggle}>
+      <ChartCard title="By GM Pod — % of Target Booked" subtitle={note} icon={BarChart3} action={toggle}>
         {rows.length === 0 ? (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             No Labs pacing data for this scope.
@@ -165,7 +168,7 @@ export default function LabsPodMatrix({
       </ChartCard>
 
       {/* ── Summary card ───────────────────────────────────────────────────── */}
-      <ChartCard title="By GM Pod — Summary" icon={Table2}>
+      <ChartCard title="By GM Pod — Summary" subtitle={note} icon={Table2}>
         {rows.length === 0 ? (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             No Labs pacing data for this scope.
