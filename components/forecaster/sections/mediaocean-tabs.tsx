@@ -12,6 +12,9 @@
  * those sections take scopedClientIds / clients / year / selMonths (Social omits
  * year — it intrinsically compares 2025 vs 2026).
  *
+ * At the bottom of Media Investments, the Investment KPIs section repeats the
+ * Exec KPI Dashboard's booked (MIR) scorecards + Exec KPIs by Client table.
+ *
  * The active sub-tab is controlled by the parent (page.tsx) so the parent can
  * show the global filter bar on both sub-pages.
  */
@@ -20,6 +23,7 @@ import InvestmentKpisSection from "./investment-kpis-section";
 import MediaoceanInvestmentSection from "./mediaocean-investment-section";
 import MediaoceanTopPartnersSection from "./mediaocean-top-partners-section";
 import MediaoceanSocialSection from "./mediaocean-social-section";
+import InvestmentKpisBookedSection from "./investment-kpis-booked-section";
 import SubTabBar from "../sub-tab-bar";
 import type { Client } from "../../../lib/types/client.types";
 import {
@@ -82,6 +86,8 @@ export default function MediaOceanTabs({
             clients={clients}
             selMonths={selMonths}
           />
+          {/* Booked (MIR) Exec KPIs: scorecards + by-client table. */}
+          <InvestmentKpisBookedSection scopedClientIds={scopedClientIds} year={year} />
         </div>
       )}
     </div>

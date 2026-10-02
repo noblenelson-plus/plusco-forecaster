@@ -17,18 +17,16 @@
  * Goal lines come from the admin Labs Targets tab (`partner_targets/{year}`):
  * the Labs share target + the Exec goals (Labs spend, Meta spend + share,
  * Billups share). "% of Target" is the actual spend / the goal.
+ *
+ * The booked (MIR) view comes from useBookedExecKpis, shared with the Media
+ * Investments page's Investment KPIs section so both show the same numbers;
+ * this page adds the Forecaster view, the Meta trend and the by-GM table.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Calendar, PieChart, DollarSign, AlertTriangle } from "lucide-react";
+import { Loader2, Calendar, PieChart, DollarSign } from "lucide-react";
 import { computeClientTable } from "./client-table-data";
 import {
-  useMoKpiByClient,
-  metaShareTrendBreakdown,
-  computeInvestmentKpis,
-} from "../../../lib/dashboard/data/use-mo-kpi-by-client";
-import {
-  useBillupsMirRows,
   mapForecastRowsToBillups,
   computeBillupsKpis,
   type BillupsEligibility,
@@ -37,52 +35,23 @@ import {
   subscribeToLabsPartners,
   getLabsPartnersForYear,
 } from "../../../lib/services/labs-partner-service";
-import {
-  subscribeToPartnerTargets,
-  getPartnerTargetsForYear,
-} from "../../../lib/services/partner-targets-service";
 import { isEligibleForPartner } from "../../../lib/format/client";
-import {
-  EMPTY_EXEC_GOALS,
-  type PartnerTargetsYear,
-} from "../../../lib/types/partner-targets.types";
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { Client } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import ExecSummaryKpiBand, { type ExecPillar } from "./exec-summary-kpi-band";
+import {
+  useBookedExecKpis,
+  money,
+  moneyCompact,
+  pct,
+  ratioTo,
+} from "./use-booked-exec-kpis";
 import MetaShareTrendStrip from "./meta-share-trend-strip";
 import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
-import { ragStatus } from "./exec-rag";
-import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
 
 const ELIGIBILITY_YEAR = 2026;
-
-// --- Formatting helpers -------------------------------------------------------
-
-function num(v: unknown): number {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-/** Compact money, e.g. "$116.5M" / "$805.8K". */
-function moneyCompact(v: number): string {
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `$${(v / 1_000).toFixed(1)}K`;
-  return `$${Math.round(v).toLocaleString("en-CA")}`;
-}
-/** Full money, e.g. "$27,546,111". */
-function money(v: number): string {
-  return `$${Math.round(v).toLocaleString("en-CA")}`;
-}
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-
-// --- MIR "as of" date --------------------------------------------------------
-// The MIR data is pulled roughly once a month; this is the pull date shown in
-// the source column of the latest MIR. Update it whenever a new MIR is synced.
-const MIR_AS_OF_LABEL = "Jul 27, 2026";
 
 // --- Section ------------------------------------------------------------------
 
@@ -101,93 +70,9 @@ export default function ExecutiveSummarySection({
   scopedClientIds: string[];
   year: number;
 }) {
-  const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
-  // -- MIR "as of" date from the last sync (dashboard_meta/last_sync) ----------
-  const lastSync = useLastSync();
-
-  // -- Targets / goals (from the admin Labs Targets tab) ----------------------
-  const [targetYears, setTargetYears] = useState<PartnerTargetsYear[]>([]);
-  useEffect(() => {
-    const unsubscribe = subscribeToPartnerTargets(setTargetYears);
-    return () => unsubscribe();
-  }, []);
-  const targets = getPartnerTargetsForYear(targetYears, year) ?? null;
-  const goals = targets?.execGoals ?? EMPTY_EXEC_GOALS;
-  const labsShareGoal = targets?.totalLabsShareOfMediaTarget ?? null;
-
-  // -- mo_kpi_by_client: Meta (all) + Labs booked -----------------------------
-  const kpi = useMoKpiByClient();
-  const scopedKpiRows = useMemo(
-    () => kpi.rows.filter((r) => scopeSet.has(r.PLUSCO_CLIENT_ID)),
-    [kpi.rows, scopeSet]
-  );
-  const inv = useMemo(
-    () => computeInvestmentKpis(scopedKpiRows),
-    [scopedKpiRows]
-  );
-  const bookedLabsSpend = useMemo(
-    () => scopedKpiRows.reduce((acc, r) => acc + num(r.labs_spend_2026), 0),
-    [scopedKpiRows]
-  );
-
-  // -- Digital media-mix scorecards (booked; MIR-only). Aggregated from the
-  // same mo_kpi_by_client rows and computed identically to the by-GM Digital
-  // section (safeDiv semantics), so the totals tie out. ------------------------
-  const digital = useMemo(() => {
-    let dig = 0,
-      dig25 = 0,
-      dd = 0,
-      dd25 = 0,
-      ddNd = 0,
-      prog = 0,
-      prog25 = 0,
-      progNd = 0;
-    for (const r of scopedKpiRows) {
-      dig += num(r.digital_spend_2026);
-      dig25 += num(r.digital_spend_2025);
-      dd += num(r.digital_direct_spend_2026);
-      dd25 += num(r.digital_direct_spend_2025);
-      ddNd += num(r.dd_nondeal_spend_2026);
-      prog += num(r.prog_spend_2026);
-      prog25 += num(r.prog_spend_2025);
-      progNd += num(r.prog_nondeal_spend_2026);
-    }
-    const div = (n: number, d: number): number | null => (d !== 0 ? n / d : null);
-    const ddShare = div(dd, dig);
-    const ddShare25 = div(dd25, dig25);
-    const progShare = div(prog, dig);
-    const progShare25 = div(prog25, dig25);
-    return {
-      ddShare,
-      progShare,
-      ddNonDeal: ddNd,
-      progNonDeal: progNd,
-      ddYoyPpt:
-        ddShare != null && ddShare25 != null ? ddShare - ddShare25 : null,
-      progYoyPpt:
-        progShare != null && progShare25 != null ? progShare - progShare25 : null,
-    };
-  }, [scopedKpiRows]);
-
-  const metaTrend = useMemo(
-    () => metaShareTrendBreakdown(scopedKpiRows),
-    [scopedKpiRows]
-  );
-
-  // MIQ-Social Labs deal target (Deal Targets page) — the MIR-toggle goal.
-  const miqSocialTarget = useMemo(
-    () =>
-      targets?.partners.find((p) => p.partner === "MIQ-Social")
-        ?.mediaSpendTarget ?? null,
-    [targets]
-  );
-
-  // -- Billups: booked (MIR) + forecast, same path as the Billups section -----
-  const mir = useBillupsMirRows();
-  const mirRows = useMemo(
-    () => mir.rows.filter((r) => scopeSet.has(r.clientId)),
-    [mir.rows, scopeSet]
-  );
+  // Booked (MIR) scorecards + the scoped mo_kpi_by_client rows (shared hook).
+  const booked = useBookedExecKpis(scopedClientIds, year);
+  const { scopedKpiRows, inv, metaTrend, goals, labsShareGoal, mirSourceLabel } = booked;
 
   const [partners, setPartners] = useState<LabsPartner[]>([]);
   useEffect(() => {
@@ -246,7 +131,6 @@ export default function ExecutiveSummarySection({
     ]
   );
 
-  const billupsBooked = useMemo(() => computeBillupsKpis(mirRows), [mirRows]);
   const billupsForecast = useMemo(
     () => computeBillupsKpis(billupsForecastRows),
     [billupsForecastRows]
@@ -259,164 +143,11 @@ export default function ExecutiveSummarySection({
     ? fcLabsTotal - comparisonData.labs.totalLabs
     : null;
 
-  const metaYoyPpt = inv.meta.metaShareOfSocial.yoyPpt;
-
   // -- Source of truth (MIR vs Forecaster) drives the KPI band ----------------
   const [source, setSource] = useState<"mir" | "forecaster">("mir");
 
-  const pillars = useMemo<ExecPillar[]>(() => {
-    const ratioTo = (actual: number | null, goal: number | null): number | null =>
-      actual != null && goal != null && goal !== 0 ? actual / goal : null;
-
-    const mirPillars: ExecPillar[] = [
-      {
-        title: "Media Labs",
-        subtitle: "Booked to date (MIR)",
-        metrics: [
-          {
-            icon: PieChart,
-            label: "Labs Share of Total Media",
-            value: pct(inv.labs.labsShareOfTotalMedia),
-            pctOfTarget: ratioTo(inv.labs.labsShareOfTotalMedia, labsShareGoal),
-            goalLabel: labsShareGoal != null ? `Goal ${pct(labsShareGoal)}` : undefined,
-          },
-          {
-            icon: DollarSign,
-            label: "Total LABS Spend",
-            value: money(bookedLabsSpend),
-            pctOfTarget: ratioTo(bookedLabsSpend, goals.labsSpend),
-            goalLabel:
-              goals.labsSpend != null ? `Goal ${moneyCompact(goals.labsSpend)}` : undefined,
-          },
-        ],
-      },
-      {
-        title: "Billups",
-        subtitle: "Booked to date (MIR)",
-        metrics: [
-          {
-            icon: PieChart,
-            label: "Billups Share of OOH",
-            value: pct(billupsBooked.ooh.eligibleShare),
-            pctOfTarget: ratioTo(billupsBooked.ooh.eligibleShare, goals.billupsShare),
-            goalLabel:
-              goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
-          },
-          {
-            icon: PieChart,
-            label: "Billups Share of PRINT",
-            value: pct(billupsBooked.print.eligibleShare),
-            pctOfTarget: ratioTo(billupsBooked.print.eligibleShare, goals.billupsShare),
-            goalLabel:
-              goals.billupsShare != null ? `Goal ${pct(goals.billupsShare)}` : undefined,
-          },
-          {
-            icon: AlertTriangle,
-            label: "Missed Opportunity",
-            value: money(billupsBooked.combined.missed),
-            // OOH + Print split of the missed $ (small caption). The two
-            // eligibleMissed values sum to combined.missed.
-            sub: `OOH ${moneyCompact(
-              billupsBooked.ooh.eligibleMissed
-            )} · Print ${moneyCompact(billupsBooked.print.eligibleMissed)}`,
-          },
-        ],
-      },
-      {
-        title: "Meta",
-        subtitle: "Booked to date (MIR)",
-        metrics: [
-          {
-            icon: DollarSign,
-            label: "Meta Spend 2026",
-            value: money(inv.meta.metaSpend2026),
-            pctOfTarget: ratioTo(inv.meta.metaSpend2026, inv.meta.targetMetaSpend2026),
-            status: ragStatus(inv.meta.metaSpend2026, inv.meta.targetMetaSpend2026, {
-              lowerIsBetter: true,
-            }),
-            goalLabel: `Target ${moneyCompact(inv.meta.targetMetaSpend2026)}`,
-          },
-          {
-            icon: PieChart,
-            label: "Meta Share of Social 2026",
-            value: pct(inv.meta.metaShareOfSocial.value),
-            status: ragStatus(
-              inv.meta.metaShareOfSocial.value,
-              inv.meta.targetMetaShareOfSocial,
-              { lowerIsBetter: true }
-            ),
-            sub: `Target ${pct(inv.meta.targetMetaShareOfSocial)}`,
-            yoy:
-              metaYoyPpt != null
-                ? {
-                    label: `${(metaYoyPpt * 100).toFixed(1)}pt YoY`,
-                    favorable: metaYoyPpt <= 0,
-                  }
-                : null,
-          },
-          {
-            icon: DollarSign,
-            label: "MIQ-Social Spend",
-            value: money(inv.meta.miqSocialSpend2026),
-            // % booked vs the MIQ-Social Labs deal target (Deal Targets page).
-            pctOfTarget: ratioTo(
-              inv.meta.miqSocialSpend2026,
-              miqSocialTarget
-            ),
-            goalLabel:
-              miqSocialTarget != null
-                ? `Target ${moneyCompact(miqSocialTarget)}`
-                : undefined,
-          },
-        ],
-      },
-      {
-        title: "Digital",
-        subtitle: "Booked to date (MIR)",
-        metrics: [
-          {
-            icon: PieChart,
-            label: "Digital Direct Share of Digital",
-            value: pct(digital.ddShare),
-            yoy:
-              digital.ddYoyPpt != null
-                ? {
-                    label: `${digital.ddYoyPpt >= 0 ? "+" : ""}${(
-                      digital.ddYoyPpt * 100
-                    ).toFixed(0)}pt`,
-                    favorable: digital.ddYoyPpt < 0,
-                  }
-                : null,
-          },
-          {
-            icon: DollarSign,
-            label: "Digital Direct $ Non-Deal",
-            value: money(digital.ddNonDeal),
-          },
-          {
-            icon: PieChart,
-            label: "Prog Share of Digital",
-            value: pct(digital.progShare),
-            yoy:
-              digital.progYoyPpt != null
-                ? {
-                    label: `${digital.progYoyPpt >= 0 ? "+" : ""}${(
-                      digital.progYoyPpt * 100
-                    ).toFixed(0)}pt`,
-                    favorable: digital.progYoyPpt > 0,
-                  }
-                : null,
-          },
-          {
-            icon: DollarSign,
-            label: "Prog $ Non-Deal",
-            value: money(digital.progNonDeal),
-          },
-        ],
-      },
-    ];
-
-    const forecasterPillars: ExecPillar[] = [
+  const forecasterPillars = useMemo<ExecPillar[]>(() => {
+    return [
       {
         title: "Media Labs",
         subtitle: "Forecaster",
@@ -483,33 +214,26 @@ export default function ExecutiveSummarySection({
       },
     ];
 
-    return source === "mir" ? mirPillars : forecasterPillars;
   }, [
-    source,
     inv,
-    bookedLabsSpend,
-    billupsBooked,
     billupsForecast,
     fcLabsShare,
     fcLabsTotal,
     fcLabsDelta,
     goals,
     labsShareGoal,
-    metaYoyPpt,
-    digital,
-    miqSocialTarget,
   ]);
+  const pillars = source === "mir" ? booked.pillars : forecasterPillars;
 
   // -- Period / "as of" label (source-aware) ----------------------------------
-  const mirSourceLabel = `Booked to date (MIR) · as of ${lastSync.labelShort ?? MIR_AS_OF_LABEL}`;
   const periodLabel =
     source === "mir"
       ? `${year} · ${mirSourceLabel}`
       : `${year} · Forecaster (live)`;
 
   // -- Loading / error --------------------------------------------------------
-  const busy = kpi.loading || mir.loading || forecastData.loading;
-  const err = kpi.error || mir.error || forecastData.error;
+  const busy = booked.loading || forecastData.loading;
+  const err = booked.error || forecastData.error;
 
   if (busy) {
     return (
