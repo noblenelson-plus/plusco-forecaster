@@ -48,7 +48,7 @@ export const FORECASTER_TABS: {
   icon: LucideIcon;
   roles: readonly UserRole[];
 }[] = [
-  { id: "forecaster", label: "Forecaster Dashboard", icon: LayoutDashboard, roles: DASHBOARD_ROLES },
+  { id: "forecaster", label: "Forecaster", icon: LayoutDashboard, roles: DASHBOARD_ROLES },
   { id: "labs-pacing", label: "Labs Pacing", icon: Activity, roles: DASHBOARD_ROLES },
   // The high-level KPI dashboard and MediaBox Adoption: Execs (and Admins).
   { id: "exec-kpis", label: "Exec KPI Dashboard", icon: Gauge, roles: EXEC_AND_ADMIN },

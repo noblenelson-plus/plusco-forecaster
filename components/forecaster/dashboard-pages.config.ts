@@ -42,10 +42,10 @@ export const FORECASTER_SUBTABS = [
 export type ForecasterSubTab = (typeof FORECASTER_SUBTABS)[number]["id"];
 
 export const EXEC_KPIS_SUBTABS = [
-  { id: "summary", label: "Executive Summary" },
+  { id: "summary", label: "Media & Labs KPIs" },
   { id: "investment", label: "Investment Strategy KPIs" },
   { id: "meta", label: "Meta" },
-  { id: "labs-pacing", label: "Labs Pacing" },
+  { id: "labs-pacing", label: "Deal Pacing" },
   { id: "billups", label: "Billups" },
   { id: "local-media", label: "Local Media" },
 ] as const satisfies readonly SubTabDef[];
