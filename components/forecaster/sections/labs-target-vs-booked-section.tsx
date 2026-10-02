@@ -197,11 +197,14 @@ export default function LabsTargetVsBookedSection({
           value={pacingMoney(tiles.totalMedia)}
           sub={`All channels except N/A · as of ${asOf}`}
         />
+        {/* Every LABS / LABS - BRP deal in MIR, incl. partners outside the
+            Forecaster's Labs list — NOT the official Labs share (that is the
+            "Forecaster only" tile, which matches the Exec KPI scorecards). */}
         <StatCard
           icon={PieChart}
-          label="Labs Share of Media"
+          label="All LABS-Tagged Deals ÷ Media"
           value={pctTile(tiles.labsShareAll)}
-          sub="All partners booked ÷ total media"
+          sub="Incl. partners outside the Labs list (e.g. Sirius XM, iHeart) — not the official Labs share"
         />
         <StatCard
           icon={Percent}
