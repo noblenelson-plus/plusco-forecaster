@@ -528,7 +528,7 @@ export default function ExecutiveSummarySection({
 
   // -- Render --------------------------------------------------------------
   return (
-    <div data-scroll-section data-scroll-label="Executive Summary" className="space-y-6">
+    <div data-scroll-section data-scroll-label="Media & Labs KPIs" className="space-y-6">
       {/* Header — one tight row: title + as-of date (left), RAG legend (center),
           source toggle (right), so the scorecards are the first thing seen. */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
@@ -536,7 +536,7 @@ export default function ExecutiveSummarySection({
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Plusco Exec KPIs
           </p>
-          <h2 className="text-xl font-bold text-foreground">Executive Summary</h2>
+          <h2 className="text-xl font-bold text-foreground">Media &amp; Labs KPIs</h2>
           <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
             <Calendar size={12} className="flex-shrink-0" />
             {periodLabel}

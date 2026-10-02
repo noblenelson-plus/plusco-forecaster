@@ -523,7 +523,7 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto w-full max-w-[1700px] flex-1 p-6 md:p-8 lg:pr-16">
-        {/* Forecaster Dashboard sub-tabs. The other grouped tabs render their
+        {/* Forecaster sub-tabs. The other grouped tabs render their
             own bar inside their container. */}
         {topTab === "forecaster" && (
           <div className="mb-6">
@@ -591,7 +591,7 @@ export default function DashboardPage() {
             {viewCurrency === "USD"
               ? "No USD clients are in scope for this selection."
               : topTab === "forecaster"
-                ? "The Forecaster Dashboard shows the clients assigned to you, and none are assigned yet."
+                ? "The Forecaster tab shows the clients assigned to you, and none are assigned yet."
                 : "No clients are available for your account yet."}
           </div>
         ) : forecastData.error ? (
@@ -637,11 +637,7 @@ export default function DashboardPage() {
             focusLoading={focusLoading}
             onFocusChange={setFocusedClientId}
             clientNameById={clientNameById}
-            currencyByClient={currencyByClient}
-            usdToCad={usdToCad}
-            selMonths={selMonths}
           />
-        
         ) : tab === "revenue" ? (
           <RevenueTab
             data={forecastData}
