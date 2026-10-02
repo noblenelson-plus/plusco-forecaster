@@ -8,6 +8,11 @@
 --   iHeart Media, Sirius XM, Media Pulse). 2025 uses the same 2026 list so the
 --   YoY comparison is like-for-like. Adding a partner in Admin -> LABS flows in
 --   at the next rebuild. Everything else is unchanged.
+-- CHANGE (Labs partner breakdown, 2026-10-02): adds labs_by_partner_2026 — a
+--   JSON string [{"p":"BILLUPS","v":34169435.12}, ...] of each client's 2026
+--   Labs spend per configured partner, computed with exactly the labs_2026
+--   rule (so the parts sum to labs_spend_2026). Additive column; the app sums
+--   it across the filtered clients for the Total LABS Spend breakdown.
 -- CHANGE (AIM split): the ONLY edit vs the prior version is adding 'AIM-PROG' to
 --   the two booked prog-labs IN-lists (prog_labs_2026 / prog_labs_2025) so AIM's
 --   PROGRAMMATIC booked spend counts in prog-labs. AIM-Social/AIM-SEM are NOT
@@ -150,6 +155,23 @@ client_spend AS (
   FROM `plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE`
   WHERE UPPER(PLUSCO_MEDIA_CHANNEL) != 'N/A'
   GROUP BY PLUSCO_CLIENT_ID
+),
+labs_by_partner AS (
+  -- Per-client 2026 Labs spend by configured partner — same filters as labs_2026.
+  SELECT
+    PLUSCO_CLIENT_ID,
+    TO_JSON_STRING(ARRAY_AGG(STRUCT(partner AS p, ROUND(amount, 2) AS v) ORDER BY amount DESC)) AS labs_by_partner_2026
+  FROM (
+    SELECT PLUSCO_CLIENT_ID, UPPER(PLUSCO_MEDIA_PARTNER) AS partner, SUM(NET_ORDERED_CAD) AS amount
+    FROM `plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE`
+    WHERE PLUSCO_YEAR = '2026'
+      AND UPPER(PLUSCO_MEDIA_CHANNEL) != 'N/A'
+      AND UPPER(PLUSCO_DEALS_Type) IN ('LABS', 'LABS - BRP')
+      AND UPPER(PLUSCO_MEDIA_PARTNER) != 'MAGNITE'
+      AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
+    GROUP BY 1, 2
+  )
+  GROUP BY 1
 ),
 billups_eligibility AS (
   SELECT
@@ -334,6 +356,7 @@ SELECT
   be.scenario_meta_mapping,
   SAFE_DIVIDE(c.labs_2026, c.total_2026)               AS labs_share_total_media_2026,
   c.labs_2026                                          AS labs_spend_2026,
+  lbp.labs_by_partner_2026                             AS labs_by_partner_2026,
   c.total_2026                                         AS total_spend_2026,
   lp.labs_target_rfq2_2026,
   lp.labs_booked_mir_2026,
@@ -506,4 +529,5 @@ JOIN target_cte t ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = t.client_id
 LEFT JOIN target_v2_annual tv2 ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = tv2.client_id
 LEFT JOIN target_annual ta ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = ta.client_id
 LEFT JOIN labs_partner_annual lp ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = lp.client_id
+LEFT JOIN labs_by_partner lbp ON c.PLUSCO_CLIENT_ID = lbp.PLUSCO_CLIENT_ID
 ORDER BY AGENCY, CLIENT_NAME;

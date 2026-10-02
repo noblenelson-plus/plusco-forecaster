@@ -39,6 +39,12 @@ export interface KpiByClientRow {
 
     // Achieve Labs Targets
   labs_spend_2026: number;
+  /**
+   * JSON string `[{"p":"BILLUPS","v":34169435.12}, …]` — the client's 2026 Labs
+   * spend per configured partner; the parts sum to labs_spend_2026. Absent on
+   * docs synced before the column existed.
+   */
+  labs_by_partner_2026?: string | null;
   total_spend_2026: number;
   labs_target_rfq2_2026: number;
   labs_booked_mir_2026: number;

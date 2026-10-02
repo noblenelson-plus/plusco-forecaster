@@ -8,6 +8,10 @@
  * scorecards (Media Labs, Billups, Meta, Digital) and the Exec KPIs by Client
  * table. Numbers come from useBookedExecKpis, so the two pages always agree.
  *
+ * Unlike the Exec page, the portfolio-wide dollar goals (Total LABS Spend,
+ * MIQ-Social Spend) are hidden here: they aren't tied to clients, so they
+ * mislead once the client filter narrows the scope. Share goals stay.
+ *
  * Scope: the dashboard's global client filter (scopedClientIds). The MIR rows
  * are agency-partitioned by the security rules, so each user sees their own
  * agencies only — this page is open to every role.
@@ -25,7 +29,7 @@ export default function InvestmentKpisBookedSection({
   scopedClientIds: string[];
   year: number;
 }) {
-  const booked = useBookedExecKpis(scopedClientIds, year);
+  const booked = useBookedExecKpis(scopedClientIds, year, { dollarTargets: false });
 
   return (
     <div data-scroll-section data-scroll-label="Investment KPIs" className="space-y-6">
