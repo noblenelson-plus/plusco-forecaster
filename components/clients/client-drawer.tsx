@@ -676,27 +676,32 @@ export default function ClientDrawer({
             )}
           </Section>
 
-          {/* Section: Forecasting type */}
+          {/* Section: Forecasting type — everyone sees it, only admins change it
+              (the rules let non-admins write commissionsConfig only). */}
           <Section label="Forecasting type">
             <Toggle
               label="Media Spend"
               checked={form.Forecasting_Type.mediaSpend}
               onChange={() => toggleForecasting("mediaSpend")}
+              disabled={!isAdmin}
             />
             <Toggle
               label="Labs"
               checked={form.Forecasting_Type.labs}
               onChange={() => toggleForecasting("labs")}
+              disabled={!isAdmin}
             />
             <Toggle
               label="Revenues"
               checked={form.Forecasting_Type.revenues}
               onChange={() => toggleForecasting("revenues")}
+              disabled={!isAdmin}
             />
+            {!isAdmin && <ReadOnlyNote />}
           </Section>
 
-          {/* Section: Labs eligibility (admin, edit only) */}
-          {isAdmin && isEditing && (
+          {/* Section: Labs eligibility (edit only) — read-only for non-admins */}
+          {isEditing && (
             <Section label="Labs eligibility">
               {labsPartners.length === 0 ? (
                 <p className="text-xs text-gray-400">No labs partners configured.</p>
@@ -715,6 +720,7 @@ export default function ClientDrawer({
                               p.partnerId
                             )}
                             onChange={() => toggleEligibility(p.partnerId)}
+                            disabled={!isAdmin}
                           />
                         ))}
                       </div>
@@ -722,9 +728,13 @@ export default function ClientDrawer({
                   ))}
                 </div>
               )}
-              <p className="text-xs text-gray-400">
-                Clients are eligible by default. Toggle off to exclude.
-              </p>
+              {isAdmin ? (
+                <p className="text-xs text-gray-400">
+                  Clients are eligible by default. Toggle off to exclude.
+                </p>
+              ) : (
+                <ReadOnlyNote />
+              )}
             </Section>
           )}
 
@@ -890,21 +900,32 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+function ReadOnlyNote() {
+  return <p className="text-xs text-gray-400">Only admins can change these settings.</p>;
+}
+
 function Toggle({
   label,
   description,
   checked,
   onChange,
   icon,
+  disabled = false,
 }: {
   label: string;
   description?: string;
   checked: boolean;
   onChange: () => void;
   icon?: React.ReactNode;
+  /** Read-only display: the switch shows its state but can't be flipped. */
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 cursor-pointer py-1">
+    <label
+      className={`flex items-center justify-between gap-3 py-1 ${
+        disabled ? "cursor-default" : "cursor-pointer"
+      }`}
+    >
       <div className="min-w-0">
         <span className="flex items-center gap-2 text-sm text-gray-700">
           {icon}
@@ -916,10 +937,11 @@ function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
-        onClick={onChange}
+        aria-disabled={disabled}
+        onClick={disabled ? undefined : onChange}
         className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
           checked ? "bg-yellow-400" : "bg-gray-200"
-        }`}
+        } ${disabled ? "cursor-default" : ""}`}
       >
         <span
           className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${

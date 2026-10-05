@@ -17,6 +17,7 @@
 
 import type { TableColumn } from "./table-column.types";
 import {
+  applyDataValidations,
   connect,
   createSpreadsheet,
   isConnected,
@@ -125,6 +126,7 @@ export async function exportToNewSheet({
   sheetTitle,
   matrix,
   onProgress,
+  dropdowns,
 }: {
   /** Spreadsheet file name, e.g. "Client detail — 2026 RFQ2 vs 2025 Final". */
   title: string;
@@ -133,6 +135,11 @@ export async function exportToNewSheet({
   matrix: CellValue[][];
   /** Upload progress: (requests written, total requests). */
   onProgress?: (done: number, total: number) => void;
+  /**
+   * Header label → allowed values, added as in-sheet dropdowns on that
+   * column (best effort: a failure here never fails the export).
+   */
+  dropdowns?: Record<string, string[]>;
 }): Promise<string> {
   if (!isGoogleConfigured()) {
     throw new SheetsUnavailableError(
@@ -149,6 +156,25 @@ export async function exportToNewSheet({
     { title: sheetTitle, rowCount: rows, columnCount: cols },
   ]);
   await writeValues(spreadsheet.spreadsheetId, sheetTitle, matrix, onProgress);
+
+  const sheetId = spreadsheet.sheetIdsByTitle[sheetTitle];
+  if (dropdowns && sheetId !== undefined) {
+    const header = (matrix[0] ?? []).map(String);
+    try {
+      await applyDataValidations(
+        spreadsheet.spreadsheetId,
+        Object.entries(dropdowns).map(([label, values]) => ({
+          sheetId,
+          columnIndex: header.indexOf(label),
+          values,
+          // Cover the data plus room for rows collaborators add.
+          rowCount: rows + 500,
+        }))
+      );
+    } catch (err) {
+      console.warn("Sheet dropdowns failed (data was exported):", err);
+    }
+  }
   return spreadsheet.url;
 }
 

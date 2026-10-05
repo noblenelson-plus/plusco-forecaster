@@ -432,6 +432,24 @@ export async function getSheetTitles(spreadsheetId: string): Promise<string[]> {
     .filter((t): t is string => !!t);
 }
 
+/**
+ * The spreadsheet's file title and its tabs (numeric sheetId + title), so a
+ * pasted link's `#gid=` can be resolved to the tab it points at.
+ */
+export async function getSpreadsheetInfo(
+  spreadsheetId: string
+): Promise<{ title: string; tabs: { sheetId: number; title: string }[] }> {
+  const url = `${SHEETS_API}/${spreadsheetId}?fields=properties.title,sheets.properties(sheetId,title)`;
+  const res = await api<{
+    properties?: { title?: string };
+    sheets?: { properties?: { sheetId?: number; title?: string } }[];
+  }>(url);
+  const tabs = (res.sheets ?? [])
+    .map((s) => s.properties ?? {})
+    .filter((p): p is { sheetId: number; title: string } => p.sheetId != null && !!p.title);
+  return { title: res.properties?.title ?? "", tabs };
+}
+
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
 /** Wraps a sheet title in single quotes (doubling internal quotes) for A1 ranges. */

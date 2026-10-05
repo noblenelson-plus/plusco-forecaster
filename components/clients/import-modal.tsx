@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, AlertTriangle, CheckCircle2, Loader2, FileText } from "lucide-react";
+import { X, AlertTriangle, CheckCircle2, Loader2, FileText, Info } from "lucide-react";
 import { CSVValidationResult, commitCSVImport } from "../../lib/services/client-service";
 import { fetchAccessibleClients } from "../../lib/services/assignment-service";
 import { syncTeamAccess } from "../../lib/services/team-access-service";
@@ -29,6 +29,7 @@ export default function ImportModal({
   if (!open || !validation) return null;
 
   const hasErrors = validation.errors.length > 0;
+  const hasWarnings = validation.warnings.length > 0;
   const hasValidRows = validation.validRows.length > 0;
 
   async function handleConfirm() {
@@ -73,7 +74,7 @@ export default function ImportModal({
     <>
       {/* Overlay */}
       <div
-        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+        className="fixed inset-0 z-50 bg-black/40"
         onClick={onClose}
       />
 
@@ -124,12 +125,14 @@ export default function ImportModal({
             )}
           </div>
 
-          {/* Error list */}
-          {hasErrors && (
+          {/* Error + warning lists */}
+          {(hasErrors || hasWarnings) && (
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                Errors — these rows will be skipped
-              </p>
+              {hasErrors && (
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                  Errors — these rows will be skipped
+                </p>
+              )}
               {validation.errors.map((err, i) => (
                 <div
                   key={i}
@@ -142,11 +145,25 @@ export default function ImportModal({
                   <p className="text-xs text-white leading-relaxed">{err}</p>
                 </div>
               ))}
+              {hasWarnings && (
+                <p className={`text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 ${hasErrors ? "pt-3" : ""}`}>
+                  Heads-up — these rows still import
+                </p>
+              )}
+              {validation.warnings.map((w, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-2.5 bg-yellow-400 border border-yellow-400 rounded-lg px-3 py-2.5"
+                >
+                  <Info size={13} className="text-gray-900 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-gray-900 leading-relaxed">{w}</p>
+                </div>
+              ))}
             </div>
           )}
 
           {/* No errors — all good message */}
-          {!hasErrors && (
+          {!hasErrors && !hasWarnings && (
             <div className="px-6 py-6 flex flex-col items-center text-center">
               <CheckCircle2 size={32} className="text-emerald-500 mb-3" />
               <p className="text-sm font-medium text-gray-900 mb-1">
