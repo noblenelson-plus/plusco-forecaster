@@ -48,6 +48,7 @@ import {
   ratioTo,
 } from "./use-booked-exec-kpis";
 import MetaShareTrendStrip from "./meta-share-trend-strip";
+import BillupsEligibilityCard from "./billups-eligibility-card";
 import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
 
@@ -80,7 +81,7 @@ export default function ExecutiveSummarySection({
     return () => unsubscribe();
   }, []);
 
-  const eligibilityById = useMemo(() => {
+  const { eligibilityById, missingBillupsPartners } = useMemo(() => {
     const yearPartners = getLabsPartnersForYear(partners, ELIGIBILITY_YEAR);
     const find = (name: string): LabsPartner | null =>
       yearPartners.find(
@@ -97,8 +98,17 @@ export default function ExecutiveSummarySection({
           : true,
       });
     }
-    return map;
+    const missing: ("ooh" | "print")[] = [];
+    if (!oohPartner) missing.push("ooh");
+    if (!printPartner) missing.push("print");
+    return { eligibilityById: map, missingBillupsPartners: missing };
   }, [partners, clients]);
+
+  // The dashboard-scoped clients, for the Billups eligibility split.
+  const scopedClients = useMemo(() => {
+    const scope = new Set(scopedClientIds);
+    return clients.filter((c) => scope.has(c.cl_id));
+  }, [clients, scopedClientIds]);
 
   const gmPodById = useMemo(
     () => new Map(clients.map((c) => [c.cl_id, c.GM_Pod ?? ""])),
@@ -295,9 +305,18 @@ export default function ExecutiveSummarySection({
       {/* Total Plusco KPI band (drives off the selected source) */}
             <ExecSummaryKpiBand pillars={pillars} />
 
-      {/* Meta Share Trend — client-status snapshot, below the scorecards */}
-      <div className="rounded-lg border border-border bg-card p-4">
-        <MetaShareTrendStrip data={metaTrend} />
+      {/* Client-status snapshots, below the scorecards: Billups eligibility
+          (under the Billups pillar's story) beside the Meta Share Trend. */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <BillupsEligibilityCard
+          clients={scopedClients}
+          eligibilityById={eligibilityById}
+          missingPartners={missingBillupsPartners}
+          year={ELIGIBILITY_YEAR}
+        />
+        <div className="rounded-lg border border-border bg-card p-4">
+          <MetaShareTrendStrip data={metaTrend} />
+        </div>
       </div>
 
       {/* By GM */}
