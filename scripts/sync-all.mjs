@@ -16,6 +16,9 @@
  *   in order, and noticing if one quietly failed is exactly where a half-updated
  *   dashboard comes from. This makes the whole push one command, all-or-nothing.
  *
+ * QA: after the stamp it also writes dashboard_meta/qa_fingerprint (qa-fingerprint.mjs,
+ * non-fatal) — the BigQuery side of the QA page's Data Health checks.
+ *
  * WHAT IT DOES NOT DO
  *   It does not run your SQL rebuilds. Do those first (load the sheets, rebuild
  *   RAW_COMBINED with the new month tag, then rebuild the tables in dependency
@@ -278,6 +281,18 @@ async function main() {
   }
 
   printSummary(results);
+
+  // QA fingerprint for the QA page's Data Health checks. Non-fatal: the data
+  // and its stamp are already current; a failure here only means the QA page
+  // compares against the previous fingerprint.
+  try {
+    await runSync("qa-fingerprint.mjs");
+  } catch (err) {
+    console.warn(
+      `\n⚠  QA fingerprint failed (${err?.message || err}). Data is synced; run  node scripts/qa-fingerprint.mjs  to refresh the QA checks.`
+    );
+  }
+
   const secs = ((Date.now() - started) / 1000).toFixed(1);
   console.log(`\nAll ${SYNCS.length} collections synced and stamped in ${secs}s.`);
   process.exit(0);
