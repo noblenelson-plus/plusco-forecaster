@@ -52,6 +52,8 @@ const STRATEGY_PAGE =
   "Exec KPI Dashboard → Investment Strategy KPIs; Media Investments Report → KPIs Media and Labs";
 const MIR_INVEST = "Media Investments Report → Media Investments";
 const LABS_PACING = "Labs Pacing tab; Exec KPI Dashboard → Deal Pacing";
+/** GM-level Labs sections — removed from the all-roles Labs Pacing tab. */
+const DEAL_PACING = "Exec KPI Dashboard → Deal Pacing";
 const BY_GM = "Exec KPI Dashboard → Media & Labs KPIs → Exec KPIs by GM";
 const BY_CLIENT =
   "Exec KPI Dashboard → Media & Labs KPIs → KPIs by Client; Media Investments Report → Media Investments → Investment KPIs → KPIs by Client";
@@ -578,7 +580,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
     metrics: [
       {
         name: "PLUSCO Deals Target",
-        where: LABS_PACING + " → Labs — Target vs Booked by Partner",
+        where: DEAL_PACING + " → Labs — Target vs Booked by Partner",
         formula: "Sum of the partner's 'media spend target' rows for the selected year",
         details:
           "Only target rows whose deal type is in the Deal Type filter (default Labs + Labs - BRP). Billups-OOH + Billups-Print roll up to Billups, MIQ-Prog + MIQ-Social to MIQ, AIM-* to AIM.",
@@ -587,7 +589,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "RFQx Labs Forecast",
-        where: LABS_PACING + " → Labs — Target vs Booked by Partner",
+        where: DEAL_PACING + " → Labs — Target vs Booked by Partner",
         formula: "Sum of the Forecaster Labs forecast per partner, full year, selected Year + RFQ",
         details:
           "Clients in the filter, CAD-converted with the Admin rate. Joined to the target rows by normalized partner name (after the roll-up). Blank ('—') for partners with no forecast.",
@@ -597,7 +599,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "Booked to Date",
-        where: LABS_PACING + " → Labs — Target vs Booked by Partner",
+        where: DEAL_PACING + " → Labs — Target vs Booked by Partner",
         formula: "Sum of NET_ORDERED_CAD per partner for the selected year, all months",
         details:
           "MIR rows with deal type LABS or 'LABS - BRP', channel ≠ N/A, partner ≠ MAGNITE; joined to the target rows by normalized partner name. No configured-partner-list filter.",
@@ -608,7 +610,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "% of PLUSCO Target",
-        where: LABS_PACING + " → Labs — Target vs Booked by Partner",
+        where: DEAL_PACING + " → Labs — Target vs Booked by Partner",
         formula: "Booked to Date ÷ PLUSCO Deals Target",
         details: "Grand total = total booked ÷ total target over the rows shown.",
         source: "labs-target-vs-booked-data.ts; labs-target-vs-booked-section.tsx (recomputeTotals)",
@@ -616,7 +618,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "% of RFQ Forecast",
-        where: LABS_PACING + " → Labs — Target vs Booked by Partner",
+        where: DEAL_PACING + " → Labs — Target vs Booked by Partner",
         formula: "Booked to Date ÷ RFQx Labs Forecast",
         details: "Grand total uses only the booked $ of rows that have a forecast, ÷ total forecast.",
         source: "labs-target-vs-booked-data.ts; labs-target-vs-booked-section.tsx",
@@ -624,7 +626,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "Total Media (MIR)",
-        where: LABS_PACING + " → Labs — Target vs Booked by Partner (tile)",
+        where: DEAL_PACING + " → Labs — Target vs Booked by Partner (tile)",
         formula: "Sum of NET_ORDERED_CAD of every MIR row for the selected year",
         details: "All channels except blank / 'N/A' / '#N/A'; all months.",
         source: "use-mediaocean-investment-mix.ts (computeTotalMediaInvestment) via use-labs-target-vs-booked.ts",
@@ -633,7 +635,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "All LABS-Tagged Deals ÷ Media",
-        where: LABS_PACING + " → Labs — Target vs Booked by Partner (tile)",
+        where: DEAL_PACING + " → Labs — Target vs Booked by Partner (tile)",
         formula: "Booked to Date of every target-roster partner in the selected deal types ÷ Total Media (MIR)",
         details: "Includes partners outside the Forecaster's Labs list (e.g. Sirius XM, iHeart) when they have a Labs Targets row.",
         source: "labs-target-vs-booked-data.ts (tiles.labsShareAll)",
@@ -643,7 +645,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "Labs Share of Media (Forecaster only)",
-        where: LABS_PACING + " → Labs — Target vs Booked by Partner (tile)",
+        where: DEAL_PACING + " → Labs — Target vs Booked by Partner (tile)",
         formula: "Booked to Date of partners flagged 'Included in RFQ' ÷ Total Media (MIR)",
         details: "A rolled-up partner counts only if every one of its target rows is flagged as in the Labs forecaster.",
         source: "labs-target-vs-booked-data.ts (tiles.labsShareForecaster)",
@@ -652,7 +654,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "Forecast RFQx (Target) — Labs Pacing By Partner",
-        where: LABS_PACING + " → Labs Pacing → By Partner / By Client / By GM Pod",
+        where: LABS_PACING + " → Labs Pacing → By Partner / By Client (By GM Pod: Deal Pacing only)",
         formula: "Sum of the Forecaster Labs forecast per partner for the selected Year + RFQ and the section's months",
         details:
           "Clients in the filter, CAD-converted. The section has its own Months filter (default January → two months before today) and Partner filter. AIM-Prog / AIM-Social / AIM-SEM roll into one 'AIM' line.",
@@ -661,7 +663,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "Booked (MIR) — Labs Pacing",
-        where: LABS_PACING + " → Labs Pacing → By Partner / By Client / By GM Pod",
+        where: LABS_PACING + " → Labs Pacing → By Partner / By Client (By GM Pod: Deal Pacing only)",
         formula: "Sum of the Labs MediaOcean actuals per partner for the same months",
         details:
           "Read from the Forecaster's annual Labs actuals (the 'MediaOcean' rows admins load per client and year), not from the synced KPI table.",
@@ -688,7 +690,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       },
       {
         name: "By GM Pod — % of Target Booked / Summary",
-        where: LABS_PACING + " → Labs Pacing → By GM Pod",
+        where: DEAL_PACING + " → Labs Pacing → By GM Pod",
         formula: "Per pod (and partner × pod): Booked ÷ Target × 100; toggles show Booked $, Target $, Gap $",
         details: "Pod = the client's GM Pod in the Forecaster ('—' if blank). Heat: ≥ 100% green, ≥ 80% amber, below red.",
         source: "labs-pacing-data.ts (computeGmPodMatrix); labs-pod-matrix.tsx",

@@ -68,6 +68,21 @@ function monthOf(r: SocialPartnerRow): number | null {
   return null;
 }
 
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Header note for the months shown: "Full year (Jan–Dec)" when no month filter
+ * applies — a whole-year or cross-year period — else the months (contiguous,
+ * from monthsWithinOneYear), applied to both 2025 and 2026.
+ */
+function describeSocialMonths(selMonths: number[]): string {
+  if (selMonths.length === 0) return "Full year (Jan–Dec), not period-filtered";
+  const first = MONTH_ABBR[selMonths[0] - 1];
+  const last = MONTH_ABBR[selMonths[selMonths.length - 1] - 1];
+  const range = first === last ? first : `${first}–${last}`;
+  return `${range} of 2025 vs 2026`;
+}
+
 // Two-tone palette for the paired share bars (2025 / 2026).
 const COLOR_2025 = "#3b82f6"; // blue
 const COLOR_2026 = "#f59e0b"; // amber
@@ -289,6 +304,11 @@ export default function MediaoceanSocialSection({
       <div className="flex items-center gap-2">
         <Share2 size={18} className="text-primary" />
         <h2 className="text-lg font-semibold text-foreground">Social Media</h2>
+        {/* The period picker only narrows this section when it sits inside one
+            year (see monthsWithinOneYear); otherwise the full years show. */}
+        <span className="text-xs font-medium text-muted-foreground">
+          · {describeSocialMonths(selMonths)}
+        </span>
         <span className="ml-auto text-xs text-muted-foreground">
           {money(summary.total2026)} social spend (2026)
         </span>
