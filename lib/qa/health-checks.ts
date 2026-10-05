@@ -6,7 +6,11 @@
  * fingerprint written at sync time (scripts/qa-fingerprint.mjs →
  * dashboard_meta/qa_fingerprint), plus sanity rules on the data itself.
  *
- * Each check returns a plain-English result an admin can act on. Groups:
+ * Each failing check carries machine-readable `fixes`; buildActionPlan()
+ * merges them into one ordered to-do list (fix the source → rebuild tables →
+ * sync → re-run the checks), so an admin never has to work out the order.
+ *
+ * Groups:
  *   - Freshness: is every table built from the latest MIR (NATIVE)?
  *   - BigQuery parity: does the app hold exactly what BigQuery has?
  *   - Data sanity: values the dashboard relies on (deal tags, channel names,
@@ -15,7 +19,20 @@
  *     reason they differ is stated).
  */
 
+/**
+ * pass  — matches / looks right; nothing to do.
+ * warn  — differs for a known, explained reason; no action unless that changed.
+ * fail  — out of date or wrong; follow the action plan.
+ * info  — context only, never a problem.
+ */
 export type CheckStatus = "pass" | "warn" | "fail" | "info";
+
+/** One concrete step that resolves a failing check. */
+export type Fix =
+  | { kind: "source"; what: string }
+  | { kind: "rebuild"; table: string }
+  | { kind: "sync"; script: string }
+  | { kind: "fingerprint" };
 
 export interface CheckResult {
   id: string;
@@ -24,8 +41,10 @@ export interface CheckResult {
   status: CheckStatus;
   /** One or two sentences: what was compared and what was found. */
   detail: string;
-  /** What to do when it isn't a pass. */
-  action?: string;
+  /** Short note shown under the detail (e.g. why a known difference is expected). */
+  note?: string;
+  /** Steps that resolve it (fail only). */
+  fixes?: Fix[];
 }
 
 /** dashboard_meta/qa_fingerprint, as written by scripts/qa-fingerprint.mjs. */
@@ -72,15 +91,29 @@ export interface HealthInput {
   now?: Date;
 }
 
-/** Tables built from NATIVE that the dashboard depends on. */
-export const DERIVED_TABLES = [
-  "KPI_BY_CLIENT_2025_vs_2026",
-  "MEDIAOCEAN_INVESTMENT_MIX",
-  "SOCIAL_PARTNER_MIX_2025_vs_2026",
-  "CHANNEL_MIX_2025_vs_2026",
-  "META_SOCIAL_OUTPUT_2025_vs_2026",
-];
 const NATIVE = "PCC_Dashboard_NATIVE";
+const KPI = "KPI_BY_CLIENT_2025_vs_2026";
+const MIX = "MEDIAOCEAN_INVESTMENT_MIX";
+const SOCIAL = "SOCIAL_PARTNER_MIX_2025_vs_2026";
+const CHANNEL = "CHANNEL_MIX_2025_vs_2026";
+const META = "META_SOCIAL_OUTPUT_2025_vs_2026";
+
+/** Tables built from NATIVE that the dashboard depends on, in rebuild order. */
+export const DERIVED_TABLES = [KPI, MIX, SOCIAL, CHANNEL, META];
+
+/** Where each BigQuery table's build SQL lives (bq/README.md). */
+export const TABLE_SQL: Record<string, string> = {
+  [KPI]: "bq/KPI_BY_CLIENT_2025_vs_2026.sql",
+  [MIX]: "bq/MEDIAOCEAN_INVESTMENT_MIX.sql",
+  [SOCIAL]: "bq/SOCIAL_PARTNER_MIX_2025_vs_2026.sql",
+  [CHANNEL]: "bq/CHANNEL_MIX_2025_vs_2026.sql",
+  [META]: "its saved query in BigQuery (not in bq/ yet)",
+};
+
+const SYNC_KPI = "sync-kpi-by-client.mjs";
+const SYNC_MIX = "sync-mediaocean-investment-mix.mjs";
+const SYNC_SOCIAL = "sync-social-partner-mix.mjs";
+const SYNC_META = "sync-meta-social-output.mjs";
 
 const num = (v: unknown): number => {
   const n = typeof v === "number" ? v : Number(v);
@@ -103,25 +136,22 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
     out.push({
       id: "fp-missing",
       group: "Freshness",
-      title: "BigQuery fingerprint",
+      title: "BigQuery snapshot",
       status: "fail",
-      detail: "No BigQuery fingerprint found, so the app can't be compared with BigQuery.",
-      action: "Run  node scripts/sync-all.mjs  (or  node scripts/qa-fingerprint.mjs).",
+      detail: "No BigQuery snapshot found, so the app can't be compared with BigQuery.",
+      fixes: [{ kind: "fingerprint" }],
     });
   } else {
-    const ageDays = (now.getTime() - new Date(fp.generatedAt).getTime()) / 86_400_000;
+    const ageDays = Math.floor((now.getTime() - new Date(fp.generatedAt).getTime()) / 86_400_000);
+    const old = ageDays > 35;
     out.push({
       id: "fp-age",
       group: "Freshness",
-      title: "BigQuery fingerprint",
-      status: ageDays > 35 ? "warn" : "pass",
-      detail: `BigQuery was last checked on ${day(fp.generatedAt)} (${Math.floor(ageDays)} day${
-        Math.floor(ageDays) === 1 ? "" : "s"
-      } ago). The checks below compare the app with that snapshot.`,
-      action:
-        ageDays > 35
-          ? "Over a month old — run the monthly rebuild + sync-all to refresh it."
-          : undefined,
+      title: "BigQuery snapshot",
+      status: old ? "fail" : "pass",
+      detail: `Taken on ${day(fp.generatedAt)} (${ageDays} day${ageDays === 1 ? "" : "s"} ago). Every check below compares the app with it.`,
+      note: old ? "Over a month old — the monthly rebuild + sync probably hasn't run." : undefined,
+      fixes: old ? [{ kind: "fingerprint" }] : undefined,
     });
 
     const native = fp.tables[NATIVE];
@@ -131,7 +161,8 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
         group: "Freshness",
         title: "MIR source table (NATIVE)",
         status: "fail",
-        detail: "PCC_Dashboard_NATIVE wasn't found in the fingerprint.",
+        detail: `${NATIVE} wasn't found in BigQuery.`,
+        fixes: [{ kind: "source", what: `Rebuild ${NATIVE} from the MIR sheets` }],
       });
     } else {
       out.push({
@@ -139,7 +170,7 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
         group: "Freshness",
         title: "Latest MIR load (NATIVE)",
         status: "info",
-        detail: `PCC_Dashboard_NATIVE was rebuilt on ${day(native.lastModified)} (${native.rowCount.toLocaleString(
+        detail: `${NATIVE} was rebuilt on ${day(native.lastModified)} (${native.rowCount.toLocaleString(
           "en-CA"
         )} rows). Every table below must be rebuilt after it.`,
       });
@@ -150,8 +181,9 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
             id: `fresh-${t}`,
             group: "Freshness",
             title: t,
-            status: "warn",
+            status: "fail",
             detail: `${t} wasn't found in BigQuery.`,
+            fixes: [{ kind: "rebuild", table: t }],
           });
           continue;
         }
@@ -162,13 +194,11 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
           title: t,
           status: stale ? "fail" : "pass",
           detail: stale
-            ? `Rebuilt ${day(info.lastModified)} — BEFORE the latest MIR load (${day(
+            ? `Rebuilt ${day(info.lastModified)} — before the latest MIR load (${day(
                 native.lastModified
               )}), so its pages still show the older MIR.`
             : `Rebuilt ${day(info.lastModified)}, after the latest MIR load.`,
-          action: stale
-            ? `Rebuild ${t} (bq/ — see bq/README.md for the order), then run sync-all.`
-            : undefined,
+          fixes: stale ? [{ kind: "rebuild", table: t }] : undefined,
         });
       }
     }
@@ -179,7 +209,7 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
       title: "Last full sync (sync-all)",
       status: "info",
       detail: input.lastFullSyncAt
-        ? `The last complete sync-all run was on ${day(input.lastFullSyncAt)}. Single-table syncs don't update this date — the parity checks below are what confirm the app matches BigQuery.`
+        ? `The last complete sync-all run was on ${day(input.lastFullSyncAt)}. Single-table syncs don't update this date — the parity checks are what confirm the app matches BigQuery.`
         : "No full sync-all run is recorded.",
     });
   }
@@ -188,13 +218,14 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
   if (fp) {
     // KPI_BY_CLIENT → mo_kpi_by_client (one doc per client).
     const kpi = input.kpiRows;
+    const syncKpi: Fix[] = [{ kind: "sync", script: SYNC_KPI }];
     out.push({
       id: "kpi-count",
       group: "BigQuery parity",
       title: "KPIs by client — clients",
       status: kpi.length === fp.kpi.rows ? "pass" : "fail",
       detail: `App: ${kpi.length} clients · BigQuery: ${fp.kpi.rows}.`,
-      action: kpi.length === fp.kpi.rows ? undefined : "Run  node scripts/sync-kpi-by-client.mjs.",
+      fixes: kpi.length === fp.kpi.rows ? undefined : syncKpi,
     });
     const sums: [string, string, (r: HealthInput["kpiRows"][number]) => unknown, number][] = [
       ["kpi-labs", "Total LABS Spend 2026", (r) => r.labs_spend_2026, fp.kpi.labsSpend2026],
@@ -210,7 +241,7 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
         title: `KPIs — ${title}`,
         status: ok ? "pass" : "fail",
         detail: `App: ${money(actual)} · BigQuery: ${money(expected)}${ok ? "" : ` (off by ${money(actual - expected)})`}.`,
-        action: ok ? undefined : "Run  node scripts/sync-kpi-by-client.mjs.",
+        fixes: ok ? undefined : syncKpi,
       });
     }
     const appPartners = labsByPartner(kpi);
@@ -225,7 +256,7 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
       detail: partnerMismatch.length
         ? `Differs for ${partnerMismatch.map((p) => p.partner).join(", ")}.`
         : `All ${fp.kpi.labsByPartner.length} partners match BigQuery to the dollar.`,
-      action: partnerMismatch.length ? "Run  node scripts/sync-kpi-by-client.mjs." : undefined,
+      fixes: partnerMismatch.length ? syncKpi : undefined,
     });
 
     // MEDIAOCEAN_INVESTMENT_MIX → mediaocean_investment_mix ($ by year).
@@ -248,7 +279,7 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
         detail: `App: ${money(app.net)} (${app.rows.toLocaleString("en-CA")} records) · BigQuery: ${money(
           y.net
         )} (${y.rows.toLocaleString("en-CA")} rows).${ok ? "" : ` Off by ${money(app.net - y.net)}.`}`,
-        action: ok ? undefined : "Run  node scripts/sync-mediaocean-investment-mix.mjs.",
+        fixes: ok ? undefined : [{ kind: "sync", script: SYNC_MIX }],
       });
     }
 
@@ -264,20 +295,18 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
       detail: `App: ${money(s25)} / ${money(s26)} · BigQuery: ${money(fp.social.spend2025)} / ${money(
         fp.social.spend2026
       )}.`,
-      action: socialOk ? undefined : "Run  node scripts/sync-social-partner-mix.mjs.",
+      fixes: socialOk ? undefined : [{ kind: "sync", script: SYNC_SOCIAL }],
     });
 
     // META_SOCIAL_OUTPUT → meta_social_output (one doc per client).
+    const metaOk = input.metaSocialDocs === fp.metaSocial.clients;
     out.push({
       id: "meta-social",
       group: "BigQuery parity",
       title: "Meta social output — clients",
-      status: input.metaSocialDocs === fp.metaSocial.clients ? "pass" : "fail",
+      status: metaOk ? "pass" : "fail",
       detail: `App: ${input.metaSocialDocs} clients · BigQuery: ${fp.metaSocial.clients}.`,
-      action:
-        input.metaSocialDocs === fp.metaSocial.clients
-          ? undefined
-          : "Run  node scripts/sync-meta-social-output.mjs.",
+      fixes: metaOk ? undefined : [{ kind: "sync", script: SYNC_META }],
     });
   }
 
@@ -298,8 +327,8 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
     detail: unexpected.length
       ? `Unexpected values: ${unexpected.map(([v, n]) => `"${v || "(blank)"}" × ${n}`).join(", ")}. The Deal / Non-Deal split only counts "Partner Deal".`
       : `Only ${input.allowedDealValues.map((v) => `"${v}"`).join(" and ")} — as expected.`,
-    action: unexpected.length
-      ? "Fix the tags in the MIR / Key Deals sheet, rebuild NATIVE and MEDIAOCEAN_INVESTMENT_MIX, then sync."
+    fixes: unexpected.length
+      ? [{ kind: "source", what: "Fix the 2026 Deals tags in the MIR / Key Deals sheet" }]
       : undefined,
   });
 
@@ -320,7 +349,9 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
     detail: dupes.length
       ? `Same channel spelled differently: ${dupes.map((s) => [...s].map((v) => `"${v}"`).join(" / ")).join("; ")} — shows twice in filters.`
       : `${byLower.size} channels, each spelled one way.`,
-    action: dupes.length ? "Fix the spelling in the MIR source, rebuild, then sync." : undefined,
+    fixes: dupes.length
+      ? [{ kind: "source", what: "Fix the channel spelling in the MIR source" }]
+      : undefined,
   });
 
   const splitOff = input.kpiRows.filter((r) => {
@@ -335,6 +366,7 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
     detail: splitOff.length
       ? `${splitOff.length} client(s) whose per-partner Labs split doesn't sum to their Labs spend.`
       : `For all ${input.kpiRows.length} clients, the partner breakdown sums to Total LABS Spend.`,
+    fixes: splitOff.length ? [{ kind: "rebuild", table: KPI }] : undefined,
   });
 
   const families = new Set(input.labsFamilies);
@@ -343,10 +375,11 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
     id: "partner-config",
     group: "Data sanity",
     title: "Labs partners match Admin → LABS",
-    status: unknownPartners.length ? "warn" : "pass",
+    status: unknownPartners.length ? "fail" : "pass",
     detail: unknownPartners.length
-      ? `In the data but not configured in Admin → LABS: ${unknownPartners.join(", ")}.`
+      ? `In the data but no longer configured in Admin → LABS: ${unknownPartners.join(", ")} — the Labs list changed after the last rebuild.`
       : `Every partner in Labs spend is configured in Admin → LABS (${input.labsFamilies.join(", ")}).`,
+    fixes: unknownPartners.length ? [{ kind: "rebuild", table: KPI }] : undefined,
   });
 
   const unmatched = input.kpiRows.filter((r) => !input.forecasterClientIds.has(r.id));
@@ -364,38 +397,102 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
   // ── Cross-checks ──────────────────────────────────────────────────────────
   const labs = input.kpiRows.reduce((a, r) => a + num(r.labs_spend_2026), 0);
   const booked = input.kpiRows.reduce((a, r) => a + num(r.labs_booked_mir_2026), 0);
+  const labsSame = sameMoney(labs, booked);
   out.push({
     id: "labs-vs-booked",
     group: "Cross-checks",
     title: "Total LABS Spend vs Labs booked (pacing)",
-    status: sameMoney(labs, booked) ? "pass" : "warn",
-    detail: sameMoney(labs, booked)
+    status: labsSame ? "pass" : "warn",
+    detail: labsSame
       ? `Both ${money(labs)}.`
-      : `Total LABS Spend ${money(labs)} vs Labs booked ${money(booked)} — a ${money(
-          labs - booked
-        )} gap. Known causes: the pacing views count MIQ only for buy types Display / Video / Social (MIQ Audio / Search are left out of "booked"), and they don't filter on deal type. See Metric Formulas → Labs Booked to Date.`,
-    action: sameMoney(labs, booked)
+      : `Total LABS Spend ${money(labs)} vs Labs booked ${money(booked)} — a ${money(labs - booked)} gap.`,
+    note: labsSame
       ? undefined
-      : "Expected until the MIQ buy-type rule is decided (pending with the media team).",
+      : `Known reason: the pacing views count MIQ only for buy types Display / Video / Social (MIQ Audio / Search are left out of "booked") and don't filter on deal type. Expected until the media team decides the MIQ rule — see Metric Formulas → Labs Booked to Date.`,
   });
 
   const mix2026 = mixByYearNet(input.mixRows, "2026");
   const kpiTotal = input.kpiRows.reduce((a, r) => a + num(r.total_spend_2026), 0);
+  const mixSame = sameMoney(mix2026, kpiTotal);
   out.push({
     id: "mix-vs-kpi",
     group: "Cross-checks",
     title: "Total media 2026: Media Investments vs KPIs",
-    status: sameMoney(mix2026, kpiTotal) ? "pass" : "warn",
+    status: mixSame ? "pass" : "fail",
     detail: `Media Investments ${money(mix2026)} · KPIs ${money(kpiTotal)}${
-      sameMoney(mix2026, kpiTotal) ? " — they agree." : ` — differ by ${money(mix2026 - kpiTotal)}.`
+      mixSame ? " — they agree." : ` — differ by ${money(mix2026 - kpiTotal)}.`
     }`,
-    action: sameMoney(mix2026, kpiTotal)
+    note: mixSame ? undefined : "Both come from NATIVE, so one of them wasn't rebuilt or synced.",
+    fixes: mixSame
       ? undefined
-      : "Both come from NATIVE; a gap usually means one table wasn't rebuilt or synced.",
+      : [
+          { kind: "rebuild", table: KPI },
+          { kind: "rebuild", table: MIX },
+        ],
   });
 
   return out;
 }
+
+// ── Action plan ─────────────────────────────────────────────────────────────
+
+export interface ActionStep {
+  title: string;
+  /** Commands or file paths, shown in monospace. */
+  items: string[];
+  hint?: string;
+}
+
+/**
+ * Merges every failing check's fixes into one ordered to-do list:
+ * fix the source → rebuild tables → sync → re-run the checks. Rebuilding any
+ * table always ends with sync-all (it also refreshes the snapshot).
+ */
+export function buildActionPlan(results: CheckResult[]): ActionStep[] {
+  const fixes = results.filter((r) => r.status === "fail").flatMap((r) => r.fixes ?? []);
+  if (!fixes.length) return [];
+
+  const sources = [...new Set(fixes.flatMap((f) => (f.kind === "source" ? [f.what] : [])))];
+  const rebuildSet = new Set(fixes.flatMap((f) => (f.kind === "rebuild" ? [f.table] : [])));
+  // A source fix means NATIVE is rebuilt → every derived table must follow.
+  if (sources.length) DERIVED_TABLES.forEach((t) => rebuildSet.add(t));
+  const rebuilds = DERIVED_TABLES.filter((t) => rebuildSet.has(t));
+  const syncs = [...new Set(fixes.flatMap((f) => (f.kind === "sync" ? [f.script] : [])))];
+  const needsFingerprint = fixes.some((f) => f.kind === "fingerprint");
+
+  const steps: ActionStep[] = [];
+  if (sources.length) {
+    steps.push({
+      title: `Fix the source data, then rebuild ${NATIVE}`,
+      items: sources,
+      hint: "Reload the corrected sheets and rebuild NATIVE before anything else.",
+    });
+  }
+  if (rebuilds.length) {
+    steps.push({
+      title: `Rebuild ${rebuilds.length === 1 ? "this BigQuery table" : "these BigQuery tables, in this order"}`,
+      items: rebuilds.map((t) => `${t}  ←  ${TABLE_SQL[t]}`),
+      hint: "Run each file with bq query (see bq/README.md).",
+    });
+  }
+  if (rebuilds.length || syncs.length > 1 || needsFingerprint) {
+    steps.push({
+      title: "Copy BigQuery into the app",
+      items: ["node scripts/sync-all.mjs"],
+      hint: "Run from the plusco-forecaster folder. It also takes a new BigQuery snapshot for these checks.",
+    });
+  } else if (syncs.length === 1) {
+    steps.push({
+      title: "Copy the out-of-date table into the app, then refresh the snapshot",
+      items: [`node scripts/${syncs[0]}`, "node scripts/qa-fingerprint.mjs"],
+      hint: "Run from the plusco-forecaster folder.",
+    });
+  }
+  steps.push({ title: "Come back here and press “Run all checks”", items: [] });
+  return steps;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function parsePartnerJson(v: unknown): { p: string; v: number }[] {
   if (typeof v !== "string" || !v) return [];
