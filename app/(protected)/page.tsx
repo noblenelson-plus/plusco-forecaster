@@ -471,6 +471,7 @@ export default function DashboardPage() {
             totalAccessible={totalAccessible}
             hasActiveFilters={hasActiveFilters}
             onReset={reset}
+            roomy={topTab !== "forecaster"}
             trailing={
               !isMirTab && topTab !== "forecaster" ? (
                 <CurrencyToggle

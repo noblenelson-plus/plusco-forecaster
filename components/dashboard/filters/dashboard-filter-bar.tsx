@@ -22,6 +22,11 @@ interface DashboardFilterBarProps {
   onReset: () => void;
   /** Shown in place of the client count (e.g. the CAD / USD toggle). */
   trailing?: ReactNode;
+  /**
+   * Roomier padding, for tabs where this is the top header row (no Time &
+   * Context row above it), so it reads as a filter panel rather than a strip.
+   */
+  roomy?: boolean;
 }
 
 export default function DashboardFilterBar({
@@ -31,10 +36,11 @@ export default function DashboardFilterBar({
   hasActiveFilters,
   onReset,
   trailing,
+  roomy = false,
 }: DashboardFilterBarProps) {
   return (
     <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
-      <div className="flex flex-wrap items-center gap-3 px-6 py-3">
+      <div className={`flex flex-wrap items-center gap-3 px-6 ${roomy ? "py-5" : "py-3"}`}>
         <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 select-none mr-2">
           <Filter size={14} />
           Filters
