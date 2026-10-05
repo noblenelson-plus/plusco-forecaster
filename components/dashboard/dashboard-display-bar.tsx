@@ -6,9 +6,9 @@
  * it), the "All amounts in CAD" note with the USD→CAD conversion applied, a
  * missing-rate warning, and the CAD / USD view toggle on the right.
  *
- * Shown on the forecast-based tabs (Forecaster, Labs Pacing, Exec KPI). The
- * MIR tabs don't use it: MIR amounts are always CAD, and the toggle there would
- * only narrow the clients to USD ones.
+ * Shown on Labs Pacing and Exec KPI (full-year tabs with no Year / RFQ bar).
+ * The Forecaster tab keeps its original DashboardContextBar, which carries the
+ * same note and toggle; the MIR tabs use MirContextBar (MIR is always CAD).
  */
 
 import { DollarSign, AlertTriangle } from "lucide-react";

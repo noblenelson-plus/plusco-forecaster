@@ -416,10 +416,11 @@ export default function DashboardPage() {
       }`}
     >
       <header className="sticky top-0 z-40 flex flex-col bg-white">
-        {/* Header rows by tab. Year / RFQ ("Time & Context") only matters on the
-            Forecaster tab; Labs Pacing and Exec KPI are full-year; the MIR tabs
-            have their own period bar. The display row (months where they apply,
-            CAD note + conversion, CAD / USD toggle) sits under it. */}
+        {/* Header row by tab. The Forecaster tab keeps its original Time &
+            Context bar (Year / RFQ vs, Months, CAD note, CAD / USD toggle) —
+            unchanged. Labs Pacing and Exec KPI are full-year, so they get the
+            display row only (CAD note + conversion + toggle); the MIR tabs get
+            their own period / note row in the same style. */}
         {isMirTab ? (
           <MirContextBar
             period={mirPeriod}
@@ -431,19 +432,39 @@ export default function DashboardPage() {
                 : "2026 full-year KPI snapshot — not filtered by period."
             }
           />
-        ) : (
-          <>
-            {topTab === "forecaster" && <DashboardContextBar />}
-            <DashboardDisplayBar
-              months={selMonths}
-              onMonthsChange={topTab === "forecaster" ? setSelMonths : undefined}
+        ) : topTab === "forecaster" ? (
+          <div className="relative">
+            <DashboardContextBar
               usdToCad={usdToCad}
               usdClientCount={forecastData.usdClientCount}
               missingRate={forecastData.missingRate}
-              viewCurrency={viewCurrency}
-              onViewCurrencyChange={setViewCurrency}
+              months={selMonths}
+              onMonthsChange={setSelMonths}
             />
-          </>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+              <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs font-semibold">
+                {(["CAD", "USD"] as Currency[]).map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setViewCurrency(c)}
+                    className={`px-3 py-1.5 transition-colors ${
+                      viewCurrency === c ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <DashboardDisplayBar
+            usdToCad={usdToCad}
+            usdClientCount={forecastData.usdClientCount}
+            missingRate={forecastData.missingRate}
+            viewCurrency={viewCurrency}
+            onViewCurrencyChange={setViewCurrency}
+          />
         )}
 
         {/* Revenue only: BL/OF Type per side. */}
