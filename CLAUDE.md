@@ -99,7 +99,7 @@ The `/forecast` page has a 4th tab, **Product** — always-on product tracking p
 **Other client attributes (`lib/format/client.ts` helpers, admin-edited in `client-drawer.tsx`):**
 - `CL_Hidden?` — when true the client is filtered out everywhere (dashboard via `use-accessible-clients`, forecast selectors) **except** the admin Clients page, where admins still see it with a "Hidden" badge and can unhide it. BLs never see hidden clients. Read via `isClientHidden`.
 - `Forecasting_Type: {mediaSpend, labs, revenues}` — per-axis toggles, **stored attribute only** (no tab/dashboard gating yet). Defaults to all true (`DEFAULT_FORECASTING_TYPE`).
-- `Labs_Eligibility?: Record<partnerId, boolean>` — sparse, **stored only** (no allocation filtering yet); absent = eligible. Read via `isEligibleForPartner`. The drawer lists partners from `labs-partner-service`, grouped by year.
+- `Labs_Eligibility?: Record<partnerId, boolean>` — sparse, **stored only** (no allocation filtering yet); absent = eligible. Read via `isEligibleForPartner`. The drawer lists partners from `labs-partner-service`, grouped by year. Unlike the other attributes it is editable by anyone who may write the client (`canWriteClient`: BL on assigned clients, Exec agency-wide, Admin): a non-admin Save writes only this map via `saveClientLabsEligibility`, and the client update rule allows `Labs_Eligibility` next to `commissionsConfig`.
 
 Because `setDoc(merge:true)` deep-merges maps (a removed key would linger), `saveClient` replaces the shrinkable maps (`Client_Status_By_Year`, `Labs_Eligibility`) with a follow-up `updateDoc` on edit.
 

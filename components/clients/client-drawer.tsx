@@ -32,7 +32,14 @@ import {
   isEligibleForPartner,
   resolveClientStatus,
 } from "../../lib/format/client";
-import { saveClient, deleteClient, uploadClientLogo } from "../../lib/services/client-service";
+import {
+  saveClient,
+  saveClientLabsEligibility,
+  deleteClient,
+  uploadClientLogo,
+} from "../../lib/services/client-service";
+import { canWriteClient } from "../../lib/services/assignment-service";
+import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { triggerMediaboxRefresh } from "../../lib/services/mediabox-totals-service";
 import { syncTeamAccess } from "../../lib/services/team-access-service";
 import { useAuth } from "../../lib/auth-context";
@@ -128,6 +135,12 @@ export default function ClientDrawer({
   // Year used when a MediaBox-IDs change triggers a totals refresh.
   const { selectedYear } = useForecastSelection();
   const { user } = useAuth();
+  const { profile } = useUserProfile();
+
+  // Labs eligibility is editable by anyone who may write this client — the
+  // BL on their assigned clients, Execs agency-wide, admins everywhere —
+  // mirroring the Firestore canWriteClient rule. Other fields stay admin-only.
+  const canEditEligibility = !!client && canWriteClient(client, profile, isAdmin);
 
   const [form, setForm] = useState<ClientFormData>(EMPTY_FORM);
   const [gaiaInput, setGaiaInput] = useState("");
@@ -139,6 +152,9 @@ export default function ClientDrawer({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  // What the drawer opened with — lets a non-admin save tell an eligibility
+  // change from edits to fields only admins may write.
+  const initialRef = useRef<{ form: ClientFormData; gaia: string; mediabox: string } | null>(null);
 
   // Commissions drawer (stacked above this one)
   const [commissionsOpen, setCommissionsOpen] = useState(false);
@@ -154,7 +170,7 @@ export default function ClientDrawer({
   // Populate form when editing
   useEffect(() => {
     if (client) {
-      setForm({
+      const populated: ClientFormData = {
         CL_Name: client.CL_Name,
         CL_Logo: client.CL_Logo ?? "",
         CL_Agency: client.CL_Agency,
@@ -184,19 +200,37 @@ export default function ClientDrawer({
         CL_MediaBox_IDs: client.CL_MediaBox_IDs ?? [],
         Client_Notes: client.Client_Notes ?? "",
         commissionsConfig: client.commissionsConfig ?? {},
-      });
-      setGaiaInput((client.CL_GAIA_Number ?? []).join(", "));
-      setMediaboxInput((client.CL_MediaBox_IDs ?? []).join(", "));
+      };
+      const gaia = (client.CL_GAIA_Number ?? []).join(", ");
+      const mediabox = (client.CL_MediaBox_IDs ?? []).join(", ");
+      setForm(populated);
+      setGaiaInput(gaia);
+      setMediaboxInput(mediabox);
+      initialRef.current = { form: populated, gaia, mediabox };
     } else {
       setForm(EMPTY_FORM);
       setGaiaInput("");
       setMediaboxInput("");
+      initialRef.current = null;
     }
     setError("");
     setConfirmDelete(false);
     setCommissionsOpen(false);
     setCopiedId(false);
   }, [client, open]);
+
+  /** Whether anything besides Labs eligibility / commissions was edited. */
+  function hasAdminOnlyEdits(): boolean {
+    const initial = initialRef.current;
+    if (!initial) return false;
+    const strip = (f: ClientFormData) =>
+      JSON.stringify({ ...f, Labs_Eligibility: undefined, commissionsConfig: undefined });
+    return (
+      strip(form) !== strip(initial.form) ||
+      gaiaInput !== initial.gaia ||
+      mediaboxInput !== initial.mediabox
+    );
+  }
 
   function set<K extends keyof ClientFormData>(key: K, value: ClientFormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -283,6 +317,39 @@ export default function ClientDrawer({
   }
 
   async function handleSave() {
+    // Non-admins can only change Labs eligibility (commissions save from
+    // their own drawer), so their Save writes that map alone — a full
+    // saveClient would be rejected by the rules.
+    if (!isAdmin && client) {
+      if (hasAdminOnlyEdits()) {
+        setError(
+          "Only admins can change client details. Cancel to undo those edits — you can change Labs eligibility only."
+        );
+        return;
+      }
+      setSaving(true);
+      setError("");
+      try {
+        const eligibility = form.Labs_Eligibility ?? {};
+        const changed =
+          JSON.stringify(eligibility) !==
+          JSON.stringify(initialRef.current?.form.Labs_Eligibility ?? {});
+        if (changed && canEditEligibility) {
+          await saveClientLabsEligibility(client.cl_id, eligibility);
+        }
+        onSaved({
+          ...client,
+          Labs_Eligibility: eligibility,
+          commissionsConfig: form.commissionsConfig ?? client.commissionsConfig,
+        });
+      } catch (err) {
+        setError("Failed to save: " + (err instanceof Error ? err.message : "Unknown error"));
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     // Name required
     if (!form.CL_Name.trim()) {
       setError("Client name is required.");
@@ -700,7 +767,8 @@ export default function ClientDrawer({
             {!isAdmin && <ReadOnlyNote />}
           </Section>
 
-          {/* Section: Labs eligibility (edit only) — read-only for non-admins */}
+          {/* Section: Labs eligibility (edit only) — editable by whoever may
+              write the client (BL / Exec / Admin), read-only otherwise */}
           {isEditing && (
             <Section label="Labs eligibility">
               {labsPartners.length === 0 ? (
@@ -720,7 +788,7 @@ export default function ClientDrawer({
                               p.partnerId
                             )}
                             onChange={() => toggleEligibility(p.partnerId)}
-                            disabled={!isAdmin}
+                            disabled={!canEditEligibility}
                           />
                         ))}
                       </div>
@@ -728,12 +796,14 @@ export default function ClientDrawer({
                   ))}
                 </div>
               )}
-              {isAdmin ? (
+              {canEditEligibility ? (
                 <p className="text-xs text-gray-400">
                   Clients are eligible by default. Toggle off to exclude.
                 </p>
               ) : (
-                <ReadOnlyNote />
+                <p className="text-xs text-gray-400">
+                  Only this client&apos;s Business Lead, an Exec or an admin can change these.
+                </p>
               )}
             </Section>
           )}

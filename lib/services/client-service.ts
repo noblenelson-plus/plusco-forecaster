@@ -193,6 +193,23 @@ export async function saveClient(
 }
 
 /**
+ * Replaces a client's Labs eligibility map (sparse: only `false` opt-outs are
+ * stored) — the one client attribute Business Leads and Execs may change
+ * besides commissions. Touches only Labs_Eligibility + updatedAt, as the
+ * Firestore rules require for non-admins; updateDoc replaces the map, so a
+ * partner toggled back to eligible loses its key.
+ */
+export async function saveClientLabsEligibility(
+  cl_id: string,
+  eligibility: Record<string, boolean>
+): Promise<void> {
+  await updateDoc(doc(db, "clients", cl_id), {
+    Labs_Eligibility: eligibility,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
  * Deletes a client AND everything keyed to it, so no orphaned data lingers:
  * forecast submissions (data_entries), annual MediaOcean actuals
  * (annual_actuals), synced MediaBox totals (mediabox_totals), product tracking
