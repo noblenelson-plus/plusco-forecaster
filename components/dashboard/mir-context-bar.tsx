@@ -2,8 +2,9 @@
 "use client";
 
 /**
- * Time bar for the MIR (MediaOcean) tabs — replaces the Year / RFQ "vs"
- * comparison bar there, since MIR data has no RFQ. Shows a From → To month
+ * The MIR (MediaOcean) tabs' header row — the same second-row style and spot
+ * as DashboardDisplayBar on the other tabs (MIR has no RFQ, so there's no Time &
+ * Context row above it). Shows a From → To month
  * period (MIR covers 2025 + 2026, so e.g. Apr 2025 → Mar 2026 works) with quick
  * picks, and the MIR vintage ("as of" the last sync).
  *
@@ -59,12 +60,7 @@ export default function MirContextBar({
     onPeriodChange(normalizePeriod({ ...period, [end]: k }));
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50">
-      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 select-none mr-2">
-        {showPeriod ? "MIR Period" : "MIR Data"}
-      </span>
-      <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
-
+    <div className="flex flex-wrap items-center gap-3 px-6 py-2 border-b border-gray-200 bg-gray-50">
       {showPeriod ? (
         <>
           <label className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -122,9 +118,8 @@ export default function MirContextBar({
         <span className="text-xs text-gray-500">{note}</span>
       )}
 
-      <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
       <span
-        className="flex items-center gap-1.5 text-xs text-gray-500"
+        className="ml-auto flex items-center gap-1.5 text-xs text-gray-500"
         title="MediaOcean (MIR) booked data — no RFQ or forecast comparison applies here."
       >
         <Database size={13} />
