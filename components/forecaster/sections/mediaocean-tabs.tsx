@@ -13,7 +13,7 @@
  * year — it intrinsically compares 2025 vs 2026).
  *
  * At the bottom of Media Investments, the Investment KPIs section repeats the
- * Exec KPI Dashboard's booked (MIR) scorecards + Exec KPIs by Client table.
+ * Exec KPI Dashboard's booked (MIR) scorecards + KPIs by Client table.
  *
  * The active sub-tab is controlled by the parent (page.tsx) so the parent can
  * show the global filter bar on both sub-pages.

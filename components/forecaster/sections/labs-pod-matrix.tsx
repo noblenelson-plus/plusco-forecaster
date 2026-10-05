@@ -16,6 +16,8 @@
 import { useState } from "react";
 import { BarChart3, Table2 } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
+import SheetExportButton from "../../dashboard/sheet-export-button";
+import type { CellValue } from "../table/table-export";
 import { pacingHeat, type GmPodMatrix } from "./labs-pacing-data";
 import { formatMoney } from "../../../lib/format/money";
 
@@ -90,6 +92,38 @@ export default function LabsPodMatrix({
         ? pct(v)
         : compact(dollarFor(d ?? { target: 0, booked: 0 }, mode));
 
+  // Sheet exports. The heatmap follows the selected mode (% as shown, $ modes
+  // in full dollars rather than the compact cell text); both lead with the
+  // period / MIR note.
+  const noteRows: CellValue[][] = note ? [[note], [""]] : [];
+  const modeLabel = MODES.find((m) => m.key === mode)?.label ?? "";
+  const heatCell = (v: number | null, d: { target: number; booked: number }): CellValue =>
+    v === null ? "" : mode === "pct" ? pct(v) : dollarFor(d, mode);
+  const heatmapMatrix = (): CellValue[][] => [
+    ...noteRows,
+    ["Partner", ...pods, "Grand total"],
+    ...rows.map((row) => [
+      row.partnerName,
+      ...pods.map((pod) =>
+        heatCell(row.byPod[pod], row.byPodDollars[pod] ?? { target: 0, booked: 0 })
+      ),
+      heatCell(row.total, { target: rowTarget(row), booked: row.bookedTotal }),
+    ]),
+    [
+      "Grand total",
+      ...pods.map((pod) =>
+        heatCell(colTotals[pod] ?? null, podTotals[pod] ?? { target: 0, booked: 0 })
+      ),
+      heatCell(grandTotal, grand),
+    ],
+  ];
+  const summaryMatrix = (): CellValue[][] => [
+    ...noteRows,
+    ["GM Pod", targetLabel, "Booked (MIR)", "$ Variance", "% Booked"],
+    ...summary.map((r) => [r.pod, r.target, r.booked, r.booked - r.target, pct(r.pctBooked)]),
+    ["Grand total", grand.target, grand.booked, grand.booked - grand.target, pct(grandTotal)],
+  ];
+
   const toggle = (
     <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs font-medium">
       {MODES.map((m) => (
@@ -109,7 +143,22 @@ export default function LabsPodMatrix({
     // Left card wider than the right (heatmap needs the room).
     <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       {/* ── Heatmap card ───────────────────────────────────────────────────── */}
-      <ChartCard title="By GM Pod — % of Target Booked" subtitle={note} icon={BarChart3} action={toggle}>
+      <ChartCard
+        title="By GM Pod — % of Target Booked"
+        subtitle={note}
+        icon={BarChart3}
+        action={
+          <div className="flex items-center gap-2">
+            {toggle}
+            <SheetExportButton
+              title={`By GM Pod — ${modeLabel}`}
+              sheetTitle="By GM Pod"
+              disabled={rows.length === 0}
+              buildMatrix={heatmapMatrix}
+            />
+          </div>
+        }
+      >
         {rows.length === 0 ? (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             No Labs pacing data for this scope.
@@ -168,7 +217,19 @@ export default function LabsPodMatrix({
       </ChartCard>
 
       {/* ── Summary card ───────────────────────────────────────────────────── */}
-      <ChartCard title="By GM Pod — Summary" subtitle={note} icon={Table2}>
+      <ChartCard
+        title="By GM Pod — Summary"
+        subtitle={note}
+        icon={Table2}
+        action={
+          <SheetExportButton
+            title="By GM Pod — Summary"
+            sheetTitle="By GM Pod Summary"
+            disabled={rows.length === 0}
+            buildMatrix={summaryMatrix}
+          />
+        }
+      >
         {rows.length === 0 ? (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             No Labs pacing data for this scope.

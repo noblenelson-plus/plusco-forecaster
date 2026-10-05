@@ -5,7 +5,7 @@
  * INVESTMENT KPIS section — the bottom of Media Investments Report → Media
  * Investments. The same booked-to-date (MIR) content as the Exec KPI
  * Dashboard's Media & Labs KPIs page, with no Forecaster data: the four
- * scorecards (Media Labs, Billups, Meta, Digital) and the Exec KPIs by Client
+ * scorecards (Media Labs, Billups, Meta, Digital) and the KPIs by Client
  * table. Numbers come from useBookedExecKpis, so the two pages always agree.
  *
  * Unlike the Exec page, the portfolio-wide dollar goals (Total LABS Spend,
@@ -54,6 +54,7 @@ export default function InvestmentKpisBookedSection({
           <ExecSummaryKpiBand pillars={booked.pillars} />
           <ExecKpisByClientTable
             rows={booked.scopedKpiRows}
+            scenarioById={booked.miqScenarioById}
             labsShareGoal={booked.labsShareGoal}
             billupsShareGoal={booked.goals.billupsShare}
             sourceLabel={booked.mirSourceLabel}

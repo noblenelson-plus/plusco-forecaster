@@ -27,6 +27,7 @@ import { useMemo, useState } from "react";
 import { Loader2, Users, Table, BarChart3 } from "lucide-react";
 import StatCard from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
+import SheetExportButton from "../../dashboard/sheet-export-button";
 import HorizontalStackedBar, {
   type StackSeries,
   type StackRow,
@@ -308,7 +309,21 @@ export default function MediaoceanTopPartnersSection({
 
       {/* Row 2 — Top-N table + Spend by Partner bar, side by side. */}
       <div className="grid items-stretch gap-6 lg:grid-cols-2">
-        <ChartCard title={`Top ${TOP_N} Partners`} icon={Table}>
+        <ChartCard
+          title={`Top ${TOP_N} Partners`}
+          icon={Table}
+          action={
+            <SheetExportButton
+              title={`Top ${TOP_N} Partners`}
+              sheetTitle="Top Partners"
+              disabled={topPartners.length === 0}
+              buildMatrix={() => [
+                ["#", "Partner", "2026 Deals", "Net Ordered (CAD)"],
+                ...topPartners.map((p, i) => [i + 1, p.partner, p.dealType ?? "", p.net]),
+              ]}
+            />
+          }
+        >
           <div className="pt-4">
             <PartnerTable partners={topPartners} />
           </div>

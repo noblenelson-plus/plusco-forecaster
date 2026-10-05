@@ -22,6 +22,7 @@ import { useMemo } from "react";
 import { Loader2, TrendingUp, PieChart, Percent, Table } from "lucide-react";
 import StatCard from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
+import SheetExportButton from "../../dashboard/sheet-export-button";
 import ForecasterPieChart, { type PieSegment } from "../charts/pie-chart";
 import {
   useMediaoceanInvestmentMix,
@@ -262,6 +263,18 @@ export default function MediaoceanInvestmentSection({
           title="Investment by Channel"
           icon={Table}
           className="lg:col-span-5"
+          action={
+            <SheetExportButton
+              title="Investment by Channel"
+              sheetTitle="Investment by Channel"
+              disabled={totals.mediaMix.length === 0}
+              buildMatrix={() => [
+                ["Channel", "Net Ordered (CAD)"],
+                ...totals.mediaMix.map((s) => [s.channel, s.net]),
+                ["Grand total", totals.grandTotal],
+              ]}
+            />
+          }
         >
           <div className="pt-4">
             <ChannelTable slices={totals.mediaMix} grandTotal={totals.grandTotal} />

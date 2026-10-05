@@ -41,6 +41,8 @@ import {
   getLabsPartnersForYear,
 } from "../../../lib/services/labs-partner-service";
 import type { LabsPartner } from "../../../lib/types/labs.types";
+import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { isEligibleForPartner } from "../../../lib/format/client";
 import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
 
 // --- Formatting -------------------------------------------------------------
@@ -138,6 +140,28 @@ export function useBookedExecKpis(
       .map(([key, value]) => ({ label: label.get(key) ?? key, value }))
       .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
   }, [labsPartners, year, scopedKpiRows]);
+
+  // -- MIQ Scenario (KPIs by Client) -------------------------------------------
+  // From each client's Labs eligibility toggles in the Forecaster (Edit client →
+  // Labs eligibility) for the year's MIQ-Social and AIM-Social partners. Only
+  // "Not Eligible" is called out; an eligible client has no entry ("—").
+  const { clients: accessibleClients } = useAccessibleClients();
+  const miqScenarioById = useMemo(() => {
+    const yearPartners = getLabsPartnersForYear(labsPartners, year);
+    const watched = ["MIQ-Social", "AIM-Social"]
+      .map((name) =>
+        yearPartners.find((p) => p.name.trim().toLowerCase() === name.toLowerCase())
+      )
+      .filter((p): p is LabsPartner => !!p);
+    const out = new Map<string, string>();
+    for (const c of accessibleClients) {
+      const notEligible = watched
+        .filter((p) => !isEligibleForPartner(c, p.partnerId))
+        .map((p) => p.name);
+      if (notEligible.length) out.set(c.cl_id, `Not Eligible for ${notEligible.join(" & ")}`);
+    }
+    return out;
+  }, [labsPartners, year, accessibleClients]);
 
   // -- Digital media-mix scorecards (booked; MIR-only). Aggregated from the
   // same mo_kpi_by_client rows and computed identically to the by-GM Digital
@@ -372,6 +396,8 @@ export function useBookedExecKpis(
     /** The four booked (MIR) scorecard pillars. */
     pillars,
     scopedKpiRows,
+    /** client id → "Not Eligible for MIQ-Social / AIM-Social" (eligible: absent). */
+    miqScenarioById,
     inv,
     metaTrend,
     goals,

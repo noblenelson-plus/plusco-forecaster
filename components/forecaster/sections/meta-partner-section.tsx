@@ -28,6 +28,8 @@ import {
 } from "recharts";
 import { Share2, BarChart3, PieChart as PieIcon, Loader2, DollarSign } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
+import SheetExportButton from "../../dashboard/sheet-export-button";
+import type { CellValue } from "../table/table-export";
 import StatCard from "../../dashboard/charts/stat-card";
 import ForecasterPieChart, { type PieSegment } from "../charts/pie-chart";
 import { useSocialPartnerMix } from "../../../lib/dashboard/data/use-social-partner-mix";
@@ -59,6 +61,17 @@ interface Partner {
   partner: string;
   spend2025: number;
   spend2026: number;
+}
+
+/** Sheet rows for a per-year partner table — same order and columns as YearTable. */
+function yearTableMatrix(partners: Partner[], year: 2025 | 2026, socialTotal: number): CellValue[][] {
+  const key = year === 2025 ? "spend2025" : "spend2026";
+  const sorted = [...partners].sort((a, b) => b[key] - a[key]);
+  return [
+    ["Partner", "Spend $", "Spend %"],
+    ...sorted.map((p) => [p.partner, p[key], pct(safeDiv(p[key], socialTotal))]),
+    ["Grand total", socialTotal, "100%"],
+  ];
 }
 
 /** A per-year partner table: Partner · Spend $ · Spend % (of that year's social). */
@@ -170,7 +183,31 @@ export default function MetaPartnerSection() {
     <div data-scroll-section data-scroll-label="Meta partner YoY" className="space-y-6">
       {/* Row 1 — YoY table + grouped bar chart */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard title="Social Partners — YoY" icon={Share2}>
+        <ChartCard
+          title="Social Partners — YoY"
+          icon={Share2}
+          action={
+            <SheetExportButton
+              title="Social Partners — YoY"
+              sheetTitle="Social Partners YoY"
+              disabled={m.byYoy.length === 0}
+              buildMatrix={() => [
+                ["Partner", "Spend 2025", "Spend 2026", "Variance $", "Share of Social Var"],
+                ...m.byYoy.map((p) => [
+                  p.partner,
+                  p.spend2025,
+                  p.spend2026,
+                  p.spend2026 - p.spend2025,
+                  ppt(
+                    (safeDiv(p.spend2026, m.social2026) ?? 0) -
+                      (safeDiv(p.spend2025, m.social2025) ?? 0)
+                  ),
+                ]),
+                ["Grand total", m.social2025, m.social2026, m.social2026 - m.social2025, ""],
+              ]}
+            />
+          }
+        >
           <div className="-mx-2 mt-2 overflow-x-auto">
             <table className="min-w-full border-collapse text-sm">
               <thead>
@@ -243,7 +280,18 @@ export default function MetaPartnerSection() {
 
       {/* Row 2 — 2025 block */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ChartCard title="2025 — Spend by Partner" icon={Share2}>
+        <ChartCard
+          title="2025 — Spend by Partner"
+          icon={Share2}
+          action={
+            <SheetExportButton
+              title="2025 — Spend by Partner"
+              sheetTitle="2025 Spend by Partner"
+              disabled={m.partners.length === 0}
+              buildMatrix={() => yearTableMatrix(m.partners, 2025, m.social2025)}
+            />
+          }
+        >
           <div className="-mx-2 mt-2 overflow-x-auto">
             <YearTable partners={m.partners} year={2025} socialTotal={m.social2025} />
           </div>
@@ -262,7 +310,18 @@ export default function MetaPartnerSection() {
 
       {/* Row 3 — 2026 block */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ChartCard title="2026 — Spend by Partner" icon={Share2}>
+        <ChartCard
+          title="2026 — Spend by Partner"
+          icon={Share2}
+          action={
+            <SheetExportButton
+              title="2026 — Spend by Partner"
+              sheetTitle="2026 Spend by Partner"
+              disabled={m.partners.length === 0}
+              buildMatrix={() => yearTableMatrix(m.partners, 2026, m.social2026)}
+            />
+          }
+        >
           <div className="-mx-2 mt-2 overflow-x-auto">
             <YearTable partners={m.partners} year={2026} socialTotal={m.social2026} />
           </div>

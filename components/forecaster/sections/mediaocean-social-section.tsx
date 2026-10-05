@@ -22,6 +22,7 @@
 import { useMemo } from "react";
 import { Loader2, Share2, Table } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
+import SheetExportButton from "../../dashboard/sheet-export-button";
 import {
   useSocialPartnerMix,
   computeSocialSummary,
@@ -295,7 +296,28 @@ export default function MediaoceanSocialSection({
 
       {/* Table + share comparison side by side. */}
       <div className="grid items-stretch gap-6 lg:grid-cols-2">
-        <ChartCard title="Social Partners" icon={Table}>
+        <ChartCard
+          title="Social Partners"
+          icon={Table}
+          action={
+            <SheetExportButton
+              title="Social Partners"
+              sheetTitle="Social Partners"
+              disabled={summary.partners.length === 0}
+              buildMatrix={() => [
+                ["Partner", "Spend 2025", "Spend 2026", "Variance $", "Share ppt"],
+                ...summary.partners.map((p) => [
+                  p.partner,
+                  p.spend2025,
+                  p.spend2026,
+                  p.variance,
+                  p.sharePpt == null ? "" : Math.round(p.sharePpt * 10) / 10,
+                ]),
+                ["Grand total", summary.total2025, summary.total2026, summary.totalVariance, ""],
+              ]}
+            />
+          }
+        >
           <div className="pt-4">
             <SocialTable
               partners={summary.partners}
