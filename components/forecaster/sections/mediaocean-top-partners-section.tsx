@@ -14,10 +14,10 @@
  * grand total), the shared HorizontalStackedBar (single series) for the ranking.
  *
  * Filtering: client scope, year and months come from the global dashboard filter
- * + Time & Context. On top of that, four buy-level facets stay section-local
- * (Media Channel / Programmatic / 2026 Deals / Media Partner) because they have
- * no equivalent in the global bar -- they mirror the Looker report's partner
- * facets.
+ * + Time & Context. On top of that, three buy-level facets stay section-local
+ * (Media Channel / 2026 Deals / Media Partner) because they have no equivalent
+ * in the global bar. (A Programmatic facet was removed at the media team's
+ * request; the shared PartnerFilters type still carries it, always empty.)
  *
  * Deal split is PER ROW (PLUSCO_2026_DEALS === "Partner Deal"), reproducing the
  * Looker calc field. Everything else -- "#N/A", "Partner Deal - OLG" -- is Non-Deal.
@@ -199,7 +199,6 @@ export default function MediaoceanTopPartnersSection({
 
   const anyFacetActive =
     facets.channel.length > 0 ||
-    facets.programmatic.length > 0 ||
     facets.deals.length > 0 ||
     facets.partner.length > 0;
 
@@ -260,12 +259,6 @@ export default function MediaoceanTopPartnersSection({
           selectedValues={facets.channel}
           onChange={(v) => setFacet({ channel: v })}
           searchable
-        />
-        <MultiSelectDropdown
-          label="Programmatic"
-          options={toOptions(options.programmatic)}
-          selectedValues={facets.programmatic}
-          onChange={(v) => setFacet({ programmatic: v })}
         />
         <MultiSelectDropdown
           label="2026 Deals"
