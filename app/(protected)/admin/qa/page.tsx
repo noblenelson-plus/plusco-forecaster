@@ -2,10 +2,13 @@
 "use client";
 
 /**
- * Admin QA page — runs the data-consistency checks over the filtered client
- * scope for the globally selected Year + RFQ. Reuses the dashboard's data
- * pipeline (per-client, CAD-normalized) and its faceted filter bar (agency,
- * pod, region, office, tier, status, business lead, client).
+ * Admin QA page. Tabs:
+ *   - Data Health: is the synced data up to date with BigQuery, and does
+ *     anything look off? (independent of the filters below)
+ *   - Metric Formulas: how every dashboard number is calculated.
+ *   - Reconciliation / Consistency checks: forecast checks over the filtered
+ *     client scope for the selected Year + RFQ, reusing the dashboard's data
+ *     pipeline (per-client, CAD-normalized) and its faceted filter bar.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -16,6 +19,8 @@ import ForecastSelectors from "../../../../components/_shared/forecast-selectors
 import MultiSelectDropdown from "../../../../components/_shared/multi-select-dropdown";
 import QaChecksPanel from "../../../../components/qa/qa-checks-panel";
 import TotalsReconciliationPanel from "../../../../components/qa/totals-reconciliation-panel";
+import DataHealthPanel from "../../../../components/qa/data-health-panel";
+import MetricFormulasPanel from "../../../../components/qa/metric-formulas-panel";
 import DashboardFilterBar from "../../../../components/dashboard/filters/dashboard-filter-bar";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import { useAccessibleClients } from "../../../../lib/hooks/use-accessible-clients";
@@ -29,6 +34,15 @@ import { useScopeForecastData } from "../../../../lib/dashboard/data/use-scope-f
 import { isTestClient } from "../../../../lib/format/client";
 import type { DashboardScope } from "../../../../lib/dashboard/widgets/widget.types";
 import type { Currency } from "../../../../lib/types/client.types";
+
+type QaTab = "health" | "formulas" | "reconcile" | "checks";
+
+const QA_TABS: { id: QaTab; label: string }[] = [
+  { id: "health", label: "Data Health" },
+  { id: "formulas", label: "Metric Formulas" },
+  { id: "reconcile", label: "Reconciliation" },
+  { id: "checks", label: "Consistency checks" },
+];
 
 const MONTH_OPTIONS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -123,7 +137,10 @@ export default function AdminQaPage() {
     ? `${comparisonRFQ.type} · ${comparisonYear}`
     : "Comparison";
 
-  const [qaTab, setQaTab] = useState<"reconcile" | "checks">("reconcile");
+  const [qaTab, setQaTab] = useState<QaTab>("health");
+  // Data Health and Metric Formulas don't depend on the forecast scope, so
+  // they hide the Year/RFQ/Months selectors and the client filter bar.
+  const forecastTab = qaTab === "reconcile" || qaTab === "checks";
 
   const clientNameById = useMemo(
     () => Object.fromEntries(clients.map((c) => [c.cl_id, c.CL_Name])),
@@ -162,34 +179,64 @@ export default function AdminQaPage() {
         <div className="relative z-20">
           <PageHeader
             title="QA"
-            description="Data-consistency checks across the filtered clients for the selected Year + RFQ. All amounts in CAD."
+            description={
+              forecastTab
+                ? "Data-consistency checks across the filtered clients for the selected Year + RFQ. All amounts in CAD."
+                : qaTab === "health"
+                ? "Is the dashboard up to date with BigQuery, and does anything look off?"
+                : "How every dashboard number is calculated, grouped by page."
+            }
             actions={
-              <>
-                <ForecastSelectors
-                  orientation="horizontal"
-                  theme="light"
-                  fields={["year", "rfq"]}
-                />
-                <MultiSelectDropdown
-                  label="Months"
-                  options={MONTH_OPTIONS}
-                  selectedValues={selMonths.map(String)}
-                  onChange={(vals) => setSelMonths(vals.map(Number))}
-                />
-              </>
+              forecastTab && (
+                <>
+                  <ForecastSelectors
+                    orientation="horizontal"
+                    theme="light"
+                    fields={["year", "rfq"]}
+                  />
+                  <MultiSelectDropdown
+                    label="Months"
+                    options={MONTH_OPTIONS}
+                    selectedValues={selMonths.map(String)}
+                    onChange={(vals) => setSelMonths(vals.map(Number))}
+                  />
+                </>
+              )
             }
           />
         </div>
-        <DashboardFilterBar
-          facetViews={facetViews}
-          filteredCount={filteredClientIds.length}
-          totalAccessible={totalAccessible}
-          hasActiveFilters={hasActiveFilters}
-          onReset={reset}
-        />
+        {forecastTab && (
+          <DashboardFilterBar
+            facetViews={facetViews}
+            filteredCount={filteredClientIds.length}
+            totalAccessible={totalAccessible}
+            hasActiveFilters={hasActiveFilters}
+            onReset={reset}
+          />
+        )}
       </header>
       <main className="mx-auto w-full max-w-[1700px] flex-1 p-6 md:p-8">
-        {error ? (
+        <div className="mb-6 flex items-center gap-1 overflow-x-auto border-b border-gray-200">
+          {QA_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setQaTab(t.id)}
+              className={`-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                qaTab === t.id
+                  ? "border-primary text-gray-900"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {qaTab === "health" ? (
+          <DataHealthPanel />
+        ) : qaTab === "formulas" ? (
+          <MetricFormulasPanel />
+        ) : error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {error}
           </div>
@@ -207,28 +254,6 @@ export default function AdminQaPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Sub-tab strip — Reconciliation (attestation) vs the existing
-                consistency checks (violation cards). */}
-            <div className="flex items-center gap-1 border-b border-gray-200">
-              {([
-                { id: "reconcile", label: "Reconciliation" },
-                { id: "checks", label: "Consistency checks" },
-              ] as const).map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setQaTab(t.id)}
-                  className={`-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                    qaTab === t.id
-                      ? "border-primary text-gray-900"
-                      : "border-transparent text-gray-500 hover:text-gray-800"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
             {qaTab === "reconcile" ? (
               <div className="space-y-4">
                 {/* Both sides pick their own Year + RFQ, so any base RFQ can be
