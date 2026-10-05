@@ -21,6 +21,7 @@ import {
 import { Button } from "../ui/button";
 import {
   exportToNewSheet,
+  exportToNewSheetWithTabs,
   SheetsUnavailableError,
   type CellValue,
 } from "../forecaster/table/table-export";
@@ -35,14 +36,17 @@ export default function SheetExportButton({
   title,
   sheetTitle,
   buildMatrix,
+  buildTabs,
   disabled,
 }: {
   /** Spreadsheet file name. */
   title: string;
-  /** Tab name inside the file. Keep it short. */
-  sheetTitle: string;
+  /** Tab name inside the file (single-tab mode). Keep it short. */
+  sheetTitle?: string;
   /** Called on click to produce the sheet contents (header + body + optional footer). */
-  buildMatrix: () => CellValue[][];
+  buildMatrix?: () => CellValue[][];
+  /** Multi-tab mode: one tab per entry, in order. Takes precedence over buildMatrix. */
+  buildTabs?: () => { sheetTitle: string; matrix: CellValue[][] }[];
   disabled?: boolean;
 }) {
   const [status, setStatus] = useState<Status>({ state: "idle" });
@@ -50,11 +54,13 @@ export default function SheetExportButton({
   const run = async () => {
     setStatus({ state: "working" });
     try {
-      const url = await exportToNewSheet({
-        title,
-        sheetTitle,
-        matrix: buildMatrix(),
-      });
+      const url = buildTabs
+        ? await exportToNewSheetWithTabs({ title, tabs: buildTabs() })
+        : await exportToNewSheet({
+            title,
+            sheetTitle: sheetTitle ?? "Sheet1",
+            matrix: buildMatrix ? buildMatrix() : [],
+          });
       setStatus({ state: "done", url });
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (error) {
