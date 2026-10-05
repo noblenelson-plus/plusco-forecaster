@@ -201,16 +201,19 @@ service cloud.firestore {
       // Update:
       // Ã¢â‚¬â€ Admins: no restriction.
       // Ã¢â‚¬â€ Writers for this client (Exec agency-wide, BL on assigned clients):
-      //   ONLY commissionsConfig (+ updatedAt). Any write touching another key
-      //   of the document is denied. (CommissionsDrawer writes via the dot-path
-      //   "commissionsConfig.{year}", which only affects those two top-level
-      //   keys.)
+      //   ONLY commissionsConfig and Labs_Eligibility (+ updatedAt). Any write
+      //   touching another key of the document is denied. (CommissionsDrawer
+      //   writes via the dot-path "commissionsConfig.{year}"; the client drawer
+      //   replaces the whole Labs_Eligibility map via
+      //   saveClientLabsEligibility.)
       allow update: if isAdmin() ||
                     (
                       canWriteClient(clientId) &&
                       request.resource.data.diff(resource.data)
                         .affectedKeys()
-                        .hasOnly(['commissionsConfig', 'updatedAt'])
+                        .hasOnly(['commissionsConfig', 'Labs_Eligibility', 'updatedAt']) &&
+                      (!('Labs_Eligibility' in request.resource.data) ||
+                        request.resource.data.Labs_Eligibility is map)
                     );
     }
     // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ agencies Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
