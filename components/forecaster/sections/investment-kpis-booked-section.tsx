@@ -25,9 +25,12 @@ import { useBookedExecKpis } from "./use-booked-exec-kpis";
 export default function InvestmentKpisBookedSection({
   scopedClientIds,
   year,
+  fullYearLabel = false,
 }: {
   scopedClientIds: string[];
   year: number;
+  /** Say "full year" — on pages whose period picker this section ignores. */
+  fullYearLabel?: boolean;
 }) {
   const booked = useBookedExecKpis(scopedClientIds, year, { dollarTargets: false });
 
@@ -37,7 +40,8 @@ export default function InvestmentKpisBookedSection({
         <h2 className="text-xl font-bold text-foreground">Investment KPIs</h2>
         <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
           <Calendar size={12} className="flex-shrink-0" />
-          {year} · {booked.mirSourceLabel}
+          {year}
+          {fullYearLabel ? " full year (not period-filtered)" : ""} · {booked.mirSourceLabel}
         </div>
       </div>
 

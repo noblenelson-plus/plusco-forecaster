@@ -10,7 +10,9 @@
  * takes `scopedClientIds`. "Media Investments" (Total Media Investment, Top
  * Partners, Social) is now also driven by the global filter + Time & Context, so
  * those sections take scopedClientIds / clients / year / selMonths (Social omits
- * year — it intrinsically compares 2025 vs 2026).
+ * year — it intrinsically compares 2025 vs 2026). Total Media Investment and
+ * Top Partners follow the MIR From → To period (MirContextBar); the KPI
+ * sections are a 2026 full-year snapshot.
  *
  * At the bottom of Media Investments, the Investment KPIs section repeats the
  * Exec KPI Dashboard's booked (MIR) scorecards + KPIs by Client table.
@@ -25,6 +27,7 @@ import MediaoceanTopPartnersSection from "./mediaocean-top-partners-section";
 import MediaoceanSocialSection from "./mediaocean-social-section";
 import InvestmentKpisBookedSection from "./investment-kpis-booked-section";
 import SubTabBar from "../sub-tab-bar";
+import { monthsWithinOneYear, type MonthPeriod } from "../../../lib/format/period";
 import type { Client } from "../../../lib/types/client.types";
 import {
   MEDIAOCEAN_SUBTABS,
@@ -36,21 +39,27 @@ export type { MediaOceanSubTab };
 
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 
+/**
+ * The year the KPI sections cover. KPI_BY_CLIENT is built per year in BigQuery
+ * (its columns are *_2026), so these sections are a full-year snapshot and
+ * don't follow the MIR period picker. Bump with the KPI table's year.
+ */
+const KPI_DATA_YEAR = 2026;
+
 export default function MediaOceanTabs({
   sub,
   onSubChange,
   scopedClientIds,
   clients,
-  year,
-  selMonths,
+  period,
   hidden = NO_HIDDEN,
 }: {
   sub: MediaOceanSubTab;
   onSubChange: (s: MediaOceanSubTab) => void;
   scopedClientIds: string[];
   clients: Client[];
-  year: number;
-  selMonths: number[];
+  /** The MIR From → To period (MIR context bar). */
+  period: MonthPeriod;
   /** Page ids hidden by an admin (Admin → Dashboard Pages). */
   hidden?: ReadonlySet<string>;
 }) {
@@ -72,22 +81,26 @@ export default function MediaOceanTabs({
           <MediaoceanInvestmentSection
             scopedClientIds={scopedClientIds}
             clients={clients}
-            year={year}
-            selMonths={selMonths}
+            period={period}
           />
           <MediaoceanTopPartnersSection
             scopedClientIds={scopedClientIds}
             clients={clients}
-            year={year}
-            selMonths={selMonths}
+            period={period}
           />
+          {/* Fixed 2025 vs 2026 view: only the period's months apply, when
+              the period sits inside one year (else the full years). */}
           <MediaoceanSocialSection
             scopedClientIds={scopedClientIds}
             clients={clients}
-            selMonths={selMonths}
+            selMonths={monthsWithinOneYear(period)}
           />
-          {/* Booked (MIR) Exec KPIs: scorecards + by-client table. */}
-          <InvestmentKpisBookedSection scopedClientIds={scopedClientIds} year={year} />
+          {/* Booked (MIR) Exec KPIs: scorecards + by-client table (full year). */}
+          <InvestmentKpisBookedSection
+            scopedClientIds={scopedClientIds}
+            year={KPI_DATA_YEAR}
+            fullYearLabel
+          />
         </div>
       )}
     </div>
