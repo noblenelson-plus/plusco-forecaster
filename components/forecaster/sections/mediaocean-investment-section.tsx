@@ -31,6 +31,7 @@ import {
   type MediaInvestmentRow,
 } from "../../../lib/dashboard/data/use-mediaocean-investment-mix";
 import type { Client } from "../../../lib/types/client.types";
+import { describePeriod, inPeriod, type MonthPeriod } from "../../../lib/format/period";
 
 // --- Formatting helpers -------------------------------------------------------
 
@@ -134,13 +135,12 @@ function ChannelTable({
 export default function MediaoceanInvestmentSection({
   scopedClientIds,
   clients,
-  year,
-  selMonths,
+  period,
 }: {
   scopedClientIds: string[];
   clients: Client[];
-  year: number;
-  selMonths: number[];
+  /** MIR From → To month period (MIR context bar). */
+  period: MonthPeriod;
 }) {
   const { rows, loading, error } = useMediaoceanInvestmentMix();
 
@@ -157,24 +157,19 @@ export default function MediaoceanInvestmentSection({
     return names;
   }, [scopedClientIds, clients]);
 
-  const yearStr = String(year);
   const filtered = useMemo(
     () =>
       rows.filter((r) => {
-        if (String(r.PLUSCO_YEAR) !== yearStr) return false;
         if (
           // Strict: an empty scope (filters exclude every client) shows nothing,
           // never "everything".
           !scopedNames.has(String(r.PLUSCO_CLIENT_NAME).trim().toLowerCase())
         )
           return false;
-        if (selMonths.length > 0) {
-          const m = monthOf(r);
-          if (m === null || !selMonths.includes(m)) return false;
-        }
-        return true;
+        // In the MIR period (rows carry a year + month).
+        return inPeriod(period, Number(r.PLUSCO_YEAR), monthOf(r));
       }),
-    [rows, yearStr, scopedNames, selMonths]
+    [rows, scopedNames, period]
   );
   // Recomputes on every filter change -- same effective-rows pattern as the
   // Investment KPIs scorecards.
@@ -237,6 +232,7 @@ export default function MediaoceanInvestmentSection({
         <h2 className="text-lg font-semibold text-foreground">
           Total Media Investment
         </h2>
+        <span className="text-xs font-medium text-muted-foreground">· {describePeriod(period)}</span>
       </div>
 
       {/* Row 1 — two hero scorecards side by side (no duplicated totals). */}

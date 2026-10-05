@@ -46,6 +46,7 @@ import {
   type MediaInvestmentRow,
 } from "../../../lib/dashboard/data/use-mediaocean-investment-mix";
 import type { Client } from "../../../lib/types/client.types";
+import { describePeriod, inPeriod, type MonthPeriod } from "../../../lib/format/period";
 
 // How many partners to show in the table + bar chart (matches the Looker "Top 20").
 const TOP_N = 20;
@@ -123,13 +124,12 @@ function PartnerTable({ partners }: { partners: PartnerSlice[] }) {
 export default function MediaoceanTopPartnersSection({
   scopedClientIds,
   clients,
-  year,
-  selMonths,
+  period,
 }: {
   scopedClientIds: string[];
   clients: Client[];
-  year: number;
-  selMonths: number[];
+  /** MIR From → To month period (MIR context bar). */
+  period: MonthPeriod;
 }) {
   const { rows, loading, error } = useMediaoceanInvestmentMix();
 
@@ -150,24 +150,19 @@ export default function MediaoceanTopPartnersSection({
     return names;
   }, [scopedClientIds, clients]);
 
-  const yearStr = String(year);
   const scoped = useMemo(
     () =>
       rows.filter((r) => {
-        if (String(r.PLUSCO_YEAR) !== yearStr) return false;
         if (
           // Strict: an empty scope (filters exclude every client) shows nothing,
           // never "everything".
           !scopedNames.has(String(r.PLUSCO_CLIENT_NAME).trim().toLowerCase())
         )
           return false;
-        if (selMonths.length > 0) {
-          const m = monthOf(r);
-          if (m === null || !selMonths.includes(m)) return false;
-        }
-        return true;
+        // In the MIR period (rows carry a year + month).
+        return inPeriod(period, Number(r.PLUSCO_YEAR), monthOf(r));
       }),
-    [rows, yearStr, scopedNames, selMonths]
+    [rows, scopedNames, period]
   );
 
   // Facet options come from ALL rows so the choices stay stable as facets change.
@@ -248,10 +243,11 @@ export default function MediaoceanTopPartnersSection({
       <div className="flex items-center gap-2">
         <Users size={18} className="text-primary" />
         <h2 className="text-lg font-semibold text-foreground">Top Partners</h2>
+        <span className="text-xs font-medium text-muted-foreground">· {describePeriod(period)}</span>
       </div>
 
-      {/* Buy-level facets (no global equivalent). Client scope, year and months
-          still come from the global filter bar + Time & Context. */}
+      {/* Buy-level facets (no global equivalent). Client scope comes from the
+          global filter bar; the period from the MIR context bar. */}
       <div className="flex flex-wrap items-center gap-3">
         <MultiSelectDropdown
           label="Media Channel"

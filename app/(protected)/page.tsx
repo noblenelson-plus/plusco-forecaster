@@ -22,6 +22,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X, Flag } from "lucide-react";
 import DashboardContextBar from "../../components/dashboard/dashboard-context-bar";
+import MirContextBar from "../../components/dashboard/mir-context-bar";
+import { calendarYearPeriod, type MonthPeriod } from "../../lib/format/period";
 import DashboardFilterBar from "../../components/dashboard/filters/dashboard-filter-bar";
 import {
   FORECASTER_TABS,
@@ -295,6 +297,12 @@ export default function DashboardPage() {
   );
 
   const [selMonths, setSelMonths] = useState<number[]>([]);
+  // MIR tabs (no RFQ): their own From → To month period instead of Year / RFQ /
+  // Months. Defaults to the current calendar year (the previous behaviour).
+  const isMirTab = topTab === "mediaocean" || topTab === "reports";
+  const [mirPeriod, setMirPeriod] = useState<MonthPeriod>(() =>
+    calendarYearPeriod(new Date().getFullYear())
+  );
   // The sub-tab chosen inside the Forecaster Dashboard (top tab: see above).
   const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
@@ -402,13 +410,26 @@ export default function DashboardPage() {
     >
       <header className="sticky top-0 z-40 flex flex-col bg-white">
         <div className="relative">
-          <DashboardContextBar
-            usdToCad={usdToCad}
-            usdClientCount={forecastData.usdClientCount}
-            missingRate={forecastData.missingRate}
-            months={selMonths}
-            onMonthsChange={setSelMonths}
-          />
+          {isMirTab ? (
+            <MirContextBar
+              period={mirPeriod}
+              onPeriodChange={setMirPeriod}
+              showPeriod={topTab === "mediaocean" && mediaOceanSub === "investments"}
+              note={
+                topTab === "reports"
+                  ? "Use each report's own Year / Month filters below."
+                  : "2026 full-year KPI snapshot — not filtered by period."
+              }
+            />
+          ) : (
+            <DashboardContextBar
+              usdToCad={usdToCad}
+              usdClientCount={forecastData.usdClientCount}
+              missingRate={forecastData.missingRate}
+              months={selMonths}
+              onMonthsChange={setSelMonths}
+            />
+          )}
           <div className="absolute right-4 top-1/2 -translate-y-1/2">
             <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs font-semibold">
               {(["CAD", "USD"] as Currency[]).map((c) => (
@@ -555,8 +576,7 @@ export default function DashboardPage() {
             onSubChange={setMediaOceanSub}
             scopedClientIds={scopedClientIds}
             clients={clients}
-            year={selectedYear ?? new Date().getFullYear()}
-            selMonths={selMonths}
+            period={mirPeriod}
             hidden={hiddenPages}
           />
         ) : tab === "labs-pacing" ? (
