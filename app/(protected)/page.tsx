@@ -22,6 +22,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X, Flag } from "lucide-react";
 import DashboardContextBar from "../../components/dashboard/dashboard-context-bar";
+import DashboardDisplayBar from "../../components/dashboard/dashboard-display-bar";
 import MirContextBar from "../../components/dashboard/mir-context-bar";
 import { calendarYearPeriod, type MonthPeriod } from "../../lib/format/period";
 import DashboardFilterBar from "../../components/dashboard/filters/dashboard-filter-bar";
@@ -117,6 +118,9 @@ function ModeToggle({
  */
 // isTestClient + TEST_CLIENT_PATTERN now live in lib/format/client.ts so the
 // dashboard and the QA reconciliation share one definition (imported above).
+
+/** "Every month" — a stable empty months list for tabs without the filter. */
+const ALL_MONTHS: number[] = [];
 
 export default function DashboardPage() {
   const { clients: allClients, loading, error } = useAccessibleClients();
@@ -300,6 +304,9 @@ export default function DashboardPage() {
   // MIR tabs (no RFQ): their own From → To month period instead of Year / RFQ /
   // Months. Defaults to the current calendar year (the previous behaviour).
   const isMirTab = topTab === "mediaocean" || topTab === "reports";
+  // The Months filter is shown on the Forecaster tab only, so the shared
+  // forecast data ignores it elsewhere (no hidden filter on Exec KPI etc.).
+  const dataMonths = topTab === "forecaster" ? selMonths : ALL_MONTHS;
   const [mirPeriod, setMirPeriod] = useState<MonthPeriod>(() =>
     calendarYearPeriod(new Date().getFullYear())
   );
@@ -361,10 +368,10 @@ export default function DashboardPage() {
     if (!isFlagView(id)) setFlagsOpen(false);
   };
 
-  const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad, selMonths);
-  const comparisonData = useScopeForecastData(comparisonScope, currencyByClient, comparisonUsdToCad, selMonths);
+  const forecastData = useScopeForecastData(scope, currencyByClient, usdToCad, dataMonths);
+  const comparisonData = useScopeForecastData(comparisonScope, currencyByClient, comparisonUsdToCad, dataMonths);
   // MediaBox totals for the same scope — feeds the coverage card (Media & Labs).
-  const mediaboxData = useScopeMediaboxTotals(scope, usdToCad, selMonths);
+  const mediaboxData = useScopeMediaboxTotals(scope, usdToCad, dataMonths);
   // Flags for the scope on the active axis — feeds the tab's Flags button
   // count and the read-only drawer. Only loads on the per-axis tabs.
   const scopeFlags = useScopeFlags(
@@ -380,12 +387,12 @@ export default function DashboardPage() {
   const primaryStreamSlices = forecastData.revenueByMode.blSubmission.breakdown.byStream;
   const allStreams = useMemo(() => allStreamKeys(primaryStreamSlices), [primaryStreamSlices]);
   const activeStreams = selectedStreams ?? allStreams;
-  const focusData = useScopeForecastData(focusScope, currencyByClient, usdToCad, selMonths);
+  const focusData = useScopeForecastData(focusScope, currencyByClient, usdToCad, dataMonths);
   const focusComparisonData = useScopeForecastData(
     focusComparisonScope,
     currencyByClient,
     comparisonUsdToCad,
-    selMonths
+    dataMonths
   );
   const productData = useScopeProductTracking(scopedClientIds);
   const { products, loading: productsLoading } = useProducts();
@@ -409,43 +416,35 @@ export default function DashboardPage() {
       }`}
     >
       <header className="sticky top-0 z-40 flex flex-col bg-white">
-        <div className="relative">
-          {isMirTab ? (
-            <MirContextBar
-              period={mirPeriod}
-              onPeriodChange={setMirPeriod}
-              showPeriod={topTab === "mediaocean" && mediaOceanSub === "investments"}
-              note={
-                topTab === "reports"
-                  ? "Use each report's own Year / Month filters below."
-                  : "2026 full-year KPI snapshot — not filtered by period."
-              }
-            />
-          ) : (
-            <DashboardContextBar
+        {/* Header rows by tab. Year / RFQ ("Time & Context") only matters on the
+            Forecaster tab; Labs Pacing and Exec KPI are full-year; the MIR tabs
+            have their own period bar. The display row (months where they apply,
+            CAD note + conversion, CAD / USD toggle) sits under it. */}
+        {isMirTab ? (
+          <MirContextBar
+            period={mirPeriod}
+            onPeriodChange={setMirPeriod}
+            showPeriod={topTab === "mediaocean" && mediaOceanSub === "investments"}
+            note={
+              topTab === "reports"
+                ? "Use each report's own Year / Month filters below."
+                : "2026 full-year KPI snapshot — not filtered by period."
+            }
+          />
+        ) : (
+          <>
+            {topTab === "forecaster" && <DashboardContextBar />}
+            <DashboardDisplayBar
+              months={selMonths}
+              onMonthsChange={topTab === "forecaster" ? setSelMonths : undefined}
               usdToCad={usdToCad}
               usdClientCount={forecastData.usdClientCount}
               missingRate={forecastData.missingRate}
-              months={selMonths}
-              onMonthsChange={setSelMonths}
+              viewCurrency={viewCurrency}
+              onViewCurrencyChange={setViewCurrency}
             />
-          )}
-          <div className="absolute right-4 top-1/2 -translate-y-1/2">
-            <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs font-semibold">
-              {(["CAD", "USD"] as Currency[]).map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setViewCurrency(c)}
-                  className={`px-3 py-1.5 transition-colors ${
-                    viewCurrency === c ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+          </>
+        )}
 
         {/* Revenue only: BL/OF Type per side. */}
         {showTypeControls && (
