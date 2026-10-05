@@ -311,6 +311,7 @@ export default function ExecutiveSummarySection({
       {/* By client */}
       <ExecKpisByClientTable
         rows={scopedKpiRows}
+        scenarioById={booked.miqScenarioById}
         labsShareGoal={labsShareGoal}
         billupsShareGoal={goals.billupsShare}
         sourceLabel={mirSourceLabel}

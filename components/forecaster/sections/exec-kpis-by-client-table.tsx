@@ -2,7 +2,7 @@
 "use client";
 
 /**
- * Executive Summary — "Exec KPIs by Client" table. The client-level drill-down
+ * "KPIs by Client" table (Exec KPI Dashboard + Media Investments). The client-level drill-down
  * that sits under the by-GM matrix, showing the same key metrics per client
  * (Labs share, Meta target/spend/share, Meta share YoY, trend, Billups OOH /
  * Print share, $ missed) with a Grand-total footer computed from summed dollars.
@@ -11,6 +11,10 @@
  * shares, the shared Billups eligibility rule), so Total ties to the matrix.
  * RAG (red/amber/green) colors the target metrics; the rest stay neutral.
  * Exports to Google Sheets from one shared set of column descriptors.
+ *
+ * MIQ Scenario comes from the Forecaster, not the MIR: each client's MIQ-Social
+ * / AIM-Social Labs eligibility toggles (Edit client), passed in as
+ * `scenarioById` by useBookedExecKpis. Only "Not Eligible" is shown.
  */
 
 import { useMemo, useState } from "react";
@@ -102,8 +106,6 @@ const progVarPpt = (r: KpiByClientRow): number | null => {
 };
 const progLabsShare = (r: KpiByClientRow) =>
   safeDiv(num(r.prog_labs_spend_2026), num(r.prog_spend_2026));
-const scenario = (r: KpiByClientRow) =>
-  textOf((r as Record<string, unknown>)["scenario_meta_mapping"]);
 
 /** Portfolio aggregate for the Grand-total footer (summed dollars / counts). */
 interface Agg {
@@ -209,7 +211,7 @@ interface Goals {
   bands?: RagBands;
 }
 
-function buildColumns(): Col[] {
+function buildColumns(scenario: (r: KpiByClientRow) => string): Col[] {
   return [
     {
       id: "client", label: "Client", kind: "text", group: "", align: "left", pinned: true,
@@ -347,18 +349,24 @@ export default function ExecKpisByClientTable({
   billupsShareGoal = null,
   bands,
   sourceLabel = "Booked to date (MIR)",
+  scenarioById,
 }: {
   rows: KpiByClientRow[];
   labsShareGoal?: number | null;
   billupsShareGoal?: number | null;
   bands?: RagBands;
   sourceLabel?: string;
+  /** client id → MIQ Scenario text from the Forecaster eligibility toggles. */
+  scenarioById?: ReadonlyMap<string, string>;
 }) {
   const goals: Goals = useMemo(
     () => ({ labsShareGoal, billupsShareGoal, bands }),
     [labsShareGoal, billupsShareGoal, bands]
   );
-  const columns = useMemo(() => buildColumns(), []);
+  const columns = useMemo(
+    () => buildColumns((r) => textOf(scenarioById?.get(r.PLUSCO_CLIENT_ID))),
+    [scenarioById]
+  );
   const [group, setGroup] = useState<GroupTab>("All");
   const visibleColumns = useMemo(
     () =>
@@ -395,9 +403,9 @@ export default function ExecKpisByClientTable({
   );
 
   return (
-    <div data-scroll-section data-scroll-label="Exec KPIs by client">
+    <div data-scroll-section data-scroll-label="KPIs by client">
       <ChartCard
-        title="Exec KPIs by Client"
+        title="KPIs by Client"
         subtitle={`${sourceLabel} · ${sorted.length} client${
           sorted.length === 1 ? "" : "s"
         } in scope`}
@@ -408,8 +416,8 @@ export default function ExecKpisByClientTable({
               columns={exportColumns}
               rows={sorted}
               totals={agg}
-              title="Exec KPIs by Client"
-              sheetTitle="Exec KPIs by Client"
+              title="KPIs by Client"
+              sheetTitle="KPIs by Client"
               includeTotals
             />
           ) : undefined
