@@ -62,9 +62,25 @@ export interface ValidatedRow {
 }
 
 export interface CSVValidationResult {
+  /** File name or Google Sheet title, shown in the review modal. */
   fileName: string;
   validRows: ValidatedRow[];
+  /** Row-level problems — those rows are skipped. */
   errors: string[];
+  /** Non-blocking notes (ignored columns, ids that create new clients…). */
+  warnings: string[];
+}
+
+/**
+ * Thrown when the table's overall structure is wrong (empty, missing required
+ * columns, the wrong export pasted…), so nothing can be imported. `problems`
+ * lists every issue found, for the UI to show at once.
+ */
+export class ImportStructureError extends Error {
+  constructor(public problems: string[]) {
+    super(problems.join(" "));
+    this.name = "ImportStructureError";
+  }
 }
 
 export interface ImportResult {
@@ -253,14 +269,18 @@ const CSV_COLUMNS = [
   "Client_Notes",
 ] as const;
 
-export function exportClientsToCSV(clients: Client[]): void {
+/**
+ * The client list as a table (header row first) — the single source for the
+ * CSV download and the Google Sheets export, so both round-trip through the
+ * same import.
+ */
+export function buildClientTable(clients: Client[]): string[][] {
   // One Client_Status_<year> column per STATUS_EXPORT_YEARS, copy-forward: a
   // year uses the client's explicit status if set, else carries the most recent
   // earlier year's value (2026 seeds from resolveClientStatus, which honors the
   // legacy Client_Status_2026 field). So 2027 pre-fills from 2026 until an
   // explicit 2027 status exists. Nested fields (Forecasting_Type,
   // Labs_Eligibility) are UI-only and omitted.
-  const header = CSV_COLUMNS.join(",");
   const rows = clients.map((c) => {
     const statusByYear: Record<number, string> = {};
     let last: string | undefined;
@@ -277,21 +297,54 @@ export function exportClientsToCSV(clients: Client[]): void {
     }
     return CSV_COLUMNS.map((col) => {
       const sm = /^Client_Status_(\d{4})$/.exec(col);
-      if (sm) return escapeCSV(statusByYear[Number(sm[1])]);
-      if (col === "CL_Hidden") return escapeCSV(c.CL_Hidden ? "true" : "false");
+      if (sm) return statusByYear[Number(sm[1])] ?? "";
+      if (col === "CL_Hidden") return c.CL_Hidden ? "true" : "false";
       const value = c[col as keyof Client];
-      if (Array.isArray(value)) return escapeCSV(value.join("|"));
-      return escapeCSV(value);
-    }).join(",");
+      if (Array.isArray(value)) return value.join("|");
+      return value == null ? "" : String(value);
+    });
   });
-  const csv = [header, ...rows].join("\n");
+  return [[...CSV_COLUMNS], ...rows];
+}
+
+/**
+ * Allowed values per constrained client column — the Google Sheets export
+ * turns them into dropdowns, so collaborators editing the sheet stay within
+ * what the import accepts.
+ */
+export function clientColumnAllowedValues(): Record<string, string[]> {
+  const statusCols = Object.fromEntries(
+    STATUS_EXPORT_YEARS.map((y) => [`Client_Status_${y}`, [...VALID_STATUSES]])
+  );
+  return {
+    CL_Agency: VALID_AGENCIES,
+    CL_Business_Unit_Region: VALID_REGIONS,
+    CL_Office: VALID_OFFICES,
+    Client_Fee_Structure: VALID_FEE_STRUCTS,
+    GM_Pod: VALID_GM_PODS,
+    CL_Currency: VALID_CURRENCIES,
+    CL_Advertiser_Vertical: VALID_VERTICALS,
+    CL_Hidden: ["TRUE", "FALSE"],
+    ...statusCols,
+  };
+}
+
+function downloadCSV(table: (string | number)[][], fileName: string): void {
+  const csv = table.map((row) => row.map(escapeCSV).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `clients_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+export function exportClientsToCSV(clients: Client[]): void {
+  downloadCSV(
+    buildClientTable(clients),
+    `clients_${new Date().toISOString().slice(0, 10)}.csv`
+  );
 }
 
 // ─── Commissions CSV Export ───────────────────────────────────────────────────
@@ -309,13 +362,15 @@ const COMMISSION_CSV_HEADER = [
 ];
 
 /**
- * Exports every client's commission rates as a CSV download — one row per
+ * Every client's commission rates as a table (header row first) — one row per
  * client × year × configured media type, with the 12 monthly rates (in %) and
  * a Uniform_Rate convenience column filled when all 12 months are identical.
  * Clients (or years) with no commission config simply contribute no rows.
+ * Shared by the CSV download and the Google Sheets export.
  */
-export function exportCommissionsToCSV(clients: Client[]): void {
-  const rows: string[] = [];
+export function buildCommissionTable(clients: Client[]): (string | number)[][] {
+  // Rates stay numbers so they land as numbers (not text) in Google Sheets.
+  const rows: (string | number)[][] = [];
 
   for (const client of clients) {
     const config = client.commissionsConfig ?? {};
@@ -328,59 +383,136 @@ export function exportCommissionsToCSV(clients: Client[]): void {
         const map = yearConfig[type as MediaType];
         if (!map) continue;
         const uniform = detectUniformRate(map);
-        rows.push(
-          [
-            escapeCSV(client.cl_id),
-            escapeCSV(client.CL_Name),
-            year,
-            type,
-            escapeCSV(MEDIA_TYPE_LABELS[type as MediaType]),
-            uniform ?? "",
-            ...MONTHS.map((m) => map[m] ?? 0),
-          ].join(",")
-        );
+        rows.push([
+          client.cl_id,
+          client.CL_Name,
+          year,
+          type,
+          MEDIA_TYPE_LABELS[type as MediaType],
+          uniform ?? "",
+          ...MONTHS.map((m) => map[m] ?? 0),
+        ]);
       }
     }
   }
 
-  const csv = [COMMISSION_CSV_HEADER.join(","), ...rows].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `commissions_${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  return [COMMISSION_CSV_HEADER, ...rows];
 }
 
-// ─── CSV Validation (dry run — no writes) ────────────────────────────────────
+export function exportCommissionsToCSV(clients: Client[]): void {
+  downloadCSV(
+    buildCommissionTable(clients),
+    `commissions_${new Date().toISOString().slice(0, 10)}.csv`
+  );
+}
+
+// ─── Import validation (dry run — no writes) ─────────────────────────────────
 
 /**
  * Parses and validates a CSV file without writing to Firestore.
  * Returns a CSVValidationResult with valid rows and error messages.
  * Call commitCSVImport() to actually write the valid rows.
  */
-export async function validateCSV(file: File): Promise<CSVValidationResult> {
+export async function validateCSV(
+  file: File,
+  existingIds?: ReadonlySet<string>
+): Promise<CSVValidationResult> {
   const text = await file.text();
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  return validateClientTable(file.name, lines.map(parseCSVLine), existingIds);
+}
 
-  if (lines.length < 2) {
-    throw new Error("CSV file is empty or missing data rows.");
+/**
+ * Checks the table's overall shape and throws an ImportStructureError when it
+ * can't be a client list export: empty, header not on row 1, the commission
+ * rates export pasted instead, missing required or duplicated columns.
+ * Returns the columns that will be ignored (unknown to the import).
+ */
+function checkClientTableStructure(table: string[][]): { ignored: string[] } {
+  const headers = table[0] ?? [];
+  const problems: string[] = [];
+
+  if (table.length < 2 || headers.every((h) => !h)) {
+    throw new ImportStructureError([
+      "The sheet is empty or has no data rows below the header row.",
+    ]);
   }
 
-  const headers = lines[0].split(",").map((h) => h.trim());
-
-  const missingCols = REQUIRED_COLUMNS.filter((col) => !headers.includes(col));
-  if (missingCols.length > 0) {
-    throw new Error(`Missing required columns: ${missingCols.join(", ")}`);
+  if (headers.includes("Media_Type") && headers.includes("Uniform_Rate")) {
+    throw new ImportStructureError([
+      "This looks like the commission rates export. Import expects the client list (Export → Client list).",
+    ]);
   }
+
+  const missing = REQUIRED_COLUMNS.filter((col) => !headers.includes(col));
+  if (missing.length > 0) {
+    problems.push(`Missing required columns: ${missing.join(", ")}.`);
+    // A header further down usually means title rows were added above it.
+    const headerRow = table.findIndex((r) => REQUIRED_COLUMNS.every((c) => r.includes(c)));
+    if (headerRow > 0) {
+      problems.push(
+        `The column headers were found on row ${headerRow + 1} — they must be on row 1. Delete the rows above them.`
+      );
+    } else {
+      problems.push(
+        "Row 1 must hold the column headers exactly as exported (e.g. CL_Name, CL_Agency) — don't rename them."
+      );
+    }
+  }
+
+  const seen = new Set<string>();
+  const duplicated = new Set<string>();
+  for (const h of headers) {
+    if (!h) continue;
+    if (seen.has(h)) duplicated.add(h);
+    seen.add(h);
+  }
+  if (duplicated.size > 0) {
+    problems.push(`Duplicated columns: ${[...duplicated].join(", ")}. Each column must appear once.`);
+  }
+
+  if (problems.length > 0) throw new ImportStructureError(problems);
+
+  const known = new Set<string>(CSV_COLUMNS);
+  const ignored = headers.filter(
+    (h) => h && !known.has(h) && !/^Client_Status_\d{4}$/.test(h)
+  );
+  return { ignored };
+}
+
+/**
+ * Validates a client-list table (header row first, as produced by
+ * buildClientTable) without writing. Shared by the CSV and Google Sheets
+ * imports. Throws ImportStructureError for a wrongly-shaped table; row-level
+ * problems are returned in `errors` and those rows are skipped. Pass
+ * `existingIds` to flag cl_ids that would create a new client.
+ */
+export function validateClientTable(
+  sourceName: string,
+  rawTable: string[][],
+  existingIds?: ReadonlySet<string>
+): CSVValidationResult {
+  const table = rawTable.map((r) => r.map((v) => (v ?? "").trim()));
+  const { ignored } = checkClientTableStructure(table);
+  const headers = table[0];
 
   const errors: string[] = [];
+  const warnings: string[] = [];
   const validRows: ValidatedRow[] = [];
+  const seenIds = new Map<string, number>();
 
-  for (let i = 1; i < lines.length; i++) {
+  if (ignored.length > 0) {
+    warnings.push(
+      `Ignored unknown column${ignored.length > 1 ? "s" : ""}: ${ignored.join(", ")}.`
+    );
+  }
+
+  for (let i = 1; i < table.length; i++) {
     const lineNumber = i + 1;
-    const values = parseCSVLine(lines[i]);
+    const values = table[i];
+
+    // Blank rows (common in shared sheets) are skipped silently.
+    if (values.every((v) => !v)) continue;
 
     if (values.length !== headers.length) {
       errors.push(
@@ -389,8 +521,33 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
       continue;
     }
 
+    // Only known columns reach the payload — an extra column added in a shared
+    // sheet must not become a stray field on the client doc.
     const row: Record<string, unknown> = {};
-    headers.forEach((h, idx) => { row[h] = values[idx]; });
+    headers.forEach((h, idx) => {
+      if (h && !ignored.includes(h)) row[h] = values[idx];
+    });
+
+    const emptyRequired = REQUIRED_COLUMNS.filter((col) => !row[col]);
+    if (emptyRequired.length > 0) {
+      errors.push(`Row ${lineNumber}: empty required ${emptyRequired.join(", ")}`);
+      continue;
+    }
+
+    const rowId = (row.cl_id as string) || "";
+    if (rowId) {
+      const firstRow = seenIds.get(rowId);
+      if (firstRow !== undefined) {
+        errors.push(`Row ${lineNumber}: cl_id "${rowId}" already used on row ${firstRow}`);
+        continue;
+      }
+      seenIds.set(rowId, lineNumber);
+      if (existingIds && !existingIds.has(rowId)) {
+        warnings.push(
+          `Row ${lineNumber}: cl_id "${rowId}" matches no existing client — it will be created as a new client.`
+        );
+      }
+    }
 
     // Validate constrained fields
     const validations: [string, string, string[]][] = [
@@ -426,12 +583,12 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
     }
     if (hasError) continue;
 
-    // Parse pipe-separated GAIA numbers
-    const gaiaRaw = (row.CL_GAIA_Number as string) ?? "";
-    row.CL_GAIA_Number = gaiaRaw ? gaiaRaw.split("|").map((s) => s.trim()) : [];
-
-    // Pipe-separated MediaBox IDs — only touched when the CSV carries the
-    // column, so older files without it don't wipe existing mappings.
+    // Pipe-separated GAIA numbers and MediaBox IDs — only touched when the
+    // table carries the column, so a file without it doesn't wipe them.
+    if ("CL_GAIA_Number" in row) {
+      const gaiaRaw = (row.CL_GAIA_Number as string) ?? "";
+      row.CL_GAIA_Number = gaiaRaw ? gaiaRaw.split("|").map((s) => s.trim()) : [];
+    }
     if ("CL_MediaBox_IDs" in row) {
       const mediaboxRaw = (row.CL_MediaBox_IDs as string) ?? "";
       row.CL_MediaBox_IDs = mediaboxRaw
@@ -454,8 +611,11 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
       row.Client_Status_By_Year = statusByYear;
     }
 
-    // Hidden flag (optional column).
-    row.CL_Hidden = (row.CL_Hidden as string) === "true";
+    // Hidden flag (optional column) — only written when the column is there,
+    // so a table without it never unhides clients. Sheets may say "TRUE".
+    if ("CL_Hidden" in row) {
+      row.CL_Hidden = String(row.CL_Hidden).toLowerCase() === "true";
+    }
 
     // Fields the CSV does NOT carry (commissionsConfig, Forecasting_Type,
     // Labs_Eligibility, createdAt) are intentionally absent from the payload:
@@ -472,15 +632,17 @@ export async function validateCSV(file: File): Promise<CSVValidationResult> {
 
     // Tier is computed from the digital spend forecast (see lib/format/tier.ts),
     // never imported: the CSV column is ignored on existing clients so an import
-    // can't overwrite a computed value. New clients start at PARTNER (no
-    // forecast yet → $0 digital spend) until the next recompute.
+    // can't overwrite a computed value. New clients (no cl_id, or one matching
+    // no existing client) start at PARTNER (no forecast yet → $0 digital
+    // spend) until the next recompute.
     delete row.CL_Tier;
-    if (!existingId) row.CL_Tier = "PARTNER";
+    const isNew = !existingId || (existingIds !== undefined && !existingIds.has(existingId));
+    if (isNew) row.CL_Tier = "PARTNER";
 
     validRows.push({ id, data: row });
   }
 
-  return { fileName: file.name, validRows, errors };
+  return { fileName: sourceName, validRows, errors, warnings };
 }
 
 // ─── Tier recompute ───────────────────────────────────────────────────────────
