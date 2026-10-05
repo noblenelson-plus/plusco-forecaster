@@ -22,7 +22,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X, Flag } from "lucide-react";
 import DashboardContextBar from "../../components/dashboard/dashboard-context-bar";
-import DashboardDisplayBar from "../../components/dashboard/dashboard-display-bar";
+import CurrencyToggle from "../../components/dashboard/currency-toggle";
 import MirContextBar from "../../components/dashboard/mir-context-bar";
 import { calendarYearPeriod, type MonthPeriod } from "../../lib/format/period";
 import DashboardFilterBar from "../../components/dashboard/filters/dashboard-filter-bar";
@@ -418,20 +418,13 @@ export default function DashboardPage() {
       <header className="sticky top-0 z-40 flex flex-col bg-white">
         {/* Header row by tab. The Forecaster tab keeps its original Time &
             Context bar (Year / RFQ vs, Months, CAD note, CAD / USD toggle) —
-            unchanged. Labs Pacing and Exec KPI are full-year, so they get the
-            display row only (CAD note + conversion + toggle); the MIR tabs get
-            their own period / note row in the same style. */}
+            unchanged. Media Investments gets the MIR period row. The other tabs
+            have no row here: Labs Pacing / Exec KPI / MediaBox carry the CAD /
+            USD toggle in the filter bar; Reports and the KPI sub-tab need none. */}
         {isMirTab ? (
-          <MirContextBar
-            period={mirPeriod}
-            onPeriodChange={setMirPeriod}
-            showPeriod={topTab === "mediaocean" && mediaOceanSub === "investments"}
-            note={
-              topTab === "reports"
-                ? "Use each report's own Year / Month filters below."
-                : "2026 full-year KPI snapshot — not filtered by period."
-            }
-          />
+          topTab === "mediaocean" && mediaOceanSub === "investments" ? (
+            <MirContextBar period={mirPeriod} onPeriodChange={setMirPeriod} />
+          ) : null
         ) : topTab === "forecaster" ? (
           <div className="relative">
             <DashboardContextBar
@@ -457,15 +450,7 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        ) : (
-          <DashboardDisplayBar
-            usdToCad={usdToCad}
-            usdClientCount={forecastData.usdClientCount}
-            missingRate={forecastData.missingRate}
-            viewCurrency={viewCurrency}
-            onViewCurrencyChange={setViewCurrency}
-          />
-        )}
+        ) : null}
 
         {/* Revenue only: BL/OF Type per side. */}
         {showTypeControls && (
@@ -486,6 +471,17 @@ export default function DashboardPage() {
             totalAccessible={totalAccessible}
             hasActiveFilters={hasActiveFilters}
             onReset={reset}
+            trailing={
+              !isMirTab && topTab !== "forecaster" ? (
+                <CurrencyToggle
+                  viewCurrency={viewCurrency}
+                  onChange={setViewCurrency}
+                  usdToCad={usdToCad}
+                  usdClientCount={forecastData.usdClientCount}
+                  missingRate={forecastData.missingRate}
+                />
+              ) : undefined
+            }
           />
         )}
 

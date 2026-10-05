@@ -3,11 +3,13 @@
 
 /**
  * Presentational filter bar — renders one dropdown per facet from the filter
- * engine's view models, plus a result count and a Reset action. All logic
+ * engine's view models, plus a result count (or a caller-supplied `trailing`
+ * control in its place) and a Reset action. All logic
  * (options, cascading, selection) lives in useDashboardFilters; this component
  * only maps view models to UI.
  */
 
+import type { ReactNode } from "react";
 import { Filter, X } from "lucide-react";
 import MultiSelectDropdown from "../../_shared/multi-select-dropdown";
 import type { FacetView } from "../../../lib/dashboard/filters/use-dashboard-filters";
@@ -18,6 +20,8 @@ interface DashboardFilterBarProps {
   totalAccessible: number;
   hasActiveFilters: boolean;
   onReset: () => void;
+  /** Shown in place of the client count (e.g. the CAD / USD toggle). */
+  trailing?: ReactNode;
 }
 
 export default function DashboardFilterBar({
@@ -26,6 +30,7 @@ export default function DashboardFilterBar({
   totalAccessible,
   hasActiveFilters,
   onReset,
+  trailing,
 }: DashboardFilterBarProps) {
   return (
     <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
@@ -49,9 +54,11 @@ export default function DashboardFilterBar({
         ))}
 
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-xs text-gray-500 tabular-nums">
-            {filteredCount} / {totalAccessible} client{totalAccessible !== 1 ? "s" : ""}
-          </span>
+          {trailing ?? (
+            <span className="text-xs text-gray-500 tabular-nums">
+              {filteredCount} / {totalAccessible} client{totalAccessible !== 1 ? "s" : ""}
+            </span>
+          )}
           {hasActiveFilters && (
             <button
               type="button"
