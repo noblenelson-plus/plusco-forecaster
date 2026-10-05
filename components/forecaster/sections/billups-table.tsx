@@ -25,6 +25,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { BillupsClientRow } from "../../../lib/dashboard/data/use-billups-by-client";
+import SheetExportButton from "../../dashboard/sheet-export-button";
 
 // ─── Formatting helpers (match the MediaOcean sections) ───────────────────────
 
@@ -274,76 +275,94 @@ export default function BillupsTable({ rows }: { rows: BillupsClientRow[] }) {
     );
   }
 
+  // Sheet rows: what's on screen (sort order, formatted cells — Sheets reads
+  // "$1,234" / "90%" back as numbers); "—" becomes an empty cell.
+  const blank = (v: string) => (v === "—" ? "" : v);
+  const exportMatrix = () => [
+    COLUMNS.map((c) => c.header),
+    ...sortedRows.map((r) => COLUMNS.map((c) => blank(c.cell(r)))),
+    COLUMNS.map((c) => blank(c.footer ? c.footer(sortedRows) : "")),
+  ];
+
   return (
-    <div className="max-h-[520px] overflow-auto">
-      <table className="min-w-[1100px] border-collapse text-sm">
-        <thead className="sticky top-0 z-20">
-          <tr className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
-            {COLUMNS.map((c) => {
-              const dir = sort.columnId === c.id ? sort.direction : null;
-              return (
-                <th
-                  key={c.id}
-                  className={`px-3 py-2 font-medium ${alignClass(c.align)}`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggle(c)}
-                    className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-foreground ${
-                      c.align === "right"
-                        ? "flex-row-reverse"
-                        : c.align === "center"
-                        ? "justify-center"
-                        : ""
+    <div>
+      <div className="flex justify-end pb-2">
+        <SheetExportButton
+          title="Billups — Client detail"
+          sheetTitle="Billups Client detail"
+          buildMatrix={exportMatrix}
+        />
+      </div>
+      <div className="max-h-[520px] overflow-auto">
+        <table className="min-w-[1100px] border-collapse text-sm">
+          <thead className="sticky top-0 z-20">
+            <tr className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
+              {COLUMNS.map((c) => {
+                const dir = sort.columnId === c.id ? sort.direction : null;
+                return (
+                  <th
+                    key={c.id}
+                    className={`px-3 py-2 font-medium ${alignClass(c.align)}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggle(c)}
+                      className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-foreground ${
+                        c.align === "right"
+                          ? "flex-row-reverse"
+                          : c.align === "center"
+                          ? "justify-center"
+                          : ""
+                      }`}
+                    >
+                      <span>{c.header}</span>
+                      {dir === "asc" && <ChevronUp size={12} />}
+                      {dir === "desc" && <ChevronDown size={12} />}
+                    </button>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+
+          <tbody>
+            {sortedRows.map((r) => (
+              <tr
+                key={r.clientId}
+                className="border-b border-border/60 hover:bg-muted/60"
+              >
+                {COLUMNS.map((c) => (
+                  <td
+                    key={c.id}
+                    className={`px-3 py-2 ${alignClass(c.align)} ${
+                      c.numeric
+                        ? "tabular-nums text-muted-foreground"
+                        : "text-foreground"
                     }`}
                   >
-                    <span>{c.header}</span>
-                    {dir === "asc" && <ChevronUp size={12} />}
-                    {dir === "desc" && <ChevronDown size={12} />}
-                  </button>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
+                    {c.cell(r)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
 
-        <tbody>
-          {sortedRows.map((r) => (
-            <tr
-              key={r.clientId}
-              className="border-b border-border/60 hover:bg-muted/60"
-            >
+          <tfoot className="sticky bottom-0 z-20">
+            <tr className="border-t-2 border-border bg-muted font-semibold">
               {COLUMNS.map((c) => (
                 <td
                   key={c.id}
                   className={`px-3 py-2 ${alignClass(c.align)} ${
-                    c.numeric
-                      ? "tabular-nums text-muted-foreground"
-                      : "text-foreground"
-                  }`}
+                    c.numeric ? "tabular-nums" : ""
+                  } text-foreground`}
                 >
-                  {c.cell(r)}
+                  {c.footer ? c.footer(sortedRows) : ""}
                 </td>
               ))}
             </tr>
-          ))}
-        </tbody>
-
-        <tfoot className="sticky bottom-0 z-20">
-          <tr className="border-t-2 border-border bg-muted font-semibold">
-            {COLUMNS.map((c) => (
-              <td
-                key={c.id}
-                className={`px-3 py-2 ${alignClass(c.align)} ${
-                  c.numeric ? "tabular-nums" : ""
-                } text-foreground`}
-              >
-                {c.footer ? c.footer(sortedRows) : ""}
-              </td>
-            ))}
-          </tr>
-        </tfoot>
-      </table>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }
