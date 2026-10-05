@@ -601,6 +601,8 @@ export default function DashboardPage() {
             scopedClientIds={scopedClientIds}
             currencyByClient={currencyByClient}
             usdToCad={usdToCad}
+            // GM-level sections live on Exec KPI → Deal Pacing only.
+            showGmSections={false}
           />
         ) : tab === "exec-kpis" ? (
           <ExecKpisTabs
