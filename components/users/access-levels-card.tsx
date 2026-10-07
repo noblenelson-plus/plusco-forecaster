@@ -1,7 +1,7 @@
 // components/users/access-levels-card.tsx
 "use client";
 
-import { Briefcase, LayoutDashboard, Shield, Clock, type LucideIcon } from "lucide-react";
+import { Briefcase, Shield, type LucideIcon } from "lucide-react";
 
 /**
  * Explains where access comes from. Shown on the admin Users page so admins
@@ -20,25 +20,13 @@ const TIERS: Tier[] = [
     icon: Briefcase,
     title: "Client team",
     detail:
-      "GM, Business Lead, Digital Lead and collaborators of a client (set on the client). They edit that client's forecast, flags and milestones (never actuals) and see it on the Forecaster dashboard.",
-  },
-  {
-    icon: LayoutDashboard,
-    title: "Dashboard access",
-    detail:
-      "Granted per dashboard to email domains or people (Admin → Dashboard Access). Global mode shows every client; Agency mode the clients of the person's agency (every agency for company-wide domains).",
+      "The GM, Business Lead, Digital Lead and collaborators of a client. They edit that client's forecast, flags and milestones (never actuals) and see it on the Forecaster dashboard. GM comes from the client's GM Pod and BL / DL are set on the client; collaborators are allocated here.",
   },
   {
     icon: Shield,
     title: "Admin",
     detail:
       "Manages users, clients, actuals, dashboards and the agency ↔ domain mapping. Sees and edits every client.",
-  },
-  {
-    icon: Clock,
-    title: "No team, no dashboard",
-    detail:
-      "Signing in creates the user row, but the person sees an “Access pending” screen until they are put on a client team or granted a dashboard.",
   },
 ];
 

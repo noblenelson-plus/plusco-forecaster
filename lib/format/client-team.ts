@@ -52,6 +52,91 @@ export function isOnClientTeam(
   return !!e && (client.CL_Team_Emails ?? []).includes(e);
 }
 
+// ─── Roles per client (Admin → Forecast Access) ──────────────────────────────
+
+/** The seat a person holds on a client's team. */
+export type TeamRole = "GM" | "BL" | "DL" | "COLLABORATOR";
+
+export const TEAM_ROLES: TeamRole[] = ["GM", "BL", "DL", "COLLABORATOR"];
+
+export const TEAM_ROLE_LABELS: Record<TeamRole, string> = {
+  GM: "GM",
+  BL: "Business Lead",
+  DL: "Digital Lead",
+  COLLABORATOR: "Collaborator",
+};
+
+export const TEAM_ROLE_SHORT: Record<TeamRole, string> = {
+  GM: "GM",
+  BL: "BL",
+  DL: "DL",
+  COLLABORATOR: "Collab.",
+};
+
+/** Every (email, role) seat on the client's team, from its source fields. */
+export function teamSeats(client: TeamEmailFields): { email: string; role: TeamRole }[] {
+  const seats: { email: string; role: TeamRole }[] = [];
+  const push = (value: string | undefined | null, role: TeamRole) => {
+    const e = normalizeEmail(value);
+    if (isValidEmail(e)) seats.push({ email: e, role });
+  };
+  for (const e of GM_POD_EMAILS[client.GM_Pod as ClientGMPod] ?? []) push(e, "GM");
+  push(client.CL_Business_Lead, "BL");
+  push(client.CL_Digital_Lead, "DL");
+  for (const e of client.CL_Collaborators ?? []) push(e, "COLLABORATOR");
+  return seats;
+}
+
+/**
+ * email → (cl_id → roles held on that client). A person with several seats on
+ * one client (e.g. BL and collaborator) lists each role once.
+ */
+export function teamMemberships(
+  clients: (TeamEmailFields & Pick<Client, "cl_id">)[]
+): Map<string, Map<string, TeamRole[]>> {
+  const out = new Map<string, Map<string, TeamRole[]>>();
+  for (const c of clients) {
+    for (const { email, role } of teamSeats(c)) {
+      let byClient = out.get(email);
+      if (!byClient) out.set(email, (byClient = new Map()));
+      const roles = byClient.get(c.cl_id) ?? [];
+      if (!roles.includes(role)) byClient.set(c.cl_id, [...roles, role]);
+    }
+  }
+  return out;
+}
+
+/** A collaborator edit on one client, with its recomputed CL_Team_Emails. */
+export interface CollaboratorsUpdate {
+  cl_id: string;
+  CL_Collaborators: string[];
+  CL_Team_Emails: string[];
+}
+
+/** The client with `collaborators` as its collaborator list. */
+export function collaboratorsUpdate(
+  client: TeamEmailFields & Pick<Client, "cl_id">,
+  collaborators: string[]
+): CollaboratorsUpdate {
+  const list = normalizeEmailList(collaborators);
+  return {
+    cl_id: client.cl_id,
+    CL_Collaborators: list,
+    CL_Team_Emails: computeTeamEmails({ ...client, CL_Collaborators: list }),
+  };
+}
+
+/** Adds (`on`) or removes the person from the client's collaborators. */
+export function toggleCollaborator(
+  client: TeamEmailFields & Pick<Client, "cl_id">,
+  email: string,
+  on: boolean
+): CollaboratorsUpdate {
+  const e = normalizeEmail(email);
+  const current = normalizeEmailList(client.CL_Collaborators ?? []);
+  return collaboratorsUpdate(client, on ? [...current, e] : current.filter((x) => x !== e));
+}
+
 // ─── Backfill ─────────────────────────────────────────────────────────────────
 
 export interface TeamEmailsChange {
