@@ -1,68 +1,83 @@
 rules_version = '2';
 
-// Cloud Storage rules. Role and agency checks read the caller's Firestore user
-// doc (cross-service rules).
+// Cloud Storage rules. Access checks read Firestore (cross-service rules) and
+// mirror firestoreRules.txt / lib/format/access.ts — change them together.
 //   - client-logos/: uploaded from the admin-only client drawer.
 //   - reports/: the per-agency Reports snapshots published by the monthly sync
 //     (scripts/lib/report-snapshot.mjs). Only the Admin SDK writes them.
 service firebase.storage {
   match /b/{bucket}/o {
-    function userDoc() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    function myEmail() {
+      return request.auth.token.email.lower();
     }
-    function isAdminOrExec() {
-      return userDoc().role in ['ADMIN', 'EXEC'];
+    function myDomain() {
+      return myEmail().split('@')[1];
     }
-    // The caller's (verified) email domain maps to this agency in the agencies
-    // ↔ domains mapping, directly or via a company-wide domain. Never grants
-    // the "_unassigned" bucket.
-    function emailDomain() {
-      return request.auth.token.email.lower().split('@')[1];
+    function userPath() {
+      return /databases/(default)/documents/users/$(myEmail());
     }
-    function isEmailDomainAgency(agency) {
-      return agency != '_unassigned' &&
-        request.auth.token.email_verified == true && (
-          (firestore.exists(/databases/(default)/documents/agencies/$(agency)) &&
-            emailDomain() in firestore.get(/databases/(default)/documents/agencies/$(agency))
-              .data.get('domains', [])) ||
-          (firestore.exists(/databases/(default)/documents/config/company_domains) &&
-            emailDomain() in firestore.get(/databases/(default)/documents/config/company_domains)
-              .data.get('domains', []))
-        );
+    // Signed in with a verified email, has a users row (users/{email}), not
+    // revoked.
+    function isActive() {
+      return request.auth != null &&
+        request.auth.token.email_verified == true &&
+        firestore.exists(userPath()) &&
+        firestore.get(userPath()).data.get('disabled', false) != true;
     }
-    // Mirrors canReadAgencyData in firestoreRules.txt: Admin reads every
-    // agency; everyone else (Execs included) strictly their email domain's
-    // agencies (live mapping, company-wide domains included). Disabled: none.
-    function canReadAgency(agency) {
-      return request.auth != null && (
-        userDoc().role == 'ADMIN' || (
-          userDoc().get('disabled', false) != true &&
-          isEmailDomainAgency(agency)
-        )
+    function isAdmin() {
+      return isActive() && firestore.get(userPath()).data.role == 'ADMIN';
+    }
+    function dashboards() {
+      return firestore.exists(/databases/(default)/documents/config/dashboard_access)
+        ? firestore.get(/databases/(default)/documents/config/dashboard_access).data.get('dashboards', {})
+        : {};
+    }
+    function grantedWith(id, mode) {
+      let g = dashboards().get(id, {});
+      return g.get('mode', 'AGENCY') == mode &&
+        (myDomain() in g.get('domains', []) || myEmail() in g.get('users', []));
+    }
+    function dashCanReadAll() {
+      return grantedWith('labs-pacing', 'GLOBAL') || grantedWith('exec-kpis', 'GLOBAL') ||
+        grantedWith('mediaocean', 'GLOBAL') || grantedWith('mediabox', 'GLOBAL') ||
+        grantedWith('reports', 'GLOBAL');
+    }
+    function dashAnyAgencyGrant() {
+      return grantedWith('labs-pacing', 'AGENCY') || grantedWith('exec-kpis', 'AGENCY') ||
+        grantedWith('mediaocean', 'AGENCY') || grantedWith('mediabox', 'AGENCY') ||
+        grantedWith('reports', 'AGENCY');
+    }
+    // The caller's email domain maps to this agency, directly or via a
+    // company-wide domain. Never the "_unassigned" bucket.
+    function domainCoversAgency(agency) {
+      return agency != '_unassigned' && (
+        (firestore.exists(/databases/(default)/documents/config/company_domains) &&
+          myDomain() in firestore.get(/databases/(default)/documents/config/company_domains)
+            .data.get('domains', [])) ||
+        (firestore.exists(/databases/(default)/documents/agencies/$(agency)) &&
+          myDomain() in firestore.get(/databases/(default)/documents/agencies/$(agency))
+            .data.get('domains', []))
       );
     }
-    // Any approved, active user (the layout's access gate, enforced here).
-    function isActiveUser() {
-      return request.auth != null &&
-        userDoc().get('disabled', false) != true && (
-          isAdminOrExec() ||
-          userDoc().get('assignedAgencies', []).size() > 0 ||
-          userDoc().get('clientAgencies', []).size() > 0 ||
-          userDoc().get('assignedClients', []).size() > 0
-        );
+    // Mirrors canReadAgencyData in firestoreRules.txt: admin → every agency;
+    // a GLOBAL grant → every agency incl. "_unassigned"; an AGENCY grant → the
+    // caller's agencies.
+    function canReadAgency(agency) {
+      return isAdmin() || (isActive() && (
+        dashCanReadAll() || (dashAnyAgencyGrant() && domainCoversAgency(agency))
+      ));
     }
 
     match /client-logos/{fileName} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
-        && userDoc().role == "ADMIN"
+      allow write: if isAdmin()
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
 
     // Which agencies exist per report table + the sync time. No row data.
     match /reports/manifest.json {
-      allow read: if isActiveUser();
+      allow read: if isActive();
       allow write: if false;
     }
 
