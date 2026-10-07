@@ -1,15 +1,15 @@
 // lib/hooks/use-accessible-clients.ts
 
 /**
- * Fetches the clients the current user may access, scoped by role:
- *   - ADMIN          → every client
- *   - BUSINESS_LEAD  → `assignedClients` ∪ every client of an `assignedAgency`
+ * Fetches the clients of the current user's team spaces:
+ *   - ADMIN → every client
+ *   - USER  → the clients whose team (CL_Team_Emails) lists their email
  *
  * Returns the full `Client` docs (not a summary) so callers can read any
  * field — the dashboard facets need agency / GM pod / region / office / tier /
  * business lead. Hidden clients are removed. Sorted by name.
  *
- * The role-scoped fetch (including agency expansion) lives in
+ * The scoped fetch lives in
  * `fetchAccessibleClients` (assignment-service), shared with
  * `forecast-selectors.tsx` and `app/(protected)/clients/page.tsx`.
  */

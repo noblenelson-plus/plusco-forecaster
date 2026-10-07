@@ -19,7 +19,7 @@ import {
 } from "../../../lib/format/client";
 
 export default function ClientsPage() {
-  const { profile, isAdmin, isViewer } = useUserProfile();
+  const { profile, isAdmin } = useUserProfile();
 
   // The year every card badge and the status filter use. The calendar year
   // (not the persisted dashboard year), so it rolls over on Jan 1; other
@@ -52,8 +52,8 @@ export default function ClientsPage() {
       setLoading(true);
       setError("");
       try {
-        // Role-scoped fetch: admins see all; BLs see assigned clients ∪ every
-        // client of an assigned agency. Already sorted by name.
+        // Team-scoped fetch: admins see all; everyone else the clients whose
+        // team they are on. Already sorted by name.
         const data = await fetchAccessibleClients(profile, isAdmin);
         setClients(data);
       } catch (err: any) {
@@ -145,7 +145,7 @@ export default function ClientsPage() {
       {/* Sticky banner — full width, outside the padded container */}
       <PageHeader
         title="Clients"
-        description={isAdmin ? "Manage all agency clients." : "Your assigned clients."}
+        description={isAdmin ? "Manage all agency clients." : "The clients whose team you are on."}
         actions={
           <>
             <a
@@ -193,7 +193,7 @@ export default function ClientsPage() {
           clients={clients}
           filteredClients={filteredClients}
           isAdmin={isAdmin}
-          canExport={!isViewer}
+          canExport
           onAddClient={handleAddClient}
         />
 

@@ -1,55 +1,57 @@
 // lib/hooks/use-user-profile.ts
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../auth-context";
-import { UserProfile } from "../services/user-service";
-import {
-  resolvePermissions,
-  type UserPermissions,
-  type UserRole,
-} from "../types/user.types";
-
-// Permissions for a signed-out / still-loading user: everything denied.
-const NO_PERMISSIONS = resolvePermissions("VIEWER");
+import type { UserProfile } from "../services/user-service";
+import type { AppRole } from "../types/access.types";
+import { normalizeEmail } from "../format/email";
 
 interface UseUserProfileResult {
   profile: UserProfile | null;
   loading: boolean;
-  role: UserRole | null;
+  role: AppRole | null;
   isAdmin: boolean;
-  isExec: boolean;
-  isViewer: boolean;
-  permissions: UserPermissions;
+  /** Signed-in, normalized email ("" when signed out). */
+  email: string;
 }
 
 /**
- * Subscribes in real-time to the current user's Firestore profile document.
- * - Returns null while loading or if no user is authenticated.
- * - Automatically unsubscribes when the user changes or the component unmounts.
+ * Subscribes in real time to the signed-in person's `users/{email}` doc.
+ * `profile` is null while loading, when signed out, or before the first
+ * sign-in has created the row.
  */
 export function useUserProfile(): UseUserProfileResult {
   const { user } = useAuth();
+  const email = normalizeEmail(user?.email);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) {
+    if (!email) {
       setProfile(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
-
-    const userRef = doc(db, "users", user.uid);
-
     const unsubscribe = onSnapshot(
-      userRef,
+      doc(db, "users", email),
       (snapshot) => {
         if (snapshot.exists()) {
-          setProfile({ uid: user.uid, ...(snapshot.data() as Omit<UserProfile, "uid">) });
+          const data = snapshot.data() as Partial<UserProfile>;
+          setProfile({
+            email,
+            displayName: data.displayName ?? null,
+            photoURL: data.photoURL ?? null,
+            uid: data.uid ?? null,
+            role: data.role === "ADMIN" ? "ADMIN" : "USER",
+            lastLoginAt: data.lastLoginAt ?? null,
+            createdAt: data.createdAt ?? null,
+            createdBy: data.createdBy ?? null,
+            disabled: data.disabled ?? null,
+          });
         } else {
           setProfile(null);
         }
@@ -63,21 +65,12 @@ export function useUserProfile(): UseUserProfileResult {
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, [email]);
 
   const role = profile?.role ?? null;
-  const permissions = useMemo(
-    () => (role ? resolvePermissions(role) : NO_PERMISSIONS),
-    [role]
-  );
+  // What a person may do is decided by client teams and dashboard grants
+  // (lib/format/access.ts, useAccess) — the role only says admin or not.
+  const isAdmin = role === "ADMIN";
 
-  return {
-    profile,
-    loading,
-    role,
-    isAdmin: role === "ADMIN",
-    isExec: role === "EXEC",
-    isViewer: role === "VIEWER",
-    permissions,
-  };
+  return { profile, loading, role, isAdmin, email };
 }

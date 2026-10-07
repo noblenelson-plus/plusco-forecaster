@@ -1,12 +1,14 @@
 // lib/hooks/use-users-map.ts
 
 /**
- * Loads a `uid → display name` map for resolving user references to readable
- * labels (e.g. the Business Lead filter shows names, not UIDs).
+ * Loads a `uid or email → display name` map for resolving user references to
+ * readable labels (e.g. the Business Lead filter shows names, not emails).
+ * Users are keyed by email; older references (notes, submissions) store the
+ * uid, so both keys are mapped.
  *
  * Reading the users collection is allowed for any authenticated user
  * (see firestoreRules.txt). The hook is tolerant of failure: on error it
- * returns an empty map and callers fall back to the raw UID.
+ * returns an empty map and callers fall back to the raw value.
  */
 
 import { useEffect, useState } from "react";
@@ -25,8 +27,10 @@ export function useUsersMap(): Map<string, string> {
         const snap = await getDocs(collection(db, "users"));
         const next = new Map<string, string>();
         for (const d of snap.docs) {
-          const u = d.data() as Omit<UserProfile, "uid">;
-          next.set(d.id, u.displayName || u.email || d.id);
+          const u = d.data() as Partial<UserProfile>;
+          const name = u.displayName || u.email || d.id;
+          next.set(d.id, name);
+          if (u.uid) next.set(u.uid, name);
         }
         if (!cancelled) setMap(next);
       } catch (err) {

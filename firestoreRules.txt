@@ -2,147 +2,110 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── Access model ──────────────────────────────────────────────────────────
+    // Mirrors lib/format/access.ts — change both together.
+    //   - users/{email} (lowercase): role USER | ADMIN; `disabled` revokes all.
+    //   - A client's team (CL_Team_Emails on the client doc: BL, DL, GM Pod
+    //     accounts, collaborators) reads + writes that client.
+    //   - config/dashboard_access opens each grantable dashboard to email
+    //     domains / people, in GLOBAL (every client, "_unassigned" rows
+    //     included) or AGENCY mode (the agencies the caller's email domain maps
+    //     to; a company-wide domain maps to all). Any grant also reads those
+    //     clients' data — read-only.
+    //   - Admins: everything.
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    function isAdmin() {
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+    function myDomain() {
+      return myEmail().split('@')[1];
+    }
+    function myUserPath() {
+      return /databases/$(database)/documents/users/$(myEmail());
+    }
+    // Signed in with a verified email, has a users row, not revoked.
+    function isActive() {
       return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "ADMIN";
-    }
-    function isBusinessLead() {
-      return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "BUSINESS_LEAD";
-    }
-    function isAssignedToClient(clientId) {
-      return isAuthenticated() &&
-        clientId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedClients;
-    }
-    // Agency-scoped access: the user has `assignedAgencies` and the given
-    // agency is among them. `.get('assignedAgencies', [])` tolerates the
-    // field being absent on pre-migration user docs.
-    function userAssignedAgencies() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid))
-        .data.get('assignedAgencies', []);
-    }
-    function isAssignedToAgency(agency) {
-      return isAuthenticated() && (agency in userAssignedAgencies());
-    }
-    // Agency access resolved from a client id (needs a client-doc lookup to
-    // read its CL_Agency). Used by collections keyed by clientId (data_entries,
-    // product_tracking, Ã¢â‚¬Â¦) where the agency isn't on the document itself.
-    function isAgencyAssignedForClient(clientId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/clients/$(clientId)) &&
-        (get(/databases/$(database)/documents/clients/$(clientId)).data.CL_Agency
-          in userAssignedAgencies());
-    }
-    function canAccessClient(clientId) {
-      return isAdmin() ||
-        isAssignedToClient(clientId) ||
-        isAgencyAssignedForClient(clientId);
-    }
-    function isExec() {
-      return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "EXEC";
-    }
-    // Write access to a client's data (forecast, milestones, product tracking,
-    // commissions):
-    //   - Admin Ã¢â€ â€™ every client.
-    //   - Exec  Ã¢â€ â€™ every client of an assigned agency (agency-wide; Execs get no
-    //             per-client grants, their scope comes from their email domain).
-    //   - BL    Ã¢â€ â€™ only explicitly assigned clients (never agency-wide Ã¢â‚¬â€ reading
-    //             the whole agency is fine, but a BL edits just their clients).
-    // Agency Viewers match none of these, so they stay read-only.
-    function canWriteClient(clientId) {
-      return isAdmin() ||
-        (isExec() &&
-          (isAssignedToClient(clientId) || isAgencyAssignedForClient(clientId))) ||
-        (isBusinessLead() && isAssignedToClient(clientId));
-    }
-    function isDisabled() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid))
-        .data.get('disabled', false) == true;
-    }
-    // Agency-partitioned dashboard data (MediaOcean tab collections, tagged
-    // `_agency` by their sync scripts; storage.rules mirrors this for the
-    // Reports snapshots):
-    //   - Admin → every agency, incl. "_unassigned".
-    //   - Everyone else (Execs included) → strictly the agencies their email
-    //     domain maps to, checked live against the agencies ↔ domains mapping
-    //     and company-wide domains — the same model as the former per-agency
-    //     Looker dashboards (@cossettemedia.com → Cossette Media + Showroom,
-    //     @jungle-media.ca → Jungle, …; @pluscompany.com → all via the company
-    //     domain). Automatic: no sync. Disabled users get nothing.
-    // Non-admin queries must filter `_agency == <agency>` for rules to allow them.
-    function canReadAgencyData(agency) {
-      return isAdmin() ||
-        (isAuthenticated() && !isDisabled() && isEmailDomainAgency(agency));
-    }
-    // The caller's (verified) email domain maps to this agency, directly or via
-    // a company-wide domain. Never grants the "_unassigned" bucket.
-    function isEmailDomainAgency(agency) {
-      return agency != '_unassigned' &&
         request.auth.token.email_verified == true &&
-        (domainOwnsAgency(agency) || isCompanyDomain());
+        exists(myUserPath()) &&
+        get(myUserPath()).data.get('disabled', false) != true;
     }
-    // ─── self-created profile validation (users create) ──────────────────────
-    // A first sign-in creates its own users/{uid} doc (ensureUserProfile). Without
-    // these checks anyone signing in could write role ADMIN or any agency into it.
-    function emailDomain() {
-      return request.auth.token.email.lower().split('@')[1];
+    function isAdmin() {
+      return isActive() && get(myUserPath()).data.role == 'ADMIN';
     }
-    function inviteRef() {
-      return /databases/$(database)/documents/invites/$(request.auth.token.email.lower());
-    }
+
+    // ─── Agencies ──────────────────────────────────────────────────────────────
     function isCompanyDomain() {
       return exists(/databases/$(database)/documents/config/company_domains) &&
-        emailDomain() in get(/databases/$(database)/documents/config/company_domains)
+        myDomain() in get(/databases/$(database)/documents/config/company_domains)
           .data.get('domains', []);
     }
     function domainOwnsAgency(agency) {
       return exists(/databases/$(database)/documents/agencies/$(agency)) &&
-        emailDomain() in get(/databases/$(database)/documents/agencies/$(agency))
+        myDomain() in get(/databases/$(database)/documents/agencies/$(agency))
           .data.get('domains', []);
     }
-    // Every agency claimed must list the caller's email domain (rules can't
-    // loop, so the list is capped at 4 — the app has four agencies); a
-    // company-wide domain may claim any.
-    function agencyClaimsValid(list) {
-      return isCompanyDomain() || (
-        list.size() <= 4 &&
-        (list.size() < 1 || domainOwnsAgency(list[0])) &&
-        (list.size() < 2 || domainOwnsAgency(list[1])) &&
-        (list.size() < 3 || domainOwnsAgency(list[2])) &&
-        (list.size() < 4 || domainOwnsAgency(list[3]))
+
+    // ─── Dashboard grants (config/dashboard_access) ───────────────────────────
+    function dashboards() {
+      return exists(/databases/$(database)/documents/config/dashboard_access)
+        ? get(/databases/$(database)/documents/config/dashboard_access).data.get('dashboards', {})
+        : {};
+    }
+    function grantedWith(id, mode) {
+      let g = dashboards().get(id, {});
+      return g.get('mode', 'AGENCY') == mode &&
+        (myDomain() in g.get('domains', []) || myEmail() in g.get('users', []));
+    }
+    function granted(id) {
+      return grantedWith(id, 'GLOBAL') || grantedWith(id, 'AGENCY');
+    }
+    // A GLOBAL grant on any dashboard → every client and every agency row.
+    function dashCanReadAll() {
+      return grantedWith('labs-pacing', 'GLOBAL') || grantedWith('exec-kpis', 'GLOBAL') ||
+        grantedWith('mediaocean', 'GLOBAL') || grantedWith('mediabox', 'GLOBAL') ||
+        grantedWith('reports', 'GLOBAL');
+    }
+    // An AGENCY grant on any dashboard → the caller's agencies (all for a
+    // company-wide domain), never "_unassigned".
+    function dashCanReadAgency(agency) {
+      return agency != '_unassigned' &&
+        (grantedWith('labs-pacing', 'AGENCY') || grantedWith('exec-kpis', 'AGENCY') ||
+          grantedWith('mediaocean', 'AGENCY') || grantedWith('mediabox', 'AGENCY') ||
+          grantedWith('reports', 'AGENCY')) &&
+        (isCompanyDomain() || domainOwnsAgency(agency));
+    }
+
+    // ─── Clients ───────────────────────────────────────────────────────────────
+    function clientPath(clientId) {
+      return /databases/$(database)/documents/clients/$(clientId);
+    }
+    function isOnClientTeam(clientId) {
+      return isActive() && exists(clientPath(clientId)) &&
+        myEmail() in get(clientPath(clientId)).data.get('CL_Team_Emails', []);
+    }
+    // Read a client's data: admin, its team, or a dashboard grant covering it.
+    function canReadClientData(clientId) {
+      return isAdmin() || isOnClientTeam(clientId) || (
+        isActive() && exists(clientPath(clientId)) &&
+        (dashCanReadAll() || dashCanReadAgency(get(clientPath(clientId)).data.CL_Agency))
       );
     }
-    // Role + client grants must come from the caller's pending invite, or be a
-    // plain VIEWER with no clients when there is none.
-    function matchesInviteOrDefault(d) {
-      return (
-        exists(inviteRef()) &&
-        d.role == get(inviteRef()).data.role &&
-        d.get('assignedClients', []) == get(inviteRef()).data.get('assignedClients', []) &&
-        d.get('clientAgencies', []) == get(inviteRef()).data.get('clientAgencies', [])
-      ) || (
-        !exists(inviteRef()) &&
-        d.role == 'VIEWER' &&
-        d.get('assignedClients', []).size() == 0 &&
-        d.get('clientAgencies', []).size() == 0
-      );
+    // Write a client's data (forecast, flags, milestones, product tracking,
+    // commissions, Labs eligibility): admin or its team.
+    function canWriteClient(clientId) {
+      return isAdmin() || isOnClientTeam(clientId);
     }
-    function isValidSelfCreatedProfile(uid) {
-      let d = request.resource.data;
-      return isAuthenticated() &&
-        request.auth.uid == uid &&
-        d.keys().hasOnly(['email', 'displayName', 'photoURL', 'role',
-                          'assignedClients', 'assignedAgencies', 'clientAgencies',
-                          'createdAt', 'lastLoginAt']) &&
-        d.email == request.auth.token.email &&
-        matchesInviteOrDefault(d) &&
-        agencyClaimsValid(d.get('assignedAgencies', []));
+    // Agency-partitioned dashboard data (MediaOcean collections; storage.rules
+    // mirrors it for the Reports snapshots). Non-admin queries must filter
+    // `_agency == <agency>` unless the caller holds a GLOBAL grant.
+    function canReadAgencyData(agency) {
+      return isAdmin() || (isActive() && (dashCanReadAll() || dashCanReadAgency(agency)));
     }
+
     // Locking lives on the rfqs document, not on data_entries.
     // data_entries carry `year` (int) and `rfq` (e.g. "RFQ0"); the matching
     // rfqs doc id is `{year}_{type}` (e.g. "2026_RFQ0").
@@ -151,60 +114,65 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/rfqs/$(rfqId)) &&
         get(/databases/$(database)/documents/rfqs/$(rfqId)).data.status != "LOCKED";
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ users Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-    match /users/{uid} {
-      // Any authenticated user can read profiles. Needed so BLs can see who
-      // has access to their clients (ClientAccessSection does a list read of the
-      // collection). Accepted trade-off: emails / roles / assignments are
-      // visible to every signed-in employee Ã¢â‚¬â€ internal tool, restricted domain.
+
+    // ─── users ─────────────────────────────────────────────────────────────────
+    // Doc id = lowercase email. Created on first sign-in (role USER) or by an
+    // admin before it.
+    match /users/{email} {
+      // Every signed-in user reads the list (team / grant pickers, name labels).
+      // Accepted trade-off: emails and roles are visible to every signed-in
+      // employee — internal tool, restricted domains.
       allow read: if isAuthenticated();
 
-      // A user can create their own profile document on first login (bootstrap),
-      // but only with what they're entitled to: the invite's role/clients (or
-      // VIEWER with none) and agencies matching their email domain — see
-      // isValidSelfCreatedProfile. Admins can also create profiles
-      // (pre-provisioning).
-      allow create: if isValidSelfCreatedProfile(uid) || isAdmin();
+      // Self sign-up: exactly the bootstrap fields, role USER, own email + uid.
+      allow create: if isAdmin() || (
+        isAuthenticated() &&
+        request.auth.token.email_verified == true &&
+        email == myEmail() &&
+        request.resource.data.keys().hasOnly(['email', 'uid', 'displayName', 'photoURL',
+                                               'role', 'createdBy', 'createdAt', 'lastLoginAt']) &&
+        request.resource.data.email == email &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.role == 'USER' &&
+        request.resource.data.get('createdBy', null) == null
+      );
 
-      // Admins can update any profile (role changes, client assignments, etc.)
-      // A user can update their own profile ONLY for safe fields Ã¢â‚¬â€ role,
-      // assignedClients, assignedAgencies and disabled are strictly reserved for
-      // admins (a disabled user must not be able to re-enable themselves).
-      allow update: if isAdmin() ||
-                    (
-                      isAuthenticated() &&
-                      request.auth.uid == uid &&
-                      !request.resource.data.diff(resource.data)
-                        .affectedKeys()
-                        .hasAny(['role', 'assignedClients', 'assignedAgencies',
-                                 'clientAgencies', 'disabled'])
-                    );
+      // Admins change anything. A person may refresh only their own sign-in
+      // fields (linking their uid) — never role or disabled.
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        request.auth.token.email_verified == true &&
+        email == myEmail() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['uid', 'displayName', 'photoURL', 'lastLoginAt']) &&
+        request.resource.data.uid == request.auth.uid
+      );
 
-      // Nobody can delete user profiles from the client
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ clients Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── clients ───────────────────────────────────────────────────────────────
     match /clients/{clientId} {
-      // Admins see all Ã¢â‚¬â€ everyone else sees assigned clients Ã¢Ë†Âª every client of
-      // an assigned agency (Viewers, BLs and Execs alike). The agency check
-      // reads CL_Agency straight off the document (works for both single-doc
-      // reads and agency `where` queries), avoiding the extra client lookup
-      // canAccessClient would do here.
-      allow read: if isAdmin() ||
-                    isAssignedToClient(clientId) ||
-                    (resource != null &&
-                      resource.data.CL_Agency in userAssignedAgencies());
+      // Admin; the team (also the shape of the "my clients" array-contains
+      // query); a GLOBAL grant (whole collection); an AGENCY grant for the
+      // client's agency (the `CL_Agency ==` queries). CL_Agency and
+      // CL_Team_Emails are read off the document itself.
+      allow read: if isAdmin() || (
+        isActive() && (
+          myEmail() in resource.data.CL_Team_Emails ||
+          dashCanReadAll() ||
+          dashCanReadAgency(resource.data.CL_Agency)
+        )
+      );
 
-      // Only admins can create or delete clients
+      // Only admins create or delete clients (and so set the team).
       allow create, delete: if isAdmin();
 
       // Update:
-      // Ã¢â‚¬â€ Admins: no restriction.
-      // Ã¢â‚¬â€ Writers for this client (Exec agency-wide, BL on assigned clients):
-      //   ONLY commissionsConfig and Labs_Eligibility (+ updatedAt). Any write
-      //   touching another key of the document is denied. (CommissionsDrawer
-      //   writes via the dot-path "commissionsConfig.{year}"; the client drawer
-      //   replaces the whole Labs_Eligibility map via
+      // — Admins: no restriction (the team fields and CL_Team_Emails included).
+      // — The client's team: ONLY commissionsConfig and Labs_Eligibility
+      //   (+ updatedAt). Any write touching another key is denied.
+      //   (CommissionsDrawer writes via the dot-path "commissionsConfig.{year}";
+      //   the client drawer replaces the Labs_Eligibility map via
       //   saveClientLabsEligibility.)
       allow update: if isAdmin() ||
                     (
@@ -216,44 +184,30 @@ service cloud.firestore {
                         request.resource.data.Labs_Eligibility is map)
                     );
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ agencies Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── agencies ──────────────────────────────────────────────────────────────
     // Document ID = the agency name (a ClientAgency value). Holds the email
-    // domains that map to the agency. Read by every authenticated user (the
-    // sign-in flow matches the caller's email domain to grant automatic
-    // agency-employee access); only admins manage the mapping.
+    // domains that map to the agency (a person's agency on Agency-mode
+    // dashboards). Read by every signed-in user; only admins manage it.
     match /agencies/{agencyId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ invites Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-    // Document ID = the invited person's lowercased email. Pre-provisions a role
-    // (+ client assignments) before their first sign-in. Admins manage them; a
-    // signing-in user may read and delete (consume) the invite addressed to
-    // their own verified email Ã¢â‚¬â€ nothing else.
-    match /invites/{email} {
-      allow get: if isAdmin() ||
-                 (isAuthenticated() && request.auth.token.email.lower() == email);
-      allow list: if isAdmin();
-      allow create, update: if isAdmin();
-      allow delete: if isAdmin() ||
-                    (isAuthenticated() && request.auth.token.email.lower() == email);
-    }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ labs_partners Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── labs_partners ─────────────────────────────────────────────────────────
     match /labs_partners/{partnerId} {
       // All authenticated users can read partners (needed to populate LABS rows)
       allow read: if isAuthenticated();
       // Only admins can manage the global partner registry
       allow create, update, delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ resources Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── resources ─────────────────────────────────────────────────────────────
     // Shared library of external links (name, description, url).
     match /resources/{resourceId} {
-      // All authenticated users can read (BLs click through to the link).
+      // All authenticated users can read (open even on "Access pending").
       allow read: if isAuthenticated();
       // Only admins can add, edit or remove resources.
       allow create, update, delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ products (DISH Products catalog) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── products (DISH Products catalog) ──────────────────────────────────────
     match /products/{productId} {
       // All authenticated users can read the catalog (needed to populate the
       // pipeline axis and the revenue Product Fees dropdown).
@@ -261,9 +215,9 @@ service cloud.firestore {
       // Only admins can manage the global product catalog.
       allow create, update, delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ currency_rates Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── currency_rates ────────────────────────────────────────────────────────
     // Document ID format: the year as a string, e.g. "2026".
-    // Holds the yearly USD Ã¢â€ â€™ CAD conversion rate.
+    // Holds the yearly USD → CAD conversion rate.
     match /currency_rates/{year} {
       // All authenticated users can read rates (needed wherever amounts are
       // converted between currencies)
@@ -278,40 +232,37 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ config Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-    // Global app configuration docs, e.g. config/flag_validation (the per-step
-    // month windows the cat-4 under-target flags analyze). Everyone reads;
-    // admins write.
+    // ─── config ────────────────────────────────────────────────────────────────
+    // Global app configuration docs: config/dashboard_access (dashboard grants,
+    // also read by these rules), config/company_domains, config/flag_validation,
+    // … Everyone reads; admins write.
     match /config/{configId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ data_entries Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── data_entries ──────────────────────────────────────────────────────────
     // Document ID format: {cl_id}_{year}_{rfq} e.g. CL_001_2026_RFQ0
-    // We extract the clientId from the document's clientId field
+    // The client is the document's clientId field.
     match /data_entries/{entryId} {
-      // Read: admin sees all, BL only sees their assigned clients.
-      // A non-existent doc (resource == null) is a normal empty case Ã¢â‚¬â€ the
-      // dashboard reads one entry per in-scope client and many have no
-      // submission yet. Allow it; reading absent data leaks nothing. Without
-      // this, the rule evaluates canAccessClient(null) and denies, surfacing
-      // as "Missing or insufficient permissions" for BLs (admins short-circuit
-      // on isAdmin()).
+      // Read: whoever may read the client's data. A non-existent doc
+      // (resource == null) is a normal empty case — the dashboard reads one
+      // entry per in-scope client and many have no submission yet. Allow it;
+      // reading absent data leaks nothing.
       allow read: if isAuthenticated() &&
-        (resource == null || canAccessClient(resource.data.clientId));
+        (resource == null || canReadClientData(resource.data.clientId));
 
       // Create: the document is created client-side on the first Save
-      // (saveAxisData Ã¢â€ â€™ setDoc with merge), so a BL assigned to the client may
-      // create it Ã¢â‚¬â€ as long as the RFQ is not locked. Admins always may.
+      // (saveAxisData → setDoc with merge), so the client's team may create it
+      // — as long as the RFQ is not locked. Admins always may.
       allow create: if isAdmin() ||
         (
           canWriteClient(request.resource.data.clientId) &&
           rfqUnlocked(request.resource.data.year, request.resource.data.rfq)
         ) ||
-        // Submission annotations (shared note, flag reviews) Ã¢â‚¬â€ the first write
-        // may annotate a submission that has no grid data yet. Allowed for an
-        // assigned BL even when the RFQ is locked (annotation-only create:
-        // nothing but these metadata keys is written).
+        // Submission annotations (shared note, flag reviews) — the first write
+        // may annotate a submission that has no grid data yet. Allowed for the
+        // team even when the RFQ is locked (annotation-only create: nothing but
+        // these metadata keys is written).
         (
           canWriteClient(request.resource.data.clientId) &&
           request.resource.data.keys()
@@ -320,16 +271,16 @@ service cloud.firestore {
                       'updatedAt'])
         );
 
-      // Update: admin always Ã¢â‚¬â€ BL only for an assigned client while the RFQ is
-      // unlocked, and without re-keying the document (clientId stays put).
+      // Update: admin always — the team while the RFQ is unlocked, and without
+      // re-keying the document (clientId stays put).
       allow update: if isAdmin() ||
         (
           canWriteClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           rfqUnlocked(resource.data.year, resource.data.rfq)
         ) ||
-        // Submission annotations (shared note, flag reviews) Ã¢â‚¬â€ an assigned BL
-        // may add/edit these even when the RFQ is locked. The write only touches
+        // Submission annotations (shared note, flag reviews) — the team may
+        // add/edit these even when the RFQ is locked. The write only touches
         // annotation keys (+ updatedAt); every forecast field keeps its value,
         // so this can never alter locked data.
         (
@@ -340,30 +291,23 @@ service cloud.firestore {
                       'lastModifiedBy', 'updatedAt'])
         );
 
-      // BLs cannot update actuals or gaiaAdjustment fields
-      // This is enforced at the Server Action level as Firestore Rules
-      // cannot easily diff nested map fields Ã¢â‚¬â€ keep logic in backend
-      // Delete: admins only Ã¢â‚¬â€ used by the client-deletion cleanup
-      // (deleteClient in client-service.ts), which removes every submission
-      // of the deleted client. BLs can never delete entries.
+      // Actuals (ADMIN_INPUT) and closed months are enforced by the app: the
+      // rules cannot easily diff nested map fields.
+      // Delete: admins only — used by the client-deletion cleanup
+      // (deleteClient in client-service.ts).
       allow delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ forecast_validations Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── forecast_validations (Milestones) ─────────────────────────────────────
     // Document ID format: {cl_id}_{year} e.g. CL_001_2026
-    // The "BL Forecast Validation" Ã¢â‚¬â€ the milestone steps (confirmation-steps.ts)
-    // a Business Lead ticks as complete. The milestones span the whole year, so
-    // the set lives at the {client, year} level, shared across every RFQ. Purely
-    // indicative (no locking effect): an assigned BL (or admin) may write anytime,
-    // independent of any RFQ lock. Only these annotation keys are ever written.
+    // The milestone steps (confirmation-steps.ts) the team ticks as complete,
+    // at the {client, year} level. Purely indicative (no locking effect): the
+    // team (or an admin) may write anytime. Only these annotation keys are
+    // ever written.
     match /forecast_validations/{entryId} {
-      // A non-existent doc (resource == null) is a normal empty case Ã¢â‚¬â€ the recap
-      // reads one per in-scope client and many have none yet. Allow it; reading
-      // absent data leaks nothing (mirrors data_entries / annual_actuals).
+      // An absent doc is a normal empty case (mirrors data_entries).
       allow read: if isAuthenticated() &&
-        (resource == null || canAccessClient(resource.data.clientId));
+        (resource == null || canReadClientData(resource.data.clientId));
 
-      // Create/update: admin always; an assigned BL may write the annotation keys
-      // for their client (no RFQ lock applies Ã¢â‚¬â€ these flags are not forecast data).
       allow create: if isAdmin() ||
         (
           canWriteClient(request.resource.data.clientId) &&
@@ -379,85 +323,68 @@ service cloud.firestore {
             .hasOnly(['steps', 'stepValidations', 'meta', 'createdAt', 'updatedAt'])
         );
 
-      // Delete: admins only Ã¢â‚¬â€ client-deletion cleanup (deleteClient).
+      // Delete: admins only — client-deletion cleanup (deleteClient).
       allow delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ annual_actuals Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── annual_actuals ────────────────────────────────────────────────────────
     // Document ID format: {cl_id}_{year} e.g. CL_001_2026
-    // Holds the annual ADMIN_INPUT (MediaOcean) for Media and Labs Ã¢â‚¬â€ a single
-    // value per year, shared by every submission. Actuals are admin-owned data,
-    // so only admins may write; assigned BLs (and admins) may read.
+    // The annual ADMIN_INPUT (MediaOcean) for Media and Labs — admin-owned.
     match /annual_actuals/{entryId} {
-      // A non-existent doc (resource == null) is the common case here Ã¢â‚¬â€ annual
-      // actuals are admin-entered and rarely populated, yet the dashboard reads
-      // one per in-scope client. Allow it (absent data leaks nothing); otherwise
-      // canAccessClient(null) denies and BLs get "Missing or insufficient
-      // permissions" (admins short-circuit on isAdmin()).
+      // An absent doc is the common case (rarely populated). Allow it.
       allow read: if isAuthenticated() &&
-        (resource == null || canAccessClient(resource.data.clientId));
-      // Create/update: admins only (BLs never edit actuals). RFQ locking does
-      // not apply Ã¢â‚¬â€ these figures are not tied to a single submission.
+        (resource == null || canReadClientData(resource.data.clientId));
+      // Create/update: admins only (the team never edits actuals). RFQ locking
+      // does not apply — these figures are not tied to a single submission.
       allow create, update: if isAdmin();
-      // Delete: admins only Ã¢â‚¬â€ client-deletion cleanup (deleteClient).
+      // Delete: admins only — client-deletion cleanup (deleteClient).
       allow delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ mediabox_totals Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── mediabox_totals ───────────────────────────────────────────────────────
     // Document ID format: {cl_id}_{year} e.g. CL_001_2026
-    // Read-only MediaBox actuals, synced from the MediaBox project by its Cloud
-    // Function (via the Admin SDK, which bypasses these rules). The grid reads
-    // one per selected client under MediaOcean, so an absent doc is the normal
-    // pre-sync case Ã¢â‚¬â€ allow it like annual_actuals (absent data leaks nothing).
+    // Read-only MediaBox actuals, synced by the MediaBox project's Cloud
+    // Function (Admin SDK, bypasses these rules). An absent doc is the normal
+    // pre-sync case — allow it like annual_actuals.
     match /mediabox_totals/{entryId} {
       allow read: if isAuthenticated() &&
-        (resource == null || canAccessClient(resource.data.clientId));
-      // Never writable from a client Ã¢â‚¬â€ only the MediaBox Admin SDK writes here.
-      // Exception: admins may delete, so the client-deletion cleanup
-      // (deleteClient) can remove a dead client's synced totals.
+        (resource == null || canReadClientData(resource.data.clientId));
+      // Never writable from a client. Admins may delete (client-deletion
+      // cleanup).
       allow create, update: if false;
       allow delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ mediabox_coverage Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── mediabox_coverage ─────────────────────────────────────────────────────
     // Document ID format: {year} e.g. 2026. One doc per year holding EVERY
-    // client's MediaBox totals (written by the MediaBox project's nightly full
-    // refresh). Because it spans all clients, reading it would leak amounts for
-    // clients a Business Lead cannot access Ã¢â‚¬â€ so it is admin-only. The
-    // dashboard coverage card does NOT read this doc; it reads the per-client
-    // mediabox_totals docs above, which enforce per-client access.
+    // client's MediaBox totals. Because it spans all clients it is admin-only;
+    // the dashboard reads the per-client mediabox_totals docs above instead.
     match /mediabox_coverage/{year} {
       allow read: if isAdmin();
-      // Never writable from a client Ã¢â‚¬â€ only the MediaBox Admin SDK writes here.
       allow create, update: if false;
       allow delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ product_tracking Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── product_tracking ──────────────────────────────────────────────────────
     // Document ID = the client's cl_id (one always-on doc per client, no
-    // year/RFQ). Holds the per-product pipeline status + optional timing.
-    // Not tied to a submission, so RFQ locking does not apply: any assigned
-    // BL (or admin) may write at any time.
+    // year/RFQ). Not tied to a submission, so RFQ locking does not apply: the
+    // team (or an admin) may write at any time.
     match /product_tracking/{clientId} {
-      allow read: if canAccessClient(clientId);
-      // Create/update: admins, or a BL assigned to the client. The doc must
-      // stay keyed to its client (clientId field matches the doc ID).
+      allow read: if canReadClientData(clientId);
+      // The doc must stay keyed to its client (clientId field matches the id).
       allow create, update: if request.resource.data.clientId == clientId &&
-        (isAdmin() || canWriteClient(clientId));
-      // Delete: admins only Ã¢â‚¬â€ client-deletion cleanup (deleteClient).
+        canWriteClient(clientId);
+      // Delete: admins only — client-deletion cleanup (deleteClient).
       allow delete: if isAdmin();
     }
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ rfqs Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─── rfqs ──────────────────────────────────────────────────────────────────
     // Document ID format: {year}_{type} e.g. 2026_RFQ1
-    // May carry `closedMonths.{media|revenue|labs}: number[]` Ã¢â‚¬â€ admin-set per-axis
-    // closed periods (a client-side editing gate for Business Leads only; not
+    // May carry `closedMonths.{media|revenue|labs}: number[]` — admin-set
+    // per-axis closed periods (an app-side editing gate for non-admins; not
     // enforced here, like the global lock above which only checks `status`).
     match /rfqs/{rfqId} {
-      // All authenticated users can read RFQs
-      // (needed to populate the year/RFQ selectors in the sidebar)
       allow read: if isAuthenticated();
-
-      // Only admins can create, lock/unlock, set closed months, edit timeline
-      // periods (timeline), or delete RFQs
+      // Only admins create, lock/unlock, set closed months, edit timelines or
+      // delete RFQs.
       allow create, update, delete: if isAdmin();
     }
-    // ─── MediaOcean dashboard collections (agency-partitioned) ───────────────
+    // ─── MediaOcean dashboard collections (agency-partitioned) ────────────────
     // Synced read-only from BigQuery by scripts/sync-*.mjs (Admin SDK, which
     // bypasses these rules). Each doc carries `_agency` (scripts/lib/agency.mjs);
     // reads are scoped by canReadAgencyData. Never writable from the app;
@@ -480,10 +407,10 @@ service cloud.firestore {
       allow create, update: if false;
       allow delete: if isAdmin();
     }
-    // meta_social_output — one doc per client; only read by the Executive KPIs
-    // tab (Exec/Admin), so not agency-tagged.
+    // meta_social_output — one doc per client; read by the Exec KPI Dashboard
+    // only, and not agency-tagged: admins and anyone granted that dashboard.
     match /meta_social_output/{docId} {
-      allow read: if isAdmin() || isExec();
+      allow read: if isAdmin() || (isActive() && granted('exec-kpis'));
       allow create, update: if false;
       allow delete: if isAdmin();
     }
@@ -494,19 +421,19 @@ service cloud.firestore {
       allow create, update: if false;
       allow delete: if isAdmin();
     }
-    // mir_raw / billing_summary_raw — raw Firestore mirrors kept by the syncs;
-    // the app reads the per-agency Storage snapshots instead (storage.rules).
-    // --- bulk_backups ---------------------------------------------------------
+    // ─── bulk_backups ──────────────────────────────────────────────────────────
     // Automatic backups taken by Bulk Edit before every import / bulk delete
-    // (bulk-backup-service.ts): a header doc per operation plus one snapshot
-    // per touched data_entries / annual_actuals doc. They hold raw forecast
-    // data of every client, so they are admin-only end to end.
+    // (bulk-backup-service.ts). They hold raw forecast data of every client, so
+    // they are admin-only end to end. (auth_migration_backups, written by
+    // scripts/migrate-auth.mjs, has no block: client SDKs are denied.)
     match /bulk_backups/{backupId} {
       allow read, create, update, delete: if isAdmin();
       match /snapshots/{snapId} {
         allow read, create, update, delete: if isAdmin();
       }
     }
+    // mir_raw / billing_summary_raw — legacy raw mirrors (no longer written;
+    // the app reads the per-agency Storage snapshots instead).
     match /mir_raw/{docId} {
       allow read: if isAdmin();
       allow create, update: if false;

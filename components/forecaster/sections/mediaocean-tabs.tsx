@@ -60,7 +60,7 @@ export default function MediaOceanTabs({
   clients: Client[];
   /** The MIR From → To period (MIR context bar). */
   period: MonthPeriod;
-  /** Page ids hidden by an admin (Admin → Dashboard Pages). */
+  /** Sub-tab page ids an admin hid (Admin → Dashboard Access). */
   hidden?: ReadonlySet<string>;
 }) {
   const subtabs = visibleSubtabs("mediaocean", MEDIAOCEAN_SUBTABS, hidden);

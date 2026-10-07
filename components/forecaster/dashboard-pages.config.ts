@@ -1,40 +1,27 @@
 // components/forecaster/dashboard-pages.config.ts
 
-import {
-  DASHBOARD_ROLES,
-  FORECASTER_TABS,
-  type ForecasterTab,
-} from "./forecaster-tabs.config";
-import type { UserRole } from "../../lib/types/user.types";
+import { FORECASTER_TABS, type ForecasterTab } from "./forecaster-tabs.config";
 
 /**
- * Registry of every dashboard page an admin manages from Admin → Dashboard
- * Pages: each top-level tab (FORECASTER_TABS) and each sub-tab below, with the
- * roles that see it. The sub-tab lists live here (not in their containers) so
- * the admin page and the dashboard share one source of ids and labels.
+ * Registry of the dashboard sub-tabs. The lists live here (not in their
+ * containers) so the dashboard and Admin → Dashboard Access share one source
+ * of ids and labels.
  *
- * Page ids: a tab's id ("exec-kpis") or "tab/sub" ("exec-kpis/meta"). Admins
- * pick the roles per page; saved choices live in config/dashboard_pages
- * (dashboard-pages-service.ts, which also maps ids saved under an older layout
- * — update it if you move a page). A page nobody edited keeps its default
- * roles. A sub-tab shows only if its tab shows for that role.
- *
- * Presentation only — data access is unchanged (security rules). That is why
- * revenue pages are locked off for Viewers: the rules don't hide revenue
- * figures, so showing those pages to a Viewer would really expose them.
+ * Page ids: "tab/sub" ("exec-kpis/meta"). Who sees a tab is decided by
+ * client teams and dashboard grants (forecaster-tabs.config.ts); a sub-tab is
+ * visible to everyone who sees its tab unless an admin hid it
+ * (config/dashboard_access `hiddenSubtabs`, for work-in-progress pages —
+ * admins still see it). Add a new sub-tab here, not in its container.
  */
 
 type SubTabDef = {
   readonly id: string;
   readonly label: string;
-  /** Shows revenue figures — never shown to Viewers (no revenue access). */
-  readonly revenue?: boolean;
 };
 
 export const FORECASTER_SUBTABS = [
-  // The Summary leads with revenue KPIs, so it is a revenue page too.
-  { id: "exec", label: "Forecast Summary", revenue: true },
-  { id: "revenue", label: "Revenues", revenue: true },
+  { id: "exec", label: "Forecast Summary" },
+  { id: "revenue", label: "Revenues" },
   { id: "media", label: "Media" },
   { id: "labs", label: "Labs" },
   { id: "product", label: "Product" },
@@ -75,86 +62,27 @@ export function subPageId(tab: ForecasterTab, sub: string): string {
   return `${tab}/${sub}`;
 }
 
-export interface DashboardPage {
+export interface DashboardSubPage {
+  /** "tab/sub". */
   id: string;
   label: string;
-  /** Who sees it when no admin has changed it. */
-  defaultRoles: readonly UserRole[];
-  /** Roles that may never see it (switch locked on the admin page). */
-  lockedRoles: readonly UserRole[];
-  children: Omit<DashboardPage, "children">[];
 }
 
-const NO_ROLES: readonly UserRole[] = [];
-const REVENUE_LOCKED: readonly UserRole[] = ["VIEWER"];
+/** Every tab in tab-bar order with its sub-tabs (Admin → Dashboard Access). */
+export const DASHBOARD_PAGES: { id: ForecasterTab; label: string; children: DashboardSubPage[] }[] =
+  FORECASTER_TABS.map((t) => ({
+    id: t.id,
+    label: t.label,
+    children: (SUBTABS_BY_TAB[t.id] ?? []).map((sub) => ({
+      id: subPageId(t.id, sub.id),
+      label: sub.label,
+    })),
+  }));
 
-/** Every page, tabs in tab-bar order with their sub-tabs nested. */
-export const DASHBOARD_PAGES: DashboardPage[] = FORECASTER_TABS.map((t) => ({
-  id: t.id,
-  label: t.label,
-  defaultRoles: t.roles,
-  lockedRoles: NO_ROLES,
-  children: (SUBTABS_BY_TAB[t.id] ?? []).map((s) => {
-    const locked = s.revenue ? REVENUE_LOCKED : NO_ROLES;
-    return {
-      id: subPageId(t.id, s.id),
-      label: s.label,
-      defaultRoles: DASHBOARD_ROLES.filter((r) => !locked.includes(r)),
-      lockedRoles: locked,
-    };
-  }),
-}));
-
-const PAGE_BY_ID = new Map(
-  DASHBOARD_PAGES.flatMap((p) => [p, ...p.children]).map((p) => [p.id, p])
+/** Every sub-tab page id (to drop stale ids from a saved config). */
+export const SUBTAB_PAGE_IDS: ReadonlySet<string> = new Set(
+  DASHBOARD_PAGES.flatMap((p) => p.children.map((c) => c.id))
 );
-
-/** Saved role choices per page id (only pages an admin has set). */
-export type PageAccess = Readonly<Record<string, readonly UserRole[]>>;
-
-/**
- * The roles that see a page: the admin's choice, else the page default; a page
- * hidden under the older all-or-nothing switch (`hidden`) sees no one. Locked
- * roles are always removed.
- */
-export function pageRoles(
-  pageId: string,
-  access: PageAccess,
-  hidden: ReadonlySet<string> = new Set()
-): UserRole[] {
-  const page = PAGE_BY_ID.get(pageId);
-  if (!page) return [];
-  const chosen = access[pageId] ?? (hidden.has(pageId) ? NO_ROLES : page.defaultRoles);
-  return DASHBOARD_ROLES.filter((r) => chosen.includes(r) && !page.lockedRoles.includes(r));
-}
-
-/** The full, effective role map for every page (what the admin page edits). */
-export function resolvePageAccess(
-  access: PageAccess,
-  hidden: ReadonlySet<string> = new Set()
-): Record<string, UserRole[]> {
-  return Object.fromEntries([...PAGE_BY_ID.keys()].map((id) => [id, pageRoles(id, access, hidden)]));
-}
-
-/**
- * The page ids a role does NOT see — a sub-tab is also hidden when its tab is.
- * The dashboard filters its tab bar and sub-tab containers with this set.
- */
-export function hiddenPagesForRole(
-  role: UserRole | null | undefined,
-  access: PageAccess,
-  hidden: ReadonlySet<string> = new Set()
-): Set<string> {
-  const out = new Set<string>();
-  for (const page of DASHBOARD_PAGES) {
-    const tabOn = !!role && pageRoles(page.id, access, hidden).includes(role);
-    if (!tabOn) out.add(page.id);
-    for (const child of page.children) {
-      if (!tabOn || !pageRoles(child.id, access, hidden).includes(role!)) out.add(child.id);
-    }
-  }
-  return out;
-}
 
 /** The sub-tabs of `tab` not in `hidden` (keeps the caller's element type). */
 export function visibleSubtabs<T extends SubTabDef>(

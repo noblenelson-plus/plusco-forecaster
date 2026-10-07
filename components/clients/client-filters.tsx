@@ -53,7 +53,7 @@ interface ClientFiltersProps {
   clients: Client[];
   filteredClients: Client[];
   isAdmin: boolean;
-  /** Export is for Business Leads, Execs and Admins; import stays admin-only. */
+  /** Export is for everyone on the page (team members, admins); import stays admin-only. */
   canExport: boolean;
   onAddClient: () => void;
 }
@@ -265,7 +265,7 @@ export default function ClientFilters({
           </span>
         </div>
 
-        {/* Right — export (BL / Exec / Admin) + admin actions */}
+        {/* Right — export (team members + admins) + admin actions */}
         {canExport && (
           <div className="flex items-center gap-2 flex-shrink-0">
 
@@ -375,10 +375,10 @@ export default function ClientFilters({
                   <span className="hidden sm:inline">Tiers</span>
                 </button>
 
-                {/* Give every client's team (BL / DL / GM) access — one-time backfill */}
+                {/* Recompute every client's team emails (who may work on it) — backfill */}
                 <button
                   onClick={() => setTeamAccessModalOpen(true)}
-                  title="Give each client's Business Lead, Digital Lead and GM access to it"
+                  title="Recompute who can work on each client from its leads, GM Pod and collaborators"
                   className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
                 >
                   <UserCheck size={14} />

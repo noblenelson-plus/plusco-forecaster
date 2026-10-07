@@ -35,25 +35,24 @@ export interface ForecastingType {
 export type LabsEligibility = Record<string, boolean>;
 
 /**
- * Taux de commission (%) par type de média, par année, avec granularité
- * mensuelle.
+ * Commission rates (%) per media type, per year, at monthly granularity.
  *
- * Format stocké : TOUJOURS mensuel (12 valeurs par type). Le cas courant
- * "même taux toute l'année" est représenté par 12 valeurs identiques —
- * l'UI détecte ce cas et affiche un champ unique (mode uniforme), mais le
- * moteur de calcul Revenue n'a qu'un seul format à gérer :
+ * Stored format: ALWAYS monthly (12 values per type). The common "same rate
+ * all year" case is stored as 12 identical values — the UI detects it and
+ * shows a single field (uniform mode), but the Revenue engine only has one
+ * format to handle:
  *
  *   commission(month) = mediaSpend(type, month) × rate(type, month) / 100
  *
- * Exemple :
+ * Example:
  * {
  *   2026: {
- *     social:       { 1: 12, 2: 12, ..., 12: 12 },   // uniforme 12%
- *     programmatic: { 1: 10, 2: 10, ..., 12: 15 },   // ajusté en déc.
+ *     social:       { 1: 12, 2: 12, ..., 12: 12 },   // uniform 12%
+ *     programmatic: { 1: 10, 2: 10, ..., 12: 15 },   // adjusted in Dec.
  *   }
  * }
  *
- * Un type de média absent = pas de commission sur ce type pour l'année.
+ * A missing media type = no commission on that type for the year.
  */
 export interface CommissionsConfig {
   [year: number]: Partial<Record<MediaType, MonthlyMap>>;
@@ -66,8 +65,16 @@ export interface Client {
   CL_Agency: ClientAgency;
   CL_Business_Unit_Region: ClientRegion;
   CL_Office: ClientOffice;
-  CL_Business_Lead: string;                 // User UID
-  CL_Digital_Lead?: string;                 // User UID
+  CL_Business_Lead: string;                 // Email (older docs may hold a uid)
+  CL_Digital_Lead?: string;                 // Email (older docs may hold a uid)
+  /** Extra team members (lowercase emails); same edit access as the BL / DL. */
+  CL_Collaborators?: string[];
+  /**
+   * Derived, never edited by hand: BL + DL + GM Pod emails + collaborators,
+   * normalized (`computeTeamEmails`). Security rules and the "my clients"
+   * query (`array-contains`) read it. Absent on pre-migration docs.
+   */
+  CL_Team_Emails?: string[];
   Client_Fee_Structure: FeeStructure;
   GM_Pod: ClientGMPod;
   CL_Currency: Currency;
@@ -105,6 +112,7 @@ export interface ClientFormData {
   CL_Office: string;
   CL_Business_Lead: string;
   CL_Digital_Lead?: string;
+  CL_Collaborators?: string[];
   Client_Fee_Structure: FeeStructure;
   GM_Pod: string;
   CL_Currency: Currency;

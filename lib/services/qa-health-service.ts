@@ -21,7 +21,7 @@ import { runHealthChecks, type CheckResult, type QaFingerprint } from "../qa/hea
 const KPI_YEAR = 2026;
 /** 2026 Deals values the Deal / Non-Deal split expects in Media Investments. */
 const ALLOWED_DEAL_VALUES = ["#N/A", "Partner Deal"];
-const ADMIN_SCOPE = { all: true, agencies: [] as string[] };
+const ADMIN_SCOPE = { all: true, agencies: [] as string[], includesUnassigned: true };
 
 export interface HealthRun {
   ranAt: Date;

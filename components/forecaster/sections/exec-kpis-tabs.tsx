@@ -61,7 +61,7 @@ export default function ExecKpisTabs({
   rfqLabel?: string;
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
-  /** Page ids hidden by an admin (Admin → Dashboard Pages). */
+  /** Sub-tab page ids an admin hid (Admin → Dashboard Access). */
   hidden?: ReadonlySet<string>;
 }) {
   const [sub, setSub] = useState<ExecSubTab>("summary");

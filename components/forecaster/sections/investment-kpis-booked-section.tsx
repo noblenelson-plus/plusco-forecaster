@@ -13,8 +13,8 @@
  * mislead once the client filter narrows the scope. Share goals stay.
  *
  * Scope: the dashboard's global client filter (scopedClientIds). The MIR rows
- * are agency-partitioned by the security rules, so each user sees their own
- * agencies only — this page is open to every role.
+ * are agency-partitioned by the security rules, so each user sees the
+ * agencies of the dashboard's scope (Global: all; Agency: their own).
  */
 
 import { Loader2, Calendar } from "lucide-react";

@@ -113,13 +113,13 @@ export default function ForecastSelectors({
   const showYear = fields.includes("year");
   const showRFQ = fields.includes("rfq");
 
-  // Fetch clients (scoped by role) — skipped when the client selector is hidden.
+  // Fetch clients (team-scoped) — skipped when the client selector is hidden.
   useEffect(() => {
     if (!profile || !showClient) return;
 
     async function fetchClients() {
       try {
-        // Role-scoped fetch (admin = all, BL = assigned clients ∪ agencies).
+        // Team-scoped fetch (admin = all, everyone else = their team clients).
         const docs = await fetchAccessibleClients(profile, isAdmin);
         const data: ClientSummary[] = docs
           // Hidden clients are not selectable for forecasting.

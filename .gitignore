@@ -44,3 +44,6 @@ next-env.d.ts
 /.firebase/
 
 *.bak-*
+
+# auth migration backups (hold staff emails / access data)
+/scripts/backups/

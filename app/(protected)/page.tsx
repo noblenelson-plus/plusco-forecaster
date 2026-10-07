@@ -45,20 +45,20 @@ import LabsPacingPage from "../../components/forecaster/sections/labs-pacing-pag
 import SubTabBar from "../../components/forecaster/sub-tab-bar";
 import {
   FORECASTER_SUBTABS,
-  hiddenPagesForRole,
   isTabVisible,
   visibleSubtabs,
   type ForecasterSubTab,
 } from "../../components/forecaster/dashboard-pages.config";
-import { useDashboardPageSettings } from "../../lib/hooks/use-dashboard-page-settings";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
 import { useProducts } from "../../lib/hooks/use-products";
-import { useAccessibleClients } from "../../lib/hooks/use-accessible-clients";
-import { useAgencyScope } from "../../lib/hooks/use-agency-scope";
+import { useReadableClients } from "../../lib/hooks/use-readable-clients";
+import { DashboardTabScope, useAccess } from "../../lib/hooks/use-access";
+import { agencyScopeKey, scopeCoversAgency } from "../../lib/format/agency-scope";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
+import { isOnClientTeam } from "../../lib/format/client-team";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
 import { isTestClient } from "../../lib/format/client";
@@ -123,9 +123,9 @@ function ModeToggle({
 const ALL_MONTHS: number[] = [];
 
 export default function DashboardPage() {
-  const { clients: allClients, loading, error } = useAccessibleClients();
+  const { clients: allClients, loading, error } = useReadableClients();
   const { profile, isAdmin } = useUserProfile();
-  const { scope: agencyScope } = useAgencyScope();
+  const access = useAccess();
   // Top-level tab — declared up here because it picks the client universe.
   const [topTab, setTopTab] = useState<ForecasterTab>("forecaster");
   // Test clients are hidden from the dashboard only (they stay in the editing
@@ -137,23 +137,25 @@ export default function DashboardPage() {
   );
   // Each tab group has its own client universe (presentation only — the
   // security rules still govern what can be read):
-  //   - Forecaster Dashboard → the clients explicitly assigned to the user
-  //     (Admin: all). Agency-wide access does not widen it.
-  //   - Every other tab → the agencies the user's email domain maps to
-  //     (Admin and company-wide domains: all), like the agency-partitioned
-  //     Media Investments / Reports data.
+  //   - Forecaster Dashboard → the clients whose team the user is on
+  //     (Admin: all). Dashboard grants do not widen it.
+  //   - Every other tab → its Admin → Dashboard Access scope: every client
+  //     (Global mode) or the agencies the user's email domain maps to (Agency
+  //     mode; company-wide domains: all), like the agency-partitioned Media
+  //     Investments / Reports data.
   // The filter bar, forecast data and charts all derive from this list.
-  const assignedClientIds = profile?.assignedClients;
+  const myEmail = profile?.email;
+  const tabScope = topTab === "forecaster" ? null : access.scopeFor(topTab);
+  const tabScopeKey = tabScope ? agencyScopeKey(tabScope) : "";
   const clients = useMemo(() => {
     if (topTab === "forecaster") {
       if (isAdmin) return dashboardClients;
-      const assigned = new Set(assignedClientIds ?? []);
-      return dashboardClients.filter((c) => assigned.has(c.cl_id));
+      return dashboardClients.filter((c) => isOnClientTeam(myEmail, c));
     }
-    if (agencyScope.all) return dashboardClients;
-    const agencies = new Set(agencyScope.agencies);
-    return dashboardClients.filter((c) => agencies.has(c.CL_Agency));
-  }, [topTab, isAdmin, assignedClientIds, agencyScope, dashboardClients]);
+    return dashboardClients.filter((c) => scopeCoversAgency(tabScope, c.CL_Agency));
+    // tabScope is tracked through its key (a fresh object each render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topTab, isAdmin, myEmail, tabScopeKey, dashboardClients]);
   const usersMap = useUsersMap();
 
   const { selectedYear, selectedRFQ, setRFQ } = useForecastSelection();
@@ -313,38 +315,35 @@ export default function DashboardPage() {
   // The sub-tab chosen inside the Forecaster Dashboard (top tab: see above).
   const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
-  // The pages this user's role does not see — the per-role access set in
-  // Admin → Dashboard Pages, live. Until the profile loads, treat the user as a
-  // Viewer (fewest pages) so nothing flashes that they may not see.
-  const { settings: pageSettings } = useDashboardPageSettings();
-  const hiddenPages = useMemo(
-    () =>
-      hiddenPagesForRole(
-        profile?.role ?? "VIEWER",
-        pageSettings.access,
-        new Set(pageSettings.hidden)
-      ),
-    [profile?.role, pageSettings]
-  );
+  // Tabs: Forecaster for admins and client-team members, every other tab for
+  // admins and people granted it (Admin → Dashboard Access). Sub-tabs an
+  // admin hid (work in progress) are hidden from everyone but admins.
+  const hiddenPages = access.hiddenSubtabs;
+  const { hasTeamSpaces, openDashboards } = access;
   const visibleTabs = useMemo(
-    () => FORECASTER_TABS.filter((t) => isTabVisible(t.id, hiddenPages)),
-    [hiddenPages]
+    () =>
+      FORECASTER_TABS.filter(
+        (t) =>
+          (t.id === "forecaster" ? hasTeamSpaces : openDashboards.includes(t.id)) &&
+          isTabVisible(t.id, hiddenPages)
+      ),
+    [hasTeamSpaces, openDashboards, hiddenPages]
   );
   const forecasterSubtabs = useMemo(
     () => visibleSubtabs("forecaster", FORECASTER_SUBTABS, hiddenPages),
     [hiddenPages]
   );
-  // If the active tab isn't visible for this role, fall back to the first tab
-  // they can see. Wait for the profile to load first, else the
-  // provisional Viewer view would bounce an admin off their tab.
+  // If the active tab isn't open to the user, fall back to the first tab they
+  // can see. Wait for access to resolve first, else the provisional empty view
+  // would bounce them off their tab.
   useEffect(() => {
-    if (!profile) return;
+    if (access.loading) return;
     if (visibleTabs.length && !visibleTabs.some((t) => t.id === topTab)) {
       setTopTab(visibleTabs[0].id);
     }
-  }, [profile, visibleTabs, topTab]);
-  // A hidden / role-blocked sub-tab (e.g. a Viewer on the Summary) shows the
-  // first visible one instead — derived, so the choice returns once allowed.
+  }, [access.loading, visibleTabs, topTab]);
+  // A hidden sub-tab shows the first visible one instead — derived, so the
+  // choice returns once it is visible again.
   const activeForecasterSub = forecasterSubtabs.some((t) => t.id === forecasterSub)
     ? forecasterSub
     : (forecasterSubtabs[0]?.id ?? forecasterSub);
@@ -587,6 +586,8 @@ export default function DashboardPage() {
               onClose={() => setFocusedClientId(null)}
             />
           )}
+        {/* Agency-partitioned data hooks read this tab's Global / Agency scope. */}
+        <DashboardTabScope tab={topTab === "forecaster" ? null : topTab}>
         {tab === "mediaocean" ? (
           <MediaOceanTabs
             sub={mediaOceanSub}
@@ -630,7 +631,7 @@ export default function DashboardPage() {
             {viewCurrency === "USD"
               ? "No USD clients are in scope for this selection."
               : topTab === "forecaster"
-                ? "The Forecaster tab shows the clients assigned to you, and none are assigned yet."
+                ? "The Forecaster tab shows the clients whose team you are on."
                 : "No clients are available for your account yet."}
           </div>
         ) : forecastData.error ? (
@@ -719,6 +720,7 @@ export default function DashboardPage() {
             {activeLabel} — coming soon
           </div>
         )}
+        </DashboardTabScope>
       </main>
 
       {/* Right-edge section navigator — reads the `data-scroll-section`

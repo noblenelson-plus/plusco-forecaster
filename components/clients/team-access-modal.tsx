@@ -2,23 +2,22 @@
 "use client";
 
 /**
- * Admin modal — "Sync team access". Gives every client's team (Business Lead,
- * Digital Lead, GM) access to it, for clients whose team was set before team
- * access became automatic. Additive only: it grants and upgrades Viewers to
- * Business Lead, never removes (removal happens when a team member is
- * replaced on a client). Shows a dry-run first; nothing is written until
- * Apply.
+ * Admin modal — "Team access". Recomputes every client's CL_Team_Emails (the
+ * array the security rules and "my clients" read) from its Business Lead,
+ * Digital Lead, GM Pod and collaborators. Client saves keep it current; this
+ * repairs older clients or applies a GM_POD_EMAILS change. Shows a dry run
+ * first; nothing is written until Apply. Also lists team emails that have no
+ * user row and team values that are not emails, for the admin to fix.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Loader2, Users, AlertTriangle } from "lucide-react";
 import type { Client } from "../../lib/types/client.types";
-import type { TeamAccessPlan } from "../../lib/format/client-team";
+import type { TeamEmailsPlan } from "../../lib/format/client-team";
 import {
-  applyTeamAccessPlan,
-  planTeamAccessChanges,
+  applyTeamEmailsChanges,
+  planTeamEmailsChanges,
 } from "../../lib/services/team-access-service";
-import { useAuth } from "../../lib/auth-context";
 
 interface TeamAccessModalProps {
   clients: Client[];
@@ -27,25 +26,15 @@ interface TeamAccessModalProps {
 }
 
 /** Mount it only while open — each opening starts a fresh dry run. */
-export default function TeamAccessModal({
-  clients,
-  onClose,
-  onApplied,
-}: TeamAccessModalProps) {
-  const { user } = useAuth();
-  const [plan, setPlan] = useState<TeamAccessPlan | null>(null);
+export default function TeamAccessModal({ clients, onClose, onApplied }: TeamAccessModalProps) {
+  const [plan, setPlan] = useState<TeamEmailsPlan | null>(null);
   const [planning, setPlanning] = useState(true);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState("");
 
-  const nameById = useMemo(
-    () => new Map(clients.map((c) => [c.cl_id, c.CL_Name])),
-    [clients]
-  );
-
   useEffect(() => {
     let cancelled = false;
-    planTeamAccessChanges(clients.map((c) => ({ after: c, before: null })))
+    planTeamEmailsChanges(clients)
       .then((p) => !cancelled && setPlan(p))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Preview failed."))
       .finally(() => !cancelled && setPlanning(false));
@@ -54,20 +43,14 @@ export default function TeamAccessModal({
     };
   }, [clients]);
 
-  const grants = plan
-    ? plan.users.reduce((n, u) => n + u.added.length, 0) +
-      plan.invites.reduce((n, i) => n + i.added.length, 0)
-    : 0;
-  const promoted = plan ? plan.users.filter((u) => u.role).length : 0;
-  const nothingToDo = plan !== null && plan.users.length === 0 && plan.invites.length === 0;
-  const names = (ids: string[]) => ids.map((id) => nameById.get(id) ?? id).join(", ");
+  const nothingToDo = plan !== null && plan.changes.length === 0;
 
   async function apply() {
     if (!plan) return;
     setApplying(true);
     setError("");
     try {
-      await applyTeamAccessPlan(plan, user?.uid);
+      await applyTeamEmailsChanges(plan.changes);
       onApplied();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Apply failed.");
@@ -88,9 +71,9 @@ export default function TeamAccessModal({
             <div className="flex items-center gap-3">
               <Users size={16} className="text-gray-600" />
               <div>
-                <h2 className="text-base font-semibold text-gray-900">Sync team access</h2>
+                <h2 className="text-base font-semibold text-gray-900">Team access</h2>
                 <p className="text-xs text-gray-500">
-                  Gives each client&apos;s Business Lead, Digital Lead and GM access to it.
+                  Recomputes who can work on each client from its leads, GM Pod and collaborators.
                 </p>
               </div>
             </div>
@@ -110,64 +93,59 @@ export default function TeamAccessModal({
                 <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" /> {error}
               </div>
             )}
-            {nothingToDo && (
-              <p className="text-gray-600">Every team member already has access to their clients.</p>
-            )}
+            {nothingToDo && <p className="text-gray-600">Every client&apos;s team access is up to date.</p>}
             {plan && !nothingToDo && (
               <>
                 <p className="text-gray-700">
-                  <strong>{grants}</strong> client grant{grants === 1 ? "" : "s"} for{" "}
-                  <strong>{plan.users.length + plan.invites.length}</strong> people
-                  {promoted > 0 && (
-                    <>
-                      {" "}· <strong>{promoted}</strong> Viewer{promoted === 1 ? "" : "s"} → Business Lead
-                    </>
-                  )}
-                  {plan.invites.length > 0 && (
-                    <>
-                      {" "}· <strong>{plan.invites.length}</strong> not signed in yet (applied on first
-                      sign-in)
-                    </>
-                  )}
-                  . Nothing is removed.
+                  <strong>{plan.changes.length}</strong> client{plan.changes.length === 1 ? "" : "s"} to update.
                 </p>
                 <table className="w-full border border-gray-200 text-xs">
                   <thead className="bg-gray-900 text-left text-white">
                     <tr>
-                      <th className="px-3 py-2 font-semibold">Person</th>
-                      <th className="px-3 py-2 font-semibold">Gets access to</th>
+                      <th className="px-3 py-2 font-semibold">Client</th>
+                      <th className="px-3 py-2 font-semibold">Gains access</th>
+                      <th className="px-3 py-2 font-semibold">Loses access</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {plan.users.map((u) => (
-                      <tr key={u.uid} className="border-t border-gray-100 align-top">
-                        <td className="px-3 py-2 text-gray-900">
-                          {u.email}
-                          {u.role && <span className="block text-gray-500">Viewer → Business Lead</span>}
-                        </td>
-                        <td className="px-3 py-2 text-gray-700">{names(u.added) || "—"}</td>
-                      </tr>
-                    ))}
-                    {plan.invites.map((i) => (
-                      <tr key={i.email} className="border-t border-gray-100 align-top">
-                        <td className="px-3 py-2 text-gray-900">
-                          {i.email}
-                          <span className="block text-gray-500">Not signed in yet — invite</span>
-                        </td>
-                        <td className="px-3 py-2 text-gray-700">{names(i.added) || "—"}</td>
+                    {plan.changes.map((c) => (
+                      <tr key={c.cl_id} className="border-t border-gray-100 align-top">
+                        <td className="px-3 py-2 text-gray-900">{c.name}</td>
+                        <td className="px-3 py-2 text-gray-700">{c.added.join(", ") || "—"}</td>
+                        <td className="px-3 py-2 text-gray-700">{c.removed.join(", ") || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </>
             )}
+            {plan && plan.notUsers.length > 0 && (
+              <div className="bg-yellow-400 px-3 py-2 text-gray-900">
+                <p className="font-semibold">
+                  {plan.notUsers.length} team email{plan.notUsers.length === 1 ? " has" : "s have"} no user row
+                </p>
+                <p className="text-xs mt-1">
+                  They keep access, but can&apos;t be picked in the client drawer until added on Admin → Access:{" "}
+                  {plan.notUsers.join(", ")}
+                </p>
+              </div>
+            )}
+            {plan && plan.invalid.length > 0 && (
+              <div className="bg-red-500 px-3 py-2 text-white">
+                <p className="font-semibold">Team values that are not emails (ignored)</p>
+                <ul className="text-xs mt-1 space-y-0.5">
+                  {plan.invalid.map((i) => (
+                    <li key={i.cl_id}>
+                      {i.name}: {i.values.join(", ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
-            >
+            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
               {nothingToDo ? "Close" : "Cancel"}
             </button>
             {!nothingToDo && (
