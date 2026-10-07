@@ -23,6 +23,47 @@
 import { GM_POD_EMAILS, type ClientGMPod } from "../constants/client.constants";
 import type { Client } from "../types/client.types";
 import type { UserRole } from "../types/user.types";
+import { isValidEmail, normalizeEmail, normalizeEmailList } from "./email";
+
+// ─── Team emails (access rebuild) ─────────────────────────────────────────────
+
+export type TeamEmailFields = Pick<
+  Client,
+  "CL_Business_Lead" | "CL_Digital_Lead" | "GM_Pod" | "CL_Collaborators"
+>;
+
+/**
+ * The client's `CL_Team_Emails`: BL + DL + the GM Pod's accounts
+ * (GM_POD_EMAILS) + collaborators — normalized, deduped, sorted. Non-email
+ * values (empty, legacy uids) are dropped; `invalidTeamValues` lists them.
+ * Recompute on every client save: the rules and the "my clients" query trust
+ * this array.
+ */
+export function computeTeamEmails(client: TeamEmailFields): string[] {
+  return normalizeEmailList([
+    client.CL_Business_Lead,
+    client.CL_Digital_Lead,
+    ...(GM_POD_EMAILS[client.GM_Pod as ClientGMPod] ?? []),
+    ...(client.CL_Collaborators ?? []),
+  ]);
+}
+
+/** Non-blank BL / DL / collaborator values that are not emails (for logs). */
+export function invalidTeamValues(client: TeamEmailFields): string[] {
+  return [client.CL_Business_Lead, client.CL_Digital_Lead, ...(client.CL_Collaborators ?? [])]
+    .filter((v): v is string => !!v && !!v.trim() && !isValidEmail(v));
+}
+
+/** True when the (normalized) email is in the client's stored CL_Team_Emails. */
+export function isOnClientTeam(
+  email: string | null | undefined,
+  client: Pick<Client, "CL_Team_Emails">
+): boolean {
+  const e = normalizeEmail(email);
+  return !!e && (client.CL_Team_Emails ?? []).includes(e);
+}
+
+// ─── Legacy team → assignedClients planning (removed in Phase 3) ──────────────
 
 export type ClientTeamFields = Pick<
   Client,
