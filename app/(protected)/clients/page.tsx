@@ -52,8 +52,8 @@ export default function ClientsPage() {
       setLoading(true);
       setError("");
       try {
-        // Role-scoped fetch: admins see all; BLs see assigned clients ∪ every
-        // client of an assigned agency. Already sorted by name.
+        // Team-scoped fetch: admins see all; everyone else the clients whose
+        // team they are on. Already sorted by name.
         const data = await fetchAccessibleClients(profile, isAdmin);
         setClients(data);
       } catch (err: any) {
@@ -145,7 +145,7 @@ export default function ClientsPage() {
       {/* Sticky banner — full width, outside the padded container */}
       <PageHeader
         title="Clients"
-        description={isAdmin ? "Manage all agency clients." : "Your assigned clients."}
+        description={isAdmin ? "Manage all agency clients." : "The clients whose team you are on."}
         actions={
           <>
             <a

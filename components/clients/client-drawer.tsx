@@ -774,7 +774,7 @@ export default function ClientDrawer({
           </Section>
 
           {/* Section: Labs eligibility (edit only) — editable by whoever may
-              write the client (BL / Exec / Admin), read-only otherwise */}
+              write the client (its team, admins), read-only otherwise */}
           {isEditing && (
             <Section label="Labs eligibility">
               {labsPartners.length === 0 ? (

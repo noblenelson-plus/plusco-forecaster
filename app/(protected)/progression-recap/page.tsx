@@ -30,7 +30,7 @@ import { filterWritableClients } from "../../../lib/services/assignment-service"
 
 export default function ProgressionRecapPage() {
   const { clients, loading: clientsLoading, error: clientsError } = useAccessibleClients();
-  const { profile, isAdmin, permissions } = useUserProfile();
+  const { profile, isAdmin } = useUserProfile();
   const usersMap = useUsersMap();
   const { selectedYear } = useForecastSelection();
 
@@ -55,7 +55,7 @@ export default function ProgressionRecapPage() {
 
   // The filtered clients the current user may WRITE to — the batch check writes
   // flags + validations, so it can only target the editable subset (read scope
-  // is broader). Read-only users (Viewers) get no runner.
+  // can be broader). With nothing writable there is no runner.
   const writableClientIds = useMemo(
     () =>
       filterWritableClients(filteredClients, profile, isAdmin).map((c) => c.cl_id),
@@ -101,8 +101,8 @@ export default function ProgressionRecapPage() {
           <ForecastSelectors orientation="horizontal" theme="light" fields={["year"]} />
 
           {/* Batch milestone check — run one step for every editable, filtered
-              client at once. Only for users who can edit forecasts. */}
-          {permissions.canEditForecast && (
+              client at once. Only when some filtered client is editable. */}
+          {writableClientIds.length > 0 && (
             <>
               <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
               <MilestoneBatchRunner

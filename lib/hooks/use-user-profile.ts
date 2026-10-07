@@ -1,20 +1,12 @@
 // lib/hooks/use-user-profile.ts
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../auth-context";
 import type { UserProfile } from "../services/user-service";
 import type { AppRole } from "../types/access.types";
 import { normalizeEmail } from "../format/email";
-import { resolvePermissions, type UserPermissions } from "../types/user.types";
-
-// Capability flags from the legacy model, still read by a few screens: a USER
-// gets the Business Lead set (edit + revenue on the clients they may write —
-// which clients is decided by the team, see lib/format/access.ts).
-const USER_PERMISSIONS = resolvePermissions("BUSINESS_LEAD");
-const ADMIN_PERMISSIONS = resolvePermissions("ADMIN");
-const NO_PERMISSIONS = resolvePermissions("VIEWER");
 
 interface UseUserProfileResult {
   profile: UserProfile | null;
@@ -23,7 +15,6 @@ interface UseUserProfileResult {
   isAdmin: boolean;
   /** Signed-in, normalized email ("" when signed out). */
   email: string;
-  permissions: UserPermissions;
 }
 
 /**
@@ -77,11 +68,9 @@ export function useUserProfile(): UseUserProfileResult {
   }, [email]);
 
   const role = profile?.role ?? null;
+  // What a person may do is decided by client teams and dashboard grants
+  // (lib/format/access.ts, useAccess) — the role only says admin or not.
   const isAdmin = role === "ADMIN";
-  const permissions = useMemo(
-    () => (!role || profile?.disabled ? NO_PERMISSIONS : isAdmin ? ADMIN_PERMISSIONS : USER_PERMISSIONS),
-    [role, isAdmin, profile?.disabled]
-  );
 
-  return { profile, loading, role, isAdmin, email, permissions };
+  return { profile, loading, role, isAdmin, email };
 }

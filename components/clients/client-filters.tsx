@@ -53,7 +53,7 @@ interface ClientFiltersProps {
   clients: Client[];
   filteredClients: Client[];
   isAdmin: boolean;
-  /** Export is for Business Leads, Execs and Admins; import stays admin-only. */
+  /** Export is for everyone on the page (team members, admins); import stays admin-only. */
   canExport: boolean;
   onAddClient: () => void;
 }
@@ -265,7 +265,7 @@ export default function ClientFilters({
           </span>
         </div>
 
-        {/* Right — export (BL / Exec / Admin) + admin actions */}
+        {/* Right — export (team members + admins) + admin actions */}
         {canExport && (
           <div className="flex items-center gap-2 flex-shrink-0">
 

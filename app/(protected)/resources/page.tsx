@@ -4,7 +4,7 @@
 /**
  * Resources — a shared library of external links.
  * Readable by everyone; only admins can add, edit or delete entries.
- * Business Leads simply click a card to open the link in a new tab.
+ * Everyone else simply clicks a card to open the link in a new tab.
  */
 
 import { useEffect, useState } from "react";
