@@ -11,7 +11,6 @@ import {
   getDocs,
   query,
   where,
-  arrayRemove,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
@@ -245,16 +244,7 @@ export async function deleteClient(cl_id: string): Promise<void> {
     await batch.commit();
   }
 
-  // Unassign the client from every user that carried it.
-  const assigned = await getDocs(
-    query(collection(db, "users"), where("assignedClients", "array-contains", cl_id))
-  );
-  await Promise.all(
-    assigned.docs.map((d) =>
-      updateDoc(d.ref, { assignedClients: arrayRemove(cl_id) })
-    )
-  );
-
+  // The client's team lives on the client doc, so deleting it removes access.
   await deleteDoc(doc(db, "clients", cl_id));
 }
 

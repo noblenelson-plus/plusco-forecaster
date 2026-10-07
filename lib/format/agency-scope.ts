@@ -1,6 +1,6 @@
 // lib/format/agency-scope.ts
 
-import type { UserRole } from "../types/user.types";
+import type { AppRole } from "../types/access.types";
 
 /**
  * Agency scope for agency-partitioned data: the MediaOcean tab collections
@@ -11,7 +11,7 @@ import type { UserRole } from "../types/user.types";
  * rules would reject.
  *
  *   - ADMIN → every agency, including UNASSIGNED_AGENCY rows.
- *   - Everyone else, Execs included → strictly the agencies their email domain
+ *   - Everyone else → strictly the agencies their email domain
  *     maps to right now (agencies ↔ domains mapping + company-wide domains,
  *     resolved live — see use-agency-scope.ts). Same model as the former
  *     per-agency Looker dashboards.
@@ -31,7 +31,7 @@ export interface AgencyScope {
 export const EMPTY_AGENCY_SCOPE: AgencyScope = { all: false, agencies: [] };
 
 export function resolveAgencyScope(
-  profile: { role: UserRole } | null,
+  profile: { role: AppRole } | null,
   /** Agencies the user's email domain maps to (live mapping). */
   domainAgencies: string[] = []
 ): AgencyScope {

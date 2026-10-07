@@ -19,7 +19,7 @@ import {
 } from "../../../lib/format/client";
 
 export default function ClientsPage() {
-  const { profile, isAdmin, isViewer } = useUserProfile();
+  const { profile, isAdmin } = useUserProfile();
 
   // The year every card badge and the status filter use. The calendar year
   // (not the persisted dashboard year), so it rolls over on Jan 1; other
@@ -193,7 +193,7 @@ export default function ClientsPage() {
           clients={clients}
           filteredClients={filteredClients}
           isAdmin={isAdmin}
-          canExport={!isViewer}
+          canExport
           onAddClient={handleAddClient}
         />
 

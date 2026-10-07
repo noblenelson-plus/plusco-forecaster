@@ -8,7 +8,6 @@ import {
   getDocs,
   serverTimestamp,
   setDoc,
-  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import type { Agency } from "../types/agency.types";
@@ -27,9 +26,9 @@ const COMPANY_DOMAINS_DOC = "company_domains";
  * Agency ↔ email-domain service.
  *
  * The `agencies` collection is the single source for the domain → agency map
- * used at sign-in to grant automatic "agency employee" (VIEWER) access.
- * Documents use the agency name as their id (a `ClientAgency` value), so the
- * granted `assignedAgencies` entry matches `clients.CL_Agency` directly.
+ * that decides a person's agency ("my agencies") on dashboards in Agency mode
+ * and for agency-partitioned data. Documents use the agency name as their id
+ * (a `ClientAgency` value), so it matches `clients.CL_Agency` directly.
  */
 
 function toAgency(d: { id: string; data: () => unknown }): Agency {
@@ -91,8 +90,8 @@ export async function saveCompanyDomains(domains: string[]): Promise<void> {
  * Resolves every agency an email may access by matching its domain against both
  * the per-agency domains and the company-wide list. A company-wide match grants
  * ALL agencies; otherwise it is the union of agencies claiming that domain.
- * Returns [] when the email has no domain or nothing claims it. Used at first
- * sign-in to seed automatic agency access.
+ * Returns [] when the email has no domain or nothing claims it. Read live by
+ * use-agency-scope (the rules check the same mapping).
  */
 export async function resolveAgenciesForEmail(
   email: string
@@ -113,44 +112,6 @@ export async function resolveAgenciesForEmail(
   return matchAgenciesByDomain(agencies, domain).map((a) => a.name);
 }
 
-/**
- * Re-syncs the given users' `assignedAgencies` from their email domain, in one
- * pass (fetches the mapping once). Agencies are UNIONED with what each user
- * already has — never removed — so a not-yet-configured domain can't wipe
- * manually- or migration-set access. Only changed users are written. Must run
- * as an admin (Firestore rules reserve `assignedAgencies` writes to admins).
- * Returns the affected uids and their new agency lists.
- */
-export async function syncUserAgenciesFromDomains(
-  users: { uid: string; email: string; assignedAgencies?: string[] }[]
-): Promise<{ uid: string; agencies: ClientAgency[] }[]> {
-  const [agencies, companyDomains] = await Promise.all([
-    fetchAgencies(),
-    fetchCompanyDomains(),
-  ]);
-
-  const resolveLocal = (email: string): ClientAgency[] => {
-    const domain = extractDomain(email);
-    if (!domain) return [];
-    if (companyDomains.some((x) => x.toLowerCase() === domain)) {
-      return agencies.map((a) => a.name);
-    }
-    return matchAgenciesByDomain(agencies, domain).map((a) => a.name);
-  };
-
-  const changes: { uid: string; agencies: ClientAgency[] }[] = [];
-  for (const u of users) {
-    const current = u.assignedAgencies ?? [];
-    const merged = Array.from(
-      new Set([...current, ...resolveLocal(u.email)])
-    ) as ClientAgency[];
-    if (merged.length !== current.length) {
-      await updateDoc(doc(db, "users", u.uid), { assignedAgencies: merged });
-      changes.push({ uid: u.uid, agencies: merged });
-    }
-  }
-  return changes;
-}
 
 /**
  * Creates or replaces an agency. Domains are normalized (lowercased, "@"

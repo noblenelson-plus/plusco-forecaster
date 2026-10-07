@@ -15,9 +15,9 @@ import {
 } from "../../lib/constants/client.constants";
 
 /**
- * Agency ↔ email-domain mapping editor. When someone signs in, the domain of
- * their email grants automatic read-only access to the matching agency's
- * clients. Company-wide domains grant every agency at once.
+ * Agency ↔ email-domain mapping editor. The domain of a person's email decides
+ * their agency on dashboards in Agency mode (it grants no access by itself —
+ * dashboards are opened by grants). Company-wide domains map to every agency.
  *
  * Self-contained (loads its own data). `userCountByAgency` is optional — when
  * provided, each agency card shows how many users currently belong to it.

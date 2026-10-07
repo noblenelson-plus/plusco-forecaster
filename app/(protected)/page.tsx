@@ -59,6 +59,7 @@ import { useAccessibleClients } from "../../lib/hooks/use-accessible-clients";
 import { useAgencyScope } from "../../lib/hooks/use-agency-scope";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
+import { isOnClientTeam } from "../../lib/format/client-team";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
 import { isTestClient } from "../../lib/format/client";
@@ -137,23 +138,22 @@ export default function DashboardPage() {
   );
   // Each tab group has its own client universe (presentation only — the
   // security rules still govern what can be read):
-  //   - Forecaster Dashboard → the clients explicitly assigned to the user
-  //     (Admin: all). Agency-wide access does not widen it.
+  //   - Forecaster Dashboard → the clients whose team the user is on
+  //     (Admin: all). Dashboard grants do not widen it.
   //   - Every other tab → the agencies the user's email domain maps to
   //     (Admin and company-wide domains: all), like the agency-partitioned
   //     Media Investments / Reports data.
   // The filter bar, forecast data and charts all derive from this list.
-  const assignedClientIds = profile?.assignedClients;
+  const myEmail = profile?.email;
   const clients = useMemo(() => {
     if (topTab === "forecaster") {
       if (isAdmin) return dashboardClients;
-      const assigned = new Set(assignedClientIds ?? []);
-      return dashboardClients.filter((c) => assigned.has(c.cl_id));
+      return dashboardClients.filter((c) => isOnClientTeam(myEmail, c));
     }
     if (agencyScope.all) return dashboardClients;
     const agencies = new Set(agencyScope.agencies);
     return dashboardClients.filter((c) => agencies.has(c.CL_Agency));
-  }, [topTab, isAdmin, assignedClientIds, agencyScope, dashboardClients]);
+  }, [topTab, isAdmin, myEmail, agencyScope, dashboardClients]);
   const usersMap = useUsersMap();
 
   const { selectedYear, selectedRFQ, setRFQ } = useForecastSelection();
@@ -315,16 +315,17 @@ export default function DashboardPage() {
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
   // The pages this user's role does not see — the per-role access set in
   // Admin → Dashboard Pages, live. Until the profile loads, treat the user as a
-  // Viewer (fewest pages) so nothing flashes that they may not see.
+  // Viewer (fewest pages) so nothing flashes that they may not see. Interim
+  // until per-dashboard grants replace it: a USER gets the Business Lead set.
   const { settings: pageSettings } = useDashboardPageSettings();
   const hiddenPages = useMemo(
     () =>
       hiddenPagesForRole(
-        profile?.role ?? "VIEWER",
+        !profile ? "VIEWER" : isAdmin ? "ADMIN" : "BUSINESS_LEAD",
         pageSettings.access,
         new Set(pageSettings.hidden)
       ),
-    [profile?.role, pageSettings]
+    [profile, isAdmin, pageSettings]
   );
   const visibleTabs = useMemo(
     () => FORECASTER_TABS.filter((t) => isTabVisible(t.id, hiddenPages)),

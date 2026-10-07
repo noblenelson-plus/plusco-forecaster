@@ -2,12 +2,22 @@
 // app/(protected)/layout.tsx
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Menu, LogOut } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import { AccessProvider, useAccess } from "../../lib/hooks/use-access";
 import Sidebar from "../../components/_shared/sidebar";
 import PlusLogo from "../../components/_shared/plus-logo";
+// Reachable without a client team: the dashboard (it shows only the tabs the
+// person may open) and the general reference pages. Admin pages guard
+// themselves. Every other route is a team space.
+const NON_TEAM_PATHS = ["/", "/how-to", "/resources"];
+// Reference pages stay reachable even with no access at all.
+const OPEN_PATHS = ["/how-to", "/resources"];
+const startsWithAny = (pathname: string, paths: string[]) =>
+paths.some((p) => (p === "/" ? pathname === "/" : pathname === p || pathname.startsWith(p + "/")));
 function AccessPendingScreen({ revoked = false }: { revoked?: boolean }) {
 const { user, signOut } = useAuth();
 const { profile } = useUserProfile();
@@ -50,7 +60,7 @@ return (
       <p className="text-sm text-gray-500 leading-relaxed mb-2">
         {revoked
           ? "Your access to Forecaster has been revoked. If you think this is a mistake, please contact:"
-          : "Your account has been created but no clients have been assigned to you yet. Please contact:"}
+          : "Your account has been created, but you are not on a client team and no dashboard has been opened for you yet. Please contact:"}
       </p>
       <a
         href="mailto:adriana.novoa@pluscompany.com"
@@ -58,6 +68,14 @@ return (
       >
         adriana.novoa@pluscompany.com
       </a>
+      {!revoked && (
+        <p className="-mt-5 mb-8 text-xs text-gray-500">
+          Meanwhile, see{" "}
+          <Link href="/how-to" className="font-medium text-purple-700 hover:text-purple-600">How to</Link>
+          {" "}and{" "}
+          <Link href="/resources" className="font-medium text-purple-700 hover:text-purple-600">Resources</Link>.
+        </p>
+      )}
 
       {/* Sign out */}
       <button
@@ -75,14 +93,22 @@ return (
 );
 }
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
+return (
+<AccessProvider>
+<ProtectedShell>{children}</ProtectedShell>
+</AccessProvider>
+);
+}
+function ProtectedShell({ children }: { children: React.ReactNode }) {
 const { user, loading: authLoading } = useAuth();
-const { profile, isAdmin, isViewer, loading: profileLoading } = useUserProfile();
+const { profile, loading: profileLoading } = useUserProfile();
+const access = useAccess();
 const router = useRouter();
 const pathname = usePathname();
 const [sidebarOpen, setSidebarOpen] = useState(false);
 const [collapsed, setCollapsed] = useState(false);
 const [isDesktop, setIsDesktop] = useState(false);
-const loading = authLoading || profileLoading;
+const loading = authLoading || profileLoading || (!!user && access.loading);
 // Restore the desktop collapse preference from localStorage.
 useEffect(() => {
   setCollapsed(localStorage.getItem("sidebar-collapsed") === "true");
@@ -108,13 +134,15 @@ if (!authLoading && !user) {
 router.replace("/auth/login");
 }
 }, [user, authLoading, router]);
-// Agency Viewers are confined to the Dashboard. Hiding the nav is only
-// cosmetic — a direct URL would still load an edit page — so bounce them back.
+// People with dashboard grants but no client team only reach the dashboard
+// and reference pages. Hiding the nav is only cosmetic — a direct URL would
+// still load a team space — so bounce them back.
+const teamSpaceBlocked =
+!access.loading && access.hasAnyAccess && !access.hasTeamSpaces &&
+!startsWithAny(pathname, NON_TEAM_PATHS) && !pathname.startsWith("/admin");
 useEffect(() => {
-if (!profileLoading && isViewer && pathname !== "/") {
-router.replace("/");
-}
-}, [profileLoading, isViewer, pathname, router]);
+if (teamSpaceBlocked) router.replace("/");
+}, [teamSpaceBlocked, router]);
 if (loading) {
 return (
 <main className="flex min-h-[calc(100vh/var(--app-zoom,1))] items-center justify-center bg-gray-50">
@@ -126,20 +154,17 @@ return (
 );
 }
 if (!user) return null;
-// Revoked access — an admin disabled this account. Blocks even domain-granted
-// agency access, and survives re-login (the flag lives on the profile).
+// Revoked access — an admin disabled this account. Blocks team and dashboard
+// access alike, and survives re-login (the flag lives on the profile).
 if (profile?.disabled) {
 return <AccessPendingScreen revoked />;
 }
-// Access gate — user is authenticated but has no clients, no agencies and
-// is not admin. Agency-scoped access counts even with no explicit clients.
-const hasAccess =
-  isAdmin ||
-  (profile?.assignedClients?.length ?? 0) > 0 ||
-  (profile?.assignedAgencies?.length ?? 0) > 0;
-if (!hasAccess) {
+// Access gate — signed in, but on no client team and granted no dashboard
+// (and not admin). The reference pages stay reachable.
+if (!access.hasAnyAccess && !startsWithAny(pathname, OPEN_PATHS)) {
 return <AccessPendingScreen />;
 }
+if (teamSpaceBlocked) return null;
 return (
 <div className="flex min-h-[calc(100vh/var(--app-zoom,1))] bg-gray-50">
   {/* Mobile overlay */}

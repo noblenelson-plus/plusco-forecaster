@@ -50,7 +50,6 @@ import {
   getLabsPartnersForYear,
 } from "../../lib/services/labs-partner-service";
 import type { LabsPartner } from "../../lib/types/labs.types";
-import ClientAccessSection from "./client-access-section";
 import CommissionsDrawer from "./commissions-drawer";
 
 interface ClientDrawerProps {
@@ -647,15 +646,6 @@ export default function ClientDrawer({
               />
             </Field>
           </Section>
-
-          {/* Section: Access (edit only) */}
-          {isEditing && client && (
-            <ClientAccessSection
-              clId={client.cl_id}
-              agency={client.CL_Agency}
-              isAdmin={isAdmin}
-            />
-          )}
 
           {/* Section: Classification */}
           <Section label="Classification">

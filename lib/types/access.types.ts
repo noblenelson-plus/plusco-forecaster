@@ -16,6 +16,8 @@
  * user.types.ts model still exists; the names differ from it on purpose.
  */
 
+import type { Timestamp } from "firebase/firestore";
+
 /** USER is the default; ADMIN is set by hand. */
 export type AppRole = "USER" | "ADMIN";
 
@@ -33,9 +35,9 @@ export interface UserRecord {
   /** Firebase Auth uid, filled on the first Google sign-in. */
   uid: string | null;
   role: AppRole;
-  /** ISO string; null when added by an admin and never signed in. */
-  lastLoginAt: string | null;
-  createdAt: string;
+  /** Null when added by an admin and never signed in. */
+  lastLoginAt: Timestamp | null;
+  createdAt: Timestamp | null;
   /** Email of the admin who added the person by hand; null for self sign-up. */
   createdBy: string | null;
   /** Soft revoke: the person keeps their row but gets no access. */

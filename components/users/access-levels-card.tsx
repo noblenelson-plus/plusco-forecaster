@@ -1,12 +1,12 @@
 // components/users/access-levels-card.tsx
 "use client";
 
-import { Eye, Briefcase, BarChart3, Shield, type LucideIcon } from "lucide-react";
+import { Briefcase, LayoutDashboard, Shield, Clock, type LucideIcon } from "lucide-react";
 
 /**
- * Explains the four access tiers. Shown on the admin Users page so admins
- * understand what each role grants before changing someone's role. Mirrors the
- * model in user.types.ts — keep the copy in sync if the tiers change.
+ * Explains where access comes from. Shown on the admin Users page so admins
+ * understand the model before changing someone's role. Mirrors
+ * lib/format/access.ts — keep the copy in sync if the model changes.
  */
 
 interface Tier {
@@ -17,28 +17,28 @@ interface Tier {
 
 const TIERS: Tier[] = [
   {
-    icon: Eye,
-    title: "Agency Viewer",
-    detail:
-      "Granted automatically from the email domain. Read-only, Dashboard tab only (Media Spend, Product, Labs, MediaOcean, MediaBox) — for their agency's clients. No revenue.",
-  },
-  {
     icon: Briefcase,
-    title: "Business Lead",
+    title: "Client team",
     detail:
-      "Assigned to specific clients. Can edit the forecast and milestones of those clients (never the actuals), and see revenue.",
+      "GM, Business Lead, Digital Lead and collaborators of a client (set on the client). They edit that client's forecast, flags and milestones (never actuals) and see it on the Forecaster dashboard.",
   },
   {
-    icon: BarChart3,
-    title: "Exec",
+    icon: LayoutDashboard,
+    title: "Dashboard access",
     detail:
-      "Like a Business Lead across every client of their domain — no per-client assignment needed — plus a global dashboard covering all clients.",
+      "Granted per dashboard to email domains or people (Admin → Dashboard Access). Global mode shows every client; Agency mode the clients of the person's agency (every agency for company-wide domains).",
   },
   {
     icon: Shield,
     title: "Admin",
     detail:
-      "Manages users, clients, actuals and the agency ↔ domain mapping. Full access.",
+      "Manages users, clients, actuals, dashboards and the agency ↔ domain mapping. Sees and edits every client.",
+  },
+  {
+    icon: Clock,
+    title: "No team, no dashboard",
+    detail:
+      "Signing in creates the user row, but the person sees an “Access pending” screen until they are put on a client team or granted a dashboard.",
   },
 ];
 

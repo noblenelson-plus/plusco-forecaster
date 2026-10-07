@@ -28,7 +28,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
-import { ROLE_LABELS } from "../../lib/types/user.types";
+import { useAccess } from "../../lib/hooks/use-access";
+import { APP_ROLE_LABELS } from "../../lib/types/access.types";
 import PlusLogo from "./plus-logo";
 import ZoomControl from "./zoom-control";
 
@@ -37,22 +38,23 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
-  // Agency Viewers are limited to the Dashboard; only items flagged here show
-  // for them. Everyone above Viewer sees the full (non-admin) set.
-  viewerVisible?: boolean;
+  // Team spaces: shown only to admins and people on at least one client team.
+  teamOnly?: boolean;
+  // Shown to people with any access (a team or a dashboard grant).
+  needsAccess?: boolean;
   section?: "main" | "admin";
   // When true, the item renders indented, as a child of the item above it.
   isSubItem?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard",    href: "/",            icon: <LayoutDashboard size={18} />, section: "main", viewerVisible: true },
-  { label: "Forecast",     href: "/forecast",    icon: <TrendingUp size={18} />,      section: "main" },
-  { label: "Flags",        href: "/flags",       icon: <Flag size={18} />,            section: "main" },
-  { label: "Milestones",  href: "/progression-recap", icon: <ClipboardCheck size={18} />, section: "main" },
+  { label: "Dashboard",    href: "/",            icon: <LayoutDashboard size={18} />, section: "main", needsAccess: true },
+  { label: "Forecast",     href: "/forecast",    icon: <TrendingUp size={18} />,      section: "main", teamOnly: true },
+  { label: "Flags",        href: "/flags",       icon: <Flag size={18} />,            section: "main", teamOnly: true },
+  { label: "Milestones",  href: "/progression-recap", icon: <ClipboardCheck size={18} />, section: "main", teamOnly: true },
     { label: "Bulk Edits",   href: "/bulk-edits",  icon: <Upload size={18} />,          section: "admin", adminOnly: true },
   { label: "Report Center", href: "/report-center", icon: <FileSpreadsheet size={18} />, section: "admin", adminOnly: true },
-  { label: "Clients",      href: "/clients",     icon: <Briefcase size={18} />,       section: "main" },
+  { label: "Clients",      href: "/clients",     icon: <Briefcase size={18} />,       section: "main", teamOnly: true },
   { label: "How to",       href: "/how-to",      icon: <BookOpen size={18} />,        section: "main" },
   { label: "Resources",    href: "/resources",   icon: <Library size={18} />,         section: "main" },
   { label: "Access",       href: "/admin/users", icon: <Users size={18} />,           section: "admin", adminOnly: true },
@@ -75,13 +77,15 @@ interface SidebarProps {
 export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
-  const { profile, isAdmin, isViewer } = useUserProfile();
+  const { profile, isAdmin } = useUserProfile();
+  const { hasTeamSpaces, hasAnyAccess } = useAccess();
 
   const mainItems = NAV_ITEMS.filter(
     (item) =>
       item.section === "main" &&
       (!item.adminOnly || isAdmin) &&
-      (!isViewer || item.viewerVisible)
+      (!item.teamOnly || hasTeamSpaces) &&
+      (!item.needsAccess || hasAnyAccess)
   );
   const adminItems = NAV_ITEMS.filter(
     (item) => item.section === "admin" && (!item.adminOnly || isAdmin)
@@ -193,7 +197,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
                 {profile?.displayName ?? user?.email}
               </p>
               <p className="text-gray-400 text-xs">
-                {profile?.role ? ROLE_LABELS[profile.role] : "—"}
+                {profile?.role ? APP_ROLE_LABELS[profile.role] : "—"}
               </p>
             </div>
           )}
