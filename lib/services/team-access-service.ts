@@ -6,7 +6,8 @@
  *   derived `CL_Team_Emails` (lib/format/client-team.ts). Client saves and CSV
  *   imports keep the array current on their own; this repairs clients saved
  *   before the field existed, or after GM_POD_EMAILS changes;
- * — Admin → Forecast Access edits collaborators in bulk.
+ * — Admin → Forecast Access edits collaborators in bulk, and applies a team
+ *   sheet import (BL, DL and collaborators).
  */
 
 import { doc, writeBatch } from "firebase/firestore";
@@ -18,6 +19,7 @@ import {
   type TeamEmailsChange,
   type TeamEmailsPlan,
 } from "../format/client-team";
+import type { TeamSheetChange } from "../format/team-sheet";
 import type { Client } from "../types/client.types";
 
 const BATCH_SIZE = 500;
@@ -52,6 +54,27 @@ export async function applyCollaboratorsUpdates(updates: CollaboratorsUpdate[]):
       batch.update(doc(db, "clients", u.cl_id), {
         CL_Collaborators: u.CL_Collaborators,
         CL_Team_Emails: u.CL_Team_Emails,
+        updatedAt: now,
+      });
+    }
+    await batch.commit();
+  }
+}
+
+/**
+ * Applies a reviewed team sheet import (planTeamSheetImport): each changed
+ * client's BL, DL, collaborators and recomputed CL_Team_Emails, together.
+ */
+export async function applyTeamSheetChanges(changes: TeamSheetChange[]): Promise<void> {
+  const now = new Date().toISOString();
+  for (let start = 0; start < changes.length; start += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    for (const c of changes.slice(start, start + BATCH_SIZE)) {
+      batch.update(doc(db, "clients", c.cl_id), {
+        CL_Business_Lead: c.CL_Business_Lead,
+        CL_Digital_Lead: c.CL_Digital_Lead,
+        CL_Collaborators: c.CL_Collaborators,
+        CL_Team_Emails: c.CL_Team_Emails,
         updatedAt: now,
       });
     }

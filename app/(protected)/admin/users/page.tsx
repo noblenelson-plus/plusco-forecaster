@@ -39,6 +39,9 @@ import AccessLevelsCard from "../../../../components/users/access-levels-card";
 import AgenciesPanel from "../../../../components/agencies/agencies-panel";
 import PersonClientsDrawer, { type AccessPerson } from "../../../../components/users/person-clients-drawer";
 import ClientPeopleDrawer from "../../../../components/users/client-people-drawer";
+import TeamSheetImportModal from "../../../../components/users/team-sheet-import-modal";
+import { exportToNewSheet } from "../../../../components/forecaster/table/table-export";
+import { buildTeamSheet, TEAM_SHEET_ROLES, type TeamSheetChange } from "../../../../lib/format/team-sheet";
 import {
   Users,
   UsersRound,
@@ -51,6 +54,10 @@ import {
   Search,
   UserPlus,
   X,
+  Download,
+  Upload,
+  FileSpreadsheet,
+  ExternalLink,
 } from "lucide-react";
 
 const ROLES: AppRole[] = ["USER", "ADMIN"];
@@ -119,6 +126,10 @@ export default function AdminUsersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [openPerson, setOpenPerson] = useState<string | null>(null);
   const [openClient, setOpenClient] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportedUrl, setExportedUrl] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [imported, setImported] = useState<number | null>(null);
 
   // Guard — redirect non-admins
   useEffect(() => {
@@ -167,6 +178,53 @@ export default function AdminUsersPage() {
     const byId = new Map(updated.map((c) => [c.cl_id, c]));
     setClients((prev) => prev.map((c) => byId.get(c.cl_id) ?? c));
   }
+
+  /**
+   * Every client team to a new Google Sheet (all clients, whatever the view
+   * filters — the import treats each client's rows as its full team). Text
+   * cells get a leading apostrophe so ids like "1e820aff" stay text.
+   */
+  async function exportTeams() {
+    setExporting(true);
+    setError("");
+    setExportedUrl(null);
+    try {
+      const table = buildTeamSheet(clients);
+      const url = await exportToNewSheet({
+        title: `Client teams — ${new Date().toISOString().slice(0, 10)}`,
+        sheetTitle: "Client teams",
+        matrix: table.map((row, r) => (r === 0 ? row : row.map((v) => (v ? `'${v}` : v)))),
+        dropdowns: { Role: TEAM_SHEET_ROLES },
+      });
+      setExportedUrl(url);
+    } catch (err) {
+      setError("Google Sheets export failed: " + (err instanceof Error ? err.message : "Unknown error"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function applyImported(changes: TeamSheetChange[]) {
+    const byId = new Map(changes.map((c) => [c.cl_id, c]));
+    setClients((prev) =>
+      prev.map((c) => {
+        const ch = byId.get(c.cl_id);
+        return ch
+          ? {
+              ...c,
+              CL_Business_Lead: ch.CL_Business_Lead,
+              CL_Digital_Lead: ch.CL_Digital_Lead,
+              CL_Collaborators: ch.CL_Collaborators,
+              CL_Team_Emails: ch.CL_Team_Emails,
+            }
+          : c;
+      })
+    );
+    setImportOpen(false);
+    setImported(changes.length);
+  }
+
+  const userEmails = useMemo(() => new Set(users.map((u) => u.email)), [users]);
 
   // Every users row + every team email without one.
   const people = useMemo<PersonRow[]>(() => {
@@ -263,6 +321,31 @@ export default function AdminUsersPage() {
           </div>
         )}
 
+        {exportedUrl && (
+          <div className="flex items-center justify-between gap-3 bg-green-500 text-white px-4 py-3 text-sm">
+            <span className="flex items-center gap-2">
+              <FileSpreadsheet size={15} />
+              Client teams exported to a new Google Sheet in your Drive.
+            </span>
+            <span className="flex items-center gap-3 flex-shrink-0">
+              <a href={exportedUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 font-medium underline underline-offset-2">
+                Open sheet <ExternalLink size={13} />
+              </a>
+              <button onClick={() => setExportedUrl(null)} title="Dismiss">
+                <X size={15} />
+              </button>
+            </span>
+          </div>
+        )}
+        {imported !== null && (
+          <div className="flex items-center justify-between gap-3 bg-green-500 text-white px-4 py-3 text-sm">
+            <span>Import applied — {imported} client team{imported !== 1 ? "s" : ""} updated.</span>
+            <button onClick={() => setImported(null)} title="Dismiss">
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
         {/* Scorecards */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard icon={Users} label="Total users" value={loading ? "—" : String(stats.total)} accent="text-gray-900" />
@@ -305,7 +388,7 @@ export default function AdminUsersPage() {
                     { value: "clients", label: "By client", icon: <Briefcase size={13} /> },
                   ]}
                 />
-                <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-xs">
+                <div className="relative w-full sm:w-auto sm:flex-1 min-w-[220px]">
                   <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
@@ -315,6 +398,29 @@ export default function AdminUsersPage() {
                     className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
                   />
                 </div>
+                <button
+                  onClick={() => void exportTeams()}
+                  disabled={loading || exporting}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50 transition-colors"
+                  title="Every client team to a new Google Sheet: Client ID, Client Name, Role, Email"
+                >
+                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  Export
+                </button>
+                <button
+                  onClick={() => {
+                    setImported(null);
+                    setImportOpen(true);
+                  }}
+                  disabled={loading}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50 transition-colors"
+                  title="Apply an edited team sheet (review first)"
+                >
+                  <Upload size={14} />
+                  Import
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-3 py-2">
                 {view === "people" && (
                   <Segmented
                     value={filter}
@@ -374,6 +480,15 @@ export default function AdminUsersPage() {
             )
           }
           onDelete={() => run(person.email, () => deleteUserRecord(person.email), null, "delete user")}
+        />
+      )}
+
+      {importOpen && (
+        <TeamSheetImportModal
+          clients={clients}
+          userEmails={userEmails}
+          onClose={() => setImportOpen(false)}
+          onApplied={applyImported}
         />
       )}
 
