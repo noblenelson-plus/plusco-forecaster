@@ -41,8 +41,7 @@ import {
 import { canWriteClient } from "../../lib/services/assignment-service";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { triggerMediaboxRefresh } from "../../lib/services/mediabox-totals-service";
-import { syncTeamAccess } from "../../lib/services/team-access-service";
-import { useAuth } from "../../lib/auth-context";
+import { fetchUsers, type UserProfile } from "../../lib/services/user-service";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import {
   subscribeToLabsPartners,
@@ -51,6 +50,7 @@ import {
 } from "../../lib/services/labs-partner-service";
 import type { LabsPartner } from "../../lib/types/labs.types";
 import CommissionsDrawer from "./commissions-drawer";
+import { TeamMemberMultiSelect, TeamMemberSelect } from "./team-member-picker";
 
 interface ClientDrawerProps {
   open: boolean;
@@ -71,6 +71,7 @@ const EMPTY_FORM: ClientFormData = {
   CL_Office: "",
   CL_Business_Lead: "",
   CL_Digital_Lead: "",
+  CL_Collaborators: [],
   Client_Fee_Structure: "" as FeeStructure,
   GM_Pod: "",
   CL_Currency: "" as Currency,
@@ -133,12 +134,11 @@ export default function ClientDrawer({
 
   // Year used when a MediaBox-IDs change triggers a totals refresh.
   const { selectedYear } = useForecastSelection();
-  const { user } = useAuth();
   const { profile } = useUserProfile();
 
-  // Labs eligibility is editable by anyone who may write this client — the
-  // BL on their assigned clients, Execs agency-wide, admins everywhere —
-  // mirroring the Firestore canWriteClient rule. Other fields stay admin-only.
+  // Labs eligibility is editable by anyone who may write this client — its
+  // team and admins — mirroring the Firestore canWriteClient rule. Other
+  // fields (the team included) stay admin-only.
   const canEditEligibility = !!client && canWriteClient(client, profile, isAdmin);
 
   const [form, setForm] = useState<ClientFormData>(EMPTY_FORM);
@@ -154,6 +154,21 @@ export default function ClientDrawer({
   // What the drawer opened with — lets a non-admin save tell an eligibility
   // change from edits to fields only admins may write.
   const initialRef = useRef<{ form: ClientFormData; gaia: string; mediabox: string } | null>(null);
+
+  // USERS, for the team pickers — loaded while open.
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetchUsers()
+      .then((list) => {
+        if (!cancelled) setUsers(list);
+      })
+      .catch((err) => console.error("Failed to load users:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // Commissions drawer (stacked above this one)
   const [commissionsOpen, setCommissionsOpen] = useState(false);
@@ -177,6 +192,7 @@ export default function ClientDrawer({
         CL_Office: client.CL_Office,
         CL_Business_Lead: client.CL_Business_Lead,
         CL_Digital_Lead: client.CL_Digital_Lead ?? "",
+        CL_Collaborators: client.CL_Collaborators ?? [],
         Client_Fee_Structure: client.Client_Fee_Structure,
         GM_Pod: client.GM_Pod,
         CL_Currency: client.CL_Currency,
@@ -404,23 +420,6 @@ export default function ClientDrawer({
         );
       }
 
-      // The client's team (BL, DL, GM) gets access to it automatically, and a
-      // replaced member loses it. Admins only (they own users/invites writes,
-      // and only they can edit the team fields). On failure the drawer stays
-      // open: the client is saved, and Save again retries the access update.
-      if (isAdmin) {
-        try {
-          await syncTeamAccess([{ after: saved, before: client }], user?.uid);
-        } catch (err) {
-          setError(
-            "Client saved, but its team's access couldn't be updated: " +
-              (err instanceof Error ? err.message : "Unknown error") +
-              ". Save again to retry."
-          );
-          return;
-        }
-      }
-
       onSaved(saved);
     } catch (err: any) {
       setError("Failed to save: " + (err?.message ?? "Unknown error"));
@@ -631,20 +630,37 @@ export default function ClientDrawer({
                 placeholder="Select GM Pod"
               />
             </Field>
-            <Field label="Business Lead (email)">
-              <Input
+            <Field label="Business Lead">
+              <TeamMemberSelect
                 value={form.CL_Business_Lead}
                 onChange={(v) => set("CL_Business_Lead", v)}
-                placeholder="e.g. lead@cossettemedia.com"
+                users={users}
+                placeholder="Search users…"
+                disabled={!isAdmin}
               />
             </Field>
-            <Field label="Digital Lead (email)">
-              <Input
+            <Field label="Digital Lead">
+              <TeamMemberSelect
                 value={form.CL_Digital_Lead ?? ""}
                 onChange={(v) => set("CL_Digital_Lead", v)}
-                placeholder="e.g. digital@cossettemedia.com (optional)"
+                users={users}
+                placeholder="Search users… (optional)"
+                disabled={!isAdmin}
               />
             </Field>
+            <Field label="Collaborators">
+              <TeamMemberMultiSelect
+                value={form.CL_Collaborators ?? []}
+                onChange={(v) => set("CL_Collaborators", v)}
+                users={users}
+                placeholder="Add a collaborator…"
+                disabled={!isAdmin}
+              />
+            </Field>
+            <p className="text-xs text-gray-400">
+              The GM Pod&apos;s GM, the leads and collaborators can edit this
+              client&apos;s forecast, flags and milestones.
+            </p>
           </Section>
 
           {/* Section: Classification */}
@@ -792,7 +808,7 @@ export default function ClientDrawer({
                 </p>
               ) : (
                 <p className="text-xs text-gray-400">
-                  Only this client&apos;s Business Lead, an Exec or an admin can change these.
+                  Only this client&apos;s team or an admin can change these.
                 </p>
               )}
             </Section>
@@ -887,7 +903,7 @@ export default function ClientDrawer({
                   <p className="text-sm text-white mb-3">
                     Are you sure? This deletes the client <strong>and all its
                     forecast data</strong> (every submission, MediaOcean
-                    actuals, MediaBox totals) and unassigns it from every user.
+                    actuals, MediaBox totals); its team loses access to it.
                     This cannot be undone.
                   </p>
                   <div className="flex gap-2">

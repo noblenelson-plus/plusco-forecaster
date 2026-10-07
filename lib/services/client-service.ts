@@ -26,6 +26,8 @@ import {
   type ClientTier,
 } from "../constants/client.constants";
 import { resolveClientStatus } from "../format/client";
+import { computeTeamEmails } from "../format/client-team";
+import { isValidEmail, normalizeEmail, normalizeEmailList } from "../format/email";
 import { computeTierFromDigitalSpend, sumDigitalSpend } from "../format/tier";
 import { MEDIA_TYPES, MONTHS, type MediaType } from "../types/common.types";
 import { MEDIA_TYPE_LABELS } from "../types/forecaster.types";
@@ -162,6 +164,17 @@ export async function uploadClientLogo(file: File, clientName: string): Promise<
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
+/** A BL / DL value: emails normalized; anything else (a legacy uid) trimmed. */
+const normTeamValue = (v: string | undefined) => {
+  const s = (v ?? "").trim();
+  return s.includes("@") ? normalizeEmail(s) : s;
+};
+
+/**
+ * Saves a client (admin). The team fields are normalized and the derived
+ * CL_Team_Emails recomputed in the same write, so access follows the team the
+ * moment it is saved — the rules and the "my clients" query read that array.
+ */
 export async function saveClient(
   formData: ClientFormData,
   cl_id: string | null
@@ -169,8 +182,15 @@ export async function saveClient(
   const id = cl_id ?? generateClientId();
   const docRef = doc(db, "clients", id);
   const now = new Date().toISOString();
+  const team = {
+    CL_Business_Lead: normTeamValue(formData.CL_Business_Lead),
+    CL_Digital_Lead: normTeamValue(formData.CL_Digital_Lead),
+    CL_Collaborators: normalizeEmailList(formData.CL_Collaborators ?? []),
+  };
   const payload = {
     ...formData,
+    ...team,
+    CL_Team_Emails: computeTeamEmails({ ...team, GM_Pod: formData.GM_Pod as Client["GM_Pod"] }),
     updatedAt: now,
     ...(cl_id ? {} : { createdAt: now }),
   };
@@ -212,8 +232,8 @@ export async function saveClientLabsEligibility(
  * Deletes a client AND everything keyed to it, so no orphaned data lingers:
  * forecast submissions (data_entries), annual MediaOcean actuals
  * (annual_actuals), synced MediaBox totals (mediabox_totals), product tracking
- * (product_tracking), BL Forecast Validations (forecast_validations), and the
- * client's id in every user's assignedClients list. Admin-only (enforced by the
+ * (product_tracking) and BL Forecast Validations (forecast_validations). The
+ * team lives on the client doc, so it goes with it. Admin-only (enforced by the
  * Firestore rules). The client doc itself is deleted LAST, so a partial failure
  * leaves the client visible and the deletion retryable.
  */
@@ -264,6 +284,7 @@ const CSV_COLUMNS = [
   "CL_Office",
   "CL_Business_Lead",
   "CL_Digital_Lead",
+  "CL_Collaborators",
   "Client_Fee_Structure",
   "GM_Pod",
   "CL_Currency",
@@ -590,6 +611,30 @@ export function validateClientTable(
     }
     if (hasError) continue;
 
+    // Team emails: BL / DL must be emails (or empty); collaborators are a
+    // pipe- or comma-separated email list, only touched when the column is
+    // there. All normalized, so they match the sign-in email the rules check.
+    const teamErrors: string[] = [];
+    for (const field of ["CL_Business_Lead", "CL_Digital_Lead"] as const) {
+      if (!(field in row)) continue;
+      const v = (row[field] as string) ?? "";
+      if (v && !isValidEmail(v)) teamErrors.push(`invalid ${field} "${v}" — must be an email`);
+      row[field] = normalizeEmail(v);
+    }
+    if ("CL_Collaborators" in row) {
+      const parts = ((row.CL_Collaborators as string) ?? "")
+        .split(/[|,]/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      const bad = parts.filter((x) => !isValidEmail(x));
+      if (bad.length) teamErrors.push(`invalid CL_Collaborators ${bad.map((b) => `"${b}"`).join(", ")} — must be emails`);
+      row.CL_Collaborators = normalizeEmailList(parts);
+    }
+    if (teamErrors.length) {
+      teamErrors.forEach((e) => errors.push(`Row ${lineNumber}: ${e}`));
+      continue;
+    }
+
     // Pipe-separated GAIA numbers and MediaBox IDs — only touched when the
     // table carries the column, so a file without it doesn't wipe them.
     if ("CL_GAIA_Number" in row) {
@@ -760,14 +805,26 @@ export async function applyTierUpdates(
 /**
  * Writes pre-validated rows to Firestore in batches of 500.
  * Should only be called after validateCSV() and user confirmation.
+ *
+ * Each row merges into its client, so CL_Team_Emails is recomputed from the
+ * merged result (columns the table lacks keep their stored values) and
+ * written in the same batch.
  */
 export async function commitCSVImport(validRows: ValidatedRow[]): Promise<ImportResult> {
   const BATCH_SIZE = 500;
+  const existing = new Map(
+    (await getDocs(collection(db, "clients"))).docs.map((d) => [d.id, d.data() as Partial<Client>])
+  );
 
   for (let start = 0; start < validRows.length; start += BATCH_SIZE) {
     const batch = writeBatch(db);
     validRows.slice(start, start + BATCH_SIZE).forEach(({ id, data }) => {
-      batch.set(doc(db, "clients", id), data, { merge: true });
+      const merged = { ...existing.get(id), ...data } as Client;
+      batch.set(
+        doc(db, "clients", id),
+        { ...data, CL_Team_Emails: computeTeamEmails(merged) },
+        { merge: true }
+      );
     });
     await batch.commit();
   }

@@ -6,12 +6,11 @@ import type { ClientAgency } from "../constants/client.constants";
  * An agency and the email domains that map to it.
  *
  * The document id and `name` mirror a `ClientAgency` value (the same string
- * stored on `clients.CL_Agency`), so agency-scoped access can reuse the
- * existing `assignedAgencies` / `CL_Agency` matching without a second lookup.
+ * stored on `clients.CL_Agency`), so agency scopes match clients directly.
  *
- * When a user signs in, the domain of their email is matched (case-insensitive)
- * against every agency's `domains`. A match grants automatic, read-only
- * "agency employee" (VIEWER) access to that agency's clients.
+ * A person's email domain is matched (case-insensitive) against every agency's
+ * `domains` to find their agency on dashboards in Agency mode. The match
+ * grants no access by itself — dashboards are opened by grants.
  */
 export interface Agency {
   // Document id — equal to `name` (a ClientAgency value).
