@@ -24,7 +24,7 @@ import { fetchAccessibleClients } from "../../../../lib/services/assignment-serv
 import { APP_ROLE_LABELS, type AppRole } from "../../../../lib/types/access.types";
 import type { Client } from "../../../../lib/types/client.types";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
-import { isValidEmail, normalizeEmail } from "../../../../lib/format/email";
+import { isValidEmail, nameFromEmail, normalizeEmail } from "../../../../lib/format/email";
 import { isClientHidden } from "../../../../lib/format/client";
 import {
   teamMemberships,
@@ -92,15 +92,7 @@ const ROLE_ICON: Record<TeamRole, string> = {
   COLLABORATOR: "text-pink-500",
 };
 
-/** "aicha.dhaheri@x.com" → "Aicha Dhaheri" — for people who never signed in. */
-function nameFromEmail(email: string): string {
-  return email
-    .split("@")[0]
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
-}
+
 
 /** Shows ~20 rows, then the table scrolls (rows are h-14 = 3.5rem). */
 const TABLE_MAX_H = "max-h-[73.5rem]";

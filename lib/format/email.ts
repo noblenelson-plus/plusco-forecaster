@@ -32,6 +32,16 @@ export function normalizeDomain(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase().replace(/^@/, "");
 }
 
+/** "aicha.dhaheri@x.com" → "Aicha Dhaheri" — a label for people with no display name. */
+export function nameFromEmail(value: string | null | undefined): string {
+  return normalizeEmail(value)
+    .split("@")[0]
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 /** Normalized, valid, deduped and sorted. Invalid entries are dropped. */
 export function normalizeEmailList(values: Iterable<string | null | undefined>): string[] {
   const out = new Set<string>();

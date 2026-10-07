@@ -22,7 +22,7 @@ function label(u: UserProfile): string {
 }
 
 /** Search box listing matching users; picking one calls `onPick(email)`. */
-function UserSearch({
+export function UserSearch({
   users,
   exclude,
   onPick,

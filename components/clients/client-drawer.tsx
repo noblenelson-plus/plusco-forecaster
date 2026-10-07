@@ -51,6 +51,7 @@ import {
 import type { LabsPartner } from "../../lib/types/labs.types";
 import CommissionsDrawer from "./commissions-drawer";
 import { TeamMemberMultiSelect, TeamMemberSelect } from "./team-member-picker";
+import DigitalLeadSelect from "./digital-lead-select";
 
 interface ClientDrawerProps {
   open: boolean;
@@ -640,11 +641,10 @@ export default function ClientDrawer({
               />
             </Field>
             <Field label="Digital Lead">
-              <TeamMemberSelect
+              <DigitalLeadSelect
                 value={form.CL_Digital_Lead ?? ""}
                 onChange={(v) => set("CL_Digital_Lead", v)}
                 users={users}
-                placeholder="Search users… (optional)"
                 disabled={!isAdmin}
               />
             </Field>
