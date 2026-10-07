@@ -1,6 +1,7 @@
 // components/_shared/sidebar.tsx
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -25,6 +26,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Target,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
@@ -45,6 +47,8 @@ interface NavItem {
   section?: "main" | "admin";
   // When true, the item renders indented, as a child of the item above it.
   isSubItem?: boolean;
+  // A dropdown group: the item only toggles its children (its href is unused).
+  children?: NavItem[];
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -57,7 +61,13 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Clients",      href: "/clients",     icon: <Briefcase size={18} />,       section: "main", teamOnly: true },
   { label: "How to",       href: "/how-to",      icon: <BookOpen size={18} />,        section: "main" },
   { label: "Resources",    href: "/resources",   icon: <Library size={18} />,         section: "main" },
-  { label: "Access",       href: "/admin/users", icon: <Users size={18} />,           section: "admin", adminOnly: true },
+  {
+    label: "Access", href: "#access", icon: <Users size={18} />, section: "admin", adminOnly: true,
+    children: [
+      { label: "Forecast Access",  href: "/admin/users",            icon: <TrendingUp size={16} />,    isSubItem: true },
+      { label: "Dashboard Access", href: "/admin/dashboard-access", icon: <PanelsTopLeft size={16} />, isSubItem: true },
+    ],
+  },
   { label: "RFQs",         href: "/admin/rfqs",  icon: <CalendarRange size={18} />,   section: "admin", adminOnly: true },
   { label: "LABS",         href: "/admin/labs",  icon: <FlaskConical size={18} />,    section: "admin", adminOnly: true },
   { label: "Deal Targets", href: "/admin/targets", icon: <Target size={18} />,       section: "admin", adminOnly: true },
@@ -65,7 +75,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Currency",     href: "/admin/currency", icon: <DollarSign size={18} />,   section: "admin", adminOnly: true },
   { label: "QA",           href: "/admin/qa",    icon: <ShieldCheck size={18} />,     section: "admin", adminOnly: true },
   { label: "Flags config", href: "/admin/flags", icon: <Flag size={18} />,            section: "admin", adminOnly: true },
-  { label: "Dashboard Access", href: "/admin/dashboard-access", icon: <PanelsTopLeft size={18} />, section: "admin", adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -170,9 +179,13 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
               </p>
             )}
             <ul className="space-y-1">
-              {adminItems.map((item) => (
-                <NavLink key={item.href} item={item} pathname={pathname} onClose={onClose} collapsed={collapsed} />
-              ))}
+              {adminItems.map((item) =>
+                item.children ? (
+                  <NavGroup key={item.href} item={item} pathname={pathname} onClose={onClose} collapsed={collapsed} />
+                ) : (
+                  <NavLink key={item.href} item={item} pathname={pathname} onClose={onClose} collapsed={collapsed} />
+                )
+              )}
             </ul>
           </>
         )}
@@ -215,6 +228,59 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
         </button>
       </div>
     </aside>
+  );
+}
+
+// A dropdown of nav links. Opens on its own when one of its pages is active;
+// the collapsed sidebar shows the children as plain icons.
+function NavGroup({
+  item,
+  pathname,
+  onClose,
+  collapsed = false,
+}: {
+  item: NavItem;
+  pathname: string;
+  onClose?: () => void;
+  collapsed?: boolean;
+}) {
+  const children = item.children ?? [];
+  const containsActive = children.some((c) => c.href === pathname);
+  const [open, setOpen] = useState(containsActive);
+  const expanded = open || containsActive;
+
+  if (collapsed) {
+    return (
+      <>
+        {children.map((c) => (
+          <NavLink key={c.href} item={c} pathname={pathname} onClose={onClose} collapsed />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={expanded}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+          containsActive ? "text-gray-900" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+        }`}
+      >
+        {item.icon}
+        <span className="flex-1 text-left">{item.label}</span>
+        <ChevronDown size={14} className={`transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+      {expanded && (
+        <ul className="mt-1 space-y-1">
+          {children.map((c) => (
+            <NavLink key={c.href} item={c} pathname={pathname} onClose={onClose} />
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
