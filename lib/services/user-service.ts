@@ -85,10 +85,17 @@ export async function ensureUserProfile(user: User): Promise<void> {
   });
 }
 
-/** Every person, sorted by email (admin page, team pickers). */
+/**
+ * Every person, sorted by email (admin page, team pickers). Docs whose id is
+ * not an email (pre-migration users/{uid}, until scripts/migrate-auth.mjs
+ * --cleanup removes them) are skipped.
+ */
 export async function fetchUsers(): Promise<UserRecord[]> {
   const snap = await getDocs(collection(db, COLLECTION));
-  return snap.docs.map(toUser).sort((a, b) => a.email.localeCompare(b.email));
+  return snap.docs
+    .filter((d) => d.id.includes("@"))
+    .map(toUser)
+    .sort((a, b) => a.email.localeCompare(b.email));
 }
 
 /**
