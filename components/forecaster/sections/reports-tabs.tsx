@@ -28,7 +28,7 @@ const NO_HIDDEN: ReadonlySet<string> = new Set();
 export default function ReportsTabs({
   hidden = NO_HIDDEN,
 }: {
-  /** Page ids hidden by an admin (Admin → Dashboard Pages). */
+  /** Sub-tab page ids an admin hid (Admin → Dashboard Access). */
   hidden?: ReadonlySet<string>;
 }) {
   const [sub, setSub] = useState<ReportsSubTab>("mir-raw");

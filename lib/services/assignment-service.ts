@@ -16,6 +16,7 @@ import type { UserProfile } from "./user-service";
 import type { Client } from "../types/client.types";
 import { isOnClientTeam } from "../format/client-team";
 import { normalizeEmail } from "../format/email";
+import { scopeQueryAgencies, type AgencyScope } from "../format/agency-scope";
 
 function toClient(d: { id: string; data: () => unknown }): Client {
   return { cl_id: d.id, ...(d.data() as Omit<Client, "cl_id">) };
@@ -48,6 +49,39 @@ export async function fetchAccessibleClients(
     query(collection(db, "clients"), where("CL_Team_Emails", "array-contains", email))
   );
   return snap.docs.map(toClient).sort(byName);
+}
+
+/**
+ * Every client the person may READ: their team clients plus the clients their
+ * dashboard grants cover (`readable`, the union scope — see readableScope in
+ * lib/format/access.ts). Admin → all. Each query is one the rules can verify:
+ * the whole collection only for a Global grant, else one `CL_Agency ==`
+ * query per agency, plus the team `array-contains`. Deduped, sorted by name,
+ * hidden clients included (callers filter). Feeds the dashboard, whose tabs
+ * then narrow it to their own scope.
+ */
+export async function fetchReadableClients(
+  profile: Pick<UserProfile, "email" | "disabled"> | null,
+  isAdmin: boolean,
+  readable: AgencyScope
+): Promise<Client[]> {
+  const byName = (a: Client, b: Client) => a.CL_Name.localeCompare(b.CL_Name);
+  if (isAdmin) return fetchAccessibleClients(profile, true);
+  if (!profile || profile.disabled) return [];
+
+  const ref = collection(db, "clients");
+  const agencies = scopeQueryAgencies(readable);
+  const [team, ...byAgency] = await Promise.all([
+    fetchAccessibleClients(profile, false),
+    ...(agencies === null
+      ? [getDocs(ref).then((s) => s.docs.map(toClient))]
+      : agencies.map((a) =>
+          getDocs(query(ref, where("CL_Agency", "==", a))).then((s) => s.docs.map(toClient))
+        )),
+  ]);
+  const byId = new Map<string, Client>();
+  for (const c of [...team, ...byAgency.flat()]) byId.set(c.cl_id, c);
+  return [...byId.values()].sort(byName);
 }
 
 // ─── Write scope (client-side mirror of the Firestore `canWriteClient` rule) ──

@@ -3,11 +3,11 @@
 
 /**
  * Labs Pacing — target vs booked, then pacing with the GM-pod breakdown. One
- * page shown in two places: its own top-level dashboard tab (every role, over
- * their accessible clients) and the Exec KPI Dashboard's "Deal Pacing" sub-tab.
+ * page shown in two places: its own top-level dashboard tab (over that tab's
+ * client scope) and the Exec KPI Dashboard's "Deal Pacing" sub-tab.
  *
- * The GM-level sections (Target vs Booked by Partner, By GM Pod) belong to
- * Exec/Admin only: the top-level tab, open to every role, passes
+ * The GM-level sections (Target vs Booked by Partner, By GM Pod) belong to the
+ * Exec KPI Dashboard only: the Labs Pacing tab passes
  * `showGmSections={false}` and keeps the partner/client pacing alone.
  */
 

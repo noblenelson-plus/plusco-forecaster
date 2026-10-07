@@ -65,7 +65,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Currency",     href: "/admin/currency", icon: <DollarSign size={18} />,   section: "admin", adminOnly: true },
   { label: "QA",           href: "/admin/qa",    icon: <ShieldCheck size={18} />,     section: "admin", adminOnly: true },
   { label: "Flags config", href: "/admin/flags", icon: <Flag size={18} />,            section: "admin", adminOnly: true },
-  { label: "Dashboard Pages", href: "/admin/dashboard-pages", icon: <PanelsTopLeft size={18} />, section: "admin", adminOnly: true },
+  { label: "Dashboard Access", href: "/admin/dashboard-access", icon: <PanelsTopLeft size={18} />, section: "admin", adminOnly: true },
 ];
 
 interface SidebarProps {

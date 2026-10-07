@@ -75,4 +75,9 @@ export interface DashboardGrant {
 /** `config/dashboard_access`. */
 export interface DashboardAccessConfig {
   dashboards: Record<GrantableDashboardId, DashboardGrant>;
+  /**
+   * Sub-tab page ids ("exec-kpis/meta") hidden from everyone but admins —
+   * work-in-progress pages. Any dashboard's sub-tabs, Forecaster's included.
+   */
+  hiddenSubtabs: string[];
 }

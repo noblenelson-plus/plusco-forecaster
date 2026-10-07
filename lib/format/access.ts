@@ -10,9 +10,11 @@
  *   - Client team (CL_Team_Emails) → read + write that client in the team
  *     spaces (Forecast, Flags, Milestones, Clients, Forecaster dashboard).
  *   - Dashboard grant (config/dashboard_access, by email domain or person)
- *     → opens that dashboard; GLOBAL mode shows every client, AGENCY mode the
- *     agencies the viewer's email domain maps to. A company-wide domain
- *     (config/company_domains) maps to every agency, but still needs a grant.
+ *     → opens that dashboard; GLOBAL mode shows every client ("_unassigned"
+ *     rows included), AGENCY mode the agencies the viewer's email domain maps
+ *     to. A company-wide domain (config/company_domains) maps to every agency,
+ *     but still needs a grant. Any grant also lets the person read those
+ *     clients' data (readableScope) — read-only, never write.
  *   - Disabled users get nothing.
  *
  * Actuals stay admin-only and the RFQ lock / closed months still apply on top
@@ -27,7 +29,7 @@ import {
   type GrantableDashboardId,
 } from "../types/access.types";
 import type { Client } from "../types/client.types";
-import { UNASSIGNED_AGENCY } from "./agency-scope";
+import { UNASSIGNED_AGENCY, scopeCoversAgency, type AgencyScope } from "./agency-scope";
 import { isOnClientTeam } from "./client-team";
 import { emailDomain, normalizeDomain, normalizeEmail, normalizeEmailList } from "./email";
 
@@ -45,16 +47,15 @@ export interface AccessContext {
 }
 
 /** Clients a dashboard shows: every client, or those of the listed agencies. */
-export interface DashboardScope {
-  all: boolean;
-  /** When `all` is false (sorted). */
-  agencies: string[];
-  /** Rows tagged "_unassigned" — Admin only. */
-  includesUnassigned: boolean;
-}
+export type DashboardScope = AgencyScope;
+export { scopeCoversAgency };
 
-const ALL_CLIENTS: DashboardScope = { all: true, agencies: [], includesUnassigned: false };
-const ADMIN_SCOPE: DashboardScope = { all: true, agencies: [], includesUnassigned: true };
+// GLOBAL means every row, "_unassigned" ones included (rows whose agency the
+// sync could not map). A company-wide domain in AGENCY mode gets every agency,
+// but not "_unassigned".
+const GLOBAL_SCOPE: DashboardScope = { all: true, agencies: [], includesUnassigned: true };
+const ALL_AGENCIES: DashboardScope = { all: true, agencies: [], includesUnassigned: false };
+const NO_SCOPE: DashboardScope = { all: false, agencies: [], includesUnassigned: false };
 
 // ─── Config normalization ─────────────────────────────────────────────────────
 
@@ -68,8 +69,11 @@ export function closedGrant(mode: DashboardMode = "AGENCY"): DashboardGrant {
  * dropped, missing ones are closed, domains / emails are normalized.
  */
 export function normalizeDashboardAccess(raw: unknown): DashboardAccessConfig {
-  const src = (raw as { dashboards?: Record<string, Partial<DashboardGrant>> } | null)
-    ?.dashboards ?? {};
+  const doc = raw as {
+    dashboards?: Record<string, Partial<DashboardGrant>>;
+    hiddenSubtabs?: unknown;
+  } | null;
+  const src = doc?.dashboards ?? {};
   const dashboards = {} as Record<GrantableDashboardId, DashboardGrant>;
   for (const id of GRANTABLE_DASHBOARDS) {
     const g = src[id] ?? {};
@@ -79,7 +83,11 @@ export function normalizeDashboardAccess(raw: unknown): DashboardAccessConfig {
       users: normalizeEmailList(g.users ?? []),
     };
   }
-  return { dashboards };
+  const hidden = Array.isArray(doc?.hiddenSubtabs) ? doc.hiddenSubtabs : [];
+  const hiddenSubtabs = [
+    ...new Set(hidden.filter((x): x is string => typeof x === "string" && x.includes("/"))),
+  ].sort();
+  return { dashboards, hiddenSubtabs };
 }
 
 // ─── Agencies ─────────────────────────────────────────────────────────────────
@@ -129,17 +137,34 @@ export function dashboardScope(
   id: GrantableDashboardId
 ): DashboardScope | null {
   if (!canOpenDashboard(ctx, id)) return null;
-  if (ctx.isAdmin) return ADMIN_SCOPE;
-  if (ctx.dashboardAccess.dashboards[id].mode === "GLOBAL") return ALL_CLIENTS;
+  if (ctx.isAdmin) return GLOBAL_SCOPE;
+  if (ctx.dashboardAccess.dashboards[id].mode === "GLOBAL") return GLOBAL_SCOPE;
   const mine = myAgencies(ctx.email, ctx.agencyDomains, ctx.companyDomains);
-  return mine.all ? ALL_CLIENTS : { all: false, agencies: mine.agencies, includesUnassigned: false };
+  return mine.all ? ALL_AGENCIES : { all: false, agencies: mine.agencies, includesUnassigned: false };
 }
 
-/** Whether a scope covers a client / row of the given agency. */
-export function scopeCoversAgency(scope: DashboardScope | null, agency: string): boolean {
-  if (!scope) return false;
-  if (agency === UNASSIGNED_AGENCY) return scope.includesUnassigned;
-  return scope.all || scope.agencies.includes(agency);
+/**
+ * The union of every dashboard scope the caller has — what the rules let them
+ * read of agency-partitioned data and of clients beyond their team
+ * (dashCanReadAll / dashCanReadAgency). Empty when no dashboard is open.
+ */
+export function readableScope(ctx: AccessContext): DashboardScope {
+  let out = NO_SCOPE;
+  for (const id of GRANTABLE_DASHBOARDS) {
+    const s = dashboardScope(ctx, id);
+    if (!s) continue;
+    out = {
+      all: out.all || s.all,
+      agencies: [...new Set([...out.agencies, ...s.agencies])].sort(),
+      includesUnassigned: out.includesUnassigned || s.includesUnassigned,
+    };
+  }
+  return out.all ? { ...out, agencies: [] } : out;
+}
+
+/** Sub-tab page ids hidden for the caller (admins see every sub-tab). */
+export function hiddenSubtabsFor(ctx: Pick<AccessContext, "isAdmin" | "dashboardAccess">): Set<string> {
+  return ctx.isAdmin ? new Set() : new Set(ctx.dashboardAccess.hiddenSubtabs);
 }
 
 /** Dashboards the caller may open (the Forecaster dashboard excluded). */

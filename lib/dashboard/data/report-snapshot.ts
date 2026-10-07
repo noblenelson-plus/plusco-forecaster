@@ -25,7 +25,7 @@
  */
 
 import { auth } from "../../firebase";
-import type { AgencyScope } from "../../format/agency-scope";
+import { scopeCoversAgency, type AgencyScope } from "../../format/agency-scope";
 
 export type ReportTable = "mir" | "billing";
 
@@ -276,9 +276,9 @@ function mergeTables(parts: ColumnarTable[]): ColumnarTable {
 }
 
 /**
- * Loads one report table for the user's agency scope. Admins get every
- * published agency (incl. rows without a recognized agency); everyone else
- * gets the intersection of their agencies with what was published.
+ * Loads one report table for the Reports dashboard's scope: the published
+ * agency files the scope covers (the "_unassigned" file only for admins and
+ * Global mode).
  */
 export async function loadReport(
   table: ReportTable,
@@ -291,9 +291,7 @@ export async function loadReport(
       "This report hasn't been published yet. It appears after the next monthly data sync."
     );
   }
-  const agencies = scope.all
-    ? entry.agencies
-    : entry.agencies.filter((a) => scope.agencies.includes(a));
+  const agencies = entry.agencies.filter((a) => scopeCoversAgency(scope, a));
   if (agencies.length === 0) {
     return {
       table: { columns: [], rowCount: 0, dicts: {}, idx: {} },
