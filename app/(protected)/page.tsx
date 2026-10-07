@@ -55,6 +55,8 @@ import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-prod
 import { useProducts } from "../../lib/hooks/use-products";
 import { useReadableClients } from "../../lib/hooks/use-readable-clients";
 import { DashboardTabScope, useAccess } from "../../lib/hooks/use-access";
+import { isClientScopedDashboard } from "../../lib/format/access";
+import type { GrantableDashboardId } from "../../lib/types/access.types";
 import { agencyScopeKey, scopeCoversAgency } from "../../lib/format/agency-scope";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
@@ -137,25 +139,26 @@ export default function DashboardPage() {
   );
   // Each tab group has its own client universe (presentation only — the
   // security rules still govern what can be read):
-  //   - Forecaster Dashboard → the clients whose team the user is on
-  //     (Admin: all). Dashboard grants do not widen it.
-  //   - Every other tab → its Admin → Dashboard Access scope: every client
-  //     (Global mode) or the agencies the user's email domain maps to (Agency
-  //     mode; company-wide domains: all), like the agency-partitioned Media
-  //     Investments / Reports data.
+  //   - Forecaster, Labs Pacing, Exec KPI and MediaBox → the clients the user
+  //     is allocated to, i.e. whose team they are on (Admin: all). Dashboard
+  //     grants only decide who opens a tab, never widen this.
+  //   - Mediaocean, Reports → their Admin → Dashboard Access scope: every
+  //     client (Global mode) or the agencies the user's email domain maps to
+  //     (Agency mode), like their agency-partitioned data.
   // The filter bar, forecast data and charts all derive from this list.
   const myEmail = profile?.email;
-  const tabScope = topTab === "forecaster" ? null : access.scopeFor(topTab);
+  const byTeam = topTab === "forecaster" || isClientScopedDashboard(topTab);
+  const tabScope = byTeam ? null : access.scopeFor(topTab as GrantableDashboardId);
   const tabScopeKey = tabScope ? agencyScopeKey(tabScope) : "";
   const clients = useMemo(() => {
-    if (topTab === "forecaster") {
+    if (byTeam) {
       if (isAdmin) return dashboardClients;
       return dashboardClients.filter((c) => isOnClientTeam(myEmail, c));
     }
     return dashboardClients.filter((c) => scopeCoversAgency(tabScope, c.CL_Agency));
     // tabScope is tracked through its key (a fresh object each render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topTab, isAdmin, myEmail, tabScopeKey, dashboardClients]);
+  }, [byTeam, isAdmin, myEmail, tabScopeKey, dashboardClients]);
   const usersMap = useUsersMap();
 
   const { selectedYear, selectedRFQ, setRFQ } = useForecastSelection();

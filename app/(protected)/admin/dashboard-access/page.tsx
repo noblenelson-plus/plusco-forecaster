@@ -3,11 +3,12 @@
 
 /**
  * Admin → Dashboard Access — who opens each dashboard and which clients it
- * shows them. Per grantable dashboard (everything except Forecaster): a mode
- * (Global = every client, Agency = the clients of the person's agencies, from
- * their email domain) and grants (email domains and/or people). Admins always
- * see everything. The Forecaster dashboard follows client teams and is not
- * grantable. Sub-tabs can be hidden from everyone but admins (work-in-progress
+ * shows them. Per grantable dashboard (everything except Forecaster): grants
+ * (email domains and/or people). Labs Pacing, Exec KPI and MediaBox show each
+ * person their allocated clients (CLIENT_SCOPED_DASHBOARDS); Mediaocean and
+ * Reports also have a mode (Global = every client, Agency = the clients of the
+ * person's agencies, from their email domain). Admins always see everything.
+ * The Forecaster dashboard follows client teams and is not grantable. Sub-tabs can be hidden from everyone but admins (work-in-progress
  * pages). Stored in config/dashboard_access (dashboard-access-service.ts);
  * resolution logic in lib/format/access.ts, mirrored by the security rules.
  */
@@ -15,6 +16,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Globe, Building2, Loader2, Plus, Save, Undo2, X } from "lucide-react";
+import { isClientScopedDashboard } from "../../../../lib/format/access";
 import PageHeader from "../../../../components/_shared/page-header";
 import { TeamMemberMultiSelect } from "../../../../components/clients/team-member-picker";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
@@ -116,7 +118,7 @@ export default function AdminDashboardAccessPage() {
       <header className="sticky top-14 lg:top-0 z-20 bg-white">
         <PageHeader
           title="Dashboard Access"
-          description="Who opens each dashboard, and which clients it shows them. Admins always see everything; the Forecaster dashboard follows client teams."
+          description="Who opens each dashboard. Most dashboards show each person their allocated clients; Mediaocean and Reports show their agency (or every client in Global mode). Admins see everything."
           actions={
             <div className="flex items-center gap-2">
               <button
@@ -156,11 +158,14 @@ export default function AdminDashboardAccessPage() {
           DASHBOARD_PAGES.map((page) => {
             const grantable = (GRANTABLE_DASHBOARDS as readonly string[]).includes(page.id);
             const id = page.id as GrantableDashboardId;
+            const byTeam = grantable && isClientScopedDashboard(id);
             return (
               <section key={page.id} className="border border-gray-200 bg-white">
                 <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
                   <h2 className="font-semibold text-gray-900">{page.label}</h2>
-                  {grantable ? (
+                  {byTeam ? (
+                    <span className="text-xs text-gray-500">Shows each person&apos;s allocated clients</span>
+                  ) : grantable ? (
                     <ModeSwitch value={config.dashboards[id].mode} onChange={(mode) => setGrant(id, { mode })} />
                   ) : (
                     <span className="text-xs text-gray-500">Client-team members and admins</span>
@@ -189,7 +194,9 @@ export default function AdminDashboardAccessPage() {
                       />
                     </div>
                     <p className="text-xs text-gray-500 md:col-span-2">
-                      {config.dashboards[id].mode === "GLOBAL"
+                      {byTeam
+                        ? "Everyone granted opens it and sees the clients they are allocated to (Access → Forecast Access)."
+                        : config.dashboards[id].mode === "GLOBAL"
                         ? "Global: everyone granted sees every client."
                         : "Agency: everyone granted sees the clients of their agency (from their email domain; company-wide domains see every agency)."}{" "}
                       {config.dashboards[id].domains.length === 0 && config.dashboards[id].users.length === 0 &&

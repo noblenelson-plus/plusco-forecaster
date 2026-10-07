@@ -20,8 +20,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { useAgencyScope } from "../../hooks/use-agency-scope";
-import { fetchAgencyScopedDocs } from "./agency-scoped-query";
+import { useDashboardDocScope } from "../../hooks/use-agency-scope";
+import { fetchDashboardClientDocs } from "./agency-scoped-query";
 
 const COLLECTION = "mo_kpi_by_client";
 
@@ -100,7 +100,7 @@ export function useMoKpiByClient(): MoKpiByClientResult {
   const [rows, setRows] = useState<KpiByClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { scope, loading: scopeLoading } = useAgencyScope();
+  const { scope, clientIds, key, loading: scopeLoading } = useDashboardDocScope();
 
   useEffect(() => {
     if (scopeLoading) return;
@@ -110,7 +110,7 @@ export function useMoKpiByClient(): MoKpiByClientResult {
       setLoading(true);
       setError(null);
       try {
-        const docs = await fetchAgencyScopedDocs(COLLECTION, scope);
+        const docs = await fetchDashboardClientDocs(COLLECTION, { scope, clientIds });
         if (cancelled) return;
         const out = docs.map((d) => ({
           PLUSCO_CLIENT_ID: d.id,
@@ -131,7 +131,9 @@ export function useMoKpiByClient(): MoKpiByClientResult {
     return () => {
       cancelled = true;
     };
-  }, [scope, scopeLoading]);
+    // scope / clientIds are tracked through `key`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, scopeLoading]);
 
   return { rows, loading: loading || scopeLoading, error };
 }

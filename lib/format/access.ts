@@ -23,6 +23,7 @@
 
 import {
   GRANTABLE_DASHBOARDS,
+  CLIENT_SCOPED_DASHBOARDS,
   type DashboardAccessConfig,
   type DashboardGrant,
   type DashboardMode,
@@ -123,6 +124,11 @@ export function matchesGrant(email: string, grant: DashboardGrant): boolean {
   const e = normalizeEmail(email);
   if (!e) return false;
   return grant.users.includes(e) || grant.domains.includes(emailDomain(e));
+}
+
+/** True for dashboards that show only the viewer's allocated clients. */
+export function isClientScopedDashboard(id: GrantableDashboardId | null | undefined): boolean {
+  return !!id && CLIENT_SCOPED_DASHBOARDS.includes(id);
 }
 
 /** Admin, or granted on that dashboard. */

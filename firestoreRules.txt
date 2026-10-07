@@ -390,8 +390,12 @@ service cloud.firestore {
     // reads are scoped by canReadAgencyData. Never writable from the app;
     // admins may delete.
     // mo_kpi_by_client — one doc per client (scripts/sync-kpi-by-client.mjs).
+    // Listed by agency (canReadAgencyData); a single doc may also be read by
+    // the client's team — the client-scoped dashboards (Labs Pacing, Exec KPI,
+    // MediaBox) fetch the allocated clients' docs one by one.
     match /mo_kpi_by_client/{clientId} {
-      allow read: if canReadAgencyData(resource.data._agency);
+      allow list: if canReadAgencyData(resource.data._agency);
+      allow get: if canReadAgencyData(resource.data._agency) || isOnClientTeam(clientId);
       allow create, update: if false;
       allow delete: if isAdmin();
     }

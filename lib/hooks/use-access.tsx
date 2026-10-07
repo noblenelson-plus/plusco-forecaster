@@ -8,8 +8,10 @@
  *     Milestones, Clients and the Forecaster dashboard;
  *   - `openDashboards`: the grantable dashboards opened to them;
  *   - `hasAnyAccess`: either of the above (else "Access pending");
- *   - `ctx` / `scopeFor` / `readable`: which clients each dashboard shows, and
- *     the union the rules let them read.
+ *   - `teamClientIds`: the clients they are allocated to — what the Forecaster
+ *     dashboard and the client-scoped dashboards (CLIENT_SCOPED_DASHBOARDS) show;
+ *   - `ctx` / `scopeFor` / `readable`: the agency scope of agency-partitioned
+ *     data (Mediaocean, Reports), and the union the rules let them read.
  * Presentation only — the security rules enforce the same model.
  */
 
@@ -33,6 +35,8 @@ interface AccessState {
   loading: boolean;
   /** Clients whose team lists the person (0 for admins — they see all anyway). */
   teamClientCount: number;
+  /** Their ids (empty for admins). Client-scoped dashboards show these. */
+  teamClientIds: string[];
   dashboardAccess: DashboardAccessConfig;
   openDashboards: GrantableDashboardId[];
   hasTeamSpaces: boolean;
@@ -58,7 +62,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   const { profile, isAdmin, email, loading: profileLoading } = useUserProfile();
   const disabled = !!profile?.disabled;
   const [config, setConfig] = useState<DashboardAccessConfig | null>(null);
-  const [team, setTeam] = useState<{ email: string; count: number } | null>(null);
+  const [team, setTeam] = useState<{ email: string; ids: string[] } | null>(null);
   const [mapping, setMapping] = useState<AgencyMapping | null>(null);
 
   // Subscribe once signed in (a signed-out read is denied and would stick).
@@ -94,11 +98,11 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     fetchAccessibleClients({ email, disabled }, false)
       .then((clients) => {
-        if (!cancelled) setTeam({ email, count: clients.length });
+        if (!cancelled) setTeam({ email, ids: clients.map((c) => c.cl_id).sort() });
       })
       .catch((err) => {
         console.error("Failed to load team clients:", err);
-        if (!cancelled) setTeam({ email, count: 0 });
+        if (!cancelled) setTeam({ email, ids: [] });
       });
     return () => {
       cancelled = true;
@@ -108,7 +112,8 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AccessState>(() => {
     const dashboardAccess = config ?? normalizeDashboardAccess(null);
     const teamReady = isAdmin || disabled || team?.email === email;
-    const teamClientCount = team?.email === email ? team.count : 0;
+    const teamClientIds = team?.email === email ? team.ids : [];
+    const teamClientCount = teamClientIds.length;
     const ctx: AccessCtx = {
       email,
       isAdmin,
@@ -122,6 +127,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     return {
       loading: profileLoading || !config || !mapping || !teamReady,
       teamClientCount,
+      teamClientIds,
       dashboardAccess,
       openDashboards: open,
       hasTeamSpaces,

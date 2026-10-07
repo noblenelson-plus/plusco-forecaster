@@ -29,8 +29,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { useAgencyScope } from "../../hooks/use-agency-scope";
-import { fetchAgencyScopedDocs } from "./agency-scoped-query";
+import { useDashboardDocScope } from "../../hooks/use-agency-scope";
+import { fetchDashboardClientDocs } from "./agency-scoped-query";
 
 // ─── Source + unified row shape ───────────────────────────────────────────────
 
@@ -125,8 +125,8 @@ export interface BillupsRowsResult {
 }
 
 /**
- * One-shot read of `mo_kpi_by_client` (~163 docs, within the user's agency
- * scope — every agency for Admin, the email domain's agencies otherwise), mapped
+ * One-shot read of `mo_kpi_by_client` (~163 docs: every client for Admin, the
+ * allocated clients on client-scoped dashboards — useDashboardDocScope), mapped
  * to BillupsClientRow. Small enough to load in full and filter/roll-up in
  * memory, which keeps the page filters instant.
  */
@@ -134,7 +134,7 @@ export function useBillupsMirRows(): BillupsRowsResult {
   const [rows, setRows] = useState<BillupsClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { scope, loading: scopeLoading } = useAgencyScope();
+  const { scope, clientIds, key, loading: scopeLoading } = useDashboardDocScope();
 
   useEffect(() => {
     if (scopeLoading) return;
@@ -144,11 +144,11 @@ export function useBillupsMirRows(): BillupsRowsResult {
       setLoading(true);
       setError(null);
       try {
-        const docs = await fetchAgencyScopedDocs(MIR_COLLECTION, scope);
+        const docs = await fetchDashboardClientDocs(MIR_COLLECTION, { scope, clientIds });
         if (cancelled) return;
 
         const out: BillupsClientRow[] = docs.map((d) => {
-          const raw = d.data() as Record<string, unknown>;
+          const raw = (d.data() ?? {}) as Record<string, unknown>;
           return {
             clientId: d.id,
             clientName: (raw["CLIENT_NAME"] ?? d.id).toString(),

@@ -61,6 +61,19 @@ export const GRANTABLE_DASHBOARDS = [
 
 export type GrantableDashboardId = (typeof GRANTABLE_DASHBOARDS)[number];
 
+/**
+ * Grantable dashboards that, like the Forecaster dashboard, show each person
+ * only the clients they are allocated to (their client teams; admins: all).
+ * The grant only decides who opens them — their Global / Agency mode no
+ * longer picks the clients. The others (Mediaocean, Reports) show
+ * agency-partitioned data by mode, since their rows aren't keyed by client.
+ */
+export const CLIENT_SCOPED_DASHBOARDS: readonly GrantableDashboardId[] = [
+  "labs-pacing",
+  "exec-kpis",
+  "mediabox",
+];
+
 /** GLOBAL: every client. AGENCY: the clients of the viewer's agencies. */
 export type DashboardMode = "GLOBAL" | "AGENCY";
 
