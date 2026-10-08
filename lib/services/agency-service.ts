@@ -22,6 +22,12 @@ import type { ClientAgency } from "../constants/client.constants";
 // replicated onto every agency.
 const COMPANY_DOMAINS_DOC = "company_domains";
 
+// Every email domain allowed to sign in: the agencies' domains + the
+// company-wide ones, kept as one list because the security rules can't scan
+// the agencies collection (isActive in firestoreRules.txt / storage.rules).
+// Rebuilt by syncSignInDomains whenever either source changes.
+const SIGN_IN_DOMAINS_DOC = "sign_in_domains";
+
 /**
  * Agency ↔ email-domain service.
  *
@@ -82,6 +88,31 @@ export async function saveCompanyDomains(domains: string[]): Promise<void> {
     { domains: normalized, updatedAt: serverTimestamp() },
     { merge: true }
   );
+  await syncSignInDomains();
+}
+
+/**
+ * The domains allowed to sign in (config/sign_in_domains). Falls back to the
+ * agencies + company-wide domains when the list doesn't exist yet.
+ */
+export async function fetchSignInDomains(): Promise<string[]> {
+  const snap = await getDoc(doc(db, "config", SIGN_IN_DOMAINS_DOC));
+  if (snap.exists()) return (snap.data().domains as string[]) ?? [];
+  const [agencies, company] = await Promise.all([fetchAgencies(), fetchCompanyDomains()]);
+  return [...new Set([...agencies.flatMap((a) => a.domains ?? []), ...company])].sort();
+}
+
+/** Rebuilds config/sign_in_domains from the agencies and company-wide domains (admin). */
+export async function syncSignInDomains(): Promise<void> {
+  const [agencies, company] = await Promise.all([fetchAgencies(), fetchCompanyDomains()]);
+  const domains = [
+    ...new Set(
+      [...agencies.flatMap((a) => a.domains ?? []), ...company]
+        .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+        .filter(Boolean)
+    ),
+  ].sort();
+  await setDoc(doc(db, "config", SIGN_IN_DOMAINS_DOC), { domains, updatedAt: serverTimestamp() });
 }
 
 // ─── Resolution ───────────────────────────────────────────────────────────────
@@ -133,9 +164,11 @@ export async function saveAgency(
     { name, domains: normalized, updatedAt: serverTimestamp() },
     { merge: true }
   );
+  await syncSignInDomains();
 }
 
 /** Deletes an agency's domain mapping. */
 export async function deleteAgency(name: string): Promise<void> {
   await deleteDoc(doc(db, "agencies", name));
+  await syncSignInDomains();
 }

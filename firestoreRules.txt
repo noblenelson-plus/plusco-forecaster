@@ -26,10 +26,23 @@ service cloud.firestore {
     function myUserPath() {
       return /databases/$(database)/documents/users/$(myEmail());
     }
-    // Signed in with a verified email, has a users row, not revoked.
-    function isActive() {
+    // Only company email domains may use the app: config/sign_in_domains lists
+    // the agencies' domains + the company-wide ones (kept in sync by
+    // agency-service.ts). Anyone else is signed out by the app, and refused here.
+    function signInAllowed() {
+      return exists(/databases/$(database)/documents/config/sign_in_domains) &&
+        myDomain() in get(/databases/$(database)/documents/config/sign_in_domains)
+          .data.get('domains', []);
+    }
+    // Signed in with a verified company email (no users row needed yet).
+    function isCompanyUser() {
       return isAuthenticated() &&
         request.auth.token.email_verified == true &&
+        signInAllowed();
+    }
+    // A company user with a users row, not revoked.
+    function isActive() {
+      return isCompanyUser() &&
         exists(myUserPath()) &&
         get(myUserPath()).data.get('disabled', false) != true;
     }
@@ -154,11 +167,11 @@ service cloud.firestore {
       // Every signed-in user reads the list (team / grant pickers, name labels).
       // Accepted trade-off: emails and roles are visible to every signed-in
       // employee — internal tool, restricted domains.
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
 
       // Self sign-up: exactly the bootstrap fields, role USER, own email + uid.
       allow create: if isAdmin() || (
-        isAuthenticated() &&
+        isCompanyUser() &&
         request.auth.token.email_verified == true &&
         email == myEmail() &&
         request.resource.data.keys().hasOnly(['email', 'uid', 'displayName', 'photoURL',
@@ -172,7 +185,7 @@ service cloud.firestore {
       // Admins change anything. A person may refresh only their own sign-in
       // fields (linking their uid) — never role or disabled.
       allow update: if isAdmin() || (
-        isAuthenticated() &&
+        isCompanyUser() &&
         request.auth.token.email_verified == true &&
         email == myEmail() &&
         request.resource.data.diff(resource.data).affectedKeys()
@@ -221,13 +234,13 @@ service cloud.firestore {
     // domains that map to the agency (a person's agency on Agency-mode
     // dashboards). Read by every signed-in user; only admins manage it.
     match /agencies/{agencyId} {
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
       allow create, update, delete: if isAdmin();
     }
     // ─── labs_partners ─────────────────────────────────────────────────────────
     match /labs_partners/{partnerId} {
       // All authenticated users can read partners (needed to populate LABS rows)
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
       // Only admins can manage the global partner registry
       allow create, update, delete: if isAdmin();
     }
@@ -235,7 +248,7 @@ service cloud.firestore {
     // Shared library of external links (name, description, url).
     match /resources/{resourceId} {
       // All authenticated users can read (open even on "Access pending").
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
       // Only admins can add, edit or remove resources.
       allow create, update, delete: if isAdmin();
     }
@@ -243,7 +256,7 @@ service cloud.firestore {
     match /products/{productId} {
       // All authenticated users can read the catalog (needed to populate the
       // pipeline axis and the revenue Product Fees dropdown).
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
       // Only admins can manage the global product catalog.
       allow create, update, delete: if isAdmin();
     }
@@ -253,7 +266,7 @@ service cloud.firestore {
     match /currency_rates/{year} {
       // All authenticated users can read rates (needed wherever amounts are
       // converted between currencies)
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
       // Only admins can set or remove conversion rates
       allow create, update, delete: if isAdmin();
     }
@@ -261,7 +274,7 @@ service cloud.firestore {
     // signed-in user may read (the Executive Summary consumes them); only
     // admins may edit.
     match /partner_targets/{year} {
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
       allow create, update, delete: if isAdmin();
     }
     // ─── config ────────────────────────────────────────────────────────────────
@@ -276,7 +289,8 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
     match /config/{configId} {
-      allow read: if isAuthenticated();
+      // sign_in_domains is read before sign-in is accepted (lib/auth-context).
+      allow read: if isCompanyUser() || (isAuthenticated() && configId == 'sign_in_domains');
       allow create, update, delete: if isAdmin();
     }
     // ─── data_entries ──────────────────────────────────────────────────────────
@@ -287,7 +301,7 @@ service cloud.firestore {
       // (resource == null) is a normal empty case — the dashboard reads one
       // entry per in-scope client and many have no submission yet. Allow it;
       // reading absent data leaks nothing.
-      allow read: if isAuthenticated() &&
+      allow read: if isCompanyUser() &&
         (resource == null || canReadClientData(resource.data.clientId));
 
       // Create: the document is created client-side on the first Save
@@ -344,7 +358,7 @@ service cloud.firestore {
     // ever written.
     match /forecast_validations/{entryId} {
       // An absent doc is a normal empty case (mirrors data_entries).
-      allow read: if isAuthenticated() &&
+      allow read: if isCompanyUser() &&
         (resource == null || canReadClientData(resource.data.clientId));
 
       allow create: if isAdmin() ||
@@ -370,7 +384,7 @@ service cloud.firestore {
     // The annual ADMIN_INPUT (MediaOcean) for Media and Labs — admin-owned.
     match /annual_actuals/{entryId} {
       // An absent doc is the common case (rarely populated). Allow it.
-      allow read: if isAuthenticated() &&
+      allow read: if isCompanyUser() &&
         (resource == null || canReadClientData(resource.data.clientId));
       // Create/update: admins only (the team never edits actuals). RFQ locking
       // does not apply — these figures are not tied to a single submission.
@@ -384,7 +398,7 @@ service cloud.firestore {
     // Function (Admin SDK, bypasses these rules). An absent doc is the normal
     // pre-sync case — allow it like annual_actuals.
     match /mediabox_totals/{entryId} {
-      allow read: if isAuthenticated() &&
+      allow read: if isCompanyUser() &&
         (resource == null || canReadClientData(resource.data.clientId));
       // Never writable from a client. Admins may delete (client-deletion
       // cleanup).
@@ -418,7 +432,7 @@ service cloud.firestore {
     // per-axis closed periods (an app-side editing gate for non-admins; not
     // enforced here, like the global lock above which only checks `status`).
     match /rfqs/{rfqId} {
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
       // Only admins create, lock/unlock, set closed months, edit timelines or
       // delete RFQs.
       allow create, update, delete: if isAdmin();
@@ -460,7 +474,7 @@ service cloud.firestore {
     // dashboard_meta — the "Last Updated" stamp written by scripts/sync-all.mjs.
     // A date label only, no client data: any signed-in user may read it.
     match /dashboard_meta/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if isCompanyUser();
       allow create, update: if false;
       allow delete: if isAdmin();
     }
