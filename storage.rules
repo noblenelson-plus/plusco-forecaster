@@ -16,11 +16,18 @@ service firebase.storage {
     function userPath() {
       return /databases/(default)/documents/users/$(myEmail());
     }
-    // Signed in with a verified email, has a users row (users/{email}), not
-    // revoked.
+    // A company email domain (config/sign_in_domains; see firestoreRules.txt).
+    function signInAllowed() {
+      return firestore.exists(/databases/(default)/documents/config/sign_in_domains) &&
+        myDomain() in firestore.get(/databases/(default)/documents/config/sign_in_domains)
+          .data.get('domains', []);
+    }
+    // Signed in with a verified company email, has a users row
+    // (users/{email}), not revoked.
     function isActive() {
       return request.auth != null &&
         request.auth.token.email_verified == true &&
+        signInAllowed() &&
         firestore.exists(userPath()) &&
         firestore.get(userPath()).data.get('disabled', false) != true;
     }
@@ -63,7 +70,7 @@ service firebase.storage {
     }
 
     match /client-logos/{fileName} {
-      allow read: if request.auth != null;
+      allow read: if isActive();
       allow write: if isAdmin()
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');

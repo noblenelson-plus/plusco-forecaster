@@ -48,7 +48,7 @@ const money = new Intl.NumberFormat("en-US", {
 });
 
 export default function LoginPage() {
-  const { user, loading, signInWithGoogle } = useAuth();
+  const { user, loading, blockedEmail, signInWithGoogle } = useAuth();
   const router = useRouter();
   const [error, setError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
@@ -108,9 +108,12 @@ export default function LoginPage() {
     celebrate(1.5);
     try {
       await signInWithGoogle();
+      // A company account redirects away; a blocked one stays here with the
+      // "staff only" message, so the button must be usable again.
+      setSigningIn(false);
     } catch (err: any) {
       setError(
-        "Erreur de connexion: " + (err?.code || "UNKNOWN") + " — " + err?.message
+        "Sign-in failed: " + (err?.code || "UNKNOWN") + " — " + err?.message
       );
       setSigningIn(false);
     }
@@ -221,6 +224,15 @@ export default function LoginPage() {
           {error && (
             <div className="mt-4 bg-red-500 px-4 py-3 text-sm text-white">
               {error}
+            </div>
+          )}
+          {blockedEmail && !error && (
+            <div className="mt-4 bg-red-500 px-4 py-3 text-sm text-white">
+              <p className="font-semibold">This app is for Plus Company staff only.</p>
+              <p className="mt-1 text-xs">
+                {blockedEmail} isn&apos;t a company email. Sign in with your agency or Plus Company Google
+                account (e.g. @cossettemedia.com, @jungle-media.ca, @mekanism.com, @pluscompany.com).
+              </p>
             </div>
           )}
 
