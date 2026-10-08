@@ -11,6 +11,7 @@
  * Everything is driven by the FACETS registry — the hook never names a facet.
  */
 
+import { disambiguatePersonOptions } from "../../format/person";
 import { useCallback, useMemo, useState } from "react";
 import type { Client } from "../../types/client.types";
 import { FACETS } from "./facets";
@@ -122,7 +123,7 @@ export function useDashboardFilters(
         key: facet.key,
         label: facet.label,
         searchable: facet.searchable ?? false,
-        options,
+        options: facet.key === "businessLeads" ? disambiguatePersonOptions(options) : options,
         selected,
         onChange: (values: string[]) => setFacet(facet.key, values),
       };

@@ -8,6 +8,7 @@
  * filtered client set) is driven by this list — no other file changes.
  */
 
+import { personLabel } from "../../format/person";
 import {
   CLIENT_AGENCIES,
   CLIENT_GM_PODS,
@@ -77,7 +78,7 @@ export const FACETS: Facet[] = [
     label: "Business Lead",
     searchable: true,
     getValue: (c) => c.CL_Business_Lead,
-    getLabel: (v, ctx) => ctx.usersMap.get(v) ?? v,
+    getLabel: (v, ctx) => personLabel(v, ctx.usersMap),
   },
   {
     key: "clients",
