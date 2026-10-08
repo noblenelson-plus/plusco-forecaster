@@ -41,7 +41,7 @@ import GrantSheetImportModal, { REPORT_TABS } from "../../../../components/dashb
 import { exportToNewSheetWithTabs } from "../../../../components/forecaster/table/table-export";
 import { buildGrantSheet } from "../../../../lib/format/grant-sheet";
 import { buildTeamSheet } from "../../../../lib/format/team-sheet";
-import { buildAccessSummary, buildGrantClients } from "../../../../lib/format/access-report";
+import { buildAccessSummary, buildAllAccess, buildGrantClients } from "../../../../lib/format/access-report";
 import { fetchAccessibleClients } from "../../../../lib/services/assignment-service";
 import { fetchAgencies, fetchCompanyDomains } from "../../../../lib/services/agency-service";
 import type { Client } from "../../../../lib/types/client.types";
@@ -130,7 +130,8 @@ export default function AdminDashboardAccessPage() {
   );
 
   /**
-   * The access report to a new Google Sheet: Summary (one row per person —
+   * The access report to a new Google Sheet: All access (one row per person
+   * × tab × source — filter by name), Summary (one row per person —
    * what they see on each tab and why), Dashboard grants and Client access
    * (editable; Import reads them back) and Grant clients (each grant's
    * clients). Cell text gets a leading apostrophe so ids stay text.
@@ -153,6 +154,7 @@ export default function AdminDashboardAccessPage() {
       const url = await exportToNewSheetWithTabs({
         title: `Access report — ${new Date().toISOString().slice(0, 10)}`,
         tabs: [
+          { sheetTitle: REPORT_TABS.allAccess, matrix: buildAllAccess(input) },
           { sheetTitle: REPORT_TABS.summary, matrix: buildAccessSummary(input) },
           { sheetTitle: REPORT_TABS.grants, matrix: buildGrantSheet(grants ?? [], names, tabLabels) },
           { sheetTitle: REPORT_TABS.clientAccess, matrix: asText(buildTeamSheet(clients)) },

@@ -151,3 +151,79 @@ export function buildGrantClients(input: AccessReportInput): string[][] {
   }
   return [["Email", "Name", "Tab", "Client ID", "Client Name", "Agency", "Region", "Can edit"], ...rows];
 }
+
+/**
+ * All access tab: one row per person × dashboard tab × source of access —
+ * Email, Name, Access level, Tab, Agencies, Regions, Clients, Can edit — so
+ * filtering on a name shows everything that person can see and why. Access
+ * level: Admin, Global (company-wide email: every agency), Domain (their
+ * agency's email), Client team (their own clients), Grant (added on
+ * Dashboard Access). Tabs hidden from non-admins are left out (they can't
+ * see them); revoked people and people with no access get one row saying so.
+ */
+export function buildAllAccess(input: AccessReportInput): string[][] {
+  const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, tabLabels } = input;
+  const shown = clients.filter((c) => !isClientHidden(c) && !isTestClient(c.CL_Name));
+  const userBy = new Map(users.map((u) => [u.email, u]));
+  const grantBy = new Map(grants.map((g) => [normalizeEmail(g.email), g.tabs]));
+  const nameOf = (e: string) => userBy.get(e)?.displayName || nameFromEmail(e);
+  const uniq = (values: string[]) => [...new Set(values)].sort().join(", ");
+  const rows: string[][] = [];
+
+  for (const email of [...new Set([...userBy.keys(), ...grantBy.keys()])].sort((a, b) => nameOf(a).localeCompare(nameOf(b)))) {
+    const u = userBy.get(email);
+    const name = nameOf(email);
+    const row = (level: string, tab: string, agencies: string, regions: string, count: number | string, edit: string) =>
+      rows.push([email, name, level, tab, agencies, regions, String(count), edit]);
+
+    if (u?.disabled) {
+      row("Revoked", "—", "—", "—", 0, "No");
+      continue;
+    }
+    if (u?.role === "ADMIN") {
+      for (const tab of DASHBOARD_TABS) row("Admin", tabLabels[tab], "All agencies", "All regions", shown.length, "Yes");
+      continue;
+    }
+
+    const ctx: AccessContext = {
+      email,
+      isAdmin: false,
+      disabled: false,
+      agencyDomains,
+      companyDomains,
+      grants: grantBy.get(email) ?? {},
+      dashboardAccess,
+    };
+    const hidden = hiddenPagesFor(ctx);
+    const team = shown.filter((c) => isOnClientTeam(email, c));
+    const start = rows.length;
+
+    for (const tab of DASHBOARD_TABS) {
+      if (hidden.has(tab)) continue;
+      const label = tabLabels[tab];
+      if (tab === "forecaster" && team.length) {
+        row("Client team", label, uniq(team.map((c) => c.CL_Agency)), uniq(team.map((c) => c.CL_Business_Unit_Region)), team.length, "Yes");
+      }
+      if (AGENCY_DEFAULT_TABS.includes(tab)) {
+        const d = domainScope(ctx);
+        if (d.all) row("Global", label, "All agencies", "All regions", shown.length, "No");
+        else if (d.agencies.length) {
+          row("Domain", label, d.agencies.join(", "), "All regions", shown.filter((c) => d.agencies.includes(c.CL_Agency)).length, "No");
+        }
+      }
+      const g = ctx.grants[tab];
+      if (g) {
+        row(
+          "Grant",
+          label,
+          g.allAgencies ? "All agencies" : g.agencies.join(", "),
+          g.allRegions ? "All regions" : g.regions.join(", "),
+          shown.filter((c) => grantCoversClient(g, c)).length,
+          tab === "forecaster" && g.edit ? "Yes" : "No"
+        );
+      }
+    }
+    if (rows.length === start) row("No access", "—", "—", "—", 0, "No");
+  }
+  return [["Email", "Name", "Access level", "Tab", "Agencies", "Regions", "Clients", "Can edit"], ...rows];
+}
