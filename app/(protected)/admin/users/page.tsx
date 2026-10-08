@@ -77,9 +77,8 @@ const FILTER_LABELS: Record<Filter, string> = {
 };
 
 // One Plus-palette color per role: badge dot and scorecard icon.
-const ROLE_DOT: Record<"ADMIN" | "REVOKED" | TeamRole, string> = {
+const ROLE_DOT: Record<"ADMIN" | TeamRole, string> = {
   ADMIN: "bg-gray-900",
-  REVOKED: "bg-red-500",
   GM: "bg-purple-600",
   BL: "bg-green-500",
   DL: "bg-blue-400",
@@ -97,9 +96,14 @@ const ROLE_ICON: Record<TeamRole, string> = {
 /** Shows ~20 rows, then the table scrolls (rows are h-14 = 3.5rem). */
 const TABLE_MAX_H = "max-h-[73.5rem]";
 
+/** Highest role first: a person shows only their top role. */
+type PrimaryRole = "ADMIN" | TeamRole;
+
 interface PersonRow extends AccessPerson {
   isAdmin: boolean;
   roles: TeamRole[];
+  /** Admin > GM > Business Lead > Digital Lead > Collaborator; null = no client. */
+  primary: PrimaryRole | null;
 }
 
 export default function AdminUsersPage() {
@@ -235,31 +239,36 @@ export default function AdminUsersPage() {
           clients: mine,
           isAdmin: user?.role === "ADMIN",
           roles: TEAM_ROLES.filter((r) => held.has(r)),
+          primary: (user?.role === "ADMIN" ? "ADMIN" : TEAM_ROLES.find((r) => held.has(r)) ?? null) as PrimaryRole | null,
         };
       })
-      .sort((a, b) => (a.displayName ?? a.email).localeCompare(b.displayName ?? b.email));
+      .sort((a, b) => (a.displayName ?? nameFromEmail(a.email)).localeCompare(b.displayName ?? nameFromEmail(b.email)));
   }, [users, clients]);
 
-  const stats = useMemo(() => {
-    const has = (r: TeamRole) => people.filter((p) => p.roles.includes(r)).length;
-    return { total: people.length, GM: has("GM"), BL: has("BL"), DL: has("DL"), COLLABORATOR: has("COLLABORATOR") };
-  }, [people]);
+  // The table lists admins and people with ≥1 client; the rest only show up
+  // when searched for.
+  const allocated = useMemo(() => people.filter((p) => p.primary !== null), [people]);
 
+  // One role per person (their top role), so the cards and filters add up.
   const filterCounts = useMemo(() => {
-    const c = { ALL: people.length, ADMIN: 0, GM: 0, BL: 0, DL: 0, COLLABORATOR: 0 } as Record<Filter, number>;
-    for (const p of people) {
-      if (p.isAdmin) c.ADMIN += 1;
-      for (const r of p.roles) c[r] += 1;
-    }
+    const c = { ALL: allocated.length, ADMIN: 0, GM: 0, BL: 0, DL: 0, COLLABORATOR: 0 } as Record<Filter, number>;
+    for (const p of allocated) if (p.primary) c[p.primary] += 1;
     return c;
-  }, [people]);
+  }, [allocated]);
+  const stats = { total: allocated.length, ...filterCounts };
 
   const filteredPeople = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return people
-      .filter((p) => (filter === "ALL" ? true : filter === "ADMIN" ? p.isAdmin : p.roles.includes(filter)))
-      .filter((p) => !q || p.email.includes(q) || (p.displayName ?? "").toLowerCase().includes(q));
-  }, [people, filter, search]);
+    return (q ? people : allocated)
+      .filter((p) => filter === "ALL" || p.primary === filter)
+      .filter(
+        (p) =>
+          !q ||
+          p.email.includes(q) ||
+          (p.displayName ?? nameFromEmail(p.email)).toLowerCase().includes(q)
+      );
+  }, [people, allocated, filter, search]);
+  const hiddenCount = people.length - allocated.length;
 
   const filteredClients = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -429,7 +438,9 @@ export default function AdminUsersPage() {
                 )}
                 <span className="ml-auto text-sm text-gray-400 hidden sm:block">
                   {view === "people"
-                    ? `${filteredPeople.length} ${filteredPeople.length === 1 ? "person" : "people"}`
+                    ? `${filteredPeople.length} ${filteredPeople.length === 1 ? "person" : "people"}${
+                        !search.trim() && hiddenCount ? ` · ${hiddenCount} with no client hidden — search to find them` : ""
+                      }`
                     : `${filteredClients.length} client${filteredClients.length !== 1 ? "s" : ""}`}
                 </span>
               </div>
@@ -554,12 +565,7 @@ function PeopleTable({
                 </td>
                 <td className="px-4 py-2">
                   <div className="flex items-center gap-1 flex-wrap">
-                    {revoked && <RoleBadge role="REVOKED" />}
-                    {p.isAdmin && <RoleBadge role="ADMIN" />}
-                    {p.roles.map((r) => (
-                      <RoleBadge key={r} role={r} />
-                    ))}
-                    {!p.isAdmin && p.roles.length === 0 && <span className="text-xs text-gray-300">No client</span>}
+                    {p.primary ? <RoleBadge role={p.primary} /> : <span className="text-xs text-gray-300">No client</span>}
                     {!p.user && <span className="text-[11px] text-gray-400">· not signed in</span>}
                   </div>
                 </td>
@@ -758,11 +764,11 @@ function Segmented<T extends string>({
 
 // ─── Role badge (same look as the client status badge) ──────────────────────
 
-function RoleBadge({ role }: { role: "ADMIN" | "REVOKED" | TeamRole }) {
+function RoleBadge({ role }: { role: "ADMIN" | TeamRole }) {
   return (
     <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium border border-gray-200 bg-white text-gray-700">
       <span className={`w-1.5 h-1.5 mr-1.5 ${ROLE_DOT[role]}`} />
-      {role === "ADMIN" ? "Admin" : role === "REVOKED" ? "Revoked" : TEAM_ROLE_LABELS[role]}
+      {role === "ADMIN" ? "Admin" : TEAM_ROLE_LABELS[role]}
     </span>
   );
 }

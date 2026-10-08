@@ -50,8 +50,8 @@ import {
 } from "../../lib/services/labs-partner-service";
 import type { LabsPartner } from "../../lib/types/labs.types";
 import CommissionsDrawer from "./commissions-drawer";
-import { TeamMemberMultiSelect, TeamMemberSelect } from "./team-member-picker";
-import DigitalLeadSelect from "./digital-lead-select";
+import { TeamMemberMultiSelect } from "./team-member-picker";
+import LeadSelect from "./lead-select";
 
 interface ClientDrawerProps {
   open: boolean;
@@ -632,16 +632,17 @@ export default function ClientDrawer({
               />
             </Field>
             <Field label="Business Lead">
-              <TeamMemberSelect
+              <LeadSelect
+                kind="business"
                 value={form.CL_Business_Lead}
                 onChange={(v) => set("CL_Business_Lead", v)}
                 users={users}
-                placeholder="Search users…"
                 disabled={!isAdmin}
               />
             </Field>
             <Field label="Digital Lead">
-              <DigitalLeadSelect
+              <LeadSelect
+                kind="digital"
                 value={form.CL_Digital_Lead ?? ""}
                 onChange={(v) => set("CL_Digital_Lead", v)}
                 users={users}
