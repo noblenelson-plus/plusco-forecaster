@@ -2,27 +2,54 @@
 "use client";
 
 /**
- * Admin → Dashboard Access → Import: paste the link of an edited grants
- * export, review every change (dry run, planGrantSheetImport), then apply.
- * The sheet is the full list — people without rows lose their grants, which
- * the review spells out. Errors block the import; nothing is written before
- * "Apply".
+ * Admin → Dashboard Access → Import: paste the link of an edited access
+ * report (Export), review every change, then apply. Two tabs are editable:
+ *   - "Dashboard grants" (planGrantSheetImport): the sheet is the full list —
+ *     people without rows lose their grants;
+ *   - "Client access" (planTeamSheetImport): for every client in it, its BL /
+ *     DL / collaborators become exactly its rows; clients without rows are
+ *     left unchanged.
+ * A single-tab grants sheet (older exports) still works. Errors in either tab
+ * block the import; nothing is written before "Apply".
  */
 
 import { useMemo, useState } from "react";
 import { X, AlertTriangle, Loader2, FileSpreadsheet, Check, Info } from "lucide-react";
+import type { Client } from "../../lib/types/client.types";
 import type { DashboardGrantDoc, DashboardTabId } from "../../lib/types/access.types";
 import {
-  planGrantSheetImport,
   GrantSheetStructureError,
+  planGrantSheetImport,
   type GrantSheetChange,
   type GrantSheetPlan,
 } from "../../lib/format/grant-sheet";
-import { describeSheetError, readLinkedSheet } from "../../lib/services/linked-sheet";
+import {
+  TeamSheetStructureError,
+  planTeamSheetImport,
+  type TeamSheetChange,
+  type TeamSheetPlan,
+} from "../../lib/format/team-sheet";
+import { describeSheetError, readLinkedWorkbook } from "../../lib/services/linked-sheet";
 import { saveGrantsBatch } from "../../lib/services/dashboard-grants-service";
+import { applyTeamSheetChanges } from "../../lib/services/team-access-service";
+
+/** Tab names of the access report (Export) — keep in sync with the page. */
+export const REPORT_TABS = {
+  summary: "Summary",
+  grants: "Dashboard grants",
+  clientAccess: "Client access",
+  grantClients: "Grant clients",
+} as const;
+
+interface Plans {
+  source: string;
+  grants: GrantSheetPlan | null;
+  team: TeamSheetPlan | null;
+}
 
 export default function GrantSheetImportModal({
   current,
+  clients,
   userEmails,
   tabLabels,
   updatedBy,
@@ -30,17 +57,17 @@ export default function GrantSheetImportModal({
   onApplied,
 }: {
   current: DashboardGrantDoc[];
+  clients: Client[];
   userEmails: ReadonlySet<string>;
   tabLabels: Record<DashboardTabId, string>;
   updatedBy: string;
   onClose: () => void;
-  onApplied: (changes: GrantSheetChange[]) => void;
+  onApplied: (grantChanges: GrantSheetChange[], teamChanges: TeamSheetChange[]) => void;
 }) {
   const [link, setLink] = useState("");
   const [checking, setChecking] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
-  const [source, setSource] = useState("");
-  const [plan, setPlan] = useState<GrantSheetPlan | null>(null);
+  const [plans, setPlans] = useState<Plans | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState("");
 
@@ -49,39 +76,69 @@ export default function GrantSheetImportModal({
     setProblems([]);
     try {
       // The first Google call opens the consent popup when there's no live token.
-      const { name, table } = await readLinkedSheet(link.trim());
-      setPlan(planGrantSheetImport(table, current, userEmails, tabLabels));
-      setSource(name);
+      const wb = await readLinkedWorkbook(link.trim(), [REPORT_TABS.grants, REPORT_TABS.clientAccess]);
+      const grantsTable = wb.tabs[REPORT_TABS.grants];
+      const teamTable = wb.tabs[REPORT_TABS.clientAccess];
+      if (!grantsTable && !teamTable) {
+        // An older single-tab grants export: the linked tab is the grants list.
+        setPlans({
+          source: `${wb.fileName} › ${wb.linked.title}`,
+          grants: planGrantSheetImport(wb.linked.table, current, userEmails, tabLabels),
+          team: null,
+        });
+      } else {
+        setPlans({
+          source: wb.fileName,
+          grants: grantsTable ? planGrantSheetImport(grantsTable, current, userEmails, tabLabels) : null,
+          team: teamTable ? planTeamSheetImport(teamTable, clients, userEmails) : null,
+        });
+      }
     } catch (err) {
-      setProblems(err instanceof GrantSheetStructureError ? err.problems : [describeSheetError(err)]);
+      setProblems(
+        err instanceof GrantSheetStructureError || err instanceof TeamSheetStructureError
+          ? err.problems
+          : [describeSheetError(err)]
+      );
     } finally {
       setChecking(false);
     }
   }
 
   async function apply() {
-    if (!plan) return;
+    if (!plans) return;
     setApplying(true);
     setApplyError("");
     try {
-      await saveGrantsBatch(plan.changes.map((c) => ({ email: c.email, tabs: c.tabs })), updatedBy);
-      onApplied(plan.changes);
+      const g = plans.grants?.changes ?? [];
+      const t = plans.team?.changes ?? [];
+      if (g.length) await saveGrantsBatch(g.map((c) => ({ email: c.email, tabs: c.tabs })), updatedBy);
+      if (t.length) await applyTeamSheetChanges(t);
+      onApplied(g, t);
     } catch (err) {
       setApplyError("Import failed: " + (err instanceof Error ? err.message : "Unknown error"));
       setApplying(false);
     }
   }
 
+  const g = plans?.grants;
+  const tm = plans?.team;
   const totals = useMemo(() => {
-    const t = { add: 0, change: 0, remove: 0, losesAll: 0 };
-    for (const c of plan?.changes ?? []) {
+    const t = { add: 0, change: 0, remove: 0, losesAll: 0, seatsAdded: 0, seatsRemoved: 0, leads: 0 };
+    for (const c of g?.changes ?? []) {
       for (const l of c.lines) t[l.kind]++;
       if (Object.keys(c.tabs).length === 0) t.losesAll++;
     }
+    for (const c of tm?.changes ?? []) {
+      t.seatsAdded += c.added.length;
+      t.seatsRemoved += c.removed.length;
+      t.leads += Number(!!c.bl) + Number(!!c.dl);
+    }
     return t;
-  }, [plan]);
+  }, [g, tm]);
 
-  const blocked = !plan || plan.errors.length > 0 || plan.changes.length === 0;
+  const errorCount = (g?.errors.length ?? 0) + (tm?.errors.length ?? 0);
+  const changeCount = (g?.changes.length ?? 0) + (tm?.changes.length ?? 0);
+  const blocked = !plans || errorCount > 0 || changeCount === 0;
 
   return (
     <>
@@ -94,8 +151,8 @@ export default function GrantSheetImportModal({
                 <FileSpreadsheet size={16} className="text-white" />
               </div>
               <div>
-                <h2 className="text-base font-semibold text-gray-900">Import dashboard access</h2>
-                <p className="text-xs text-gray-400 mt-0.5">{plan ? source : "Nothing is saved until you apply the review."}</p>
+                <h2 className="text-base font-semibold text-gray-900">Import access</h2>
+                <p className="text-xs text-gray-400 mt-0.5">{plans ? plans.source : "Nothing is saved until you apply the review."}</p>
               </div>
             </div>
             <button onClick={onClose} className="p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
@@ -104,7 +161,7 @@ export default function GrantSheetImportModal({
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-            {!plan ? (
+            {!plans ? (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Google Sheet link</label>
                 <input
@@ -120,18 +177,19 @@ export default function GrantSheetImportModal({
                 />
                 <ul className="text-xs text-gray-500 mt-2 space-y-1 list-disc pl-4">
                   <li>
-                    Start from <strong>Export</strong> and keep the headers on row 1 (Email, Name, Tab, Agencies,
-                    Regions, Can edit). One row per person per tab.
+                    Start from <strong>Export</strong>. Two tabs are imported; the others (Summary, Grant clients) are a
+                    read-only report.
                   </li>
                   <li>
-                    Agencies / Regions: <strong>All</strong> (includes clients added later) or a comma-separated list.
-                    &ldquo;Can edit&rdquo; (Yes / No) only applies to Forecaster.
+                    <strong>{REPORT_TABS.grants}</strong> — one row per person per tab; Agencies / Regions are{" "}
+                    <strong>All</strong> (includes clients added later) or a list. It&apos;s the full list: anyone without
+                    a row loses their grants.
                   </li>
                   <li>
-                    <strong>The sheet is the full list:</strong> anyone without a row loses their access. Delete a row to
-                    remove a tab, add one to give access.
+                    <strong>{REPORT_TABS.clientAccess}</strong> — one row per person per client (Client ID, Role, Email).
+                    For each client in it, its Business Lead, Digital Lead and collaborators become exactly its rows; GM
+                    rows are read-only. Add a row with a Client ID to give someone that client.
                   </li>
-                  <li>Client teams and email-domain defaults aren&apos;t grants — they don&apos;t appear in the sheet.</li>
                 </ul>
                 {problems.length > 0 && (
                   <div className="mt-4 bg-red-500 px-3 py-2.5 space-y-1.5">
@@ -150,48 +208,55 @@ export default function GrantSheetImportModal({
             ) : (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <Summary label="People changed" value={plan.changes.length} />
                   <Summary label="Tabs given" value={totals.add} />
-                  <Summary label="Scopes changed" value={totals.change} />
-                  <Summary label="Tabs removed" value={totals.remove} warn={totals.remove > 0} />
+                  <Summary label="Tabs changed / removed" value={totals.change + totals.remove} warn={totals.remove > 0} />
+                  <Summary label="Client seats + / −" value={`${totals.seatsAdded} / ${totals.seatsRemoved}`} warn={totals.seatsRemoved > 0} />
+                  <Summary label="BL / DL changes" value={totals.leads} />
                 </div>
-                <p className="text-xs text-gray-500">
-                  {plan.rows} row{plan.rows !== 1 ? "s" : ""} for {plan.people} {plan.people === 1 ? "person" : "people"}.
-                  {totals.losesAll > 0 && (
-                    <strong className="text-red-600"> {totals.losesAll} {totals.losesAll === 1 ? "person loses" : "people lose"} all their access.</strong>
-                  )}
-                </p>
-
-                {plan.errors.length > 0 && (
-                  <IssueList
-                    tone="error"
-                    title={`${plan.errors.length} problem${plan.errors.length !== 1 ? "s" : ""} — fix the sheet and check again`}
-                    issues={plan.errors}
-                  />
+                {totals.losesAll > 0 && (
+                  <p className="text-xs font-semibold text-red-600">
+                    {totals.losesAll} {totals.losesAll === 1 ? "person loses" : "people lose"} all their dashboard grants.
+                  </p>
                 )}
-                {plan.warnings.length > 0 && <IssueList tone="warning" title="Worth a look" issues={plan.warnings} />}
 
-                {plan.changes.length === 0 && plan.errors.length === 0 ? (
+                {g && <PlanSection title={REPORT_TABS.grants} errors={g.errors} warnings={g.warnings} />}
+                {tm && <PlanSection title={REPORT_TABS.clientAccess} errors={tm.errors} warnings={tm.warnings} />}
+
+                {changeCount === 0 && errorCount === 0 ? (
                   <p className="flex items-center gap-2 text-sm text-gray-600">
                     <Check size={15} className="text-green-500" /> Nothing to change — the sheet matches the current access.
                   </p>
                 ) : (
                   <ul className="divide-y divide-gray-100 border border-gray-200">
-                    {plan.changes.map((c) => (
-                      <li key={c.email} className="px-3 py-2 text-xs">
+                    {(g?.changes ?? []).map((c) => (
+                      <li key={"g" + c.email} className="px-3 py-2 text-xs">
                         <p className="text-sm font-medium text-gray-900">
-                          {c.email}
-                          {Object.keys(c.tabs).length === 0 && <span className="ml-2 text-[11px] font-semibold text-red-600">loses all access</span>}
+                          {c.email} <span className="text-[11px] font-normal text-gray-400">dashboard grants</span>
+                          {Object.keys(c.tabs).length === 0 && <span className="ml-2 text-[11px] font-semibold text-red-600">loses all grants</span>}
                         </p>
                         <div className="mt-1 space-y-0.5">
                           {c.lines.map((l, i) => (
-                            <p
-                              key={i}
-                              className={l.kind === "add" ? "text-green-700" : l.kind === "remove" ? "text-red-600" : "text-gray-700"}
-                            >
+                            <p key={i} className={l.kind === "add" ? "text-green-700" : l.kind === "remove" ? "text-red-600" : "text-gray-700"}>
                               {l.kind === "add" ? "+ " : l.kind === "remove" ? "− " : "~ "}
                               {l.text}
                             </p>
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                    {(tm?.changes ?? []).map((c) => (
+                      <li key={"t" + c.cl_id} className="px-3 py-2 text-xs">
+                        <p className="text-sm font-medium text-gray-900">
+                          {c.name} <span className="text-[11px] font-normal text-gray-400">{c.cl_id} · client team</span>
+                        </p>
+                        <div className="mt-1 space-y-0.5">
+                          {c.bl && <p className="text-gray-700">Business Lead: {c.bl.before || "none"} → {c.bl.after || "none"}</p>}
+                          {c.dl && <p className="text-gray-700">Digital Lead: {c.dl.before || "none"} → {c.dl.after || "none"}</p>}
+                          {c.added.map((e) => (
+                            <p key={"+" + e} className="text-green-700">+ {e} (collaborator)</p>
+                          ))}
+                          {c.removed.map((e) => (
+                            <p key={"-" + e} className="text-red-600">− {e} (collaborator)</p>
                           ))}
                         </div>
                       </li>
@@ -204,10 +269,10 @@ export default function GrantSheetImportModal({
           </div>
 
           <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3">
-            {plan ? (
+            {plans ? (
               <button
                 onClick={() => {
-                  setPlan(null);
+                  setPlans(null);
                   setApplyError("");
                 }}
                 disabled={applying}
@@ -222,14 +287,14 @@ export default function GrantSheetImportModal({
               <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50">
                 Cancel
               </button>
-              {plan ? (
+              {plans ? (
                 <button
                   onClick={() => void apply()}
                   disabled={blocked || applying}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {applying && <Loader2 size={14} className="animate-spin" />}
-                  Apply {plan.changes.length} change{plan.changes.length !== 1 ? "s" : ""}
+                  Apply {changeCount} change{changeCount !== 1 ? "s" : ""}
                 </button>
               ) : (
                 <button
@@ -249,7 +314,26 @@ export default function GrantSheetImportModal({
   );
 }
 
-function Summary({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
+function PlanSection({
+  title,
+  errors,
+  warnings,
+}: {
+  title: string;
+  errors: { row: number | null; message: string }[];
+  warnings: { row: number | null; message: string }[];
+}) {
+  return (
+    <>
+      {errors.length > 0 && (
+        <IssueList tone="error" title={`${title}: ${errors.length} problem${errors.length !== 1 ? "s" : ""} — fix the sheet and check again`} issues={errors} />
+      )}
+      {warnings.length > 0 && <IssueList tone="warning" title={`${title}: worth a look`} issues={warnings} />}
+    </>
+  );
+}
+
+function Summary({ label, value, warn }: { label: string; value: number | string; warn?: boolean }) {
   return (
     <div className="border border-gray-200 px-3 py-2">
       <p className="text-[11px] text-gray-500">{label}</p>
