@@ -37,9 +37,14 @@ import {
 import PageHeader from "../../../../components/_shared/page-header";
 import AgenciesPanel from "../../../../components/agencies/agencies-panel";
 import GrantEditor from "../../../../components/dashboard-access/grant-editor";
-import GrantSheetImportModal from "../../../../components/dashboard-access/grant-sheet-import-modal";
-import { exportToNewSheet } from "../../../../components/forecaster/table/table-export";
+import GrantSheetImportModal, { REPORT_TABS } from "../../../../components/dashboard-access/grant-sheet-import-modal";
+import { exportToNewSheetWithTabs } from "../../../../components/forecaster/table/table-export";
 import { buildGrantSheet } from "../../../../lib/format/grant-sheet";
+import { buildTeamSheet } from "../../../../lib/format/team-sheet";
+import { buildAccessSummary, buildGrantClients } from "../../../../lib/format/access-report";
+import { fetchAccessibleClients } from "../../../../lib/services/assignment-service";
+import { fetchAgencies, fetchCompanyDomains } from "../../../../lib/services/agency-service";
+import type { Client } from "../../../../lib/types/client.types";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import {
   saveDashboardAccess,
@@ -93,6 +98,12 @@ export default function AdminDashboardAccessPage() {
   const [exportedUrl, setExportedUrl] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // For the access report: every client and the email domain ↔ agency mapping.
+  const [clients, setClients] = useState<Client[]>([]);
+  const [mapping, setMapping] = useState<{ agencyDomains: Record<string, string[]>; companyDomains: string[] }>({
+    agencyDomains: {},
+    companyDomains: [],
+  });
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -100,10 +111,12 @@ export default function AdminDashboardAccessPage() {
       setSaved(c);
       if (!dirtyRef.current) setConfig(c);
     });
-    Promise.all([fetchUsers(), fetchAllGrants()])
-      .then(([u, g]) => {
+    Promise.all([fetchUsers(), fetchAllGrants(), fetchAccessibleClients(null, true), fetchAgencies(), fetchCompanyDomains()])
+      .then(([u, g, c, agencies, companyDomains]) => {
         setUsers(u);
         setGrants(g);
+        setClients(c);
+        setMapping({ agencyDomains: Object.fromEntries(agencies.map((a) => [a.name, a.domains ?? []])), companyDomains });
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load grants."));
     return () => unsub();
@@ -116,17 +129,35 @@ export default function AdminDashboardAccessPage() {
     []
   );
 
-  /** Every grant to a new Google Sheet (one row per person per tab). */
+  /**
+   * The access report to a new Google Sheet: Summary (one row per person —
+   * what they see on each tab and why), Dashboard grants and Client access
+   * (editable; Import reads them back) and Grant clients (each grant's
+   * clients). Cell text gets a leading apostrophe so ids stay text.
+   */
   async function exportGrants() {
     setExporting(true);
     setSaveError(null);
     setExportedUrl(null);
     try {
-      const url = await exportToNewSheet({
-        title: `Dashboard access — ${new Date().toISOString().slice(0, 10)}`,
-        sheetTitle: "Dashboard access",
-        matrix: buildGrantSheet(grants ?? [], names, tabLabels),
-        dropdowns: { Tab: Object.values(tabLabels), "Can edit": ["Yes", "No"] },
+      const asText = (table: string[][]) => table.map((row, r) => (r === 0 ? row : row.map((v) => (v ? `'${v}` : v))));
+      const input = {
+        users,
+        clients,
+        grants: grants ?? [],
+        agencyDomains: mapping.agencyDomains,
+        companyDomains: mapping.companyDomains,
+        dashboardAccess: config,
+        tabLabels,
+      };
+      const url = await exportToNewSheetWithTabs({
+        title: `Access report — ${new Date().toISOString().slice(0, 10)}`,
+        tabs: [
+          { sheetTitle: REPORT_TABS.summary, matrix: buildAccessSummary(input) },
+          { sheetTitle: REPORT_TABS.grants, matrix: buildGrantSheet(grants ?? [], names, tabLabels) },
+          { sheetTitle: REPORT_TABS.clientAccess, matrix: asText(buildTeamSheet(clients)) },
+          { sheetTitle: REPORT_TABS.grantClients, matrix: asText(buildGrantClients(input)) },
+        ],
       });
       setExportedUrl(url);
     } catch (err) {
@@ -217,9 +248,9 @@ export default function AdminDashboardAccessPage() {
                 <button
                   type="button"
                   onClick={() => void exportGrants()}
-                  disabled={grants === null || exporting}
+                  disabled={grants === null || clients.length === 0 || exporting}
                   className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
-                  title="Everyone given access, to a new Google Sheet: Email, Name, Tab, Agencies, Regions, Can edit"
+                  title="Access report to a new Google Sheet: who sees what and why, grants, client access"
                 >
                   {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                   Export
@@ -232,7 +263,7 @@ export default function AdminDashboardAccessPage() {
                   }}
                   disabled={grants === null}
                   className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
-                  title="Apply an edited access sheet (review first)"
+                  title="Apply an edited access report — Dashboard grants + Client access (review first)"
                 >
                   <Upload size={14} />
                   Import
@@ -299,7 +330,7 @@ export default function AdminDashboardAccessPage() {
               <div className="flex items-center justify-between gap-3 bg-green-500 text-white px-4 py-3 text-sm">
                 <span className="flex items-center gap-2">
                   <FileSpreadsheet size={15} />
-                  Dashboard access exported to a new Google Sheet in your Drive.
+                  Access report exported to a new Google Sheet in your Drive.
                 </span>
                 <span className="flex items-center gap-3 flex-shrink-0">
                   <a href={exportedUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 font-medium underline underline-offset-2">
@@ -424,19 +455,33 @@ export default function AdminDashboardAccessPage() {
       {importOpen && grants && (
         <GrantSheetImportModal
           current={grants}
+          clients={clients}
           userEmails={userEmails}
           tabLabels={tabLabels}
           updatedBy={myEmail}
           onClose={() => setImportOpen(false)}
-          onApplied={(changes) => {
+          onApplied={(changes, teamChanges) => {
             const byEmail = new Map(changes.map((c) => [c.email, c.tabs]));
             setGrants((prev) => {
               const kept = (prev ?? []).filter((g) => !byEmail.has(g.email));
               const updated = changes.filter((c) => Object.keys(c.tabs).length).map((c) => ({ email: c.email, tabs: c.tabs }));
               return [...kept, ...updated];
             });
+            const byClient = new Map(teamChanges.map((c) => [c.cl_id, c]));
+            setClients((prev) =>
+              prev.map((c) => {
+                const ch = byClient.get(c.cl_id);
+                return ch
+                  ? { ...c, CL_Business_Lead: ch.CL_Business_Lead, CL_Digital_Lead: ch.CL_Digital_Lead, CL_Collaborators: ch.CL_Collaborators, CL_Team_Emails: ch.CL_Team_Emails }
+                  : c;
+              })
+            );
             setImportOpen(false);
-            setNotice(`Import applied — access updated for ${changes.length} ${changes.length === 1 ? "person" : "people"}.`);
+            const parts = [
+              changes.length ? `dashboard grants for ${changes.length} ${changes.length === 1 ? "person" : "people"}` : "",
+              teamChanges.length ? `${teamChanges.length} client team${teamChanges.length === 1 ? "" : "s"}` : "",
+            ].filter(Boolean);
+            setNotice(`Import applied — updated ${parts.join(" and ")}.`);
           }}
         />
       )}
