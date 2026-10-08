@@ -15,7 +15,7 @@ import StrategyKpisSection from "../sections/strategy-kpis-section";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
 import ChartCard from "../../dashboard/charts/chart-card";
 import DonutChart from "../../dashboard/charts/donut-chart";
-import { MEDIA_TYPE_COLORS } from "../../dashboard/charts/colors";
+import { CATEGORICAL_COLORS } from "../../dashboard/charts/colors";
 import { useScopeProductRevenue } from "../../../lib/dashboard/data/use-scope-product-revenue";
 import { computeProductRevenue } from "../sections/product-revenue-data";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
@@ -24,7 +24,7 @@ import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { formatCompactMoney, formatPct } from "../../dashboard/charts/format";
 import { sumMonthlyMap } from "../../../lib/types/common.types";
-import { computeVariance, MEDIA_TYPE_LABELS } from "../../../lib/types/forecaster.types";
+import { computeVariance } from "../../../lib/types/forecaster.types";
 import type { Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 import type { ScopeMediaboxData } from "../../../lib/dashboard/data/use-scope-mediabox-totals";
@@ -120,14 +120,18 @@ export default function ExecSummaryTab({
   const channels = media.byChannel.filter((c) => c.annual > 0);
   const streams = revenue.byStream.filter((s) => s.annual > 0);
 
-  // Labs spend by media channel (mirrors Channel mix).
-  const labsSegments = labs.byType
-    .filter((t) => t.labsAnnual > 0)
-    .map((t) => ({
-      label: MEDIA_TYPE_LABELS[t.mediaType],
-      value: t.labsAnnual,
-      color: MEDIA_TYPE_COLORS[t.mediaType],
-    }));
+  // Labs spend by Labs partner (Billups, …): the Labs rows are entered per
+  // partner, so sum each partner across the clients in view (the focused
+  // client when one is selected).
+  const labsByPartner = new Map<string, number>();
+  for (const r of shown.labsDetail) {
+    labsByPartner.set(r.partnerName, (labsByPartner.get(r.partnerName) ?? 0) + r.total);
+  }
+  const labsSegments = [...labsByPartner.entries()]
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, value], i) => ({ label, value, color: CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length] }));
+  const labsPartnerTotal = labsSegments.reduce((acc, s) => acc + s.value, 0);
 
   // Product revenue by product (mirrors Revenue mix). Reads per-product BL
   // revenue for the scope; narrows to the focused client like the other charts.
@@ -259,11 +263,11 @@ export default function ExecSummaryTab({
           )}
         </ChartCard>
 
-        <ChartCard title="Labs spend" subtitle="Annual BL Labs spend by channel" icon={FlaskConical}>
+        <ChartCard title="Labs spend" subtitle="Annual BL Labs spend by Labs partner" icon={FlaskConical}>
           {labsSegments.length > 0 ? (
             <DonutChart
               segments={labsSegments}
-              centerValue={formatCompactMoney(labs.totalLabs)}
+              centerValue={formatCompactMoney(labsPartnerTotal)}
               centerLabel="Labs"
               valueFormat={formatCompactMoney}
             />
