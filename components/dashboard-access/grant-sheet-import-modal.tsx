@@ -35,6 +35,7 @@ import { applyTeamSheetChanges } from "../../lib/services/team-access-service";
 
 /** Tab names of the access report (Export) — keep in sync with the page. */
 export const REPORT_TABS = {
+  allAccess: "All access",
   summary: "Summary",
   grants: "Dashboard grants",
   clientAccess: "Client access",
@@ -177,8 +178,8 @@ export default function GrantSheetImportModal({
                 />
                 <ul className="text-xs text-gray-500 mt-2 space-y-1 list-disc pl-4">
                   <li>
-                    Start from <strong>Export</strong>. Two tabs are imported; the others (Summary, Grant clients) are a
-                    read-only report.
+                    Start from <strong>Export</strong>. Two tabs are imported; the others (All access, Summary, Grant
+                    clients) are a read-only report.
                   </li>
                   <li>
                     <strong>{REPORT_TABS.grants}</strong> — one row per person per tab; Agencies / Regions are{" "}
