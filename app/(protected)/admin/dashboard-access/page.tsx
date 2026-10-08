@@ -2,45 +2,64 @@
 "use client";
 
 /**
- * Admin → Dashboard Access — who opens each dashboard and which clients it
- * shows them. Per grantable dashboard (everything except Forecaster): grants
- * (email domains and/or people). Labs Pacing, Exec KPI and MediaBox show each
- * person their allocated clients (CLIENT_SCOPED_DASHBOARDS); Mediaocean and
- * Reports also have a mode (Global = every client, Agency = the clients of the
- * person's agencies, from their email domain). Admins always see everything.
- * The Forecaster dashboard follows client teams and is not grantable. Sub-tabs can be hidden from everyone but admins (work-in-progress
- * pages). Stored in config/dashboard_access (dashboard-access-service.ts);
- * resolution logic in lib/format/access.ts, mirrored by the security rules.
+ * Admin → Access → Dashboard Access. Per dashboard tab:
+ *   - who sees it by default (client teams / every company email for its own
+ *     agency / nobody) — fixed rules, see lib/format/access.ts;
+ *   - whether it (and each sub-tab) is visible to non-admins at all
+ *     (config/dashboard_access, saved with Save / Discard);
+ *   - the people granted it, each with a scope: agencies × regions, read-only
+ *     (Forecaster: optionally edit) — dashboard_grants/{email}, saved at once.
+ * The Agencies & Domains tab edits the email domain ↔ agency mapping that the
+ * defaults read. Admins always see every tab and client.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Building2, LayoutDashboard, Loader2, Plus, Save, Undo2, X } from "lucide-react";
-import { isClientScopedDashboard } from "../../../../lib/format/access";
+import {
+  Building2,
+  Briefcase,
+  Eye,
+  EyeOff,
+  LayoutDashboard,
+  Loader2,
+  Pencil,
+  Save,
+  Trash2,
+  Undo2,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import PageHeader from "../../../../components/_shared/page-header";
 import AgenciesPanel from "../../../../components/agencies/agencies-panel";
-import { TeamMemberMultiSelect } from "../../../../components/clients/team-member-picker";
+import GrantEditor from "../../../../components/dashboard-access/grant-editor";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import {
   saveDashboardAccess,
   subscribeToDashboardAccess,
 } from "../../../../lib/services/dashboard-access-service";
+import { fetchAllGrants, saveGrant } from "../../../../lib/services/dashboard-grants-service";
 import { fetchUsers, type UserProfile } from "../../../../lib/services/user-service";
-import { fetchAgencies, fetchCompanyDomains } from "../../../../lib/services/agency-service";
 import { DASHBOARD_PAGES } from "../../../../components/forecaster/dashboard-pages.config";
-import { normalizeDashboardAccess } from "../../../../lib/format/access";
-import { normalizeDomain } from "../../../../lib/format/email";
+import { grantScopeLabel, normalizeDashboardAccess } from "../../../../lib/format/access";
+import { nameFromEmail } from "../../../../lib/format/email";
 import {
-  GRANTABLE_DASHBOARDS,
+  AGENCY_DEFAULT_TABS,
   type DashboardAccessConfig,
-  type DashboardMode,
-  type GrantableDashboardId,
+  type DashboardGrantDoc,
+  type DashboardTabId,
+  type GrantScope,
 } from "../../../../lib/types/access.types";
 
-const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+/** Who sees each tab without a grant. */
+function defaultAccess(tab: DashboardTabId): { icon: React.ReactNode; text: string } {
+  if (tab === "forecaster") return { icon: <Briefcase size={13} />, text: "Client teams — their own clients" };
+  if (AGENCY_DEFAULT_TABS.includes(tab))
+    return { icon: <Building2 size={13} />, text: "Everyone — their own agency (Plus Company emails: all agencies)" };
+  return { icon: <Users size={13} />, text: "Nobody — only the people below" };
+}
 
 export default function AdminDashboardAccessPage() {
-  const { isAdmin, loading: profileLoading } = useUserProfile();
+  const { isAdmin, email: myEmail, loading: profileLoading } = useUserProfile();
   const router = useRouter();
 
   useEffect(() => {
@@ -50,8 +69,8 @@ export default function AdminDashboardAccessPage() {
   const [config, setConfig] = useState<DashboardAccessConfig>(() => normalizeDashboardAccess(null));
   const [saved, setSaved] = useState<DashboardAccessConfig | null>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  // domain → label ("Cossette Media", "All agencies") for suggestions and chips.
-  const [knownDomains, setKnownDomains] = useState<Map<string, string>>(new Map());
+  const [grants, setGrants] = useState<DashboardGrantDoc[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -59,6 +78,9 @@ export default function AdminDashboardAccessPage() {
   // at subscribe time would always be false and remote updates would overwrite
   // unsaved edits).
   const dirtyRef = useRef(false);
+  // Dashboards | Agencies & Domains (the agency ↔ domain mapping).
+  const [tab, setTab] = useState<"dashboards" | "agencies">("dashboards");
+  const [editing, setEditing] = useState<{ tab: DashboardTabId; label: string; email?: string } | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -66,30 +88,44 @@ export default function AdminDashboardAccessPage() {
       setSaved(c);
       if (!dirtyRef.current) setConfig(c);
     });
-    Promise.all([fetchUsers(), fetchAgencies(), fetchCompanyDomains()])
-      .then(([u, agencies, company]) => {
+    Promise.all([fetchUsers(), fetchAllGrants()])
+      .then(([u, g]) => {
         setUsers(u);
-        const m = new Map<string, string>();
-        for (const a of agencies) for (const d of a.domains ?? []) m.set(d, m.has(d) ? `${m.get(d)}, ${a.name}` : a.name);
-        for (const d of company) m.set(normalizeDomain(d), "All agencies (company-wide)");
-        setKnownDomains(m);
+        setGrants(g);
       })
-      .catch((err) => console.error("Failed to load users / agencies:", err));
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load grants."));
     return () => unsub();
   }, [isAdmin]);
+
+  const names = useMemo(() => new Map(users.map((u) => [u.email, u.displayName])), [users]);
+  const nameOf = (e: string) => names.get(e) || nameFromEmail(e);
+
+  /** Per tab: the people granted it. */
+  const byTab = useMemo(() => {
+    const m = new Map<DashboardTabId, { email: string; scope: GrantScope }[]>();
+    for (const g of grants ?? []) {
+      for (const [t, scope] of Object.entries(g.tabs) as [DashboardTabId, GrantScope][]) {
+        if (!m.has(t)) m.set(t, []);
+        m.get(t)!.push({ email: g.email, scope });
+      }
+    }
+    for (const list of m.values()) list.sort((a, b) => nameOf(a.email).localeCompare(nameOf(b.email)));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grants, names]);
+
+  // ─── Visibility (Save / Discard) ────────────────────────────────────────────
 
   const update = (next: DashboardAccessConfig) => {
     dirtyRef.current = true;
     setDirty(true);
     setConfig(next);
   };
-  const setGrant = (id: GrantableDashboardId, patch: Partial<DashboardAccessConfig["dashboards"][GrantableDashboardId]>) =>
-    update({ ...config, dashboards: { ...config.dashboards, [id]: { ...config.dashboards[id], ...patch } } });
-  const toggleSubtab = (pageId: string) => {
-    const hidden = new Set(config.hiddenSubtabs);
-    if (hidden.has(pageId)) hidden.delete(pageId);
-    else hidden.add(pageId);
-    update({ ...config, hiddenSubtabs: [...hidden].sort() });
+  const toggleIn = (key: "hiddenTabs" | "hiddenSubtabs", id: string) => {
+    const hidden = new Set(config[key]);
+    if (hidden.has(id)) hidden.delete(id);
+    else hidden.add(id);
+    update({ ...config, [key]: [...hidden].sort() });
   };
 
   async function save() {
@@ -112,39 +148,55 @@ export default function AdminDashboardAccessPage() {
     setConfig(saved ?? normalizeDashboardAccess(null));
   }
 
-  // Dashboards | Agencies & Domains (the agency ↔ domain mapping).
-  const [tab, setTab] = useState<"dashboards" | "agencies">("dashboards");
+  // ─── Grants (saved at once) ─────────────────────────────────────────────────
+
+  async function setGrantScope(email: string, t: DashboardTabId, scope: GrantScope | null) {
+    const current = grants?.find((g) => g.email === email)?.tabs ?? {};
+    const tabs = { ...current };
+    if (scope) tabs[t] = scope;
+    else delete tabs[t];
+    await saveGrant(email, tabs, myEmail);
+    setGrants((prev) => {
+      const rest = (prev ?? []).filter((g) => g.email !== email);
+      return Object.keys(tabs).length ? [...rest, { email, tabs }] : rest;
+    });
+  }
 
   if (profileLoading || !isAdmin) return null;
+
+  const editingScope = editing?.email
+    ? grants?.find((g) => g.email === editing.email)?.tabs[editing.tab]
+    : undefined;
 
   return (
     <div className="flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col bg-muted">
       <header className="sticky top-14 lg:top-0 z-20 bg-white">
         <PageHeader
           title="Dashboard Access"
-          description="Who opens each dashboard. Most dashboards show each person their allocated clients; Mediaocean and Reports show their agency (or every client in Global mode). Admins see everything."
+          description="Who sees each dashboard tab, and which clients. Admins always see everything."
           actions={
             tab === "dashboards" && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={discard}
-                disabled={!dirty || saving}
-                className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
-              >
-                <Undo2 size={14} />
-                Discard
-              </button>
-              <button
-                type="button"
-                onClick={() => void save()}
-                disabled={!dirty || saving}
-                className="flex items-center gap-1.5 border border-gray-900 bg-gray-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-40"
-              >
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Save
-              </button>
-            </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={discard}
+                  disabled={!dirty || saving}
+                  className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                >
+                  <Undo2 size={14} />
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void save()}
+                  disabled={!dirty || saving}
+                  className="flex items-center gap-1.5 border border-gray-900 bg-gray-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-40"
+                  title="Saves tab / sub-tab visibility. People are saved as you add them."
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Save
+                </button>
+              </div>
             )
           }
         />
@@ -174,211 +226,176 @@ export default function AdminDashboardAccessPage() {
         {tab === "agencies" ? (
           <>
             <p className="text-xs text-gray-500 max-w-xl">
-              The domain ↔ agency mapping decides a person&apos;s agency on Mediaocean and Reports
-              in Agency mode. It is read live — changes apply to everyone at once.
+              The email domain ↔ agency mapping decides which agency&apos;s data each person sees by
+              default on Media Investments, Labs Pacing and Reports. Company-wide domains see every
+              agency. It is read live — changes apply to everyone at once.
             </p>
             <AgenciesPanel />
           </>
         ) : (
-        <>
-        {saveError && (
-          <div className="border border-red-500 bg-red-500 px-4 py-2 text-sm text-white">
-            Couldn&apos;t save: {saveError}
-          </div>
-        )}
-        {saved === null ? (
-          <div className="flex h-64 items-center justify-center text-gray-400">
-            <Loader2 size={20} className="animate-spin" />
-          </div>
-        ) : (
-          DASHBOARD_PAGES.map((page) => {
-            const grantable = (GRANTABLE_DASHBOARDS as readonly string[]).includes(page.id);
-            const id = page.id as GrantableDashboardId;
-            const byTeam = grantable && isClientScopedDashboard(id);
-            return (
-              <section key={page.id} className="border border-gray-200 bg-white">
-                <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
-                  <h2 className="font-semibold text-gray-900">{page.label}</h2>
-                  {byTeam ? (
-                    <span className="text-xs text-gray-500">Shows each person&apos;s allocated clients</span>
-                  ) : grantable ? (
-                    <ModeSwitch value={config.dashboards[id].mode} onChange={(mode) => setGrant(id, { mode })} />
-                  ) : (
-                    <span className="text-xs text-gray-500">Client-team members and admins</span>
-                  )}
-                </div>
-
-                {grantable && (
-                  <div className="grid gap-4 px-4 py-4 md:grid-cols-2">
-                    <div>
-                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                        Email domains
-                      </p>
-                      <DomainList
-                        value={config.dashboards[id].domains}
-                        onChange={(domains) => setGrant(id, { domains })}
-                        known={knownDomains}
-                      />
+          <>
+            {(saveError || loadError) && (
+              <div className="border border-red-500 bg-red-500 px-4 py-2 text-sm text-white">
+                {saveError ? `Couldn't save: ${saveError}` : loadError}
+              </div>
+            )}
+            {saved === null || grants === null ? (
+              <div className="flex h-64 items-center justify-center text-gray-400">
+                <Loader2 size={20} className="animate-spin" />
+              </div>
+            ) : (
+              DASHBOARD_PAGES.map((page) => {
+                const id = page.id as DashboardTabId;
+                const hiddenTab = config.hiddenTabs.includes(id);
+                const def = defaultAccess(id);
+                const people = byTab.get(id) ?? [];
+                return (
+                  <section key={id} className={`border border-gray-200 bg-white ${hiddenTab ? "opacity-70" : ""}`}>
+                    <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+                      <div className="min-w-0">
+                        <h2 className="font-semibold text-gray-900">{page.label}</h2>
+                        <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+                          {def.icon}
+                          {def.text}
+                        </p>
+                      </div>
+                      <VisibilityToggle hidden={hiddenTab} onToggle={() => toggleIn("hiddenTabs", id)} />
                     </div>
-                    <div>
-                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">People</p>
-                      <TeamMemberMultiSelect
-                        value={config.dashboards[id].users}
-                        onChange={(emails) => setGrant(id, { users: emails })}
-                        users={users}
-                        placeholder="Add a person…"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 md:col-span-2">
-                      {byTeam
-                        ? "Everyone granted opens it and sees the clients they are allocated to (Access → Forecast Access)."
-                        : config.dashboards[id].mode === "GLOBAL"
-                        ? "Global: everyone granted sees every client."
-                        : "Agency: everyone granted sees the clients of their agency (from their email domain; company-wide domains see every agency)."}{" "}
-                      {config.dashboards[id].domains.length === 0 && config.dashboards[id].users.length === 0 &&
-                        "Nobody is granted yet — only admins see it."}
-                    </p>
-                  </div>
-                )}
 
-                {page.children.length > 0 && (
-                  <div className="border-t border-gray-100 px-4 py-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Sub-tabs</p>
-                    <ul className="grid gap-1.5 sm:grid-cols-2">
-                      {page.children.map((child) => {
-                        const visible = !config.hiddenSubtabs.includes(child.id);
-                        return (
-                          <li key={child.id} className="flex items-center justify-between gap-3 text-sm">
-                            <span className={visible ? "text-gray-800" : "text-gray-400"}>{child.label}</span>
-                            <button
-                              type="button"
-                              onClick={() => toggleSubtab(child.id)}
-                              className={`px-2 py-0.5 text-[11px] font-semibold ${
-                                visible ? "bg-green-500 text-white" : "bg-gray-200 text-gray-600"
-                              }`}
-                              title={visible ? "Hide from everyone but admins" : "Show to everyone who sees the dashboard"}
-                            >
-                              {visible ? "Visible" : "Admins only"}
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
-              </section>
-            );
-          })
-        )}
-        <p className="text-[11px] text-gray-400">
-          Granting a dashboard also lets those people read the data it shows (read-only — editing
-          still requires being on the client&apos;s team). The security rules enforce the same model.
-        </p>
-        </>
+                    {/* Granted people */}
+                    <div className="px-4 py-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          People given access{people.length ? ` (${people.length})` : ""}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setEditing({ tab: id, label: page.label })}
+                          className="flex items-center gap-1.5 border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-gray-900"
+                        >
+                          <UserPlus size={13} />
+                          Add person
+                        </button>
+                      </div>
+                      {people.length === 0 ? (
+                        <p className="text-xs text-gray-400">Nobody yet.</p>
+                      ) : (
+                        <ul className="divide-y divide-gray-100 border border-gray-100">
+                          {people.map(({ email, scope }) => (
+                            <li key={email} className="flex items-center gap-3 px-3 py-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-gray-900 truncate">{nameOf(email)}</p>
+                                <p className="text-[11px] text-gray-400 truncate">{email}</p>
+                              </div>
+                              <span className="text-xs text-gray-600 text-right">{grantScopeLabel(scope)}</span>
+                              <button
+                                onClick={() => setEditing({ tab: id, label: page.label, email })}
+                                className="p-1 text-gray-400 hover:text-gray-900"
+                                title="Change scope"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <RemoveButton onConfirm={() => setGrantScope(email, id, null)} />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    {/* Sub-tabs */}
+                    {page.children.length > 0 && (
+                      <div className="border-t border-gray-100 px-4 py-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Sub-tabs</p>
+                        <ul className="grid gap-1.5 sm:grid-cols-2">
+                          {page.children.map((child) => {
+                            const visible = !config.hiddenSubtabs.includes(child.id);
+                            return (
+                              <li key={child.id} className="flex items-center justify-between gap-3 text-sm">
+                                <span className={visible ? "text-gray-800" : "text-gray-400"}>{child.label}</span>
+                                <VisibilityToggle
+                                  small
+                                  hidden={!visible}
+                                  onToggle={() => toggleIn("hiddenSubtabs", child.id)}
+                                />
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                  </section>
+                );
+              })
+            )}
+            <p className="text-[11px] text-gray-400">
+              Hidden tabs and sub-tabs disappear for everyone but admins. Access to data is enforced
+              by the security rules with the same model; grants are view-only unless &ldquo;can
+              edit&rdquo; is set on Forecaster.
+            </p>
+          </>
         )}
       </main>
-    </div>
-  );
-}
 
-function ModeSwitch({ value, onChange }: { value: DashboardMode; onChange: (m: DashboardMode) => void }) {
-  const options: { mode: DashboardMode; label: string; icon: React.ReactNode }[] = [
-    { mode: "AGENCY", label: "Agency", icon: <Building2 size={13} /> },
-    { mode: "GLOBAL", label: "Global", icon: <Globe size={13} /> },
-  ];
-  return (
-    <div className="inline-flex border border-gray-200">
-      {options.map((o) => (
-        <button
-          key={o.mode}
-          type="button"
-          onClick={() => onChange(o.mode)}
-          className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold ${
-            value === o.mode ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
-          }`}
-        >
-          {o.icon}
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function DomainList({
-  value,
-  onChange,
-  known,
-}: {
-  value: string[];
-  onChange: (domains: string[]) => void;
-  known: Map<string, string>;
-}) {
-  const [input, setInput] = useState("");
-  const listId = useId();
-  const domain = normalizeDomain(input);
-  const valid = DOMAIN_RE.test(domain) && !value.includes(domain);
-  const suggestions = useMemo(
-    () => [...known.keys()].filter((d) => !value.includes(d)).sort(),
-    [known, value]
-  );
-
-  const add = (d: string) => {
-    onChange([...value, d].sort());
-    setInput("");
-  };
-
-  return (
-    <div className="space-y-2">
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {value.map((d) => (
-            <span key={d} className="inline-flex items-center gap-1.5 bg-gray-100 px-2 py-1 text-xs text-gray-800">
-              @{d}
-              {known.has(d) && <span className="text-gray-500">· {known.get(d)}</span>}
-              <button
-                type="button"
-                onClick={() => onChange(value.filter((x) => x !== d))}
-                className="text-gray-400 hover:text-gray-900"
-                title="Remove"
-              >
-                <X size={12} />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (valid) add(domain);
-        }}
-        className="flex gap-2"
-      >
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="e.g. cossettemedia.com"
-          list={listId}
-          className="min-w-0 flex-1 border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
+      {editing && (
+        <GrantEditor
+          key={`${editing.tab}-${editing.email ?? "new"}`}
+          tab={editing.tab}
+          tabLabel={editing.label}
+          email={editing.email}
+          scope={editingScope}
+          users={users}
+          taken={new Set((byTab.get(editing.tab) ?? []).map((p) => p.email))}
+          onClose={() => setEditing(null)}
+          onSave={async (email, scope) => {
+            await setGrantScope(email, editing.tab, scope);
+            setEditing(null);
+          }}
         />
-        <button
-          type="submit"
-          disabled={!valid}
-          className="flex items-center gap-1 bg-yellow-400 px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-yellow-300 disabled:opacity-40"
-        >
-          <Plus size={13} />
-          Add
-        </button>
-      </form>
-      <datalist id={listId}>
-        {suggestions.map((d) => (
-          <option key={d} value={d}>
-            {known.get(d)}
-          </option>
-        ))}
-      </datalist>
+      )}
     </div>
+  );
+}
+
+function VisibilityToggle({ hidden, onToggle, small }: { hidden: boolean; onToggle: () => void; small?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={hidden ? "Show to everyone who has access" : "Hide from everyone but admins"}
+      className={`flex flex-shrink-0 items-center gap-1 font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs"} ${
+        hidden ? "bg-gray-200 text-gray-600" : "bg-green-500 text-white"
+      }`}
+    >
+      {hidden ? <EyeOff size={small ? 11 : 13} /> : <Eye size={small ? 11 : 13} />}
+      {hidden ? "Hidden" : "Visible"}
+    </button>
+  );
+}
+
+function RemoveButton({ onConfirm }: { onConfirm: () => Promise<void> }) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (busy) return <Loader2 size={14} className="animate-spin text-gray-400" />;
+  return armed ? (
+    <button
+      autoFocus
+      onBlur={() => setArmed(false)}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await onConfirm();
+        } finally {
+          setBusy(false);
+          setArmed(false);
+        }
+      }}
+      className="px-2 py-0.5 text-[11px] font-semibold bg-red-500 text-white"
+    >
+      Remove?
+    </button>
+  ) : (
+    <button onClick={() => setArmed(true)} className="p-1 text-gray-300 hover:text-red-500" title="Remove access">
+      <Trash2 size={14} />
+    </button>
   );
 }

@@ -40,6 +40,7 @@ import {
 } from "../../lib/services/client-service";
 import { canWriteClient } from "../../lib/services/assignment-service";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import { useAccess } from "../../lib/hooks/use-access";
 import { triggerMediaboxRefresh } from "../../lib/services/mediabox-totals-service";
 import { fetchUsers, type UserProfile } from "../../lib/services/user-service";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
@@ -141,11 +142,12 @@ export default function ClientDrawer({
   // Year used when a MediaBox-IDs change triggers a totals refresh.
   const { selectedYear } = useForecastSelection();
   const { profile } = useUserProfile();
+  const { editGrant } = useAccess();
 
   // Labs eligibility is editable by anyone who may write this client — its
   // team and admins — mirroring the Firestore canWriteClient rule. Other
   // fields (the team included) stay admin-only.
-  const canEditEligibility = !!client && canWriteClient(client, profile, isAdmin);
+  const canEditEligibility = !!client && canWriteClient(client, profile, isAdmin, editGrant);
 
   const [form, setForm] = useState<ClientFormData>(EMPTY_FORM);
   const [gaiaInput, setGaiaInput] = useState("");

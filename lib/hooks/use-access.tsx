@@ -4,14 +4,13 @@
 /**
  * The signed-in person's access, resolved once for the protected shell — see
  * lib/format/access.ts:
- *   - `hasTeamSpaces`: admin or on ≥1 client team → Forecast, Flags,
- *     Milestones, Clients and the Forecaster dashboard;
- *   - `openDashboards`: the grantable dashboards opened to them;
+ *   - `hasTeamSpaces`: admin, on ≥1 client team, or a Forecaster edit grant
+ *     → Forecast, Flags, Milestones, Clients;
+ *   - `openTabs`: the dashboard tabs they see (hidden ones dropped);
  *   - `hasAnyAccess`: either of the above (else "Access pending");
- *   - `teamClientIds`: the clients they are allocated to — what the Forecaster
- *     dashboard and the client-scoped dashboards (CLIENT_SCOPED_DASHBOARDS) show;
- *   - `ctx` / `scopeFor` / `readable`: the agency scope of agency-partitioned
- *     data (Mediaocean, Reports), and the union the rules let them read.
+ *   - `tabCovers` / `tabAgencyScope`: which clients and agency-tagged data
+ *     each tab shows; `readable` / `readableQueries`: what the rules let them
+ *     read; `editGrant` / `editQueries`: the clients a grant lets them edit.
  * Presentation only — the security rules enforce the same model.
  */
 
@@ -19,35 +18,59 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useUserProfile } from "./use-user-profile";
 import { fetchAccessibleClients } from "../services/assignment-service";
 import { subscribeToDashboardAccess } from "../services/dashboard-access-service";
+import { subscribeToMyGrants } from "../services/dashboard-grants-service";
 import { fetchAgencies, fetchCompanyDomains } from "../services/agency-service";
 import {
-  dashboardScope,
-  hiddenSubtabsFor,
+  canOpenTeamSpaces,
+  editableClientQueries,
+  editGrant as resolveEditGrant,
+  hiddenPagesFor,
   normalizeDashboardAccess,
-  openDashboards as resolveOpenDashboards,
-  readableScope,
+  openTabs as resolveOpenTabs,
+  readableAgencyScope,
+  readableClientQueries,
+  tabAgencyScope,
+  tabCoversClient,
   type AccessContext as AccessCtx,
+  type ClientQuerySpec,
   type DashboardScope,
 } from "../format/access";
-import type { DashboardAccessConfig, GrantableDashboardId } from "../types/access.types";
+import type {
+  DashboardAccessConfig,
+  DashboardGrantDoc,
+  DashboardTabId,
+  GrantScope,
+} from "../types/access.types";
+import type { Client } from "../types/client.types";
 
 interface AccessState {
   loading: boolean;
   /** Clients whose team lists the person (0 for admins — they see all anyway). */
   teamClientCount: number;
-  /** Their ids (empty for admins). Client-scoped dashboards show these. */
+  /** Their ids (empty for admins). */
   teamClientIds: string[];
   dashboardAccess: DashboardAccessConfig;
-  openDashboards: GrantableDashboardId[];
+  /** The person's own grants. */
+  grants: DashboardGrantDoc["tabs"];
+  /** Dashboard tabs they see, in tab-bar order. */
+  openTabs: DashboardTabId[];
   hasTeamSpaces: boolean;
   hasAnyAccess: boolean;
   /** Everything lib/format/access.ts needs to resolve this person's access. */
   ctx: AccessCtx;
-  /** Clients dashboard `id` shows; null when it isn't open to them. */
-  scopeFor: (id: GrantableDashboardId) => DashboardScope | null;
-  /** Union of every open dashboard's scope (what the rules let them read). */
+  /** Whether a tab shows a client. */
+  tabCovers: (tab: DashboardTabId, client: Client) => boolean;
+  /** Agency-tagged data a tab shows. */
+  tabAgencyScope: (tab: DashboardTabId) => DashboardScope;
+  /** Agency-tagged data they may read on any tab. */
   readable: DashboardScope;
-  /** Sub-tab page ids hidden for them (none for admins). */
+  /** `clients` queries (beyond the team's) loading everything they may read. */
+  readableQueries: ClientQuerySpec[];
+  /** The Forecaster grant that lets them edit, if any. */
+  editGrant: GrantScope | null;
+  /** `clients` queries for that grant (beyond the team's). */
+  editQueries: ClientQuerySpec[];
+  /** Tab and sub-tab page ids hidden for them (none for admins). */
   hiddenSubtabs: ReadonlySet<string>;
 }
 
@@ -62,6 +85,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   const { profile, isAdmin, email, loading: profileLoading } = useUserProfile();
   const disabled = !!profile?.disabled;
   const [config, setConfig] = useState<DashboardAccessConfig | null>(null);
+  const [grants, setGrants] = useState<{ email: string; tabs: DashboardGrantDoc["tabs"] } | null>(null);
   const [team, setTeam] = useState<{ email: string; ids: string[] } | null>(null);
   const [mapping, setMapping] = useState<AgencyMapping | null>(null);
 
@@ -71,8 +95,13 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     return subscribeToDashboardAccess(setConfig);
   }, [email]);
 
+  useEffect(() => {
+    if (!email) return;
+    return subscribeToMyGrants(email, (tabs) => setGrants({ email, tabs }));
+  }, [email]);
+
   // The agency ↔ domain mapping, read live once per session (the rules read
-  // the same docs). A failure leaves Agency-mode dashboards with no agency.
+  // the same docs). A failure leaves the person with no agency.
   useEffect(() => {
     if (!email) return;
     let cancelled = false;
@@ -111,6 +140,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AccessState>(() => {
     const dashboardAccess = config ?? normalizeDashboardAccess(null);
+    const myGrants = grants?.email === email ? grants.tabs : {};
     const teamReady = isAdmin || disabled || team?.email === email;
     const teamClientIds = team?.email === email ? team.ids : [];
     const teamClientCount = teamClientIds.length;
@@ -120,24 +150,30 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       disabled,
       agencyDomains: mapping?.agencyDomains ?? {},
       companyDomains: mapping?.companyDomains ?? [],
+      grants: myGrants,
       dashboardAccess,
     };
-    const open = resolveOpenDashboards(ctx);
-    const hasTeamSpaces = !disabled && (isAdmin || teamClientCount > 0);
+    const open = resolveOpenTabs(ctx, teamClientCount);
+    const hasTeamSpaces = canOpenTeamSpaces(ctx, teamClientCount);
     return {
-      loading: profileLoading || !config || !mapping || !teamReady,
+      loading: profileLoading || !config || !mapping || !teamReady || (!!email && grants?.email !== email),
       teamClientCount,
       teamClientIds,
       dashboardAccess,
-      openDashboards: open,
+      grants: myGrants,
+      openTabs: open,
       hasTeamSpaces,
       hasAnyAccess: hasTeamSpaces || open.length > 0,
       ctx,
-      scopeFor: (id) => dashboardScope(ctx, id),
-      readable: readableScope(ctx),
-      hiddenSubtabs: hiddenSubtabsFor(ctx),
+      tabCovers: (tab, client) => tabCoversClient(ctx, tab, client),
+      tabAgencyScope: (tab) => tabAgencyScope(ctx, tab),
+      readable: readableAgencyScope(ctx),
+      readableQueries: readableClientQueries(ctx),
+      editGrant: resolveEditGrant(ctx),
+      editQueries: editableClientQueries(ctx),
+      hiddenSubtabs: hiddenPagesFor(ctx),
     };
-  }, [config, mapping, team, email, isAdmin, disabled, profileLoading]);
+  }, [config, grants, mapping, team, email, isAdmin, disabled, profileLoading]);
 
   return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;
 }
@@ -148,25 +184,25 @@ export function useAccess(): AccessState {
   return ctx;
 }
 
-// ─── Per-dashboard scope ──────────────────────────────────────────────────────
+// ─── Per-tab scope ────────────────────────────────────────────────────────────
 
-const DashboardTabContext = createContext<GrantableDashboardId | null>(null);
+const DashboardTabContext = createContext<DashboardTabId | null>(null);
 
 /**
- * Marks the dashboard a subtree renders, so agency-partitioned data hooks
- * (useAgencyScope) read that dashboard's Global / Agency scope.
+ * Marks the dashboard tab a subtree renders, so agency-tagged data hooks
+ * (useAgencyScope, useDashboardDocScope) read that tab's scope.
  */
 export function DashboardTabScope({
   tab,
   children,
 }: {
-  tab: GrantableDashboardId | null;
+  tab: DashboardTabId | null;
   children: ReactNode;
 }) {
   return <DashboardTabContext.Provider value={tab}>{children}</DashboardTabContext.Provider>;
 }
 
-/** The dashboard id set by the nearest DashboardTabScope (null outside one). */
-export function useDashboardTab(): GrantableDashboardId | null {
+/** The tab set by the nearest DashboardTabScope (null outside one). */
+export function useDashboardTab(): DashboardTabId | null {
   return useContext(DashboardTabContext);
 }

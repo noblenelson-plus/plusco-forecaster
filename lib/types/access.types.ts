@@ -8,9 +8,8 @@
  *   - Client access comes from the client's team (CL_Team_Emails, see
  *     lib/format/client-team.ts) and gives the team spaces: Forecast, Flags,
  *     Milestones, Clients and the Forecaster dashboard.
- *   - Every other dashboard is opened by `config/dashboard_access`: per
- *     dashboard a mode (GLOBAL = all clients, AGENCY = the viewer's agencies)
- *     and grants (email domains and/or people).
+ *   - Dashboard tabs: defaults by email domain and client team, plus
+ *     per-person grants (`dashboard_grants/{email}`) — see DASHBOARD_TABS.
  *
  * Imported directly (not via the lib/types barrel) while the legacy
  * user.types.ts model still exists; the names differ from it on purpose.
@@ -47,10 +46,29 @@ export interface UserRecord {
 // ─── Dashboard access ─────────────────────────────────────────────────────────
 
 /**
- * Dashboards opened by `config/dashboard_access`. The Forecaster dashboard is
- * not one of them: it follows the client team (team members + admins).
- * Ids match FORECASTER_TABS in components/forecaster/forecaster-tabs.config.ts.
+ * The six dashboard tabs, in tab-bar order. Ids match FORECASTER_TABS in
+ * components/forecaster/forecaster-tabs.config.ts.
+ *
+ * Who sees a tab (lib/format/access.ts; mirrored by the security rules):
+ *   - Forecaster: client-team members (their clients) + people granted it.
+ *   - Media Investments, Labs Pacing, Reports (AGENCY_DEFAULT_TABS): every
+ *     company email, for the agencies its domain maps to (a company-wide
+ *     domain such as pluscompany.com: every agency) + people granted it.
+ *   - Exec KPI, MediaBox Adoption: only people granted it.
+ *   - Admins: every tab, every client — hidden tabs included.
  */
+export const DASHBOARD_TABS = [
+  "forecaster",
+  "labs-pacing",
+  "exec-kpis",
+  "mediaocean",
+  "mediabox",
+  "reports",
+] as const;
+
+export type DashboardTabId = (typeof DASHBOARD_TABS)[number];
+
+/** Every tab but Forecaster (the Forecaster tab also follows client teams). */
 export const GRANTABLE_DASHBOARDS = [
   "labs-pacing",
   "exec-kpis",
@@ -61,33 +79,42 @@ export const GRANTABLE_DASHBOARDS = [
 
 export type GrantableDashboardId = (typeof GRANTABLE_DASHBOARDS)[number];
 
+/** Tabs every company email sees for its own agency, with no grant. */
+export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "labs-pacing", "reports"];
+
 /**
- * Grantable dashboards that, like the Forecaster dashboard, show each person
- * only the clients they are allocated to (their client teams; admins: all).
- * The grant only decides who opens them — their Global / Agency mode no
- * longer picks the clients. The others (Mediaocean, Reports) show
- * agency-partitioned data by mode, since their rows aren't keyed by client.
+ * A grant's scope on one tab: the clients of the chosen agencies × regions
+ * (`all…` = every one, including those added later). Being a rule rather
+ * than a client list, new clients that match are included automatically.
+ * Agency-tagged data (Media Investments, Reports) follows the agencies only.
  */
-export const CLIENT_SCOPED_DASHBOARDS: readonly GrantableDashboardId[] = [
-  "labs-pacing",
-  "exec-kpis",
-  "mediabox",
-];
-
-/** GLOBAL: every client. AGENCY: the clients of the viewer's agencies. */
-export type DashboardMode = "GLOBAL" | "AGENCY";
-
-export interface DashboardGrant {
-  mode: DashboardMode;
-  /** Lowercase email domains ("cossettemedia.com"). */
-  domains: string[];
-  /** Lowercase emails. */
-  users: string[];
+export interface GrantScope {
+  allAgencies: boolean;
+  /** CL_Agency values; used when `allAgencies` is false. */
+  agencies: string[];
+  allRegions: boolean;
+  /** CL_Business_Unit_Region values; used when `allRegions` is false. */
+  regions: string[];
+  /**
+   * Forecaster only: may also EDIT those clients in Forecast (like a client
+   * team member). Other grants are read-only.
+   */
+  edit?: boolean;
 }
 
-/** `config/dashboard_access`. */
+/** `dashboard_grants/{email}` — one doc per granted person. */
+export interface DashboardGrantDoc {
+  /** Lowercase; equal to the doc id. */
+  email: string;
+  tabs: Partial<Record<DashboardTabId, GrantScope>>;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+/** `config/dashboard_access` — what non-admins see at all. */
 export interface DashboardAccessConfig {
-  dashboards: Record<GrantableDashboardId, DashboardGrant>;
+  /** Tab ids hidden from everyone but admins. */
+  hiddenTabs: string[];
   /**
    * Sub-tab page ids ("exec-kpis/meta") hidden from everyone but admins —
    * work-in-progress pages. Any dashboard's sub-tabs, Forecaster's included.

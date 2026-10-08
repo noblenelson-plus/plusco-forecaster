@@ -40,18 +40,20 @@ export async function fetchAgencyScopedDocs(
 }
 
 /**
- * A per-client collection (doc id = client id) on the current dashboard
- * (useDashboardDocScope): the listed clients' docs one by one when
- * `clientIds` is set, else the agency-scoped read above. A missing doc, or
- * one the rules deny, is skipped rather than failing the whole read.
+ * A per-client collection (doc id = client id) on the current dashboard tab
+ * (useDashboardDocScope): the agency-scoped read above, plus the listed
+ * clients' docs one by one. A missing doc, or one the rules deny, is skipped
+ * rather than failing the whole read.
  */
 export async function fetchDashboardClientDocs(
   collectionName: string,
   { scope, clientIds }: { scope: AgencyScope; clientIds: string[] | null }
 ): Promise<DocumentSnapshot[]> {
-  if (clientIds === null) return fetchAgencyScopedDocs(collectionName, scope);
-  const results = await Promise.allSettled(
-    clientIds.map((id) => getDoc(doc(db, collectionName, id)))
-  );
-  return results.flatMap((r) => (r.status === "fulfilled" && r.value.exists() ? [r.value] : []));
+  const [byAgency, results] = await Promise.all([
+    fetchAgencyScopedDocs(collectionName, scope),
+    Promise.allSettled((clientIds ?? []).map((id) => getDoc(doc(db, collectionName, id)))),
+  ]);
+  const byId = new Map<string, DocumentSnapshot>(byAgency.map((d) => [d.id, d]));
+  for (const r of results) if (r.status === "fulfilled" && r.value.exists()) byId.set(r.value.id, r.value);
+  return [...byId.values()];
 }

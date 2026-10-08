@@ -1,38 +1,42 @@
 // lib/format/access.ts
 
 /**
- * Access resolution for the user & access rebuild, as pure functions (no
- * Firebase). This is the reference logic: firestoreRules.txt and storage.rules
- * must mirror it (isAdmin, isOnClientTeam, myAgencies, dashboard grants,
- * canReadClientData, canWriteClient) — change both together.
+ * Access resolution, as pure functions (no Firebase). This is the reference
+ * logic: firestoreRules.txt and storage.rules mirror it — change them
+ * together.
  *
- *   - Admin → everything, every client (including "_unassigned" rows).
- *   - Client team (CL_Team_Emails) → read + write that client in the team
- *     spaces (Forecast, Flags, Milestones, Clients, Forecaster dashboard).
- *   - Dashboard grant (config/dashboard_access, by email domain or person)
- *     → opens that dashboard; GLOBAL mode shows every client ("_unassigned"
- *     rows included), AGENCY mode the agencies the viewer's email domain maps
- *     to. A company-wide domain (config/company_domains) maps to every agency,
- *     but still needs a grant. Any grant also lets the person read those
- *     clients' data (readableScope) — read-only, never write.
- *   - Disabled users get nothing.
+ * A person's access comes from three sources:
+ *   1. Client team (CL_Team_Emails) — read + edit their clients; the team
+ *      spaces (Forecast, Flags, Milestones, Clients) and the Forecaster tab.
+ *   2. Email domain — every company email sees Media Investments, Labs
+ *      Pacing and Reports (AGENCY_DEFAULT_TABS) for the agencies its domain
+ *      maps to; a company-wide domain (config/company_domains, e.g.
+ *      pluscompany.com) sees every agency, like an admin.
+ *   3. Grants (dashboard_grants/{email}) — per tab, the clients of chosen
+ *      agencies × regions, read-only; a Forecaster grant may also allow
+ *      editing. Exec KPI and MediaBox Adoption are grants only.
+ *   Admins see and edit everything. Disabled users get nothing. Tabs an
+ *   admin hides (config/dashboard_access) disappear for everyone else.
  *
  * Actuals stay admin-only and the RFQ lock / closed months still apply on top
  * of canWriteClient; those checks live where they always did.
  */
 
 import {
-  GRANTABLE_DASHBOARDS,
-  CLIENT_SCOPED_DASHBOARDS,
+  AGENCY_DEFAULT_TABS,
+  DASHBOARD_TABS,
   type DashboardAccessConfig,
-  type DashboardGrant,
-  type DashboardMode,
-  type GrantableDashboardId,
+  type DashboardGrantDoc,
+  type DashboardTabId,
+  type GrantScope,
 } from "../types/access.types";
 import type { Client } from "../types/client.types";
 import { UNASSIGNED_AGENCY, scopeCoversAgency, type AgencyScope } from "./agency-scope";
 import { isOnClientTeam } from "./client-team";
-import { emailDomain, normalizeDomain, normalizeEmail, normalizeEmailList } from "./email";
+import { emailDomain, normalizeDomain } from "./email";
+
+export { scopeCoversAgency };
+export type DashboardScope = AgencyScope;
 
 /** Everything needed to resolve one person's access. */
 export interface AccessContext {
@@ -44,51 +48,63 @@ export interface AccessContext {
   agencyDomains: Record<string, string[]>;
   /** config/company_domains: domains that map to every agency. */
   companyDomains: string[];
+  /** The person's own grants (dashboard_grants/{email}.tabs). */
+  grants: DashboardGrantDoc["tabs"];
   dashboardAccess: DashboardAccessConfig;
 }
 
-/** Clients a dashboard shows: every client, or those of the listed agencies. */
-export type DashboardScope = AgencyScope;
-export { scopeCoversAgency };
+// Admins and company-wide domains also get rows the sync couldn't map to an
+// agency ("_unassigned").
+const EVERYTHING: AgencyScope = { all: true, agencies: [], includesUnassigned: true };
+const NOTHING: AgencyScope = { all: false, agencies: [], includesUnassigned: false };
 
-// GLOBAL means every row, "_unassigned" ones included (rows whose agency the
-// sync could not map). A company-wide domain in AGENCY mode gets every agency,
-// but not "_unassigned".
-const GLOBAL_SCOPE: DashboardScope = { all: true, agencies: [], includesUnassigned: true };
-const ALL_AGENCIES: DashboardScope = { all: true, agencies: [], includesUnassigned: false };
-const NO_SCOPE: DashboardScope = { all: false, agencies: [], includesUnassigned: false };
+// ─── Normalization ────────────────────────────────────────────────────────────
 
-// ─── Config normalization ─────────────────────────────────────────────────────
+const TAB_SET = new Set<string>(DASHBOARD_TABS);
 
-/** A dashboard nobody was granted: closed until an admin opens it. */
-export function closedGrant(mode: DashboardMode = "AGENCY"): DashboardGrant {
-  return { mode, domains: [], users: [] };
+/** Tolerant read of `config/dashboard_access` (older docs carried grants too). */
+export function normalizeDashboardAccess(raw: unknown): DashboardAccessConfig {
+  const doc = raw as { hiddenTabs?: unknown; hiddenSubtabs?: unknown } | null;
+  const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return {
+    hiddenTabs: [...new Set(strings(doc?.hiddenTabs).filter((t) => TAB_SET.has(t)))].sort(),
+    hiddenSubtabs: [...new Set(strings(doc?.hiddenSubtabs).filter((x) => x.includes("/")))].sort(),
+  };
 }
 
-/**
- * Tolerant read of a `config/dashboard_access` doc: unknown dashboards are
- * dropped, missing ones are closed, domains / emails are normalized.
- */
-export function normalizeDashboardAccess(raw: unknown): DashboardAccessConfig {
-  const doc = raw as {
-    dashboards?: Record<string, Partial<DashboardGrant>>;
-    hiddenSubtabs?: unknown;
-  } | null;
-  const src = doc?.dashboards ?? {};
-  const dashboards = {} as Record<GrantableDashboardId, DashboardGrant>;
-  for (const id of GRANTABLE_DASHBOARDS) {
-    const g = src[id] ?? {};
-    dashboards[id] = {
-      mode: g.mode === "GLOBAL" ? "GLOBAL" : "AGENCY",
-      domains: [...new Set((g.domains ?? []).map(normalizeDomain).filter(Boolean))].sort(),
-      users: normalizeEmailList(g.users ?? []),
-    };
+/** Tolerant read of one tab's scope; null when it covers nothing. */
+export function normalizeGrantScope(raw: unknown, tab: DashboardTabId): GrantScope | null {
+  const s = raw as Partial<GrantScope> | null;
+  if (!s || typeof s !== "object") return null;
+  const list = (v: unknown) =>
+    [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string" && !!x.trim()))].sort();
+  const scope: GrantScope = {
+    allAgencies: s.allAgencies === true,
+    agencies: s.allAgencies === true ? [] : list(s.agencies),
+    allRegions: s.allRegions === true,
+    regions: s.allRegions === true ? [] : list(s.regions),
+  };
+  if (tab === "forecaster" && s.edit === true) scope.edit = true;
+  const empty = (!scope.allAgencies && !scope.agencies.length) || (!scope.allRegions && !scope.regions.length);
+  return empty ? null : scope;
+}
+
+/** Tolerant read of a grant doc's tabs (empty scopes and unknown tabs dropped). */
+export function normalizeGrantTabs(raw: unknown): DashboardGrantDoc["tabs"] {
+  const src = (raw ?? {}) as Record<string, unknown>;
+  const out: DashboardGrantDoc["tabs"] = {};
+  for (const tab of DASHBOARD_TABS) {
+    const scope = normalizeGrantScope(src[tab], tab);
+    if (scope) out[tab] = scope;
   }
-  const hidden = Array.isArray(doc?.hiddenSubtabs) ? doc.hiddenSubtabs : [];
-  const hiddenSubtabs = [
-    ...new Set(hidden.filter((x): x is string => typeof x === "string" && x.includes("/"))),
-  ].sort();
-  return { dashboards, hiddenSubtabs };
+  return out;
+}
+
+/** "All agencies · QC/East" — for lists. */
+export function grantScopeLabel(scope: GrantScope): string {
+  const a = scope.allAgencies ? "All agencies" : scope.agencies.join(", ");
+  const r = scope.allRegions ? "all regions" : scope.regions.join(", ");
+  return `${a} · ${r}${scope.edit ? " · can edit" : ""}`;
 }
 
 // ─── Agencies ─────────────────────────────────────────────────────────────────
@@ -117,101 +133,186 @@ export function myAgencies(
   return { all: false, agencies: d ? agencies : [] };
 }
 
-// ─── Dashboards ───────────────────────────────────────────────────────────────
-
-/** The grant lists the caller's email domain or the caller. */
-export function matchesGrant(email: string, grant: DashboardGrant): boolean {
-  const e = normalizeEmail(email);
-  if (!e) return false;
-  return grant.users.includes(e) || grant.domains.includes(emailDomain(e));
-}
-
-/** True for dashboards that show only the viewer's allocated clients. */
-export function isClientScopedDashboard(id: GrantableDashboardId | null | undefined): boolean {
-  return !!id && CLIENT_SCOPED_DASHBOARDS.includes(id);
-}
-
-/** Admin, or granted on that dashboard. */
-export function canOpenDashboard(ctx: AccessContext, id: GrantableDashboardId): boolean {
-  if (ctx.disabled) return false;
-  return ctx.isAdmin || matchesGrant(ctx.email, ctx.dashboardAccess.dashboards[id]);
-}
-
-/** The clients dashboard `id` shows the caller; null when they can't open it. */
-export function dashboardScope(
-  ctx: AccessContext,
-  id: GrantableDashboardId
-): DashboardScope | null {
-  if (!canOpenDashboard(ctx, id)) return null;
-  if (ctx.isAdmin) return GLOBAL_SCOPE;
-  if (ctx.dashboardAccess.dashboards[id].mode === "GLOBAL") return GLOBAL_SCOPE;
+/** What the email domain alone shows on the agency-default tabs. */
+export function domainScope(ctx: AccessContext): AgencyScope {
   const mine = myAgencies(ctx.email, ctx.agencyDomains, ctx.companyDomains);
-  return mine.all ? ALL_AGENCIES : { all: false, agencies: mine.agencies, includesUnassigned: false };
+  if (mine.all) return EVERYTHING;
+  return { all: false, agencies: mine.agencies, includesUnassigned: false };
+}
+
+// ─── Grants ───────────────────────────────────────────────────────────────────
+
+/** Whether a grant scope covers a client (agency × region). */
+export function grantCoversClient(
+  scope: GrantScope | null | undefined,
+  client: Pick<Client, "CL_Agency" | "CL_Business_Unit_Region">
+): boolean {
+  if (!scope) return false;
+  return (
+    (scope.allAgencies || scope.agencies.includes(client.CL_Agency)) &&
+    (scope.allRegions || scope.regions.includes(client.CL_Business_Unit_Region))
+  );
+}
+
+/** The agencies a grant scope covers, for agency-tagged data (regions don't apply). */
+function grantAgencyScope(scope: GrantScope | null | undefined): AgencyScope {
+  if (!scope) return NOTHING;
+  return scope.allAgencies ? EVERYTHING : { all: false, agencies: scope.agencies, includesUnassigned: false };
+}
+
+function unionScopes(a: AgencyScope, b: AgencyScope): AgencyScope {
+  const all = a.all || b.all;
+  return {
+    all,
+    agencies: all ? [] : [...new Set([...a.agencies, ...b.agencies])].sort(),
+    includesUnassigned: a.includesUnassigned || b.includesUnassigned,
+  };
+}
+
+/** The Forecaster grant that allows editing, if any. */
+export function editGrant(ctx: AccessContext): GrantScope | null {
+  const g = ctx.grants.forecaster;
+  return g?.edit ? g : null;
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+
+/** Tab and sub-tab ids hidden for the caller (none for admins). */
+export function hiddenPagesFor(ctx: Pick<AccessContext, "isAdmin" | "dashboardAccess">): Set<string> {
+  if (ctx.isAdmin) return new Set();
+  return new Set([...ctx.dashboardAccess.hiddenTabs, ...ctx.dashboardAccess.hiddenSubtabs]);
+}
+
+/** Whether the caller may open a tab (ignores hiding — see openTabs). */
+export function canOpenTab(ctx: AccessContext, tab: DashboardTabId, teamClientCount: number): boolean {
+  if (ctx.disabled) return false;
+  if (ctx.isAdmin) return true;
+  if (ctx.grants[tab]) return true;
+  if (tab === "forecaster") return teamClientCount > 0;
+  if (AGENCY_DEFAULT_TABS.includes(tab)) {
+    const d = domainScope(ctx);
+    return d.all || d.agencies.length > 0;
+  }
+  return false;
+}
+
+/** The tabs the caller sees, in tab-bar order (hidden ones dropped for non-admins). */
+export function openTabs(ctx: AccessContext, teamClientCount: number): DashboardTabId[] {
+  const hidden = hiddenPagesFor(ctx);
+  return DASHBOARD_TABS.filter((t) => canOpenTab(ctx, t, teamClientCount) && !hidden.has(t));
+}
+
+/** Whether a tab shows a client (presentation; the rules enforce reads). */
+export function tabCoversClient(
+  ctx: AccessContext,
+  tab: DashboardTabId,
+  client: Pick<Client, "CL_Agency" | "CL_Business_Unit_Region" | "CL_Team_Emails">
+): boolean {
+  if (ctx.disabled) return false;
+  if (ctx.isAdmin) return true;
+  if (grantCoversClient(ctx.grants[tab], client)) return true;
+  if (tab === "forecaster") return isOnClientTeam(ctx.email, client);
+  if (AGENCY_DEFAULT_TABS.includes(tab)) return scopeCoversAgency(domainScope(ctx), client.CL_Agency);
+  return false;
 }
 
 /**
- * The union of every dashboard scope the caller has — what the rules let them
- * read of agency-partitioned data and of clients beyond their team
- * (dashCanReadAll / dashCanReadAgency). Empty when no dashboard is open.
+ * The agencies of agency-tagged data (Media Investments collections, Reports
+ * files, KPI docs) a tab shows: the domain's agencies on the agency-default
+ * tabs, plus the tab's grant.
  */
-export function readableScope(ctx: AccessContext): DashboardScope {
-  let out = NO_SCOPE;
-  for (const id of GRANTABLE_DASHBOARDS) {
-    const s = dashboardScope(ctx, id);
-    if (!s) continue;
-    out = {
-      all: out.all || s.all,
-      agencies: [...new Set([...out.agencies, ...s.agencies])].sort(),
-      includesUnassigned: out.includesUnassigned || s.includesUnassigned,
-    };
-  }
-  return out.all ? { ...out, agencies: [] } : out;
+export function tabAgencyScope(ctx: AccessContext, tab: DashboardTabId): AgencyScope {
+  if (ctx.disabled) return NOTHING;
+  if (ctx.isAdmin) return EVERYTHING;
+  const base = AGENCY_DEFAULT_TABS.includes(tab) ? domainScope(ctx) : NOTHING;
+  return unionScopes(base, grantAgencyScope(ctx.grants[tab]));
 }
 
-/** Sub-tab page ids hidden for the caller (admins see every sub-tab). */
-export function hiddenSubtabsFor(ctx: Pick<AccessContext, "isAdmin" | "dashboardAccess">): Set<string> {
-  return ctx.isAdmin ? new Set() : new Set(ctx.dashboardAccess.hiddenSubtabs);
-}
-
-/** Dashboards the caller may open (the Forecaster dashboard excluded). */
-export function openDashboards(ctx: AccessContext): GrantableDashboardId[] {
-  return GRANTABLE_DASHBOARDS.filter((id) => canOpenDashboard(ctx, id));
+/** Every agency the caller may read agency-tagged data for (any tab). */
+export function readableAgencyScope(ctx: AccessContext): AgencyScope {
+  return DASHBOARD_TABS.reduce((acc, t) => unionScopes(acc, tabAgencyScope(ctx, t)), NOTHING);
 }
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
-type ClientAccessFields = Pick<Client, "CL_Agency" | "CL_Team_Emails">;
+/**
+ * One `clients` query the rules can verify: the whole collection, or equality
+ * filters on agency and/or region. The team's `array-contains` query is
+ * separate.
+ */
+export interface ClientQuerySpec {
+  agency?: string;
+  region?: string;
+}
+
+/** The client queries covering one grant scope. */
+export function grantQuerySpecs(scope: GrantScope): ClientQuerySpec[] {
+  if (scope.allAgencies && scope.allRegions) return [{}];
+  if (scope.allAgencies) return scope.regions.map((region) => ({ region }));
+  if (scope.allRegions) return scope.agencies.map((agency) => ({ agency }));
+  return scope.agencies.flatMap((agency) => scope.regions.map((region) => ({ agency, region })));
+}
+
+/** Dedupes specs; a whole-collection read makes the rest redundant. */
+function dedupeSpecs(specs: ClientQuerySpec[]): ClientQuerySpec[] {
+  if (specs.some((s) => !s.agency && !s.region)) return [{}];
+  const seen = new Set<string>();
+  return specs.filter((s) => {
+    const key = `${s.agency ?? "*"}|${s.region ?? "*"}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Every client query (beyond the team's) needed to load what the caller may
+ * read: the domain's agencies, then each grant scope.
+ */
+export function readableClientQueries(ctx: AccessContext): ClientQuerySpec[] {
+  if (ctx.disabled) return [];
+  if (ctx.isAdmin) return [{}];
+  const specs: ClientQuerySpec[] = [];
+  const d = domainScope(ctx);
+  if (d.all) specs.push({});
+  else for (const agency of d.agencies) specs.push({ agency });
+  for (const scope of Object.values(ctx.grants)) if (scope) specs.push(...grantQuerySpecs(scope));
+  return dedupeSpecs(specs);
+}
+
+/** The client queries for the edit grant (beyond the team's); empty without one. */
+export function editableClientQueries(ctx: AccessContext): ClientQuerySpec[] {
+  const g = editGrant(ctx);
+  return g && !ctx.disabled ? dedupeSpecs(grantQuerySpecs(g)) : [];
+}
+
+type ClientAccessFields = Pick<Client, "CL_Agency" | "CL_Business_Unit_Region" | "CL_Team_Emails">;
 
 /**
  * Read a client and its data (forecast, milestones, product tracking, …):
- * admin, team member, or a dashboard grant whose scope covers its agency.
- * Rules: canReadClientData = isAdmin || isOnClientTeam || dashCanReadAll
- * || dashCanReadAgency(CL_Agency).
+ * admin, team member, its agency through the email domain, or any grant
+ * covering it. Rules: canReadClientData.
  */
 export function canReadClient(ctx: AccessContext, client: ClientAccessFields): boolean {
   if (ctx.disabled) return false;
   if (ctx.isAdmin || isOnClientTeam(ctx.email, client)) return true;
-  return GRANTABLE_DASHBOARDS.some((id) =>
-    scopeCoversAgency(dashboardScope(ctx, id), client.CL_Agency)
-  );
+  if (scopeCoversAgency(domainScope(ctx), client.CL_Agency)) return true;
+  return DASHBOARD_TABS.some((t) => grantCoversClient(ctx.grants[t], client));
 }
 
-/** Edit a client's forecast / flags / milestones / product tracking. */
-export function canWriteClient(ctx: AccessContext, client: Pick<Client, "CL_Team_Emails">): boolean {
+/** Edit a client's forecast / flags / milestones / product tracking. Rules: canWriteClient. */
+export function canWriteClient(ctx: AccessContext, client: ClientAccessFields): boolean {
   if (ctx.disabled) return false;
-  return ctx.isAdmin || isOnClientTeam(ctx.email, client);
+  return ctx.isAdmin || isOnClientTeam(ctx.email, client) || grantCoversClient(editGrant(ctx), client);
 }
 
-/** The Forecaster dashboard and the team spaces: admin or on ≥1 client team. */
-export function canOpenTeamSpaces(
-  ctx: Pick<AccessContext, "isAdmin" | "disabled">,
-  teamClientCount: number
-): boolean {
+/** The team spaces (Forecast, Flags, Milestones, Clients): admin, a team, or an edit grant. */
+export function canOpenTeamSpaces(ctx: AccessContext, teamClientCount: number): boolean {
   if (ctx.disabled) return false;
-  return ctx.isAdmin || teamClientCount > 0;
+  return ctx.isAdmin || teamClientCount > 0 || !!editGrant(ctx);
 }
 
-/** Past the "Access pending" screen: admin, a team, or any dashboard grant. */
+/** Past the "Access pending" screen: a team space or any tab. */
 export function hasAnyAccess(ctx: AccessContext, teamClientCount: number): boolean {
-  return canOpenTeamSpaces(ctx, teamClientCount) || openDashboards(ctx).length > 0;
+  return canOpenTeamSpaces(ctx, teamClientCount) || openTabs(ctx, teamClientCount).length > 0;
 }

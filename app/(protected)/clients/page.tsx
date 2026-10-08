@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { Client } from "../../../lib/types/client.types";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
+import { useAccess } from "../../../lib/hooks/use-access";
 import { fetchAccessibleClients } from "../../../lib/services/assignment-service";
 import ClientGrid from "../../../components/clients/client-grid";
 import ClientFilters from "../../../components/clients/client-filters";
@@ -21,6 +22,9 @@ import {
 
 export default function ClientsPage() {
   const { profile, isAdmin } = useUserProfile();
+  // A Forecaster edit grant adds the clients of its agencies × regions.
+  const { editQueries, loading: accessLoading } = useAccess();
+  const editKey = JSON.stringify(editQueries);
 
   // The year every card badge and the status filter use. The calendar year
   // (not the persisted dashboard year), so it rolls over on Jan 1; other
@@ -55,7 +59,7 @@ export default function ClientsPage() {
       try {
         // Team-scoped fetch: admins see all; everyone else the clients whose
         // team they are on. Already sorted by name.
-        const data = await fetchAccessibleClients(profile, isAdmin);
+        const data = await fetchAccessibleClients(profile, isAdmin, editQueries);
         setClients(data);
       } catch (err: any) {
         setError("Failed to load clients: " + (err?.message ?? "Unknown error"));
@@ -65,7 +69,9 @@ export default function ClientsPage() {
     }
 
     fetchClients();
-  }, [profile, isAdmin]);
+    // editQueries is tracked through editKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, isAdmin, editKey, accessLoading]);
 
   // Filtered clients. Hidden clients stay visible to admins (with a badge) but
   // are removed entirely for Business Leads — even on this page.

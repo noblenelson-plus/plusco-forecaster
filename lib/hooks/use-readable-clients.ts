@@ -11,7 +11,6 @@ import { useEffect, useState } from "react";
 import { useUserProfile } from "./use-user-profile";
 import { useAccess } from "./use-access";
 import { fetchReadableClients } from "../services/assignment-service";
-import { agencyScopeKey } from "../format/agency-scope";
 import { isClientHidden } from "../format/client";
 import type { Client } from "../types/client.types";
 
@@ -24,15 +23,15 @@ interface Result {
 
 export function useReadableClients(): { clients: Client[]; loading: boolean; error: string | null } {
   const { profile, isAdmin } = useUserProfile();
-  const { readable, loading: accessLoading } = useAccess();
+  const { readableQueries, loading: accessLoading } = useAccess();
   const ready = !!profile && !accessLoading;
-  const key = ready ? `${profile.email}|${isAdmin}|${agencyScopeKey(readable)}` : "";
+  const key = ready ? `${profile.email}|${isAdmin}|${JSON.stringify(readableQueries)}` : "";
   const [result, setResult] = useState<Result | null>(null);
 
   useEffect(() => {
     if (!key) return;
     let cancelled = false;
-    fetchReadableClients(profile, isAdmin, readable)
+    fetchReadableClients(profile, isAdmin, readableQueries)
       .then((docs) => {
         if (!cancelled) setResult({ key, clients: docs.filter((c) => !isClientHidden(c)), error: null });
       })
