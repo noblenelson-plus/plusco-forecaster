@@ -67,8 +67,9 @@ export function buildTeamSheet(clients: TeamClient[], sortBy: "client" | "email"
 }
 
 /**
- * The user list: one row per user — Name, Role (Admin, Client team, or No
- * client team; Revoked when access was removed), Email, Last Sign-In.
+ * The user list: one row per admin or client-team member — Name, Role
+ * (Admin / Client team), Email, Last Sign-In. Revoked people and people on
+ * no client team are left out.
  */
 export function buildUserList(
   users: Pick<UserRecord, "email" | "displayName" | "role" | "lastLoginAt" | "disabled">[],
@@ -77,10 +78,11 @@ export function buildUserList(
   const onTeam = new Set(clients.flatMap((c) => teamSeats(c).map((s) => s.email)));
   const nameOf = (u: { email: string; displayName: string | null }) => u.displayName || nameFromEmail(u.email);
   const rows = [...users]
+    .filter((u) => !u.disabled && (u.role === "ADMIN" || onTeam.has(u.email)))
     .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
     .map((u) => [
       nameOf(u),
-      u.disabled ? "Revoked" : u.role === "ADMIN" ? "Admin" : onTeam.has(u.email) ? "Client team" : "No client team",
+      u.role === "ADMIN" ? "Admin" : "Client team",
       u.email,
       u.lastLoginAt?.toDate?.().toISOString().slice(0, 10) ?? "Never signed in",
     ]);
