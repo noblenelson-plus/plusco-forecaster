@@ -118,7 +118,17 @@ export default function ExecSummaryTab({
       : null;
 
   const channels = media.byChannel.filter((c) => c.annual > 0);
-  const streams = revenue.byStream.filter((s) => s.annual > 0);
+  // Revenue mix shows one Commission slice: a BL Commission Overwrite replaces
+  // the computed commission for its months, so the two are summed here (the
+  // Revenues tab still lists them separately).
+  const streams = revenue.byStream
+    .reduce<typeof revenue.byStream>((acc, s) => {
+      if (s.key !== "commissionOverwrite") return [...acc, s];
+      const commission = acc.find((x) => x.key === "commission");
+      if (!commission) return [...acc, { ...s, key: "commission", label: "Commission" }];
+      return acc.map((x) => (x === commission ? { ...x, annual: x.annual + s.annual } : x));
+    }, [])
+    .filter((s) => s.annual > 0);
 
   // Labs spend by Labs partner (Billups, …): the Labs rows are entered per
   // partner, so sum each partner across the clients in view (the focused
