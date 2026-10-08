@@ -4,8 +4,9 @@
 /**
  * Spend breakdown — a single row of three ranked bar cards (Agency & Region,
  * Business Lead, Client) with a Media / Labs toggle that switches which
- * per-client metric feeds all three. Each card shows its top 10 groups; the %
- * next to a group is its share of the active metric's scope total.
+ * per-client metric feeds all three. Agency & Region lists every group;
+ * Business Lead and Client show their top 10. The % next to a group is its
+ * share of the active metric's scope total.
  *
  * Lives on the Forecast Summary tab. The Media and Labs tabs previously each
  * carried a two-card Region / Business Lead breakdown (DimensionBreakdown);
@@ -26,15 +27,16 @@ import {
 type Metric = "media" | "labs";
 const TOP_N = 10;
 
-/** Build the top-N ranked bar items for one label map under the active metric. */
+/** Ranked bar items for one label map under the active metric (top N, or all). */
 function topItems(
   totals: ClientAnnualTotal[],
   labelByClient: Record<string, string>,
-  fallback: string
+  fallback: string,
+  limit: number | null = TOP_N
 ): BarItem[] {
   const labelOf = (id: string) => labelByClient[id] ?? fallback;
-  return groupTotalsByLabel(totals, labelOf)
-    .slice(0, TOP_N)
+  const groups = groupTotalsByLabel(totals, labelOf);
+  return (limit === null ? groups : groups.slice(0, limit))
     .map((s, i) => ({
       label: s.label,
       value: s.annual,
@@ -61,7 +63,8 @@ export default function SpendBreakdownRow({
   const totals = metric === "media" ? mediaTotals : labsTotals;
   const metricLabel = metric === "media" ? "media spend" : "Labs spend";
 
-  const regionItems = topItems(totals, agencyRegionByClient, "No agency / region");
+  // A handful of agency × region groups: show them all.
+  const regionItems = topItems(totals, agencyRegionByClient, "No agency / region", null);
   const leadItems = topItems(totals, businessLeadByClient, "Unassigned");
   const clientItems = topItems(totals, clientNameById, "Unknown client");
 
@@ -74,7 +77,7 @@ export default function SpendBreakdownRow({
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Spend breakdown</h3>
           <p className="text-xs text-gray-500">
-            Top {TOP_N} by agency &amp; region, business lead, and client
+            By agency &amp; region, and the top {TOP_N} business leads and clients
           </p>
         </div>
         <div
@@ -105,7 +108,7 @@ export default function SpendBreakdownRow({
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <ChartCard title="By agency & region" subtitle={subtitle("agency & region")} icon={MapPin}>
+        <ChartCard title="By agency & region" subtitle={`Annual ${metricLabel} per agency & region`} icon={MapPin}>
           <BarList items={regionItems} valueFormat={formatCompactMoney} />
         </ChartCard>
 
