@@ -7,11 +7,11 @@ service cloud.firestore {
     //   - users/{email} (lowercase): role USER | ADMIN; `disabled` revokes all.
     //   - A client's team (CL_Team_Emails on the client doc: BL, DL, GM Pod
     //     accounts, collaborators) reads + writes that client.
-    //   - config/dashboard_access opens each grantable dashboard to email
-    //     domains / people, in GLOBAL (every client, "_unassigned" rows
-    //     included) or AGENCY mode (the agencies the caller's email domain maps
-    //     to; a company-wide domain maps to all). Any grant also reads those
-    //     clients' data — read-only.
+    //   - The email domain reads its agencies (agencies/{name}.domains); a
+    //     company-wide domain (config/company_domains) reads every agency,
+    //     "_unassigned" rows included — like an admin, read-only.
+    //   - dashboard_grants/{email}: per tab, the clients of chosen agencies ×
+    //     regions (read-only; a Forecaster grant with `edit` also writes).
     //   - Admins: everything.
 
     function isAuthenticated() {
@@ -49,34 +49,60 @@ service cloud.firestore {
           .data.get('domains', []);
     }
 
-    // ─── Dashboard grants (config/dashboard_access) ───────────────────────────
-    function dashboards() {
-      return exists(/databases/$(database)/documents/config/dashboard_access)
-        ? get(/databases/$(database)/documents/config/dashboard_access).data.get('dashboards', {})
-        : {};
+    // ─── Dashboard grants (dashboard_grants/{email}) ──────────────────────────
+    function grantPath() {
+      return /databases/$(database)/documents/dashboard_grants/$(myEmail());
     }
-    function grantedWith(id, mode) {
-      let g = dashboards().get(id, {});
-      return g.get('mode', 'AGENCY') == mode &&
-        (myDomain() in g.get('domains', []) || myEmail() in g.get('users', []));
+    function myGrantTabs() {
+      return exists(grantPath()) ? get(grantPath()).data.get('tabs', {}) : {};
     }
-    function granted(id) {
-      return grantedWith(id, 'GLOBAL') || grantedWith(id, 'AGENCY');
+    // A scope: allAgencies / agencies × allRegions / regions.
+    function scopeCoversAgency(s, agency) {
+      return s.get('allAgencies', false) == true || agency in s.get('agencies', []);
     }
-    // A GLOBAL grant on any dashboard → every client and every agency row.
-    function dashCanReadAll() {
-      return grantedWith('labs-pacing', 'GLOBAL') || grantedWith('exec-kpis', 'GLOBAL') ||
-        grantedWith('mediaocean', 'GLOBAL') || grantedWith('mediabox', 'GLOBAL') ||
-        grantedWith('reports', 'GLOBAL');
+    function scopeCovers(s, agency, region) {
+      return scopeCoversAgency(s, agency) &&
+        (s.get('allRegions', false) == true || region in s.get('regions', []));
     }
-    // An AGENCY grant on any dashboard → the caller's agencies (all for a
-    // company-wide domain), never "_unassigned".
-    function dashCanReadAgency(agency) {
-      return agency != '_unassigned' &&
-        (grantedWith('labs-pacing', 'AGENCY') || grantedWith('exec-kpis', 'AGENCY') ||
-          grantedWith('mediaocean', 'AGENCY') || grantedWith('mediabox', 'AGENCY') ||
-          grantedWith('reports', 'AGENCY')) &&
-        (isCompanyDomain() || domainOwnsAgency(agency));
+    function grantCovers(tabs, id, agency, region) {
+      return id in tabs && scopeCovers(tabs[id], agency, region);
+    }
+    function grantCoversAgency(tabs, id, agency) {
+      return id in tabs && scopeCoversAgency(tabs[id], agency);
+    }
+    // Any of the six tab grants covers a client (agency × region).
+    function anyGrantCovers(agency, region) {
+      let t = myGrantTabs();
+      return grantCovers(t, 'forecaster', agency, region) || grantCovers(t, 'labs-pacing', agency, region) ||
+        grantCovers(t, 'exec-kpis', agency, region) || grantCovers(t, 'mediaocean', agency, region) ||
+        grantCovers(t, 'mediabox', agency, region) || grantCovers(t, 'reports', agency, region);
+    }
+    // Any tab grant covers an agency (agency-tagged data: regions don't apply).
+    function anyGrantCoversAgency(agency) {
+      let t = myGrantTabs();
+      return grantCoversAgency(t, 'forecaster', agency) || grantCoversAgency(t, 'labs-pacing', agency) ||
+        grantCoversAgency(t, 'exec-kpis', agency) || grantCoversAgency(t, 'mediaocean', agency) ||
+        grantCoversAgency(t, 'mediabox', agency) || grantCoversAgency(t, 'reports', agency);
+    }
+    // The Forecaster grant with `edit` covers a client.
+    function editGrantCovers(agency, region) {
+      let t = myGrantTabs();
+      return 'forecaster' in t && t['forecaster'].get('edit', false) == true &&
+        scopeCovers(t['forecaster'], agency, region);
+    }
+    function grantedTab(id) {
+      return id in myGrantTabs();
+    }
+    // The email domain reads this agency: a company-wide domain → every one
+    // ("_unassigned" included); else the agencies listing the domain.
+    function domainCoversAgency(agency) {
+      return isCompanyDomain() || (agency != '_unassigned' && domainOwnsAgency(agency));
+    }
+    // Read a client doc's data (from its fields): team, domain's agency, grant.
+    function canReadClientFields(d) {
+      return myEmail() in d.get('CL_Team_Emails', []) ||
+        domainCoversAgency(d.CL_Agency) ||
+        anyGrantCovers(d.CL_Agency, d.get('CL_Business_Unit_Region', ''));
     }
 
     // ─── Clients ───────────────────────────────────────────────────────────────
@@ -87,23 +113,29 @@ service cloud.firestore {
       return isActive() && exists(clientPath(clientId)) &&
         myEmail() in get(clientPath(clientId)).data.get('CL_Team_Emails', []);
     }
-    // Read a client's data: admin, its team, or a dashboard grant covering it.
+    // Read a client's data: admin, its team, its agency through the email
+    // domain, or a grant covering it.
     function canReadClientData(clientId) {
-      return isAdmin() || isOnClientTeam(clientId) || (
+      return isAdmin() || (
         isActive() && exists(clientPath(clientId)) &&
-        (dashCanReadAll() || dashCanReadAgency(get(clientPath(clientId)).data.CL_Agency))
+        canReadClientFields(get(clientPath(clientId)).data)
       );
     }
     // Write a client's data (forecast, flags, milestones, product tracking,
-    // commissions, Labs eligibility): admin or its team.
+    // commissions, Labs eligibility): admin, its team, or a Forecaster grant
+    // with `edit` covering it.
     function canWriteClient(clientId) {
-      return isAdmin() || isOnClientTeam(clientId);
+      return isAdmin() || isOnClientTeam(clientId) || (
+        isActive() && exists(clientPath(clientId)) &&
+        editGrantCovers(get(clientPath(clientId)).data.CL_Agency,
+                        get(clientPath(clientId)).data.get('CL_Business_Unit_Region', ''))
+      );
     }
-    // Agency-partitioned dashboard data (MediaOcean collections; storage.rules
-    // mirrors it for the Reports snapshots). Non-admin queries must filter
-    // `_agency == <agency>` unless the caller holds a GLOBAL grant.
+    // Agency-tagged dashboard data (MediaOcean collections; storage.rules
+    // mirrors it for the Reports snapshots). Non-admin queries filter
+    // `_agency == <agency>` unless the caller covers every agency.
     function canReadAgencyData(agency) {
-      return isAdmin() || (isActive() && (dashCanReadAll() || dashCanReadAgency(agency)));
+      return isAdmin() || (isActive() && (domainCoversAgency(agency) || anyGrantCoversAgency(agency)));
     }
 
     // Locking lives on the rfqs document, not on data_entries.
@@ -152,15 +184,15 @@ service cloud.firestore {
     }
     // ─── clients ───────────────────────────────────────────────────────────────
     match /clients/{clientId} {
-      // Admin; the team (also the shape of the "my clients" array-contains
-      // query); a GLOBAL grant (whole collection); an AGENCY grant for the
-      // client's agency (the `CL_Agency ==` queries). CL_Agency and
-      // CL_Team_Emails are read off the document itself.
+      // Admin; the team (the "my clients" array-contains query); the email
+      // domain's agencies (`CL_Agency ==` queries; a company-wide domain the
+      // whole collection); a grant (equality queries on CL_Agency and/or
+      // CL_Business_Unit_Region). Fields are read off the document itself.
       allow read: if isAdmin() || (
         isActive() && (
           myEmail() in resource.data.CL_Team_Emails ||
-          dashCanReadAll() ||
-          dashCanReadAgency(resource.data.CL_Agency)
+          domainCoversAgency(resource.data.CL_Agency) ||
+          anyGrantCovers(resource.data.CL_Agency, resource.data.CL_Business_Unit_Region)
         )
       );
 
@@ -236,6 +268,13 @@ service cloud.firestore {
     // Global app configuration docs: config/dashboard_access (dashboard grants,
     // also read by these rules), config/company_domains, config/flag_validation,
     // … Everyone reads; admins write.
+    // ─── dashboard_grants ──────────────────────────────────────────────────────
+    // dashboard_grants/{email}: one person's tab grants (lib/format/access.ts).
+    // They read their own; admins read and write them all.
+    match /dashboard_grants/{email} {
+      allow read: if isAdmin() || (isActive() && email == myEmail());
+      allow create, update, delete: if isAdmin();
+    }
     match /config/{configId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
@@ -391,11 +430,11 @@ service cloud.firestore {
     // admins may delete.
     // mo_kpi_by_client — one doc per client (scripts/sync-kpi-by-client.mjs).
     // Listed by agency (canReadAgencyData); a single doc may also be read by
-    // the client's team — the client-scoped dashboards (Labs Pacing, Exec KPI,
-    // MediaBox) fetch the allocated clients' docs one by one.
+    // anyone who may read that client (canReadClientData) — the Forecaster tab
+    // fetches a team member's clients one by one, whatever their agency.
     match /mo_kpi_by_client/{clientId} {
       allow list: if canReadAgencyData(resource.data._agency);
-      allow get: if canReadAgencyData(resource.data._agency) || isOnClientTeam(clientId);
+      allow get: if canReadAgencyData(resource.data._agency) || canReadClientData(clientId);
       allow create, update: if false;
       allow delete: if isAdmin();
     }
@@ -414,7 +453,7 @@ service cloud.firestore {
     // meta_social_output — one doc per client; read by the Exec KPI Dashboard
     // only, and not agency-tagged: admins and anyone granted that dashboard.
     match /meta_social_output/{docId} {
-      allow read: if isAdmin() || (isActive() && granted('exec-kpis'));
+      allow read: if isAdmin() || (isActive() && grantedTab('exec-kpis'));
       allow create, update: if false;
       allow delete: if isAdmin();
     }

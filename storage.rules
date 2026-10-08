@@ -27,45 +27,39 @@ service firebase.storage {
     function isAdmin() {
       return isActive() && firestore.get(userPath()).data.role == 'ADMIN';
     }
-    function dashboards() {
-      return firestore.exists(/databases/(default)/documents/config/dashboard_access)
-        ? firestore.get(/databases/(default)/documents/config/dashboard_access).data.get('dashboards', {})
+    // The caller's grants (dashboard_grants/{email}; see firestoreRules.txt).
+    function myGrantTabs() {
+      return firestore.exists(/databases/(default)/documents/dashboard_grants/$(myEmail()))
+        ? firestore.get(/databases/(default)/documents/dashboard_grants/$(myEmail())).data.get('tabs', {})
         : {};
     }
-    function grantedWith(id, mode) {
-      let g = dashboards().get(id, {});
-      return g.get('mode', 'AGENCY') == mode &&
-        (myDomain() in g.get('domains', []) || myEmail() in g.get('users', []));
+    function grantCoversAgency(tabs, id, agency) {
+      return id in tabs &&
+        (tabs[id].get('allAgencies', false) == true || agency in tabs[id].get('agencies', []));
     }
-    function dashCanReadAll() {
-      return grantedWith('labs-pacing', 'GLOBAL') || grantedWith('exec-kpis', 'GLOBAL') ||
-        grantedWith('mediaocean', 'GLOBAL') || grantedWith('mediabox', 'GLOBAL') ||
-        grantedWith('reports', 'GLOBAL');
+    function anyGrantCoversAgency(agency) {
+      let t = myGrantTabs();
+      return grantCoversAgency(t, 'forecaster', agency) || grantCoversAgency(t, 'labs-pacing', agency) ||
+        grantCoversAgency(t, 'exec-kpis', agency) || grantCoversAgency(t, 'mediaocean', agency) ||
+        grantCoversAgency(t, 'mediabox', agency) || grantCoversAgency(t, 'reports', agency);
     }
-    function dashAnyAgencyGrant() {
-      return grantedWith('labs-pacing', 'AGENCY') || grantedWith('exec-kpis', 'AGENCY') ||
-        grantedWith('mediaocean', 'AGENCY') || grantedWith('mediabox', 'AGENCY') ||
-        grantedWith('reports', 'AGENCY');
+    function isCompanyDomain() {
+      return firestore.exists(/databases/(default)/documents/config/company_domains) &&
+        myDomain() in firestore.get(/databases/(default)/documents/config/company_domains)
+          .data.get('domains', []);
     }
-    // The caller's email domain maps to this agency, directly or via a
-    // company-wide domain. Never the "_unassigned" bucket.
+    // The email domain reads this agency: a company-wide domain → every one
+    // ("_unassigned" included); else the agencies listing the domain.
     function domainCoversAgency(agency) {
-      return agency != '_unassigned' && (
-        (firestore.exists(/databases/(default)/documents/config/company_domains) &&
-          myDomain() in firestore.get(/databases/(default)/documents/config/company_domains)
-            .data.get('domains', [])) ||
-        (firestore.exists(/databases/(default)/documents/agencies/$(agency)) &&
-          myDomain() in firestore.get(/databases/(default)/documents/agencies/$(agency))
-            .data.get('domains', []))
-      );
+      return isCompanyDomain() || (agency != '_unassigned' &&
+        firestore.exists(/databases/(default)/documents/agencies/$(agency)) &&
+        myDomain() in firestore.get(/databases/(default)/documents/agencies/$(agency))
+          .data.get('domains', []));
     }
-    // Mirrors canReadAgencyData in firestoreRules.txt: admin → every agency;
-    // a GLOBAL grant → every agency incl. "_unassigned"; an AGENCY grant → the
-    // caller's agencies.
+    // Mirrors canReadAgencyData in firestoreRules.txt: admin; the email
+    // domain's agencies; any grant covering the agency.
     function canReadAgency(agency) {
-      return isAdmin() || (isActive() && (
-        dashCanReadAll() || (dashAnyAgencyGrant() && domainCoversAgency(agency))
-      ));
+      return isAdmin() || (isActive() && (domainCoversAgency(agency) || anyGrantCoversAgency(agency)));
     }
 
     match /client-logos/{fileName} {

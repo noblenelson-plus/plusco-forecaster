@@ -2,8 +2,7 @@
 
 import { useMemo } from "react";
 import { useAccess, useDashboardTab } from "./use-access";
-import { isClientScopedDashboard } from "../format/access";
-import { EMPTY_AGENCY_SCOPE, agencyScopeKey, type AgencyScope } from "../format/agency-scope";
+import { agencyScopeKey, type AgencyScope } from "../format/agency-scope";
 
 /**
  * The agency scope for agency-partitioned data (MediaOcean collections,
@@ -21,7 +20,7 @@ export function useAgencyScope(): {
 } {
   const access = useAccess();
   const tab = useDashboardTab();
-  const resolved = tab ? (access.scopeFor(tab) ?? EMPTY_AGENCY_SCOPE) : access.readable;
+  const resolved = tab ? access.tabAgencyScope(tab) : access.readable;
   const key = agencyScopeKey(resolved);
   // Re-memoize on the key so consumers get a referentially stable object.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -31,12 +30,10 @@ export function useAgencyScope(): {
 
 /**
  * Where per-client agency-tagged docs (mo_kpi_by_client, keyed by client id)
- * come from on the current dashboard:
- *   - `clientIds` set → a client-scoped dashboard viewed by a non-admin: read
- *     exactly those clients' docs (the rules let a team member get their own
- *     client's doc, whatever its agency);
- *   - `clientIds` null → the agency scope (`scope`), as useAgencyScope.
- * `key` changes only when either does.
+ * come from on the current dashboard tab: the tab's agency scope (`scope`,
+ * as useAgencyScope) and, on the Forecaster tab for a non-admin, their team
+ * clients one by one (`clientIds` — the rules let a team member get their own
+ * client's doc, whatever its agency). `key` changes only when either does.
  */
 export function useDashboardDocScope(): {
   scope: AgencyScope;
@@ -47,14 +44,14 @@ export function useDashboardDocScope(): {
   const access = useAccess();
   const tab = useDashboardTab();
   const { scope, key: scopeKey, loading } = useAgencyScope();
-  const byClient = !access.ctx.isAdmin && isClientScopedDashboard(tab);
+  const byClient = !access.ctx.isAdmin && tab === "forecaster";
   const idsKey = byClient ? access.teamClientIds.join("|") : "";
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const clientIds = useMemo(() => (byClient ? access.teamClientIds : null), [byClient, idsKey]);
   return {
     scope,
     clientIds,
-    key: byClient ? `clients:${idsKey}` : scopeKey,
+    key: byClient ? `${scopeKey}+clients:${idsKey}` : scopeKey,
     loading,
   };
 }

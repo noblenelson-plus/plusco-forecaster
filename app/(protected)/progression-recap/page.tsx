@@ -22,6 +22,7 @@ import ProgressionRecapTable, {
 import MilestoneBatchRunner from "../../../components/progression/milestone-batch-runner";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
+import { useAccess } from "../../../lib/hooks/use-access";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../../lib/dashboard/filters/use-dashboard-filters";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
@@ -31,6 +32,7 @@ import { filterWritableClients } from "../../../lib/services/assignment-service"
 export default function ProgressionRecapPage() {
   const { clients, loading: clientsLoading, error: clientsError } = useAccessibleClients();
   const { profile, isAdmin } = useUserProfile();
+  const { editGrant } = useAccess();
   const usersMap = useUsersMap();
   const { selectedYear } = useForecastSelection();
 
@@ -58,8 +60,8 @@ export default function ProgressionRecapPage() {
   // can be broader). With nothing writable there is no runner.
   const writableClientIds = useMemo(
     () =>
-      filterWritableClients(filteredClients, profile, isAdmin).map((c) => c.cl_id),
-    [filteredClients, profile, isAdmin]
+      filterWritableClients(filteredClients, profile, isAdmin, editGrant).map((c) => c.cl_id),
+    [filteredClients, profile, isAdmin, editGrant]
   );
 
   const recapByClient = useMemo(() => {

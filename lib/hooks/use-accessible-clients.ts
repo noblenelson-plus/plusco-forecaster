@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { useUserProfile } from "./use-user-profile";
+import { useAccess } from "./use-access";
 import { fetchAccessibleClients } from "../services/assignment-service";
 import type { Client } from "../types/client.types";
 import { isClientHidden } from "../format/client";
@@ -28,6 +29,8 @@ interface UseAccessibleClientsResult {
 
 export function useAccessibleClients(): UseAccessibleClientsResult {
   const { profile, isAdmin } = useUserProfile();
+  const { editQueries, loading: accessLoading } = useAccess();
+  const editKey = JSON.stringify(editQueries);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +44,7 @@ export function useAccessibleClients(): UseAccessibleClientsResult {
       setLoading(true);
       setError(null);
       try {
-        const docs = await fetchAccessibleClients(profile, isAdmin);
+        const docs = await fetchAccessibleClients(profile, isAdmin, editQueries);
         const data = docs
           // Hidden clients are removed everywhere this hook feeds (dashboard, …).
           .filter((c) => !isClientHidden(c));
@@ -59,7 +62,9 @@ export function useAccessibleClients(): UseAccessibleClientsResult {
     return () => {
       cancelled = true;
     };
-  }, [profile, isAdmin]);
+    // editQueries is tracked through editKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, isAdmin, editKey, accessLoading]);
 
   return { clients, loading, error };
 }

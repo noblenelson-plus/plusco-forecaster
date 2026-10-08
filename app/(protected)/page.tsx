@@ -55,12 +55,7 @@ import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-prod
 import { useProducts } from "../../lib/hooks/use-products";
 import { useReadableClients } from "../../lib/hooks/use-readable-clients";
 import { DashboardTabScope, useAccess } from "../../lib/hooks/use-access";
-import { isClientScopedDashboard } from "../../lib/format/access";
-import type { GrantableDashboardId } from "../../lib/types/access.types";
-import { agencyScopeKey, scopeCoversAgency } from "../../lib/format/agency-scope";
-import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
-import { isOnClientTeam } from "../../lib/format/client-team";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
 import { isTestClient } from "../../lib/format/client";
@@ -126,7 +121,6 @@ const ALL_MONTHS: number[] = [];
 
 export default function DashboardPage() {
   const { clients: allClients, loading, error } = useReadableClients();
-  const { profile, isAdmin } = useUserProfile();
   const access = useAccess();
   // Top-level tab — declared up here because it picks the client universe.
   const [topTab, setTopTab] = useState<ForecasterTab>("forecaster");
@@ -137,28 +131,17 @@ export default function DashboardPage() {
     () => allClients.filter((c) => !isTestClient(c.CL_Name)),
     [allClients]
   );
-  // Each tab group has its own client universe (presentation only — the
-  // security rules still govern what can be read):
-  //   - Forecaster, Labs Pacing, Exec KPI and MediaBox → the clients the user
-  //     is allocated to, i.e. whose team they are on (Admin: all). Dashboard
-  //     grants only decide who opens a tab, never widen this.
-  //   - Mediaocean, Reports → their Admin → Dashboard Access scope: every
-  //     client (Global mode) or the agencies the user's email domain maps to
-  //     (Agency mode), like their agency-partitioned data.
+  // Each tab has its own client universe (tabCoversClient in
+  // lib/format/access.ts; presentation only — the security rules govern
+  // reads): the client team on Forecaster, the email domain's agencies on
+  // Media Investments / Labs Pacing / Reports, plus the person's grant for
+  // that tab (agencies × regions). Admin: every client.
   // The filter bar, forecast data and charts all derive from this list.
-  const myEmail = profile?.email;
-  const byTeam = topTab === "forecaster" || isClientScopedDashboard(topTab);
-  const tabScope = byTeam ? null : access.scopeFor(topTab as GrantableDashboardId);
-  const tabScopeKey = tabScope ? agencyScopeKey(tabScope) : "";
-  const clients = useMemo(() => {
-    if (byTeam) {
-      if (isAdmin) return dashboardClients;
-      return dashboardClients.filter((c) => isOnClientTeam(myEmail, c));
-    }
-    return dashboardClients.filter((c) => scopeCoversAgency(tabScope, c.CL_Agency));
-    // tabScope is tracked through its key (a fresh object each render).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [byTeam, isAdmin, myEmail, tabScopeKey, dashboardClients]);
+  const { tabCovers } = access;
+  const clients = useMemo(
+    () => dashboardClients.filter((c) => tabCovers(topTab, c)),
+    [dashboardClients, tabCovers, topTab]
+  );
   const usersMap = useUsersMap();
 
   const { selectedYear, selectedRFQ, setRFQ } = useForecastSelection();
@@ -318,19 +301,14 @@ export default function DashboardPage() {
   // The sub-tab chosen inside the Forecaster Dashboard (top tab: see above).
   const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
-  // Tabs: Forecaster for admins and client-team members, every other tab for
-  // admins and people granted it (Admin → Dashboard Access). Sub-tabs an
-  // admin hid (work in progress) are hidden from everyone but admins.
+  // Tabs: the ones open to the person (openTabs — team, email domain,
+  // grants). Tabs and sub-tabs an admin hid are hidden from everyone but
+  // admins.
   const hiddenPages = access.hiddenSubtabs;
-  const { hasTeamSpaces, openDashboards } = access;
+  const { openTabs } = access;
   const visibleTabs = useMemo(
-    () =>
-      FORECASTER_TABS.filter(
-        (t) =>
-          (t.id === "forecaster" ? hasTeamSpaces : openDashboards.includes(t.id)) &&
-          isTabVisible(t.id, hiddenPages)
-      ),
-    [hasTeamSpaces, openDashboards, hiddenPages]
+    () => FORECASTER_TABS.filter((t) => openTabs.includes(t.id) && isTabVisible(t.id, hiddenPages)),
+    [openTabs, hiddenPages]
   );
   const forecasterSubtabs = useMemo(
     () => visibleSubtabs("forecaster", FORECASTER_SUBTABS, hiddenPages),
@@ -589,8 +567,8 @@ export default function DashboardPage() {
               onClose={() => setFocusedClientId(null)}
             />
           )}
-        {/* Agency-partitioned data hooks read this tab's Global / Agency scope. */}
-        <DashboardTabScope tab={topTab === "forecaster" ? null : topTab}>
+        {/* Agency-tagged data hooks read this tab's scope. */}
+        <DashboardTabScope tab={topTab}>
         {tab === "mediaocean" ? (
           <MediaOceanTabs
             sub={mediaOceanSub}

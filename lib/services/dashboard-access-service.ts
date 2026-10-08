@@ -1,12 +1,12 @@
 // lib/services/dashboard-access-service.ts
 
 /**
- * Firestore service — `config/dashboard_access`: per grantable dashboard, its
- * mode (GLOBAL / AGENCY) and grants (email domains and people). See
- * DashboardAccessConfig in access.types.ts and the resolution logic in
- * lib/format/access.ts. Replaces the by-role `config/dashboard_pages`.
+ * Firestore service — `config/dashboard_access`: the dashboard tabs and
+ * sub-tabs hidden from everyone but admins (DashboardAccessConfig in
+ * access.types.ts). Who may open each tab is resolved in lib/format/access.ts
+ * (defaults by email domain and client team, plus dashboard_grants).
  *
- * Read by every signed-in user (the rules read it too), written by admins.
+ * Read by every signed-in user, written by admins.
  */
 
 import { doc, onSnapshot, setDoc, type Unsubscribe } from "firebase/firestore";
@@ -18,8 +18,8 @@ const CONFIG_COLLECTION = "config";
 const DASHBOARD_ACCESS_DOC = "dashboard_access";
 
 /**
- * Real-time config. A missing doc or a failed read reports every dashboard
- * closed (admins still see everything), never an error state.
+ * Real-time config. A missing doc or a failed read reports nothing hidden,
+ * never an error state.
  */
 export function subscribeToDashboardAccess(
   callback: (config: DashboardAccessConfig) => void

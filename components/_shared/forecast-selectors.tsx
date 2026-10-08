@@ -29,6 +29,7 @@ import {
   Check,
 } from "lucide-react";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import { useAccess } from "../../lib/hooks/use-access";
 import { fetchAccessibleClients } from "../../lib/services/assignment-service";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import {
@@ -85,6 +86,8 @@ export default function ForecastSelectors({
   override,
 }: ForecastSelectorsProps = {}) {
   const { profile, isAdmin } = useUserProfile();
+  const { editQueries, loading: accessLoading } = useAccess();
+  const editKey = JSON.stringify(editQueries);
 
   const {
     selectedClient,
@@ -120,7 +123,7 @@ export default function ForecastSelectors({
     async function fetchClients() {
       try {
         // Team-scoped fetch (admin = all, everyone else = their team clients).
-        const docs = await fetchAccessibleClients(profile, isAdmin);
+        const docs = await fetchAccessibleClients(profile, isAdmin, editQueries);
         const data: ClientSummary[] = docs
           // Hidden clients are not selectable for forecasting.
           .filter((c) => !isClientHidden(c))
@@ -140,7 +143,9 @@ export default function ForecastSelectors({
     }
 
     fetchClients();
-  }, [profile, isAdmin, showClient]);
+    // editQueries is tracked through editKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, isAdmin, showClient, editKey, accessLoading]);
 
   // Validate the (possibly localStorage-restored) selected client against the
   // freshly loaded accessible list: refresh its summary if it changed, clear
