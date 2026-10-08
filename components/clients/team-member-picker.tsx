@@ -14,7 +14,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { UserProfile } from "../../lib/services/user-service";
-import { normalizeEmail } from "../../lib/format/email";
+import { isValidEmail, normalizeEmail } from "../../lib/format/email";
 
 const MAX_RESULTS = 8;
 
@@ -22,19 +22,25 @@ function label(u: UserProfile): string {
   return u.displayName ? `${u.displayName} · ${u.email}` : u.email;
 }
 
-/** Search box listing matching users; picking one calls `onPick(email)`. */
+/**
+ * Search box listing matching users; picking one calls `onPick(email)`.
+ * With `newUserDomains`, a typed email on one of those (company) domains that
+ * isn't a user yet can be picked too — the caller then creates the user row.
+ */
 export function UserSearch({
   users,
   exclude,
   onPick,
   placeholder,
   disabled,
+  newUserDomains,
 }: {
   users: UserProfile[];
   exclude: ReadonlySet<string>;
   onPick: (email: string) => void;
   placeholder: string;
   disabled?: boolean;
+  newUserDomains?: readonly string[];
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -47,6 +53,15 @@ export function UserSearch({
       .filter((u) => !q || u.email.includes(q) || (u.displayName ?? "").toLowerCase().includes(q))
       .slice(0, MAX_RESULTS);
   }, [users, exclude, query]);
+
+  // A typed company email that isn't a user yet (only when the caller allows it).
+  const typed = normalizeEmail(query);
+  const typedIsEmail = isValidEmail(typed);
+  const typedDomain = typed.split("@")[1] ?? "";
+  const canAddNew =
+    !!newUserDomains && typedIsEmail && !users.some((u) => u.email === typed) && !exclude.has(typed) &&
+    newUserDomains.includes(typedDomain);
+  const notCompany = !!newUserDomains && typedIsEmail && !newUserDomains.includes(typedDomain);
 
   if (disabled) return null;
 
@@ -69,10 +84,34 @@ export function UserSearch({
       />
       {open && (
         <ul className="absolute z-20 mt-1 w-full max-h-64 overflow-auto bg-white border border-gray-200 shadow-lg">
-          {results.length === 0 ? (
-            <li className="px-3 py-2 text-xs text-gray-400">
-              No matching user. Add them on Admin → Access first.
+          {canAddNew && (
+            <li>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onPick(typed);
+                  setQuery("");
+                  setOpen(false);
+                  inputRef.current?.blur();
+                }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100"
+              >
+                <span className="block font-medium text-gray-900 truncate">+ Add {typed} as a new user</span>
+                <span className="block text-xs text-gray-500">They get access right away; their Google sign-in links the account.</span>
+              </button>
             </li>
+          )}
+          {results.length === 0 ? (
+            !canAddNew && (
+              <li className="px-3 py-2 text-xs text-gray-400">
+                {notCompany
+                  ? `${typedDomain} isn't a company domain — only company emails can be added.`
+                  : newUserDomains
+                    ? "No matching user. Type their full company email to add them."
+                    : "No matching user. Add them on Admin → Access first."}
+              </li>
+            )
           ) : (
             results.map((u) => (
               <li key={u.email}>
