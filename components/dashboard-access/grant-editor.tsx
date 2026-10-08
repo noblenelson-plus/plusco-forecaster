@@ -7,9 +7,10 @@
  * later), read-only; on Forecaster, optionally edit too.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
-import type { UserProfile } from "../../lib/services/user-service";
+import { createUserManually, type UserProfile } from "../../lib/services/user-service";
+import { fetchSignInDomains } from "../../lib/services/agency-service";
 import type { DashboardTabId, GrantScope } from "../../lib/types/access.types";
 import { CLIENT_AGENCIES, CLIENT_REGIONS } from "../../lib/constants/client.constants";
 import { nameFromEmail } from "../../lib/format/email";
@@ -22,8 +23,10 @@ export default function GrantEditor({
   scope: initialScope,
   users,
   taken,
+  createdBy,
   onClose,
   onSave,
+  onUserCreated,
 }: {
   tab: DashboardTabId;
   tabLabel: string;
@@ -33,9 +36,13 @@ export default function GrantEditor({
   users: UserProfile[];
   /** Emails already granted this tab (excluded from the picker). */
   taken: ReadonlySet<string>;
+  /** The admin's email, recorded on a user row created here. */
+  createdBy: string;
   onClose: () => void;
   /** Persists the grant; rejects with a message on failure. */
   onSave: (email: string, scope: GrantScope) => Promise<void>;
+  /** A company email that wasn't a user yet got its user row (before the grant). */
+  onUserCreated?: (user: UserProfile) => void;
 }) {
   const [email, setEmail] = useState(initialEmail ?? "");
   const [allAgencies, setAllAgencies] = useState(initialScope?.allAgencies ?? true);
@@ -45,8 +52,20 @@ export default function GrantEditor({
   const [edit, setEdit] = useState(!!initialScope?.edit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Company domains: a typed email on one of them can be added as a new user.
+  const [companyDomains, setCompanyDomains] = useState<string[] | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    fetchSignInDomains()
+      .then((d) => !cancelled && setCompanyDomains(d))
+      .catch((err) => console.error("Could not load the company domains:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const user = users.find((u) => u.email === email);
+  const isNewUser = !!email && !user;
   const valid = !!email && (allAgencies || agencies.length > 0) && (allRegions || regions.length > 0);
 
   const toggle = (list: string[], set: (v: string[]) => void, v: string) =>
@@ -56,6 +75,9 @@ export default function GrantEditor({
     setSaving(true);
     setError("");
     try {
+      // A company email that isn't a user yet: create its row first (role
+      // User). Their first Google sign-in links it.
+      if (isNewUser) onUserCreated?.(await createUserManually(email, "USER", createdBy));
       await onSave(email, {
         allAgencies,
         agencies: allAgencies ? [] : agencies,
@@ -95,8 +117,16 @@ export default function GrantEditor({
               {email ? (
                 <div className="flex items-center justify-between border border-gray-200 px-3 py-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{user?.displayName || nameFromEmail(email)}</p>
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {user?.displayName || nameFromEmail(email)}
+                      {isNewUser && (
+                        <span className="ml-2 border border-gray-200 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">New user</span>
+                      )}
+                    </p>
                     <p className="text-[11px] text-gray-400 truncate">{email}</p>
+                    {isNewUser && (
+                      <p className="text-[11px] text-gray-500">Saving adds them as a user (role User) and gives this access.</p>
+                    )}
                   </div>
                   {!initialEmail && (
                     <button onClick={() => setEmail("")} className="p-1 text-gray-400 hover:text-gray-900" title="Pick someone else">
@@ -105,7 +135,13 @@ export default function GrantEditor({
                   )}
                 </div>
               ) : (
-                <UserSearch users={users} exclude={taken} onPick={setEmail} placeholder="Search people by name or email…" />
+                <UserSearch
+                  users={users}
+                  exclude={taken}
+                  onPick={setEmail}
+                  placeholder="Search people, or type a company email…"
+                  newUserDomains={companyDomains}
+                />
               )}
             </section>
 

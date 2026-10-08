@@ -495,6 +495,8 @@ export default function AdminDashboardAccessPage() {
           scope={editingScope}
           users={users}
           taken={new Set((byTab.get(editing.tab) ?? []).map((p) => p.email))}
+          createdBy={myEmail}
+          onUserCreated={(u) => setUsers((prev) => [...prev, u])}
           onClose={() => setEditing(null)}
           onSave={async (email, scope) => {
             await setGrantScope(email, editing.tab, scope);
