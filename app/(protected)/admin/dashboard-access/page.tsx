@@ -15,9 +15,10 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Building2, Loader2, Plus, Save, Undo2, X } from "lucide-react";
+import { Globe, Building2, LayoutDashboard, Loader2, Plus, Save, Undo2, X } from "lucide-react";
 import { isClientScopedDashboard } from "../../../../lib/format/access";
 import PageHeader from "../../../../components/_shared/page-header";
+import AgenciesPanel from "../../../../components/agencies/agencies-panel";
 import { TeamMemberMultiSelect } from "../../../../components/clients/team-member-picker";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import {
@@ -111,6 +112,9 @@ export default function AdminDashboardAccessPage() {
     setConfig(saved ?? normalizeDashboardAccess(null));
   }
 
+  // Dashboards | Agencies & Domains (the agency ↔ domain mapping).
+  const [tab, setTab] = useState<"dashboards" | "agencies">("dashboards");
+
   if (profileLoading || !isAdmin) return null;
 
   return (
@@ -120,6 +124,7 @@ export default function AdminDashboardAccessPage() {
           title="Dashboard Access"
           description="Who opens each dashboard. Most dashboards show each person their allocated clients; Mediaocean and Reports show their agency (or every client in Global mode). Admins see everything."
           actions={
+            tab === "dashboards" && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -140,11 +145,42 @@ export default function AdminDashboardAccessPage() {
                 Save
               </button>
             </div>
+            )
           }
         />
       </header>
 
       <main className="mx-auto w-full max-w-[1000px] flex-1 space-y-4 p-6 md:p-8">
+        {/* Dashboards | Agencies & Domains */}
+        <div className="inline-flex items-center bg-gray-100 p-0.5 gap-0.5">
+          {([
+            ["dashboards", "Dashboards", <LayoutDashboard key="d" size={14} />],
+            ["agencies", "Agencies & Domains", <Building2 key="a" size={14} />],
+          ] as const).map(([value, label, icon]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setTab(value)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                tab === value ? "bg-white text-gray-900" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {icon}
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "agencies" ? (
+          <>
+            <p className="text-xs text-gray-500 max-w-xl">
+              The domain ↔ agency mapping decides a person&apos;s agency on Mediaocean and Reports
+              in Agency mode. It is read live — changes apply to everyone at once.
+            </p>
+            <AgenciesPanel />
+          </>
+        ) : (
+        <>
         {saveError && (
           <div className="border border-red-500 bg-red-500 px-4 py-2 text-sm text-white">
             Couldn&apos;t save: {saveError}
@@ -238,6 +274,8 @@ export default function AdminDashboardAccessPage() {
           Granting a dashboard also lets those people read the data it shows (read-only — editing
           still requires being on the client&apos;s team). The security rules enforce the same model.
         </p>
+        </>
+        )}
       </main>
     </div>
   );
