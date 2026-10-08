@@ -36,7 +36,6 @@ import {
 import PageHeader from "../../../../components/_shared/page-header";
 import StatCard from "../../../../components/dashboard/charts/stat-card";
 import AccessLevelsCard from "../../../../components/users/access-levels-card";
-import AgenciesPanel from "../../../../components/agencies/agencies-panel";
 import PersonClientsDrawer, { type AccessPerson } from "../../../../components/users/person-clients-drawer";
 import ClientPeopleDrawer from "../../../../components/users/client-people-drawer";
 import TeamSheetImportModal from "../../../../components/users/team-sheet-import-modal";
@@ -47,7 +46,6 @@ import {
   UsersRound,
   Crown,
   MonitorSmartphone,
-  Building2,
   Briefcase,
   Loader2,
   AlertCircle,
@@ -62,7 +60,6 @@ import {
 
 const ROLES: AppRole[] = ["USER", "ADMIN"];
 
-type MainTab = "team" | "agencies";
 type View = "people" | "clients";
 type Filter = "ALL" | "ADMIN" | TeamRole;
 
@@ -114,7 +111,6 @@ export default function AdminUsersPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [mainTab, setMainTab] = useState<MainTab>("team");
   const [view, setView] = useState<View>("people");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("ALL");
@@ -356,27 +352,7 @@ export default function AdminUsersPage() {
           <StatCard icon={UsersRound} label="Collaborators" value={loading ? "—" : String(stats.COLLABORATOR)} accent={ROLE_ICON.COLLABORATOR} />
         </div>
 
-        {/* Users | Agencies & Domains */}
-        <Segmented
-          value={mainTab}
-          onChange={setMainTab}
-          options={[
-            { value: "team", label: "Users", icon: <Users size={14} /> },
-            { value: "agencies", label: "Agencies & Domains", icon: <Building2 size={14} /> },
-          ]}
-        />
-
-        {mainTab === "agencies" ? (
-          <>
-            <p className="text-xs text-gray-500 max-w-xl">
-              The domain ↔ agency mapping decides a person&apos;s agency on dashboards
-              in Agency mode. It is read live — changes apply to everyone at once.
-            </p>
-            <AgenciesPanel />
-          </>
-        ) : (
-          <>
-            <AccessLevelsCard />
+        <AccessLevelsCard />
 
             <section className="border border-gray-200 bg-white">
               {/* Toolbar: view, search, role filter */}
@@ -460,8 +436,6 @@ export default function AdminUsersPage() {
                 <ClientsTable rows={filteredClients} users={users} onOpen={(id) => setOpenClient(id)} />
               )}
             </section>
-          </>
-        )}
       </main>
 
       {person && (
@@ -534,7 +508,7 @@ function PeopleTable({
           <tr>
             <th className="text-left font-semibold px-4 py-2.5">Name</th>
             <th className="text-right font-semibold px-4 py-2.5 w-32">Clients</th>
-            <th className="text-left font-semibold px-4 py-2.5 w-80">Role</th>
+            <th className="text-right font-semibold px-4 py-2.5 w-40">Role</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -564,7 +538,7 @@ function PeopleTable({
                   </button>
                 </td>
                 <td className="px-4 py-2">
-                  <div className="flex items-center gap-1 flex-wrap">
+                  <div className="flex items-center justify-end gap-1 flex-wrap">
                     {p.primary ? <RoleBadge role={p.primary} /> : <span className="text-xs text-gray-300">No client</span>}
                     {!p.user && <span className="text-[11px] text-gray-400">· not signed in</span>}
                   </div>
