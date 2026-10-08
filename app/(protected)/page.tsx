@@ -302,8 +302,8 @@ export default function DashboardPage() {
   const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
   // Tabs: the ones open to the person (openTabs — team, email domain,
-  // grants). Tabs and sub-tabs an admin hid are hidden from everyone but
-  // admins.
+  // grants). Tabs and sub-tabs an admin hid are hidden from everyone,
+  // admins included.
   const hiddenPages = access.hiddenSubtabs;
   const { openTabs } = access;
   const visibleTabs = useMemo(

@@ -190,8 +190,12 @@ export async function exportToNewSheetWithTabs({
 }: {
   /** Spreadsheet file name. */
   title: string;
-  /** One entry per tab, in display order. Each needs a unique sheetTitle. */
-  tabs: { sheetTitle: string; matrix: CellValue[][] }[];
+  /**
+   * One entry per tab, in display order. Each needs a unique sheetTitle.
+   * `dropdowns`: header label → allowed values, added as in-sheet dropdowns
+   * (best effort: a failure here never fails the export).
+   */
+  tabs: { sheetTitle: string; matrix: CellValue[][]; dropdowns?: Record<string, string[]> }[];
 }): Promise<string> {
   if (!isGoogleConfigured()) {
     throw new SheetsUnavailableError(
@@ -215,6 +219,23 @@ export async function exportToNewSheetWithTabs({
   );
   for (const tab of tabs) {
     await writeValues(spreadsheet.spreadsheetId, tab.sheetTitle, tab.matrix);
+    const sheetId = spreadsheet.sheetIdsByTitle[tab.sheetTitle];
+    if (tab.dropdowns && sheetId !== undefined) {
+      const header = (tab.matrix[0] ?? []).map(String);
+      try {
+        await applyDataValidations(
+          spreadsheet.spreadsheetId,
+          Object.entries(tab.dropdowns).map(([label, values]) => ({
+            sheetId,
+            columnIndex: header.indexOf(label),
+            values,
+            rowCount: Math.max(1000, tab.matrix.length),
+          }))
+        );
+      } catch (err) {
+        console.warn("Could not add dropdowns to the exported sheet:", err);
+      }
+    }
   }
   return spreadsheet.url;
 }

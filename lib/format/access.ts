@@ -16,7 +16,7 @@
  *      agencies × regions, read-only; a Forecaster grant may also allow
  *      editing. Exec KPI and MediaBox Adoption are grants only.
  *   Admins see and edit everything. Disabled users get nothing. Tabs an
- *   admin hides (config/dashboard_access) disappear for everyone else.
+ *   admin hides (config/dashboard_access) disappear for everyone, admins too.
  *
  * Actuals stay admin-only and the RFQ lock / closed months still apply on top
  * of canWriteClient; those checks live where they always did.
@@ -177,9 +177,12 @@ export function editGrant(ctx: AccessContext): GrantScope | null {
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-/** Tab and sub-tab ids hidden for the caller (none for admins). */
-export function hiddenPagesFor(ctx: Pick<AccessContext, "isAdmin" | "dashboardAccess">): Set<string> {
-  if (ctx.isAdmin) return new Set();
+/**
+ * Tab and sub-tab ids hidden on the dashboard — for everyone, admins
+ * included (they unhide them on Dashboard Access, which always lists them).
+ * Hiding is presentation only; it doesn't change what anyone may read.
+ */
+export function hiddenPagesFor(ctx: Pick<AccessContext, "dashboardAccess">): Set<string> {
   return new Set([...ctx.dashboardAccess.hiddenTabs, ...ctx.dashboardAccess.hiddenSubtabs]);
 }
 
@@ -196,7 +199,7 @@ export function canOpenTab(ctx: AccessContext, tab: DashboardTabId, teamClientCo
   return false;
 }
 
-/** The tabs the caller sees, in tab-bar order (hidden ones dropped for non-admins). */
+/** The tabs the caller sees, in tab-bar order (hidden ones dropped, admins included). */
 export function openTabs(ctx: AccessContext, teamClientCount: number): DashboardTabId[] {
   const hidden = hiddenPagesFor(ctx);
   return DASHBOARD_TABS.filter((t) => canOpenTab(ctx, t, teamClientCount) && !hidden.has(t));

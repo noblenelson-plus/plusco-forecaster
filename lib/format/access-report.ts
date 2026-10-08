@@ -97,7 +97,7 @@ export function buildAccessSummary(input: AccessReportInput): string[][] {
 
       const tabCell = (tab: DashboardTabId): string => {
         if (disabled) return "Revoked";
-        if (isAdmin) return `Admin — all ${shown.length} clients`;
+        if (isAdmin) return hidden.has(tab) ? "Hidden tab" : `Admin — all ${shown.length} clients`;
         if (!canOpenTab(ctx, tab, teamCount)) return "—";
         const parts: string[] = [];
         if (tab === "forecaster" && teamCount) parts.push("Own clients");
@@ -158,8 +158,7 @@ export function buildGrantClients(input: AccessReportInput): string[][] {
  * filtering on a name shows everything that person can see and why. Access
  * level: Admin, Global (company-wide email: every agency), Domain (their
  * agency's email), Client team (their own clients), Grant (added on
- * Dashboard Access). Tabs hidden from non-admins are left out (they can't
- * see them); revoked people and people with no access get one row saying so.
+ * Dashboard Access). Hidden tabs are left out (nobody sees them); revoked people and people with no access get one row saying so.
  */
 export function buildAllAccess(input: AccessReportInput): string[][] {
   const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, tabLabels } = input;
@@ -181,7 +180,10 @@ export function buildAllAccess(input: AccessReportInput): string[][] {
       continue;
     }
     if (u?.role === "ADMIN") {
-      for (const tab of DASHBOARD_TABS) row("Admin", tabLabels[tab], "All agencies", "All regions", shown.length, "Yes");
+      const hiddenForAll = hiddenPagesFor({ dashboardAccess });
+      for (const tab of DASHBOARD_TABS) {
+        if (!hiddenForAll.has(tab)) row("Admin", tabLabels[tab], "All agencies", "All regions", shown.length, "Yes");
+      }
       continue;
     }
 

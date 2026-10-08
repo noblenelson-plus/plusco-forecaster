@@ -16,7 +16,7 @@ import {
   type TeamSheetChange,
   type TeamSheetPlan,
 } from "../../lib/format/team-sheet";
-import { describeSheetError, readLinkedSheet } from "../../lib/services/linked-sheet";
+import { describeSheetError, readLinkedWorkbook } from "../../lib/services/linked-sheet";
 import { applyTeamSheetChanges } from "../../lib/services/team-access-service";
 
 export default function TeamSheetImportModal({
@@ -43,9 +43,11 @@ export default function TeamSheetImportModal({
     setProblems([]);
     try {
       // The first Google call opens the consent popup when there's no live token.
-      const { name, table } = await readLinkedSheet(link.trim());
-      setPlan(planTeamSheetImport(table, clients, userEmails));
-      setSource(name);
+      // The export's "Client teams" tab; a single-tab sheet uses the linked tab.
+      const wb = await readLinkedWorkbook(link.trim(), ["Client teams"]);
+      const teams = wb.tabs["Client teams"];
+      setPlan(planTeamSheetImport(teams ?? wb.linked.table, clients, userEmails));
+      setSource(`${wb.fileName} › ${teams ? "Client teams" : wb.linked.title}`);
     } catch (err) {
       setProblems(err instanceof TeamSheetStructureError ? err.problems : [describeSheetError(err)]);
     } finally {
