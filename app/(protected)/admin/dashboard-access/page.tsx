@@ -243,7 +243,7 @@ export default function AdminDashboardAccessPage() {
       <header className="sticky top-14 lg:top-0 z-20 bg-white">
         <PageHeader
           title="Dashboard Access"
-          description="Who sees each dashboard tab, and which clients. Admins always see everything."
+          description="Who sees each dashboard tab, and which clients. Admins see every client; hidden tabs are hidden for admins too."
           actions={
             tab === "dashboards" && (
               <div className="flex items-center gap-2">
@@ -446,7 +446,7 @@ export default function AdminDashboardAccessPage() {
               })
             )}
             <p className="text-[11px] text-gray-400">
-              Hidden tabs and sub-tabs disappear for everyone but admins. Access to data is enforced
+              Hidden tabs and sub-tabs disappear from the dashboard for everyone, admins included. Access to data is enforced
               by the security rules with the same model; grants are view-only unless &ldquo;can
               edit&rdquo; is set on Forecaster.
             </p>
@@ -515,7 +515,7 @@ function VisibilityToggle({ hidden, onToggle, small }: { hidden: boolean; onTogg
     <button
       type="button"
       onClick={onToggle}
-      title={hidden ? "Show to everyone who has access" : "Hide from everyone but admins"}
+      title={hidden ? "Show to everyone who has access" : "Hide from everyone, admins included"}
       className={`flex flex-shrink-0 items-center gap-1 font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs"} ${
         hidden ? "bg-gray-200 text-gray-600" : "bg-green-500 text-white"
       }`}

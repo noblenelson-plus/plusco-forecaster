@@ -111,12 +111,12 @@ export interface DashboardGrantDoc {
   updatedBy?: string;
 }
 
-/** `config/dashboard_access` — what non-admins see at all. */
+/** `config/dashboard_access` — dashboard tabs and sub-tabs hidden for everyone. */
 export interface DashboardAccessConfig {
-  /** Tab ids hidden from everyone but admins. */
+  /** Tab ids hidden from everyone, admins included. */
   hiddenTabs: string[];
   /**
-   * Sub-tab page ids ("exec-kpis/meta") hidden from everyone but admins —
+   * Sub-tab page ids ("exec-kpis/meta") hidden from everyone, admins included —
    * work-in-progress pages. Any dashboard's sub-tabs, Forecaster's included.
    */
   hiddenSubtabs: string[];

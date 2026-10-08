@@ -2,7 +2,7 @@
 
 /**
  * Firestore service — `config/dashboard_access`: the dashboard tabs and
- * sub-tabs hidden from everyone but admins (DashboardAccessConfig in
+ * sub-tabs hidden from everyone, admins included (DashboardAccessConfig in
  * access.types.ts). Who may open each tab is resolved in lib/format/access.ts
  * (defaults by email domain and client team, plus dashboard_grants).
  *
