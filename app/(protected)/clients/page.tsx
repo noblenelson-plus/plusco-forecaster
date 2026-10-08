@@ -10,6 +10,7 @@ import ClientGrid from "../../../components/clients/client-grid";
 import ClientFilters from "../../../components/clients/client-filters";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import ClientDrawer from "../../../components/clients/client-drawer";
+import { disambiguatePersonOptions, personLabel } from "../../../lib/format/person";
 import PageHeader from "../../../components/_shared/page-header";
 import type { ClientStatus } from "../../../lib/constants/client.constants";
 import {
@@ -69,11 +70,11 @@ export default function ClientsPage() {
   // Filtered clients. Hidden clients stay visible to admins (with a badge) but
   // are removed entirely for Business Leads — even on this page.
   // Business Lead filter options — distinct BLs in use, resolved to names.
-  const businessLeadOptions = [
-    ...new Set(clients.map((c) => c.CL_Business_Lead).filter(Boolean)),
-  ]
-    .map((uid) => ({ value: uid, label: usersMap.get(uid) ?? uid }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const businessLeadOptions = disambiguatePersonOptions(
+    [...new Set(clients.map((c) => c.CL_Business_Lead).filter(Boolean))]
+      .map((v) => ({ value: v, label: personLabel(v, usersMap) }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  );
 
   const filteredClients = clients.filter((c) => {
     if (isClientHidden(c) && !isAdmin) return false;
@@ -217,6 +218,7 @@ export default function ClientsPage() {
         <ClientDrawer
           open={drawerOpen}
           client={editingClient}
+          allClients={clients}
           isAdmin={isAdmin}
           onClose={() => {
             setDrawerOpen(false);

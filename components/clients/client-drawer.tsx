@@ -1,7 +1,7 @@
 //# filepath: components/clients/client-drawer.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { X, Loader2, Trash2, ChevronDown, ImagePlus, Percent, Copy, Check, Plus, EyeOff } from "lucide-react";
 import { db } from "../../lib/firebase";
@@ -50,12 +50,16 @@ import {
 } from "../../lib/services/labs-partner-service";
 import type { LabsPartner } from "../../lib/types/labs.types";
 import CommissionsDrawer from "./commissions-drawer";
-import { TeamMemberMultiSelect, TeamMemberSelect } from "./team-member-picker";
-import DigitalLeadSelect from "./digital-lead-select";
+import { TeamMemberMultiSelect } from "./team-member-picker";
+import LeadSelect from "./lead-select";
+import { agencyWideCollaborators } from "../../lib/format/client-team";
+import { normalizeEmail } from "../../lib/format/email";
 
 interface ClientDrawerProps {
   open: boolean;
   client: Client | null;
+  /** Every client — to tell agency-wide collaborators from the client's own. */
+  allClients?: Client[];
   isAdmin: boolean;
   onClose: () => void;
   onSaved: (client: Client) => void;
@@ -126,6 +130,7 @@ function normalizeStatusMap(
 export default function ClientDrawer({
   open,
   client,
+  allClients = [],
   isAdmin,
   onClose,
   onSaved,
@@ -247,6 +252,14 @@ export default function ClientDrawer({
       mediaboxInput !== initial.mediabox
     );
   }
+
+  // People allocated to most of an agency (senior staff) aren't listed under
+  // Collaborators — only the client's own are. Their seats are kept on save.
+  const agencyWide = useMemo(() => agencyWideCollaborators(allClients), [allClients]);
+  const isWide = (e: string) => agencyWide.has(normalizeEmail(e));
+  const ownCollaborators = (form.CL_Collaborators ?? []).filter((e) => !isWide(e));
+  const wideCollaborators = (form.CL_Collaborators ?? []).filter(isWide);
+  const collaboratorChoices = useMemo(() => users.filter((u) => !agencyWide.has(u.email)), [users, agencyWide]);
 
   function set<K extends keyof ClientFormData>(key: K, value: ClientFormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -632,16 +645,17 @@ export default function ClientDrawer({
               />
             </Field>
             <Field label="Business Lead">
-              <TeamMemberSelect
+              <LeadSelect
+                kind="business"
                 value={form.CL_Business_Lead}
                 onChange={(v) => set("CL_Business_Lead", v)}
                 users={users}
-                placeholder="Search users…"
                 disabled={!isAdmin}
               />
             </Field>
             <Field label="Digital Lead">
-              <DigitalLeadSelect
+              <LeadSelect
+                kind="digital"
                 value={form.CL_Digital_Lead ?? ""}
                 onChange={(v) => set("CL_Digital_Lead", v)}
                 users={users}
@@ -650,9 +664,9 @@ export default function ClientDrawer({
             </Field>
             <Field label="Collaborators">
               <TeamMemberMultiSelect
-                value={form.CL_Collaborators ?? []}
-                onChange={(v) => set("CL_Collaborators", v)}
-                users={users}
+                value={ownCollaborators}
+                onChange={(v) => set("CL_Collaborators", [...v, ...wideCollaborators])}
+                users={collaboratorChoices}
                 placeholder="Add a collaborator…"
                 disabled={!isAdmin}
               />

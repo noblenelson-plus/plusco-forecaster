@@ -36,6 +36,8 @@ import {
   isGoogleConfigured,
 } from "../../../lib/services/google-sheets-service";
 import { useAgencyScope } from "../../../lib/hooks/use-agency-scope";
+import { useUsersMap } from "../../../lib/hooks/use-users-map";
+import { disambiguatePersonOptions, personLabel } from "../../../lib/format/person";
 import { agencyScopeLabel } from "../../../lib/format/agency-scope";
 import {
   distinctValues,
@@ -186,6 +188,9 @@ export default function RawTablePage({
 
   const table = report?.table ?? null;
 
+  // Person columns (Business Lead) may hold emails: show names instead.
+  const usersMap = useUsersMap();
+
   // Dropdown values per filter field, from the loaded rows only.
   const options = useMemo(() => {
     const out: Record<string, string[]> = {};
@@ -285,8 +290,10 @@ export default function RawTablePage({
           <MultiSelectDropdown
             key={f.field}
             label={f.label}
-            options={(options[f.field] || []).map(
-              (v): Option => ({ value: v, label: v })
+            options={disambiguatePersonOptions(
+              (options[f.field] || [])
+                .map((v): Option => ({ value: v, label: personLabel(v, usersMap) }))
+                .sort((a, b) => a.label.localeCompare(b.label))
             )}
             selectedValues={selected[f.field] || []}
             onChange={(vals: string[]) => setFilter(f.field, vals)}

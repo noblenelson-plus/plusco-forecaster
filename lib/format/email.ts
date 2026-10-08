@@ -34,11 +34,14 @@ export function normalizeDomain(value: string | null | undefined): string {
 
 /** "aicha.dhaheri@x.com" → "Aicha Dhaheri" — a label for people with no display name. */
 export function nameFromEmail(value: string | null | undefined): string {
+  // "marc-antoine.grenier" → "Marc-Antoine Grenier": dots / underscores
+  // separate words, hyphens stay inside a word.
+  const cap = (w: string) => w.split("-").filter(Boolean).map((p) => p[0].toUpperCase() + p.slice(1)).join("-");
   return normalizeEmail(value)
     .split("@")[0]
-    .split(/[._-]+/)
+    .split(/[._]+/)
     .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .map(cap)
     .join(" ");
 }
 

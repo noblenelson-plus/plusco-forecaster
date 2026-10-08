@@ -2,7 +2,8 @@
 "use client";
 
 /**
- * Pickers for a client's team (Business Lead, Digital Lead, collaborators),
+ * Pickers for a client's team (collaborators; the BL / DL dropdowns are in
+ * lead-select.tsx and reuse UserSearch),
  * choosing from the USERS list so team emails always match a person's row —
  * and so the security rules, which compare the normalized sign-in email
  * against CL_Team_Emails, see the same value. A stored value that is not a
@@ -127,37 +128,6 @@ function MemberChip({
 
 function useUsersByEmail(users: UserProfile[]) {
   return useMemo(() => new Map(users.map((u) => [u.email, u])), [users]);
-}
-
-/** A single team slot (Business Lead, Digital Lead). Empty value = nobody. */
-export function TeamMemberSelect({
-  value,
-  onChange,
-  users,
-  placeholder,
-  disabled,
-}: {
-  value: string;
-  onChange: (email: string) => void;
-  users: UserProfile[];
-  placeholder: string;
-  disabled?: boolean;
-}) {
-  const byEmail = useUsersByEmail(users);
-  const current = value.trim();
-  if (current) {
-    return (
-      <div className="flex">
-        <MemberChip
-          value={current}
-          user={byEmail.get(normalizeEmail(current))}
-          onRemove={disabled ? undefined : () => onChange("")}
-        />
-      </div>
-    );
-  }
-  if (disabled) return <p className="text-sm text-gray-400">—</p>;
-  return <UserSearch users={users} exclude={new Set()} onPick={onChange} placeholder={placeholder} />;
 }
 
 /** Collaborators: any number of users. */

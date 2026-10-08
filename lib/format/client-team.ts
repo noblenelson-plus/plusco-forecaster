@@ -137,6 +137,38 @@ export function toggleCollaborator(
   return collaboratorsUpdate(client, on ? [...current, e] : current.filter((x) => x !== e));
 }
 
+// ─── Agency-wide collaborators ────────────────────────────────────────────────
+
+/**
+ * People allocated to most of an agency (senior staff given broad access):
+ * a collaborator on at least `share` of the clients of an agency that has
+ * `minClients` or more. The client drawer hides them from its Collaborators
+ * list so it shows the client's own collaborators; their access is unchanged.
+ * The size floor keeps a one-client agency (Showroom) from marking everyone.
+ */
+export function agencyWideCollaborators(
+  clients: Pick<Client, "CL_Agency" | "CL_Collaborators">[],
+  { share = 0.5, minClients = 10 }: { share?: number; minClients?: number } = {}
+): Set<string> {
+  const size = new Map<string, number>();
+  const count = new Map<string, Map<string, number>>();
+  for (const c of clients) {
+    size.set(c.CL_Agency, (size.get(c.CL_Agency) ?? 0) + 1);
+    for (const e of normalizeEmailList(c.CL_Collaborators ?? [])) {
+      if (!count.has(c.CL_Agency)) count.set(c.CL_Agency, new Map());
+      const m = count.get(c.CL_Agency)!;
+      m.set(e, (m.get(e) ?? 0) + 1);
+    }
+  }
+  const wide = new Set<string>();
+  for (const [agency, m] of count) {
+    const n = size.get(agency) ?? 0;
+    if (n < minClients) continue;
+    for (const [e, k] of m) if (k / n >= share) wide.add(e);
+  }
+  return wide;
+}
+
 // ─── Backfill ─────────────────────────────────────────────────────────────────
 
 export interface TeamEmailsChange {
