@@ -39,10 +39,11 @@ import AccessLevelsCard from "../../../../components/users/access-levels-card";
 import PersonClientsDrawer, { type AccessPerson } from "../../../../components/users/person-clients-drawer";
 import ClientPeopleDrawer from "../../../../components/users/client-people-drawer";
 import TeamSheetImportModal from "../../../../components/users/team-sheet-import-modal";
-import { exportToNewSheet } from "../../../../components/forecaster/table/table-export";
-import { buildTeamSheet, TEAM_SHEET_ROLES, type TeamSheetChange } from "../../../../lib/format/team-sheet";
+import { exportToNewSheetWithTabs } from "../../../../components/forecaster/table/table-export";
+import { buildTeamSheet, buildUserList, TEAM_SHEET_ROLES, type TeamSheetChange } from "../../../../lib/format/team-sheet";
 import {
   Users,
+  Shield,
   UsersRound,
   Crown,
   MonitorSmartphone,
@@ -172,21 +173,30 @@ export default function AdminUsersPage() {
   }
 
   /**
-   * Every client team to a new Google Sheet (all clients, whatever the view
-   * filters — the import treats each client's rows as its full team). Text
-   * cells get a leading apostrophe so ids like "1e820aff" stay text.
+   * Forecast Access to a new Google Sheet with two tabs:
+   *   - User list: one row per user — Name, Role (Admin / Client team),
+   *     Email, Last Sign-In;
+   *   - Client teams: every client team, one row per person per client
+   *     (all clients, whatever the view filters — the import treats each
+   *     client's rows as its full team), sorted by email.
+   * Text cells get a leading apostrophe so ids like "1e820aff" stay text.
    */
   async function exportTeams() {
     setExporting(true);
     setError("");
     setExportedUrl(null);
     try {
-      const table = buildTeamSheet(clients);
-      const url = await exportToNewSheet({
-        title: `Client teams — ${new Date().toISOString().slice(0, 10)}`,
-        sheetTitle: "Client teams",
-        matrix: table.map((row, r) => (r === 0 ? row : row.map((v) => (v ? `'${v}` : v)))),
-        dropdowns: { Role: TEAM_SHEET_ROLES },
+      const asText = (table: string[][]) => table.map((row, r) => (r === 0 ? row : row.map((v) => (v ? `'${v}` : v))));
+      const url = await exportToNewSheetWithTabs({
+        title: `Forecast access — ${new Date().toISOString().slice(0, 10)}`,
+        tabs: [
+          { sheetTitle: "User list", matrix: asText(buildUserList(users, clients)) },
+          {
+            sheetTitle: "Client teams",
+            matrix: asText(buildTeamSheet(clients, "email")),
+            dropdowns: { Role: TEAM_SHEET_ROLES },
+          },
+        ],
       });
       setExportedUrl(url);
     } catch (err) {
@@ -286,7 +296,7 @@ export default function AdminUsersPage() {
     <div className="flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col bg-muted">
       <PageHeader
         title="Forecast Access"
-        description="Who is on which client team, and admins. Dashboard tabs are granted on Access → Dashboard Access."
+        description="Client teams are automatically granted access to the Forecaster Dashboard (for their clients). Additional dashboard access is managed on the Dashboard Access page."
         actions={
           <button
             onClick={() => setAddOpen((v) => !v)}
@@ -344,8 +354,9 @@ export default function AdminUsersPage() {
         )}
 
         {/* Scorecards */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard icon={Users} label="Total users" value={loading ? "—" : String(stats.total)} accent="text-gray-900" />
+          <StatCard icon={Shield} label="Admins" value={loading ? "—" : String(stats.ADMIN)} accent="text-gray-900" />
           <StatCard icon={Crown} label="GMs" value={loading ? "—" : String(stats.GM)} accent={ROLE_ICON.GM} />
           <StatCard icon={Briefcase} label="Business Leads" value={loading ? "—" : String(stats.BL)} accent={ROLE_ICON.BL} />
           <StatCard icon={MonitorSmartphone} label="Digital Leads" value={loading ? "—" : String(stats.DL)} accent={ROLE_ICON.DL} />

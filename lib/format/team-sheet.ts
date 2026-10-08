@@ -14,8 +14,15 @@
  */
 
 import type { Client } from "../types/client.types";
-import { isValidEmail, normalizeEmail, normalizeEmailList } from "./email";
-import { computeTeamEmails, teamSeats, TEAM_ROLE_LABELS, type TeamRole } from "./client-team";
+import { isValidEmail, nameFromEmail, normalizeEmail, normalizeEmailList } from "./email";
+import {
+  computeTeamEmails,
+  teamSeats,
+  TEAM_ROLE_LABELS,
+  type TeamEmailFields,
+  type TeamRole,
+} from "./client-team";
+import type { UserRecord } from "../types/access.types";
 
 export const TEAM_SHEET_HEADERS = ["Client ID", "Client Name", "Role", "Email"] as const;
 
@@ -42,15 +49,42 @@ type TeamClient = Pick<
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-/** Header + one row per (client, seat), sorted by client name then role. */
-export function buildTeamSheet(clients: TeamClient[]): string[][] {
+/**
+ * Header + one row per (client, seat): by client name then role, or by email
+ * then client name (`sortBy: "email"`, one person's clients together).
+ */
+export function buildTeamSheet(clients: TeamClient[], sortBy: "client" | "email" = "client"): string[][] {
   const order: Record<TeamRole, number> = { GM: 0, BL: 1, DL: 2, COLLABORATOR: 3 };
-  const rows: string[][] = [];
+  const rows: { row: string[]; role: TeamRole }[] = [];
   for (const c of [...clients].sort((a, b) => a.CL_Name.localeCompare(b.CL_Name))) {
     const seats = teamSeats(c).sort((a, b) => order[a.role] - order[b.role] || a.email.localeCompare(b.email));
-    for (const s of seats) rows.push([c.cl_id, c.CL_Name, TEAM_ROLE_LABELS[s.role], s.email]);
+    for (const s of seats) rows.push({ row: [c.cl_id, c.CL_Name, TEAM_ROLE_LABELS[s.role], s.email], role: s.role });
   }
-  return [[...TEAM_SHEET_HEADERS], ...rows];
+  if (sortBy === "email") {
+    rows.sort((a, b) => a.row[3].localeCompare(b.row[3]) || a.row[1].localeCompare(b.row[1]) || order[a.role] - order[b.role]);
+  }
+  return [[...TEAM_SHEET_HEADERS], ...rows.map((r) => r.row)];
+}
+
+/**
+ * The user list: one row per user — Name, Role (Admin, Client team, or No
+ * client team; Revoked when access was removed), Email, Last Sign-In.
+ */
+export function buildUserList(
+  users: Pick<UserRecord, "email" | "displayName" | "role" | "lastLoginAt" | "disabled">[],
+  clients: (TeamEmailFields & Pick<Client, "cl_id">)[]
+): string[][] {
+  const onTeam = new Set(clients.flatMap((c) => teamSeats(c).map((s) => s.email)));
+  const nameOf = (u: { email: string; displayName: string | null }) => u.displayName || nameFromEmail(u.email);
+  const rows = [...users]
+    .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+    .map((u) => [
+      nameOf(u),
+      u.disabled ? "Revoked" : u.role === "ADMIN" ? "Admin" : onTeam.has(u.email) ? "Client team" : "No client team",
+      u.email,
+      u.lastLoginAt?.toDate?.().toISOString().slice(0, 10) ?? "Never signed in",
+    ]);
+  return [["Name", "Role", "Email", "Last Sign-In"], ...rows];
 }
 
 // ─── Import ───────────────────────────────────────────────────────────────────
