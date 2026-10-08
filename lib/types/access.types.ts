@@ -1,7 +1,7 @@
 // lib/types/access.types.ts
 
 /**
- * Access model of the user & access rebuild (branch auth-rebuild).
+ * The access model.
  *
  *   - `users/{email}`: one doc per person, keyed by lowercase email, role
  *     USER (default) or ADMIN. A row grants nothing by itself.
@@ -11,8 +11,7 @@
  *   - Dashboard tabs: defaults by email domain and client team, plus
  *     per-person grants (`dashboard_grants/{email}`) — see DASHBOARD_TABS.
  *
- * Imported directly (not via the lib/types barrel) while the legacy
- * user.types.ts model still exists; the names differ from it on purpose.
+ * Imported directly (not via the lib/types barrel).
  */
 
 import type { Timestamp } from "firebase/firestore";
