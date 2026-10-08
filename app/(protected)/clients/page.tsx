@@ -218,6 +218,7 @@ export default function ClientsPage() {
         <ClientDrawer
           open={drawerOpen}
           client={editingClient}
+          allClients={clients}
           isAdmin={isAdmin}
           onClose={() => {
             setDrawerOpen(false);
