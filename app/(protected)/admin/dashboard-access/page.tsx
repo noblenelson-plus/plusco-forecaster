@@ -18,6 +18,11 @@ import { useRouter } from "next/navigation";
 import {
   Building2,
   Briefcase,
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  Upload,
+  X,
   Eye,
   EyeOff,
   LayoutDashboard,
@@ -32,6 +37,9 @@ import {
 import PageHeader from "../../../../components/_shared/page-header";
 import AgenciesPanel from "../../../../components/agencies/agencies-panel";
 import GrantEditor from "../../../../components/dashboard-access/grant-editor";
+import GrantSheetImportModal from "../../../../components/dashboard-access/grant-sheet-import-modal";
+import { exportToNewSheet } from "../../../../components/forecaster/table/table-export";
+import { buildGrantSheet } from "../../../../lib/format/grant-sheet";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import {
   saveDashboardAccess,
@@ -81,6 +89,10 @@ export default function AdminDashboardAccessPage() {
   // Dashboards | Agencies & Domains (the agency ↔ domain mapping).
   const [tab, setTab] = useState<"dashboards" | "agencies">("dashboards");
   const [editing, setEditing] = useState<{ tab: DashboardTabId; label: string; email?: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportedUrl, setExportedUrl] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -98,6 +110,31 @@ export default function AdminDashboardAccessPage() {
   }, [isAdmin]);
 
   const names = useMemo(() => new Map(users.map((u) => [u.email, u.displayName])), [users]);
+  const userEmails = useMemo(() => new Set(users.map((u) => u.email)), [users]);
+  const tabLabels = useMemo(
+    () => Object.fromEntries(DASHBOARD_PAGES.map((p) => [p.id, p.label])) as Record<DashboardTabId, string>,
+    []
+  );
+
+  /** Every grant to a new Google Sheet (one row per person per tab). */
+  async function exportGrants() {
+    setExporting(true);
+    setSaveError(null);
+    setExportedUrl(null);
+    try {
+      const url = await exportToNewSheet({
+        title: `Dashboard access — ${new Date().toISOString().slice(0, 10)}`,
+        sheetTitle: "Dashboard access",
+        matrix: buildGrantSheet(grants ?? [], names, tabLabels),
+        dropdowns: { Tab: Object.values(tabLabels), "Can edit": ["Yes", "No"] },
+      });
+      setExportedUrl(url);
+    } catch (err) {
+      setSaveError("Google Sheets export failed: " + (err instanceof Error ? err.message : "Unknown error"));
+    } finally {
+      setExporting(false);
+    }
+  }
   const nameOf = (e: string) => names.get(e) || nameFromEmail(e);
 
   /** Per tab: the people granted it. */
@@ -179,6 +216,30 @@ export default function AdminDashboardAccessPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => void exportGrants()}
+                  disabled={grants === null || exporting}
+                  className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                  title="Everyone given access, to a new Google Sheet: Email, Name, Tab, Agencies, Regions, Can edit"
+                >
+                  {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  Export
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNotice(null);
+                    setImportOpen(true);
+                  }}
+                  disabled={grants === null}
+                  className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
+                  title="Apply an edited access sheet (review first)"
+                >
+                  <Upload size={14} />
+                  Import
+                </button>
+                <span className="mx-1 h-5 w-px bg-gray-200" />
+                <button
+                  type="button"
                   onClick={discard}
                   disabled={!dirty || saving}
                   className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
@@ -234,6 +295,30 @@ export default function AdminDashboardAccessPage() {
           </>
         ) : (
           <>
+            {exportedUrl && (
+              <div className="flex items-center justify-between gap-3 bg-green-500 text-white px-4 py-3 text-sm">
+                <span className="flex items-center gap-2">
+                  <FileSpreadsheet size={15} />
+                  Dashboard access exported to a new Google Sheet in your Drive.
+                </span>
+                <span className="flex items-center gap-3 flex-shrink-0">
+                  <a href={exportedUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 font-medium underline underline-offset-2">
+                    Open sheet <ExternalLink size={13} />
+                  </a>
+                  <button onClick={() => setExportedUrl(null)} title="Dismiss">
+                    <X size={15} />
+                  </button>
+                </span>
+              </div>
+            )}
+            {notice && (
+              <div className="flex items-center justify-between gap-3 bg-green-500 text-white px-4 py-3 text-sm">
+                <span>{notice}</span>
+                <button onClick={() => setNotice(null)} title="Dismiss">
+                  <X size={15} />
+                </button>
+              </div>
+            )}
             {(saveError || loadError) && (
               <div className="border border-red-500 bg-red-500 px-4 py-2 text-sm text-white">
                 {saveError ? `Couldn't save: ${saveError}` : loadError}
@@ -335,6 +420,26 @@ export default function AdminDashboardAccessPage() {
           </>
         )}
       </main>
+
+      {importOpen && grants && (
+        <GrantSheetImportModal
+          current={grants}
+          userEmails={userEmails}
+          tabLabels={tabLabels}
+          updatedBy={myEmail}
+          onClose={() => setImportOpen(false)}
+          onApplied={(changes) => {
+            const byEmail = new Map(changes.map((c) => [c.email, c.tabs]));
+            setGrants((prev) => {
+              const kept = (prev ?? []).filter((g) => !byEmail.has(g.email));
+              const updated = changes.filter((c) => Object.keys(c.tabs).length).map((c) => ({ email: c.email, tabs: c.tabs }));
+              return [...kept, ...updated];
+            });
+            setImportOpen(false);
+            setNotice(`Import applied — access updated for ${changes.length} ${changes.length === 1 ? "person" : "people"}.`);
+          }}
+        />
+      )}
 
       {editing && (
         <GrantEditor
