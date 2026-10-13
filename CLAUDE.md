@@ -73,11 +73,14 @@ Data model (`forecaster.types.ts`), three levels:
 
 Storage — Firestore collection `data_entries`, one doc per `{client, year, rfqType}` triplet with ID `{cl_id}_{year}_{rfqType}` (`buildDataEntryId`). Each axis lives under `axes.{axisId}`, so saving one axis (`setDoc` with `merge: true`) never touches the others (`data-entry-service.ts`).
 
-Editing flow (`use-forecaster-grid.ts`) — **explicit save**, not autosave:
+Editing flow (`use-forecaster-grid.ts`) — a local working copy, **autosaved** ~2 s after the last edit (`use-autosave.ts`), with manual Save/Discard:
 - The active triplet comes from the global Zustand store (`forecast-selection.store.ts`), set via the sidebar selectors.
 - On load, the axis data is fetched and copied into a local working copy; edits accumulate in a `dirtyMap` (cell key → value) plus a `structureDirty` flag. `Save` does a single Firestore write of the whole axis; `Discard` restores the snapshot.
 - **Locking is owned by the RFQ doc, not the data:** a `selectedRFQ.status === "LOCKED"` makes the entire grid read-only for everyone. `actuals` (`ADMIN_INPUT`) are editable only by admins. The `rfqs` collection is subscribed in real-time so lock/unlock by an admin reflects instantly.
 - RFQ comparison: a second axis can be loaded as reference; matching is by bucket name + rowType (IDs differ across docs).
+- **Reference data → BL (Media/Labs).** The MediaOcean and MediaBox strips under "Reference Data" share one Campaign ↔ Channel toggle (in that band; flipping it clears ticked rows). There are exactly two ways to copy from them — no click-to-copy, no per-month / per-campaign buttons:
+  1. **Structured:** row checkboxes (`use-reference-selection.ts`; a leaf is one channel × campaign atom, `leafKey`; parents derive checked/indeterminate) → **Copy to my submission** (`copy-to-submission-modal.tsx`): destination (one project, or split by campaign — matched by name, missing projects created) + months. Planned purely in `lib/format/reference-copy.ts` (overwrite count, unmatched/skipped channels), written by `applyReferencePaste` in one undo step, chosen months only. Channel → rowType matching, aliases and the skip list live only in `lib/format/mediabox-paste.ts`. Each strip has its own selection (the two sources describe the same spend).
+  2. **Spreadsheet:** reference rows join the grid's cell selection read-only (`GridRowDescriptor.valueAt`, keys from `referenceRowKey`) — select + Ctrl/Cmd+C as TSV, with the sum widget. `ForecastGrid` owns the strips' collapse/expand state and the MediaOcean pivot because it orders that selection model.
 
 ### The Product axis (4th tab, no grid engine)
 
