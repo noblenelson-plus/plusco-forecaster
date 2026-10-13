@@ -113,6 +113,7 @@ export function useGridSelection({
   const read = useCallback(
     (r: number, c: number) => {
       const row = rows[r];
+      if (!row) return 0;
       return row.valueAt
         ? row.valueAt(monthOf(c))
         : getValue(row.coordFor(monthOf(c)));
@@ -120,16 +121,20 @@ export function useGridSelection({
     [rows, getValue]
   );
 
-  // Selection rectangle derived from anchor + focus.
+  // Selection rectangle derived from anchor + focus. The row list can shrink
+  // under a live selection (a section collapsed, the reference orientation
+  // flipped, a detail line added); a rectangle reaching past the last row is
+  // dropped rather than read out of bounds.
   const rect = useMemo(() => {
     if (!anchor || !focus) return null;
+    if (anchor.r > maxR || focus.r > maxR) return null;
     return {
       minR: Math.min(anchor.r, focus.r),
       maxR: Math.max(anchor.r, focus.r),
       minC: Math.min(anchor.c, focus.c),
       maxC: Math.max(anchor.c, focus.c),
     };
-  }, [anchor, focus]);
+  }, [anchor, focus, maxR]);
 
   const isSelected = useCallback(
     (r: number, c: number) =>
@@ -225,7 +230,7 @@ export function useGridSelection({
   const commitEdit = useCallback(
     (value: number | null, mv: EditMove = "down") => {
       setEditing(false);
-      if (focus && !locked && !rows[focus.r]?.cellReadOnly(focus.c)) {
+      if (focus && !locked && rows[focus.r] && !rows[focus.r].cellReadOnly(focus.c)) {
         setCells([{ coord: rows[focus.r].coordFor(monthOf(focus.c)), value }]);
       }
       if (mv === "down") move(1, 0, false);
@@ -245,7 +250,9 @@ export function useGridSelection({
       for (let r = rect.minR; r <= rect.maxR; r++) {
         const cells: string[] = [];
         for (let c = rect.minC; c <= rect.maxC; c++) {
-          const v = read(r, c);
+          // Round to cents: reference rows (MediaBox) carry USD→CAD
+          // conversions with long float tails that would paste as-is.
+          const v = Math.round(read(r, c) * 100) / 100;
           cells.push(v === 0 ? "" : String(v));
         }
         lines.push(cells.join("\t"));
