@@ -1170,11 +1170,14 @@ export function useForecasterGrid(
 
   const sortBuckets = useCallback((dir: "asc" | "desc") => {
     commitData((prev) => {
-      const sorted = [...prev.buckets].sort((a, b) =>
-        dir === "asc"
-          ? a.name.localeCompare(b.name)
-          : b.name.localeCompare(a.name)
-      );
+      // Natural, case-insensitive order ("Q2 Flight" before "Q10 Flight").
+      const sorted = [...prev.buckets].sort((a, b) => {
+        const cmp = a.name.localeCompare(b.name, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+        return dir === "asc" ? cmp : -cmp;
+      });
       return { ...prev, buckets: sorted };
     });
     setStructureDirty(true);

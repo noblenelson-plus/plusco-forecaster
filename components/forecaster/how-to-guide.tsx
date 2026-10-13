@@ -32,6 +32,7 @@ import {
   Unlock,
   RotateCcw,
   FolderPlus,
+  ArrowDownAZ,
   SplitSquareHorizontal,
   Download,
   Info,
@@ -171,7 +172,8 @@ const GROUPS: ChapterGroup[] = [
               this client forecasts in (CAD or USD) — amounts you type are in
               that currency. If the RFQ has scheduled periods, a{" "}
               <strong>timeline bar</strong> pinned to the bottom of the page
-              shows where the round stands today.
+              shows where the round stands today — click it to expand the full
+              schedule.
             </Note>
           </>
         ),
@@ -242,7 +244,9 @@ const GROUPS: ChapterGroup[] = [
                 <Chip icon={FolderPlus}>Add project</Chip> (top-right), type a
                 name, press <Kbd>Enter</Kbd> or <Chip>Add</Chip>. With a single
                 project it is always named <em>General</em>; add a second one to
-                rename them freely.
+                rename them freely. With several projects,{" "}
+                <Chip icon={ArrowDownAZ}>Sort A–Z</Chip> reorders them by name
+                (click again for Z–A; Undo puts them back).
               </Step>
               <Step n={2}>
                 <strong>Add a row.</strong> In the project header, click{" "}
