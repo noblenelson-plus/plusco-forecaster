@@ -10,6 +10,57 @@
 
 import { useEffect, useRef } from "react";
 import { ClipboardPaste } from "lucide-react";
+import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
+import type { GridSelection } from "../../lib/hooks/use-grid-selection";
+import { SpreadsheetCell } from "./editable-cell";
+
+/** The grid's cell-selection plumbing, handed to the read-only reference rows. */
+export interface ReferenceCellsApi {
+  sel: GridSelection;
+  rowIndex: Map<string, number>;
+  draggingRef: React.MutableRefObject<boolean>;
+}
+
+/**
+ * The 12 month cells of a read-only reference row, as spreadsheet cells of the
+ * grid's selection model (select, Shift/drag, Ctrl/Cmd+C, the sum widget) —
+ * never editable. Falls back to plain cells if the row isn't registered.
+ */
+export function ReferenceMonthCells({
+  rowKey,
+  months,
+  cells,
+}: {
+  rowKey: string;
+  months: MonthlyMap;
+  cells: ReferenceCellsApi;
+}) {
+  const r = cells.rowIndex.get(rowKey);
+  return (
+    <>
+      {MONTHS.map((m, ci) =>
+        r === undefined ? (
+          <td key={m} className="px-2.5 py-2 text-right align-middle">
+            <p className="text-sm tabular-nums text-gray-700">
+              {months[m] ? Math.round(months[m]).toLocaleString("en-CA") : "—"}
+            </p>
+          </td>
+        ) : (
+          <SpreadsheetCell
+            key={m}
+            r={r}
+            c={ci}
+            value={months[m] ?? 0}
+            readOnly
+            dirty={false}
+            sel={cells.sel}
+            draggingRef={cells.draggingRef}
+          />
+        )
+      )}
+    </>
+  );
+}
 import type {
   ReferenceOrientation,
   ReferenceSelection,

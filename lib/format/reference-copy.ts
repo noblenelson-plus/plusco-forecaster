@@ -35,6 +35,22 @@ export function leafKey(channel: string, campaign: string): string {
 }
 
 /**
+ * Keys of the read-only reference rows in the grid's cell-selection model —
+ * shared by the grid (which orders them) and the strips (which render them).
+ * Prefixed so they never collide with BL / actuals row ids.
+ */
+export const referenceRowKey = {
+  /** MediaBox group row, or its child at `childIndex`. */
+  mediabox: (groupKey: string, childIndex?: number) =>
+    JSON.stringify(["mb", groupKey, childIndex ?? null]),
+  /** MediaOcean campaign-view row, or its channel child. */
+  mediaocean: (campaignKey: string, channelKey?: string) =>
+    JSON.stringify(["mo", campaignKey, channelKey ?? null]),
+  /** Another year's MediaOcean row (reference-year peek). */
+  otherYear: (rowId: string) => JSON.stringify(["ref", rowId]),
+};
+
+/**
  * Placeholder campaign names the two sources use for spend with no campaign:
  * MediaOcean's NO_CAMPAIGN and MediaBox's "(No campaign)" (NO_CAMPAIGN_LABEL in
  * mediabox-totals-service, not imported here to keep this module Firebase-free).

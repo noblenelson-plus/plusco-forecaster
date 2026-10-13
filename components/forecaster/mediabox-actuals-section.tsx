@@ -11,8 +11,10 @@
  * (total media spend on the Media axis, the LABS subset on the Labs axis) per
  * the grid's shared Reference Data orientation, each group expandable to its
  * children. Every row carries a checkbox (a parent ticks all its children) that
- * feeds the copy-to-submission flow. Amounts are converted USD→CAD at read time
- * with the year's rate.
+ * feeds the copy-to-submission flow, and its month cells join the grid's cell
+ * selection (select + Ctrl/Cmd+C, read-only). Expand/collapse state is owned by
+ * the grid, which needs the visible rows to order the selection model. Amounts
+ * are converted USD→CAD at read time with the year's rate.
  */
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
@@ -37,7 +39,13 @@ import {
   type ReferenceOrientation,
   type ReferenceSelection,
 } from "../../lib/hooks/use-reference-selection";
-import { RowCheckbox, SelectionCount } from "./reference-selection-controls";
+import { referenceRowKey } from "../../lib/format/reference-copy";
+import {
+  ReferenceMonthCells,
+  RowCheckbox,
+  SelectionCount,
+  type ReferenceCellsApi,
+} from "./reference-selection-controls";
 
 /** Axes that sit under MediaOcean and therefore get a MediaBox section. */
 export function axisHasMediabox(axisId: AxisId): boolean {
@@ -119,6 +127,8 @@ function MoneyRow({
   bold = false,
   expand,
   check,
+  rowKey,
+  cells,
 }: {
   label: string;
   byMonth: MonthlyMap;
@@ -129,6 +139,9 @@ function MoneyRow({
   expand?: { expanded: boolean; onToggle: () => void };
   /** Row checkbox (copy-to-submission selection); absent when not selectable. */
   check?: ReactNode;
+  /** Key of this row in the grid's cell-selection model. */
+  rowKey: string;
+  cells: ReferenceCellsApi;
 }) {
   const labelText = bold ? "font-medium" : "";
   return (
@@ -163,20 +176,7 @@ function MoneyRow({
         </div>
       </td>
       {showNotes && <td className="bg-gray-50 group-hover:bg-gray-100" />}
-      {MONTHS.map((m) => {
-        const v = byMonth[m] ?? 0;
-        return (
-          <td key={m} className="px-2.5 py-2 text-right align-middle">
-            <p
-              className={`text-sm tabular-nums ${
-                bold ? "font-medium text-gray-900" : "text-gray-700"
-              }`}
-            >
-              {money(v)}
-            </p>
-          </td>
-        );
-      })}
+      <ReferenceMonthCells rowKey={rowKey} months={byMonth} cells={cells} />
       <td className="px-2.5 py-2 text-right align-middle bg-gray-100 group-hover:bg-gray-200">
         <p
           className={`text-sm tabular-nums ${
@@ -190,6 +190,67 @@ function MoneyRow({
   );
 }
 
+/** MediaBox rows of the active axis: media types (Media) or LABS partners (Labs). */
+export function mediaboxTypeRows(
+  mediabox: UseMediaboxTotalsResult,
+  axisId: AxisId
+): MediaboxCadType[] {
+  const { cad } = mediabox;
+  if (!cad) return [];
+  return axisId === "labs" ? cad.labsByPartner : cad.mediaByType;
+}
+
+/**
+ * The strip's rows for an orientation: a primary row that expands to its nested
+ * children. Every row carries the selection leaf keys under it — one (type ×
+ * campaign) atom per child, so a key means the same spend in both orientations;
+ * a type with no campaign breakdown is a single atom under "(No campaign)" (the
+ * same bucket groupByCampaign uses). Shared with the grid, which orders the
+ * cell-selection model from the same rows.
+ */
+export function buildMediaboxGroups(
+  typeRows: MediaboxCadType[],
+  orientation: ReferenceOrientation
+) {
+  if (orientation === "campaign") {
+    return groupByCampaign(typeRows).map((g) => {
+      const children = g.types.map((t) => ({
+        label: t.label,
+        byMonth: t.byMonth,
+        total: t.total,
+        leaf: leafKey(t.label, g.name),
+      }));
+      return {
+        key: g.name,
+        label: g.name,
+        byMonth: g.byMonth,
+        total: g.total,
+        children,
+        leaves: [...new Set(children.map((c) => c.leaf))],
+      };
+    });
+  }
+  return typeRows.map((t) => {
+    const children = t.campaigns.map((c) => ({
+      label: c.name,
+      byMonth: c.byMonth,
+      total: c.total,
+      leaf: leafKey(t.label, c.name),
+    }));
+    return {
+      key: t.label,
+      label: t.label,
+      byMonth: t.byMonth,
+      total: t.total,
+      children,
+      leaves:
+        children.length > 0
+          ? [...new Set(children.map((c) => c.leaf))]
+          : [leafKey(t.label, NO_CAMPAIGN_LABEL)],
+    };
+  });
+}
+
 export default function MediaboxActualsSection({
   axisId,
   year,
@@ -198,6 +259,11 @@ export default function MediaboxActualsSection({
   orientation,
   selection,
   onCopySelection,
+  collapsed,
+  onToggleCollapsed,
+  expanded,
+  onToggleExpanded,
+  cells,
 }: {
   axisId: AxisId;
   year: number | null;
@@ -211,79 +277,25 @@ export default function MediaboxActualsSection({
   selection?: ReferenceSelection;
   /** Opens "Copy to my submission" for the ticked rows. */
   onCopySelection: () => void;
+  /** Whole-section collapse: the header stays, the body is hidden. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  /** Group rows expanded to show their children (keyed by group key). */
+  expanded: Set<string>;
+  onToggleExpanded: (groupKey: string) => void;
+  /** The grid's cell-selection plumbing for the month cells. */
+  cells: ReferenceCellsApi;
 }) {
   const { cad, totals, refreshing, triggering, loading, error, refresh } =
     mediabox;
-
-  // Which group rows are expanded to show their children.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // Whole-section collapse: the header stays, the body is hidden.
-  const [collapsed, setCollapsed] = useState(false);
-  const toggle = (key: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
 
   // Only Media and Labs sit under MediaOcean.
   if (!axisHasMediabox(axisId)) return null;
 
   const colSpan = showNotes ? 15 : 14;
   // Media axis groups by media type; Labs axis groups by LABS partner.
-  const typeRows: MediaboxCadType[] = cad
-    ? axisId === "labs"
-      ? cad.labsByPartner
-      : cad.mediaByType
-    : [];
-  // Inverted view: campaign at the top, media types / partners nested.
-  const campaignGroups = groupByCampaign(typeRows);
-
-  // Normalized rows for whichever orientation is active: a primary row that
-  // expands to its nested children. Every row carries the selection leaf keys
-  // under it — one (type × campaign) atom per child, so a key means the same
-  // spend in both orientations; a type with no campaign breakdown is a single
-  // atom under "(No campaign)" (the same bucket groupByCampaign uses).
-  const primaryRows =
-    orientation === "campaign"
-      ? campaignGroups.map((g) => {
-          const children = g.types.map((t) => ({
-            label: t.label,
-            byMonth: t.byMonth,
-            total: t.total,
-            leaf: leafKey(t.label, g.name),
-          }));
-          return {
-            key: g.name,
-            label: g.name,
-            byMonth: g.byMonth,
-            total: g.total,
-            children,
-            leaves: [...new Set(children.map((c) => c.leaf))],
-          };
-        })
-      : typeRows.map((t) => {
-          const children = t.campaigns.map((c) => ({
-            label: c.name,
-            byMonth: c.byMonth,
-            total: c.total,
-            leaf: leafKey(t.label, c.name),
-          }));
-          return {
-            key: t.label,
-            label: t.label,
-            byMonth: t.byMonth,
-            total: t.total,
-            children,
-            leaves:
-              children.length > 0
-                ? [...new Set(children.map((c) => c.leaf))]
-                : [leafKey(t.label, NO_CAMPAIGN_LABEL)],
-          };
-        });
-
-
+  const typeRows = mediaboxTypeRows(mediabox, axisId);
+  const primaryRows = buildMediaboxGroups(typeRows, orientation);
 
   // Grand total across every type/partner — the section's bottom line.
   const grandByMonth: MonthlyMap = {};
@@ -302,7 +314,7 @@ export default function MediaboxActualsSection({
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
             <button
               type="button"
-              onClick={() => setCollapsed((c) => !c)}
+              onClick={onToggleCollapsed}
               title={collapsed ? "Expand section" : "Collapse section"}
               className="flex items-center gap-1.5 text-gray-900 hover:opacity-70 transition-opacity"
             >
@@ -371,6 +383,7 @@ export default function MediaboxActualsSection({
           {/* Active orientation: primary rows, each expandable to its children. */}
           {primaryRows.map((group) => {
             const isOpen = expanded.has(group.key);
+            const groupRowKey = referenceRowKey.mediabox(group.key);
             return (
               <Fragment key={group.key}>
                 <MoneyRow
@@ -381,8 +394,10 @@ export default function MediaboxActualsSection({
                   bold
                   expand={{
                     expanded: isOpen,
-                    onToggle: () => toggle(group.key),
+                    onToggle: () => onToggleExpanded(group.key),
                   }}
+                  rowKey={groupRowKey}
+                  cells={cells}
                   check={
                     selection && (
                       <RowCheckbox
@@ -395,9 +410,11 @@ export default function MediaboxActualsSection({
                   }
                 />
                 {isOpen &&
-                  group.children.map((c) => (
+                  group.children.map((c, i) => (
                     <MoneyRow
-                      key={`${group.key}::${c.label}`}
+                      key={`${group.key}::${i}`}
+                      rowKey={referenceRowKey.mediabox(group.key, i)}
+                      cells={cells}
                       label={c.label}
                       byMonth={c.byMonth}
                       total={c.total}

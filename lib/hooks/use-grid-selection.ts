@@ -3,8 +3,8 @@
 /**
  * Spreadsheet-style selection + clipboard layer for the forecast grid.
  *
- * The grid is modelled as an ordered list of editable rows (BL rows of every
- * bucket, then the actuals rows) × 12 month columns. This hook owns:
+ * The grid is modelled as an ordered list of rows (BL rows of every bucket, the
+ * actuals rows, then the read-only reference rows) × 12 month columns. This hook owns:
  *   — the rectangular selection (anchor → focus) and the active cell
  *   — keyboard navigation (arrows / Shift+arrows / Tab / Enter)
  *   — edit-mode state (which cell holds the inline input, and its seed)
@@ -35,6 +35,13 @@ export interface GridRowDescriptor {
   cellReadOnly: (col: number) => boolean;
   /** Builds the cell coordinate for a given month (1–12). */
   coordFor: (month: number) => CellCoord;
+  /**
+   * Value of the cell for a month, for rows that aren't grid data (read-only
+   * reference rows: MediaBox, the MediaOcean campaign view, another year's
+   * actuals). Such rows must be read-only in every column; their coordFor is
+   * never written. Omitted → the grid's getValue(coordFor(month)).
+   */
+  valueAt?: (month: number) => number;
 }
 
 export interface CellPos {
@@ -102,6 +109,17 @@ export function useGridSelection({
 
   const maxR = rows.length - 1;
 
+  // A cell's value — the row's own reader for reference rows, else the grid's.
+  const read = useCallback(
+    (r: number, c: number) => {
+      const row = rows[r];
+      return row.valueAt
+        ? row.valueAt(monthOf(c))
+        : getValue(row.coordFor(monthOf(c)));
+    },
+    [rows, getValue]
+  );
+
   // Selection rectangle derived from anchor + focus.
   const rect = useMemo(() => {
     if (!anchor || !focus) return null;
@@ -135,12 +153,12 @@ export function useGridSelection({
     let count = 0;
     for (let r = rect.minR; r <= rect.maxR; r++) {
       for (let c = rect.minC; c <= rect.maxC; c++) {
-        sum += getValue(rows[r].coordFor(monthOf(c)));
+        sum += read(r, c);
         count++;
       }
     }
     return { count, sum };
-  }, [rect, getValue, rows]);
+  }, [rect, read]);
 
   const clear = useCallback(() => {
     setAnchor(null);
@@ -227,7 +245,7 @@ export function useGridSelection({
       for (let r = rect.minR; r <= rect.maxR; r++) {
         const cells: string[] = [];
         for (let c = rect.minC; c <= rect.maxC; c++) {
-          const v = getValue(rows[r].coordFor(monthOf(c)));
+          const v = read(r, c);
           cells.push(v === 0 ? "" : String(v));
         }
         lines.push(cells.join("\t"));
@@ -235,7 +253,7 @@ export function useGridSelection({
       e.clipboardData.setData("text/plain", lines.join("\n"));
       e.preventDefault();
     },
-    [rect, editing, getValue, rows]
+    [rect, editing, read]
   );
 
   const onPaste = useCallback(
@@ -295,27 +313,27 @@ export function useGridSelection({
     for (let c = rect.minC; c <= rect.maxC; c++) {
       // getValue can't tell an untouched 0 from a deliberate one, so filling
       // from a 0 clears the targets rather than stamping explicit zeros.
-      const src = getValue(rows[rect.minR].coordFor(monthOf(c))) || null;
+      const src = read(rect.minR, c) || null;
       for (let r = rect.minR + 1; r <= rect.maxR; r++) {
         if (rows[r].cellReadOnly(c)) continue;
         updates.push({ coord: rows[r].coordFor(monthOf(c)), value: src });
       }
     }
     setCells(updates);
-  }, [rect, locked, getValue, rows, setCells]);
+  }, [rect, locked, read, rows, setCells]);
 
   const fillRight = useCallback(() => {
     if (!rect || locked || rect.minC === rect.maxC) return;
     const updates: { coord: CellCoord; value: number | null }[] = [];
     for (let r = rect.minR; r <= rect.maxR; r++) {
-      const src = getValue(rows[r].coordFor(monthOf(rect.minC))) || null;
+      const src = read(r, rect.minC) || null;
       for (let c = rect.minC + 1; c <= rect.maxC; c++) {
         if (rows[r].cellReadOnly(c)) continue;
         updates.push({ coord: rows[r].coordFor(monthOf(c)), value: src });
       }
     }
     setCells(updates);
-  }, [rect, locked, getValue, rows, setCells]);
+  }, [rect, locked, read, rows, setCells]);
 
   const clearSelection = useCallback(() => {
     if (!rect || locked) return;

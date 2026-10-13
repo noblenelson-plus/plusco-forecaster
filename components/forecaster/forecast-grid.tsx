@@ -73,7 +73,7 @@ import {
   useGridSelection,
   type GridRowDescriptor,
 } from "../../lib/hooks/use-grid-selection";
-import { MONTHS } from "../../lib/types/common.types";
+import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import ForecastSheetsExportButton from "./forecast-sheets-export-button";
 import ForecastImportButton from "./forecast-import-button";
@@ -89,6 +89,8 @@ import SaveStatusIndicator from "./save-status";
 import GridLastUpdated from "./grid-last-updated";
 import MediaboxActualsSection, {
   axisHasMediabox,
+  buildMediaboxGroups,
+  mediaboxTypeRows,
 } from "./mediabox-actuals-section";
 import {
   useMediaboxTotals,
@@ -99,6 +101,7 @@ import {
   buildMediaOceanPivot,
   campaignName,
   NO_CAMPAIGN,
+  type MediaOceanPivot,
 } from "../../lib/format/mediaocean-pivot";
 import {
   leafKey,
@@ -107,12 +110,18 @@ import {
   type ReferenceSelection,
 } from "../../lib/hooks/use-reference-selection";
 import {
+  ReferenceMonthCells,
   ReferenceOrientationToggle,
   RowCheckbox,
   SelectionCount,
+  type ReferenceCellsApi,
 } from "./reference-selection-controls";
 import CopyToSubmissionModal from "./copy-to-submission-modal";
-import { mediaboxLeaves, mediaoceanLeaves } from "../../lib/format/reference-copy";
+import {
+  mediaboxLeaves,
+  mediaoceanLeaves,
+  referenceRowKey,
+} from "../../lib/format/reference-copy";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -249,14 +258,8 @@ export default function ForecastGrid({
   // the dialog opens. Only the edited year is ever copied (see canSelectReference).
   const [copySource, setCopySource] = useState<"mediaocean" | "mediabox" | null>(null);
   const mediaboxCatalog = useMemo(
-    () =>
-      mediaboxLeaves(
-        mediabox.cad
-          ? config.axisId === "labs"
-            ? mediabox.cad.labsByPartner
-            : mediabox.cad.mediaByType
-          : []
-      ),
+    () => mediaboxLeaves(mediaboxTypeRows(mediabox, config.axisId)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [mediabox.cad, config.axisId]
   );
   const mediaoceanCatalog = useMemo(
@@ -334,6 +337,81 @@ export default function ForecastGrid({
   // Label + 12 months + Total (+ Notes when shown) — used for full-width rows.
   const colCount = showNotes ? 15 : 14;
 
+  // ─── Reference strips' layout (owned here: it orders the selection model) ─
+  // Whole-section collapse of the MediaOcean (current or other year) and
+  // MediaBox strips, and which group rows are expanded to their children.
+  const [moCollapsed, setMoCollapsed] = useState(false);
+  const [mbCollapsed, setMbCollapsed] = useState(false);
+  const [moExpanded, setMoExpanded] = useState<Set<string>>(new Set());
+  const [mbExpanded, setMbExpanded] = useState<Set<string>>(new Set());
+  const toggleIn =
+    (set: React.Dispatch<React.SetStateAction<Set<string>>>) => (key: string) =>
+      set((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+  // MediaOcean shows the campaign pivot (read-only) or the editable channel
+  // rows; the pivot needs campaign detail lines, else it's channel view.
+  const moPivot = useMemo(
+    () => buildMediaOceanPivot(grid.data.actuals),
+    [grid.data.actuals]
+  );
+  const moView: ReferenceOrientation = moPivot.hasCampaigns ? orientation : "channel";
+  const mbGroups = useMemo(
+    () => buildMediaboxGroups(mediaboxTypeRows(displayMediabox, config.axisId), orientation),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [displayMediabox.cad, config.axisId, orientation]
+  );
+
+  // Read-only reference rows in display order — they join the selection model
+  // after the editable rows so they can be selected and copied (Ctrl/Cmd+C)
+  // like any cell, but never edited, pasted into or filled.
+  const referenceRows = useMemo(() => {
+    const list: { key: string; months: MonthlyMap }[] = [];
+    if (crossYear) {
+      if (!moCollapsed && !refActualsLoading) {
+        for (const row of refActuals)
+          list.push({ key: referenceRowKey.otherYear(row.rowId), months: row.months });
+      }
+    } else if (!moCollapsed && moView === "campaign") {
+      for (const node of moPivot.byCampaign) {
+        list.push({ key: referenceRowKey.mediaocean(node.key), months: node.months });
+        if (moExpanded.has(node.key)) {
+          for (const child of node.children)
+            list.push({
+              key: referenceRowKey.mediaocean(node.key, child.key),
+              months: child.months,
+            });
+        }
+      }
+    }
+    if (hasMediabox && !mbCollapsed) {
+      for (const g of mbGroups) {
+        list.push({ key: referenceRowKey.mediabox(g.key), months: g.byMonth });
+        if (mbExpanded.has(g.key)) {
+          g.children.forEach((c, i) =>
+            list.push({ key: referenceRowKey.mediabox(g.key, i), months: c.byMonth })
+          );
+        }
+      }
+    }
+    return list;
+  }, [
+    crossYear,
+    moCollapsed,
+    refActualsLoading,
+    refActuals,
+    moView,
+    moPivot,
+    moExpanded,
+    hasMediabox,
+    mbCollapsed,
+    mbGroups,
+    mbExpanded,
+  ]);
+
   // ─── Selection model — flat ordered list of editable rows × 12 months ───
   const orderedRows = useMemo<OrderedRow[]>(() => {
     const list: OrderedRow[] = [];
@@ -348,11 +426,11 @@ export default function ForecastGrid({
         });
       }
     }
-    // Actuals join the selection model only while shown editable (current
-    // year). When peeking at another year the editable MediaOcean rows are
-    // replaced by a read-only snapshot, so they must not be paste/keyboard
-    // targets.
-    if (!crossYear) {
+    // Actuals join the selection model only while shown editable: current
+    // year, channel view, section expanded. When peeking at another year (or in
+    // the campaign view) they're replaced by read-only reference rows, so they
+    // must not be paste/keyboard targets.
+    if (!crossYear && moView === "channel" && !moCollapsed) {
       for (const row of grid.data.actuals) {
         list.push({
           key: row.rowId,
@@ -376,16 +454,21 @@ export default function ForecastGrid({
       }
     }
     return list;
-  }, [grid.data, collapsed, expandedActuals, crossYear]);
+  }, [grid.data, collapsed, expandedActuals, crossYear, moView, moCollapsed]);
 
   const rowIndex = useMemo(
-    () => new Map(orderedRows.map((r, i) => [r.key, i])),
-    [orderedRows]
+    () =>
+      new Map(
+        [...orderedRows.map((r) => r.key), ...referenceRows.map((r) => r.key)].map(
+          (key, i) => [key, i]
+        )
+      ),
+    [orderedRows, referenceRows]
   );
 
   const descriptors = useMemo<GridRowDescriptor[]>(
     () =>
-      orderedRows.map((r) => ({
+      orderedRows.map((r): GridRowDescriptor => ({
         key: r.key,
         // Per-cell: actuals (and their details) follow the admin flag — except
         // a parent with detail lines, whose months are derived (row = Σ
@@ -404,8 +487,28 @@ export default function ForecastGrid({
           detailId: r.detailId ?? null,
           month,
         }),
-      })),
-    [orderedRows, blReadOnly, grid.canEditActuals, grid.canEditClosed, grid.closedMonths]
+      })).concat(
+        referenceRows.map((ref): GridRowDescriptor => ({
+          key: ref.key,
+          cellReadOnly: () => true,
+          // Never written (read-only in every column); a placeholder coordinate.
+          coordFor: (month: number) => ({
+            category: "ADMIN_INPUT" as const,
+            bucketId: null,
+            rowId: ref.key,
+            month,
+          }),
+          valueAt: (month: number) => ref.months[month] ?? 0,
+        }))
+      ),
+    [
+      orderedRows,
+      referenceRows,
+      blReadOnly,
+      grid.canEditActuals,
+      grid.canEditClosed,
+      grid.closedMonths,
+    ]
   );
 
   const sel = useGridSelection({
@@ -417,6 +520,8 @@ export default function ForecastGrid({
 
   // Shared drag flag — set on cell mousedown, cleared on window mouseup.
   const draggingRef = useRef(false);
+  // Selection plumbing for the read-only reference rows' month cells.
+  const referenceCells = { sel, rowIndex, draggingRef };
   useEffect(() => {
     const up = () => {
       draggingRef.current = false;
@@ -616,6 +721,9 @@ export default function ForecastGrid({
                   loading={refActualsLoading}
                   year={refYear}
                   showNotes={showNotes}
+                  collapsed={moCollapsed}
+                  onToggleCollapsed={() => setMoCollapsed((c) => !c)}
+                  cells={referenceCells}
                 />
               ) : (
                 <ActualsSection
@@ -628,9 +736,15 @@ export default function ForecastGrid({
                   showNotes={showNotes}
                   expandedActuals={expandedActuals}
                   onToggleExpand={toggleActualsExpand}
-                  orientation={orientation}
                   selection={canSelectReference ? moSelection : undefined}
                   onCopySelection={() => setCopySource("mediaocean")}
+                  pivot={moPivot}
+                  view={moView}
+                  collapsed={moCollapsed}
+                  onToggleCollapsed={() => setMoCollapsed((c) => !c)}
+                  campaignExpanded={moExpanded}
+                  onToggleCampaign={toggleIn(setMoExpanded)}
+                  cells={referenceCells}
                 />
               )}
 
@@ -643,6 +757,11 @@ export default function ForecastGrid({
                 orientation={orientation}
                 selection={canSelectReference ? mbSelection : undefined}
                 onCopySelection={() => setCopySource("mediabox")}
+                collapsed={mbCollapsed}
+                onToggleCollapsed={() => setMbCollapsed((c) => !c)}
+                expanded={mbExpanded}
+                onToggleExpanded={toggleIn(setMbExpanded)}
+                cells={referenceCells}
               />
             </tbody>
           </table>
@@ -850,21 +969,26 @@ function ReferenceActualsSection({
   loading,
   year,
   showNotes,
+  collapsed,
+  onToggleCollapsed,
+  cells,
 }: {
   config: AxisConfig;
   rows: ForecastRow[];
   loading: boolean;
   year: number;
   showNotes: boolean;
+  /** Whole-section collapse (owned by the grid): the header stays. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  /** The grid's cell-selection plumbing for the month cells. */
+  cells: ReferenceCellsApi;
 }) {
   const theme = actualsTheme(config.actualsLabel);
   const colSpan = showNotes ? 15 : 14;
   const totals = useMemo(() => monthTotals(rows), [rows]);
   const fmt = (v: number) =>
     v ? Math.round(v).toLocaleString("en-CA") : "—";
-  // Whole-section collapse: the header stays, the rows/total are hidden.
-  const [collapsed, setCollapsed] = useState(false);
-
   return (
     <>
       {/* Section header — pink band, flagged as a read-only reference year. */}
@@ -873,7 +997,7 @@ function ReferenceActualsSection({
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
             <button
               type="button"
-              onClick={() => setCollapsed((c) => !c)}
+              onClick={onToggleCollapsed}
               title={collapsed ? "Expand section" : "Collapse section"}
               className={`flex items-center gap-1.5 hover:opacity-70 transition-opacity ${theme.headerText}`}
             >
@@ -920,13 +1044,11 @@ function ReferenceActualsSection({
                 <span className="truncate">{row.label}</span>
               </td>
               {showNotes && <td className={theme.rowBg} />}
-              {MONTHS.map((m) => (
-                <td key={m} className="px-2.5 py-2 text-right align-middle">
-                  <p className="text-sm text-gray-700 tabular-nums">
-                    {fmt(row.months[m] ?? 0)}
-                  </p>
-                </td>
-              ))}
+              <ReferenceMonthCells
+                rowKey={referenceRowKey.otherYear(row.rowId)}
+                months={row.months}
+                cells={cells}
+              />
               <td className="px-2.5 py-2 text-right align-middle bg-gray-100 group-hover:bg-gray-200">
                 <p className="text-sm text-gray-900 tabular-nums">
                   {fmt(sumMonths(row.months))}
@@ -1848,9 +1970,15 @@ function ActualsSection({
   showNotes,
   expandedActuals,
   onToggleExpand,
-  orientation,
   selection,
   onCopySelection,
+  pivot,
+  view,
+  collapsed,
+  onToggleCollapsed,
+  campaignExpanded,
+  onToggleCampaign,
+  cells,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
@@ -1861,12 +1989,22 @@ function ActualsSection({
   showNotes: boolean;
   expandedActuals: Set<string>;
   onToggleExpand: (rowId: string) => void;
-  /** Shared Reference Data orientation (one toggle drives both strips). */
-  orientation: ReferenceOrientation;
   /** Row-checkbox selection; undefined hides the checkboxes. */
   selection?: ReferenceSelection;
   /** Opens "Copy to my submission" for the ticked rows. */
   onCopySelection: () => void;
+  /** buildMediaOceanPivot(actuals) and the effective view, owned by the grid
+   *  (they decide which rows join its selection model). */
+  pivot: MediaOceanPivot;
+  view: ReferenceOrientation;
+  /** Whole-section collapse: the header stays, the rows/total are hidden. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  /** Campaign-view rows expanded to their channels. */
+  campaignExpanded: Set<string>;
+  onToggleCampaign: (campaignKey: string) => void;
+  /** The grid's cell-selection plumbing for the campaign view's cells. */
+  cells: ReferenceCellsApi;
 }) {
   const actuals = grid.data.actuals;
   const readOnly = !grid.canEditActuals;
@@ -1874,15 +2012,7 @@ function ActualsSection({
 
   const types = availableTypes(config, actuals);
     const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
-  // Whole-section collapse: the header stays, the rows/total are hidden.
-  const [collapsed, setCollapsed] = useState(false);
   const colCount = showNotes ? 15 : 14;
-
-  // Channel (editable) vs Campaign (read-only pivot) orientation, set by the
-  // shared Reference Data toggle. Falls back to the editable Channel view when
-  // there are no campaigns to pivot.
-  const pivot = useMemo(() => buildMediaOceanPivot(actuals), [actuals]);
-  const view: ReferenceOrientation = pivot.hasCampaigns ? orientation : "channel";
   // Per-source color: MediaOcean → pink, GAIA → purple, others → grey.
   const theme = actualsTheme(config.actualsLabel);
   // Project name(s) shown next to the MediaOcean label — the "project"
@@ -1907,7 +2037,7 @@ function ActualsSection({
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
             <button
               type="button"
-              onClick={() => setCollapsed((c) => !c)}
+              onClick={onToggleCollapsed}
               title={collapsed ? "Expand section" : "Collapse section"}
               className={`flex items-center gap-1.5 hover:opacity-70 transition-opacity ${theme.headerText}`}
             >
@@ -1962,11 +2092,14 @@ function ActualsSection({
         </tr>
               ) : view === "campaign" ? (
         <ActualsCampaignView
-          actuals={actuals}
+          pivot={pivot}
           showNotes={showNotes}
           colCount={colCount}
           theme={theme}
           selection={selection}
+          expanded={campaignExpanded}
+          onToggle={onToggleCampaign}
+          cells={cells}
         />
       ) : (
         actuals.map((row) => {
