@@ -20,7 +20,6 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatMoney, parseMoney } from "../../lib/format/money";
-import { copyCellValue } from "../../lib/format/copy-cell";
 import type { EditMove, GridSelection } from "../../lib/hooks/use-grid-selection";
 
 // Re-exported for modules that still import it from here (comparison-panel).
@@ -179,8 +178,6 @@ export function SpreadsheetCell({
   // An untouched 0 renders as an em dash; a deliberate 0 shows as "0".
   const empty = value === 0 && !explicitZero;
   const display = empty ? "" : value === 0 ? "0" : formatMoney(value);
-  // A value the user can't edit (locked / closed / actuals) → click copies it.
-  const copyable = readOnly || closed;
 
   // Dark-row (inverse) rest state: light text on the row's own background; the
   // selection/active/editing states keep the shared yellow so they read the
@@ -238,15 +235,9 @@ export function SpreadsheetCell({
             onDoubleClick={() => {
               if (!readOnly) sel.beginEdit(r, c);
             }}
-            onClick={() => {
-              // Read-only / closed cells aren't editable, so a click copies
-              // the value to the clipboard instead.
-              if (copyable && !empty) copyCellValue(value);
-            }}
-            title={copyable ? "Click to copy" : undefined}
             className={`relative w-full px-1.5 py-1 text-right text-sm tabular-nums rounded-md
               outline-none select-none transition-colors
-              ${copyable ? "cursor-copy" : "cursor-cell"}
+              cursor-cell
               ${active ? "ring-2 ring-inset ring-yellow-400" : ""}
               ${stateClasses}
             `}
@@ -281,13 +272,9 @@ export function TotalCell({ value, emphasis = "row" }: TotalCellProps) {
 
   return (
     <td
-      onClick={() => {
-        if (value !== 0) copyCellValue(value);
-      }}
-      title={value !== 0 ? "Click to copy" : undefined}
       className={`px-2.5 py-1.5 border-b border-gray-100 text-right align-middle ${
-        value !== 0 ? "cursor-copy" : ""
-      } ${value < 0 ? "bg-red-500" : ""}`}
+        value < 0 ? "bg-red-500" : ""
+      }`}
     >
       <p
         className={`tabular-nums ${styles} ${

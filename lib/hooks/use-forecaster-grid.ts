@@ -35,7 +35,6 @@ import {
   saveAnnualActuals,
 } from "../services/annual-actuals-service";
 import { MONTHS, type MonthlyMap } from "../types/common.types";
-import type { SetByTypeUpdate } from "../format/mediabox-paste";
 import type { PlannedProject } from "../format/reference-copy";
 import { resolveClosedMonths, type RFQType } from "../types/rfq.types";
 import { useAutosave, type SaveStatus } from "./use-autosave";
@@ -190,29 +189,6 @@ function cellDiffers(
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-/** One channel row to write into a pasted campaign project. */
-export interface CampaignChannelPaste {
-  /** BL rowType code (e.g. "digitalDirect"); a free string, mapped to config where possible. */
-  rowType: string;
-  /** Display label for the row. */
-  label: string;
-  /** 12-month values (already converted to CAD). */
-  months: MonthlyMap;
-}
-
-/** A MediaBox campaign to paste into BL submission as its own project. */
-export interface CampaignProjectPaste {
-  /** Campaign name -> BL project (bucket) name. */
-  name: string;
-  channels: CampaignChannelPaste[];
-}
-
-/** Summary of a pasteCampaignsAsProjects run, for the confirmation toast. */
-export interface CampaignPasteResult {
-  created: number;
-  overwritten: number;
-}
-
 /** Summary of an applyReferencePaste run, for the confirmation toast. */
 export interface ReferencePasteResult {
   /** Projects created. */
@@ -269,31 +245,14 @@ export interface UseForecasterGridResult {
     }[]
   ) => void;
   /**
-   * Set (replace) BL_INPUT cells, targeting a row by (bucket, rowType) and
-   * creating it when the project lacks that type. Used by the "paste a
-   * MediaBox / MediaOcean month into the BL" tool — each matched channel /
-   * partner overwrites its BL row for that month. A null/0 value on an absent
-   * row is a no-op (no empty row is created).
-   */
-  setCellsByType: (updates: SetByTypeUpdate[]) => void;
-
-  // Structure
-  addBucket: (name: string) => void;
-  /**
-   * Paste one or more MediaBox campaigns into BL submission, each as its own
-   * project (bucket) named after the campaign, with one row per channel filled
-   * across all 12 months. A campaign whose name already matches a project
-   * overwrites that project's rows; the rest are created. No-op when locked.
-   */
-  /**
    * Write a "Copy to my submission" plan (lib/format/reference-copy) in one
    * undoable step: create the missing projects/rows, set the planned cells, and
    * leave every other cell alone. Closed months the user can't edit are skipped.
    */
   applyReferencePaste: (projects: PlannedProject[]) => ReferencePasteResult;
-  pasteCampaignsAsProjects: (
-    campaigns: CampaignProjectPaste[]
-  ) => CampaignPasteResult;
+
+  // Structure
+  addBucket: (name: string) => void;
   renameBucket: (bucketId: string, name: string) => void;
   removeBucket: (bucketId: string) => void;
   /** Reorder BL projects (buckets): A-Z / Z-A sort, or move one up/down. */
@@ -1015,72 +974,11 @@ export function useForecasterGrid(
     [data, original, config, isCoordEditable]
   );
 
-  // Set (replace) BL_INPUT cells, targeting a row by (bucket, rowType) like
-  // addToCells but overwriting the month instead of accumulating. Powers the
-  // "paste a MediaBox / MediaOcean month into the BL" tool: each matched channel
-  // / partner value replaces the BL row's value for that month. A missing row is
-  // created only for a non-zero value — never just to store an empty cell.
-  // (Media / Labs, the only axes with a MediaBox/MediaOcean source, carry no
+  // "Copy to my submission": set (replace) the planned BL_INPUT cells, targeting
+  // rows by (project, rowType) and creating missing projects / rows. A missing
+  // row is created only for a non-zero value — never just to store an empty
+  // cell. (Media / Labs, the only axes with a reference source, carry no
   // blExplicitZeroRowTypes, so a set 0 is a plain empty cell here.)
-  const setCellsByType = useCallback(
-    (rawUpdates: SetByTypeUpdate[]) => {
-      // Drop updates aimed at a closed period the user can't edit (BL).
-      const updates = rawUpdates.filter((u) =>
-        isCoordEditable({
-          category: "BL_INPUT",
-          bucketId: u.bucketId,
-          rowId: null,
-          month: u.month,
-        })
-      );
-      if (updates.length === 0) return;
-
-      const next = clone(data);
-      let createdAny = false;
-      const touched: { coord: CellCoord; value: number }[] = [];
-
-      for (const u of updates) {
-        const bucket = next.buckets.find((b) => b.bucketId === u.bucketId);
-        if (!bucket) continue;
-        const value = u.value ?? 0;
-        let row = bucket.rows.find((r) => r.rowType === u.rowType);
-        if (!row) {
-          // No point creating a row just to store an empty/zero value.
-          if (value === 0) continue;
-          const label =
-            config.rowTypeOptions.find((o) => o.value === u.rowType)?.label ??
-            u.rowType;
-          row = newRow(u.rowType, label);
-          bucket.rows.push(row);
-          createdAny = true;
-        }
-        row.months[u.month] = value;
-        touched.push({
-          coord: {
-            category: "BL_INPUT",
-            bucketId: bucket.bucketId,
-            rowId: row.rowId,
-            month: u.month,
-          },
-          value,
-        });
-      }
-
-      commitData(next);
-      setDirtyMap((prev) => {
-        const nextMap = new Map(prev);
-        for (const { coord, value } of touched) {
-          const key = buildCellKey(coord);
-          if (getValueIn(original, coord) !== value) nextMap.set(key, value);
-          else nextMap.delete(key);
-        }
-        return nextMap;
-      });
-      if (createdAny) setStructureDirty(true);
-    },
-    [data, original, config, isCoordEditable]
-  );
-
   const applyReferencePaste = useCallback(
     (planned: PlannedProject[]): ReferencePasteResult => {
       if (locked || planned.length === 0) return { created: 0, cells: 0 };
@@ -1152,63 +1050,6 @@ export function useForecasterGrid(
   );
 
   // ─── Structure (buckets / rows) ─────────────────────────────────────────
-
-  const pasteCampaignsAsProjects = useCallback(
-    (campaigns: CampaignProjectPaste[]): CampaignPasteResult => {
-      if (locked || campaigns.length === 0) {
-        return { created: 0, overwritten: 0 };
-      }
-
-      // Count create-vs-overwrite from the current working copy first, so the
-      // pure state updater below can be invoked twice (React strict mode) safely.
-      const existing = new Set(
-        data.buckets.map((b) => b.name.trim().toLowerCase())
-      );
-      let created = 0;
-      let overwritten = 0;
-      for (const c of campaigns) {
-        const key = c.name.trim().toLowerCase();
-        if (existing.has(key)) {
-          overwritten++;
-        } else {
-          created++;
-          existing.add(key);
-        }
-      }
-
-      commitData((prev) => {
-        const buckets = prev.buckets.map((b) => ({ ...b }));
-        const indexByName = new Map<string, number>(
-          buckets.map((b, i) => [b.name.trim().toLowerCase(), i])
-        );
-
-        for (const camp of campaigns) {
-          const rows: ForecastRow[] = camp.channels.map((ch) => {
-            const row = newRow(ch.rowType, ch.label);
-            row.months = { ...ch.months };
-            return row;
-          });
-          const key = camp.name.trim().toLowerCase();
-          const idx = indexByName.get(key);
-          if (idx !== undefined) {
-            // Overwrite: keep the project's id/name, replace its rows.
-            buckets[idx] = { ...buckets[idx], rows };
-          } else {
-            const nb = newBucket(camp.name);
-            nb.rows = rows;
-            buckets.push(nb);
-            indexByName.set(key, buckets.length - 1);
-          }
-        }
-
-        return { ...prev, buckets };
-      });
-
-      setStructureDirty(true);
-      return { created, overwritten };
-    },
-    [data, locked]
-  );
 
   const addBucket = useCallback((name: string) => {
     commitData((prev) => ({ ...prev, buckets: [...prev.buckets, newBucket(name)] }));
@@ -1720,10 +1561,8 @@ export function useForecasterGrid(
     setCellValue,
     setCells,
     addToCells,
-    setCellsByType,
     applyReferencePaste,
     addBucket,
-    pasteCampaignsAsProjects,
     renameBucket,
     removeBucket,
     sortBuckets,

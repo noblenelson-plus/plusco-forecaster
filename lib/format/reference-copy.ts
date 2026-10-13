@@ -171,24 +171,10 @@ export interface CopyPlan {
   createdProjects: number;
 }
 
-/** Tolerant comparison key: lowercase alphanumerics only. */
-function alnum(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-/**
- * Resolve a source channel to a BL row type: the shared resolver (value, label,
- * known aliases) first, then a punctuation/space-insensitive pass so labels
- * like "Digital-Direct" still match "Digital Direct".
- */
+/** Resolve a source channel to a BL row type option (shared matcher). */
 function matchRowType(options: RowTypeOption[], channel: string): RowTypeOption | null {
-  const exact = resolveRowType(options, channel);
-  if (exact) return options.find((o) => o.value === exact) ?? null;
-  const key = alnum(channel);
-  if (!key) return null;
-  return (
-    options.find((o) => alnum(o.value) === key || alnum(o.label) === key) ?? null
-  );
+  const value = resolveRowType(options, channel);
+  return value ? options.find((o) => o.value === value) ?? null : null;
 }
 
 const round2 = (v: number) => Math.round(v * 100) / 100;

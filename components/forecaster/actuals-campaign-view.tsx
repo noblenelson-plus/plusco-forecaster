@@ -9,13 +9,9 @@
  * source detail lines live.
  *
  * Rows come from buildMediaOceanPivot(actuals).byCampaign: each campaign expands
- * to the channels it spans. Every row carries a checkbox for the copy-to-
- * submission selection (a campaign ticks all its channels); leaf keys are the
- * same (channel × campaign) atoms the editable channel view uses. Every campaign (except the "— No campaign —" bucket)
- * carries a copy-to-BL button; "Copy all to BL" lives in the section header. The
- * copy reuses pasteCampaign(s), which maps each channel to the BL media type and
- * overwrites the project by name — so it can't double-count, and it's undoable
- * through the grid's history like any edit.
+ * to the channels it spans. Every row carries a checkbox for the "Copy to my
+ * submission" selection (a campaign ticks all its channels); leaf keys are the
+ * same (channel × campaign) atoms the editable channel view uses.
  */
 
 import { Fragment, useMemo, useState } from "react";
@@ -30,9 +26,7 @@ import {
   buildMediaOceanPivot,
   sumMonths,
   NO_CAMPAIGN,
-  type PivotNode,
 } from "../../lib/format/mediaocean-pivot";
-import { CopyCampaignButton, type BlPasteApi, type CampaignCopySource } from "./bl-paste-target";
 import type { ForecastRow } from "../../lib/types/forecaster.types";
 import type { MonthlyMap } from "../../lib/types/common.types";
 import type { actualsTheme } from "../../lib/format/actuals-theme";
@@ -44,25 +38,14 @@ function cell(value: number | undefined) {
   return value ? Math.round(value).toLocaleString("en-CA") : "—";
 }
 
-/** A pivot node → the copy payload: one entry per channel, keyed by the channel
- *  rowType value so the BL mapping is exact (no "not configured"). */
-export function campaignSource(node: PivotNode): CampaignCopySource {
-  return {
-    name: node.label,
-    types: node.children.map((c) => ({ label: c.channelRowType, byMonth: c.months })),
-  };
-}
-
 export default function ActualsCampaignView({
   actuals,
-  blPaste,
   showNotes,
   colCount,
   theme,
   selection,
 }: {
   actuals: ForecastRow[];
-  blPaste?: BlPasteApi;
   showNotes: boolean;
   colCount: number;
   theme: Theme;
@@ -122,9 +105,6 @@ export default function ActualsCampaignView({
                       ({node.children.length})
                     </span>
                   </button>
-                  {blPaste && !isNoCampaign && (
-                    <CopyCampaignButton api={blPaste} campaign={campaignSource(node)} />
-                  )}
                 </div>
               </td>
               {showNotes && <td className={theme.rowBg} />}

@@ -27,7 +27,6 @@ import {
 import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import type { AxisId } from "../../lib/types/forecaster.types";
 import type { UseMediaboxTotalsResult } from "../../lib/hooks/use-mediabox-totals";
-import { copyCellValue } from "../../lib/format/copy-cell";
 import {
   groupByCampaign,
   NO_CAMPAIGN_LABEL,
@@ -39,13 +38,6 @@ import {
   type ReferenceSelection,
 } from "../../lib/hooks/use-reference-selection";
 import { RowCheckbox, SelectionCount } from "./reference-selection-controls";
-import {
-  CopyCampaignButton,
-  CopyAllCampaignsButton,
-  MonthPasteButton,
-  TargetProjectSelect,
-  type BlPasteApi,
-} from "./bl-paste-target";
 
 /** Axes that sit under MediaOcean and therefore get a MediaBox section. */
 export function axisHasMediabox(axisId: AxisId): boolean {
@@ -126,7 +118,6 @@ function MoneyRow({
   indent = false,
   bold = false,
   expand,
-  action,
   check,
 }: {
   label: string;
@@ -136,7 +127,6 @@ function MoneyRow({
   indent?: boolean;
   bold?: boolean;
   expand?: { expanded: boolean; onToggle: () => void };
-  action?: ReactNode;
   /** Row checkbox (copy-to-submission selection); absent when not selectable. */
   check?: ReactNode;
 }) {
@@ -170,19 +160,13 @@ function MoneyRow({
               {label}
             </span>
           )}
-          {action ? <span className="shrink-0">{action}</span> : null}
         </div>
       </td>
       {showNotes && <td className="bg-gray-50 group-hover:bg-gray-100" />}
       {MONTHS.map((m) => {
         const v = byMonth[m] ?? 0;
         return (
-          <td
-            key={m}
-            onClick={() => v && copyCellValue(v)}
-            title={v ? "Click to copy" : undefined}
-            className={`px-2.5 py-2 text-right align-middle ${v ? "cursor-copy" : ""}`}
-          >
+          <td key={m} className="px-2.5 py-2 text-right align-middle">
             <p
               className={`text-sm tabular-nums ${
                 bold ? "font-medium text-gray-900" : "text-gray-700"
@@ -193,13 +177,7 @@ function MoneyRow({
           </td>
         );
       })}
-      <td
-        onClick={() => total && copyCellValue(total)}
-        title={total ? "Click to copy" : undefined}
-        className={`px-2.5 py-2 text-right align-middle bg-gray-100 group-hover:bg-gray-200 ${
-          total ? "cursor-copy" : ""
-        }`}
-      >
+      <td className="px-2.5 py-2 text-right align-middle bg-gray-100 group-hover:bg-gray-200">
         <p
           className={`text-sm tabular-nums ${
             bold ? "font-semibold text-gray-900" : "text-gray-900"
@@ -217,7 +195,6 @@ export default function MediaboxActualsSection({
   year,
   showNotes,
   mediabox,
-  blPaste,
   orientation,
   selection,
   onCopySelection,
@@ -227,11 +204,6 @@ export default function MediaboxActualsSection({
   showNotes: boolean;
   /** Owned by ForecastGrid so the CSV export shares the same data. */
   mediabox: UseMediaboxTotalsResult;
-  /**
-   * "Paste this month into the BL" plumbing (shared with the MediaOcean
-   * section). Undefined disables pasting — e.g. while peeking at another year.
-   */
-  blPaste?: BlPasteApi;
   /** Shared Reference Data orientation (one toggle drives both strips). */
   orientation: ReferenceOrientation;
   /** Row-checkbox selection; undefined hides the checkboxes (locked RFQ,
@@ -247,7 +219,6 @@ export default function MediaboxActualsSection({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Whole-section collapse: the header stays, the body is hidden.
   const [collapsed, setCollapsed] = useState(false);
-  const hierarchy = orientation;
   const toggle = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -269,13 +240,13 @@ export default function MediaboxActualsSection({
   // Inverted view: campaign at the top, media types / partners nested.
   const campaignGroups = groupByCampaign(typeRows);
 
-  // Normalized rows for whichever hierarchy is active: a primary row that
+  // Normalized rows for whichever orientation is active: a primary row that
   // expands to its nested children. Every row carries the selection leaf keys
   // under it — one (type × campaign) atom per child, so a key means the same
   // spend in both orientations; a type with no campaign breakdown is a single
   // atom under "(No campaign)" (the same bucket groupByCampaign uses).
   const primaryRows =
-    hierarchy === "campaign"
+    orientation === "campaign"
       ? campaignGroups.map((g) => {
           const children = g.types.map((t) => ({
             label: t.label,
@@ -288,7 +259,6 @@ export default function MediaboxActualsSection({
             label: g.name,
             byMonth: g.byMonth,
             total: g.total,
-            campaign: g,
             children,
             leaves: [...new Set(children.map((c) => c.leaf))],
           };
@@ -305,7 +275,6 @@ export default function MediaboxActualsSection({
             label: t.label,
             byMonth: t.byMonth,
             total: t.total,
-            campaign: undefined,
             children,
             leaves:
               children.length > 0
@@ -321,11 +290,6 @@ export default function MediaboxActualsSection({
   for (const m of MONTHS)
     grandByMonth[m] = typeRows.reduce((acc, t) => acc + (t.byMonth[m] ?? 0), 0);
   const grandTotal = typeRows.reduce((acc, t) => acc + t.total, 0);
-
-  // Source lines for the per-month "paste month → BL" button: one line per media
-  // type / LABS partner, matched to a BL rowType (aliases + skips handled in the
-  // pure paste layer).
-  const pasteSources = typeRows.map((t) => ({ label: t.label, byMonth: t.byMonth }));
 
   const busy = loading || refreshing || triggering;
 
@@ -377,16 +341,6 @@ export default function MediaboxActualsSection({
                 USD not converted (no {year} rate)
               </span>
             )}
-            {blPaste && <TargetProjectSelect api={blPaste} />}
-            {blPaste &&
-
-              hierarchy === "campaign" &&
-              campaignGroups.length > 0 && (
-                <CopyAllCampaignsButton
-                  api={blPaste}
-                  campaigns={campaignGroups}
-                />
-              )}
             {selection && (
               <SelectionCount
                 selection={selection}
@@ -414,7 +368,7 @@ export default function MediaboxActualsSection({
         </tr>
       ) : (
         <>
-          {/* Active hierarchy: primary rows, each expandable to its children. */}
+          {/* Active orientation: primary rows, each expandable to its children. */}
           {primaryRows.map((group) => {
             const isOpen = expanded.has(group.key);
             return (
@@ -429,17 +383,6 @@ export default function MediaboxActualsSection({
                     expanded: isOpen,
                     onToggle: () => toggle(group.key),
                   }}
-                  action={
-                    blPaste &&
-                    
-                    hierarchy === "campaign" &&
-                    group.campaign ? (
-                      <CopyCampaignButton
-                        api={blPaste}
-                        campaign={group.campaign}
-                      />
-                    ) : undefined
-                  }
                   check={
                     selection && (
                       <RowCheckbox
@@ -490,36 +433,13 @@ export default function MediaboxActualsSection({
                   key={m}
                   className="px-2.5 py-2 text-right align-middle"
                 >
-                  <span className="inline-flex w-full items-center justify-end gap-1">
-                    {blPaste && (
-                      <MonthPasteButton
-                        api={blPaste}
-                        rows={pasteSources}
-                        month={m}
-                        sourceLabel="MediaBox"
-                        typeNoun={axisId === "labs" ? "partner" : "channel"}
-                      />
-                    )}
-                    <span
-                      onClick={() => v && copyCellValue(v)}
-                      title={v ? "Click to copy" : undefined}
-                      className={v ? "cursor-copy" : ""}
-                    >
-                      <span className="text-sm font-bold text-gray-900 tabular-nums">
-                        {money(v)}
-                      </span>
-                    </span>
+                  <span className="text-sm font-bold text-gray-900 tabular-nums">
+                    {money(v)}
                   </span>
                 </td>
               );
             })}
-            <td
-              onClick={() => grandTotal && copyCellValue(grandTotal)}
-              title={grandTotal ? "Click to copy" : undefined}
-              className={`px-2.5 py-2 text-right align-middle bg-gray-300 ${
-                grandTotal ? "cursor-copy" : ""
-              }`}
-            >
+            <td className="px-2.5 py-2 text-right align-middle bg-gray-300">
               <p className="text-sm font-bold text-gray-900 tabular-nums">
                 {money(grandTotal)}
               </p>

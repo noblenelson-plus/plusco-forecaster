@@ -94,15 +94,7 @@ import {
   useMediaboxTotals,
   type UseMediaboxTotalsResult,
 } from "../../lib/hooks/use-mediabox-totals";
-import {
-  useBlPasteTarget,
-
-  CopyAllCampaignsButton,
-  MonthPasteButton,
-  TargetProjectSelect,
-  type BlPasteApi,
-} from "./bl-paste-target";
-import ActualsCampaignView, { campaignSource } from "./actuals-campaign-view";
+import ActualsCampaignView from "./actuals-campaign-view";
 import {
   buildMediaOceanPivot,
   campaignName,
@@ -304,11 +296,6 @@ export default function ForecastGrid({
   }, [fetchKey, selectedClient?.cl_id, refYear, config.axisId]);
 
   const grandTotals = useMemo(() => grandMonthTotals(grid.data), [grid.data]);
-
-  // "Paste a MediaBox / MediaOcean month into the BL" — one shared target
-  // project (bucket) for both source sections. Only meaningful on axes with a
-  // MediaBox/MediaOcean source (Media, Labs); harmless elsewhere.
-  const blPaste = useBlPasteTarget(grid, config);
 
   // Collapsed buckets — hidden rows are also excluded from the selection model
   // below so keyboard navigation / paste never reach rows you can't see.
@@ -641,9 +628,6 @@ export default function ForecastGrid({
                   showNotes={showNotes}
                   expandedActuals={expandedActuals}
                   onToggleExpand={toggleActualsExpand}
-                  // MediaOcean → BL paste is Media/Labs only (Revenue's actuals
-                  // source is GAIA, with computed rows — not a paste target).
-                  blPaste={hasMediabox ? blPaste : undefined}
                   orientation={orientation}
                   selection={canSelectReference ? moSelection : undefined}
                   onCopySelection={() => setCopySource("mediaocean")}
@@ -656,9 +640,6 @@ export default function ForecastGrid({
                 year={refYear}
                 showNotes={showNotes}
                 mediabox={displayMediabox}
-                // Pasting into the BL only makes sense against the edited year;
-                // a cross-year peek (crossYear) shows the section read-only.
-                blPaste={crossYear ? undefined : blPaste}
                 orientation={orientation}
                 selection={canSelectReference ? mbSelection : undefined}
                 onCopySelection={() => setCopySource("mediabox")}
@@ -1867,7 +1848,6 @@ function ActualsSection({
   showNotes,
   expandedActuals,
   onToggleExpand,
-  blPaste,
   orientation,
   selection,
   onCopySelection,
@@ -1881,8 +1861,6 @@ function ActualsSection({
   showNotes: boolean;
   expandedActuals: Set<string>;
   onToggleExpand: (rowId: string) => void;
-  /** "Paste this month into the BL" plumbing (shared with the MediaBox section). */
-  blPaste?: BlPasteApi;
   /** Shared Reference Data orientation (one toggle drives both strips). */
   orientation: ReferenceOrientation;
   /** Row-checkbox selection; undefined hides the checkboxes. */
@@ -1893,12 +1871,6 @@ function ActualsSection({
   const actuals = grid.data.actuals;
   const readOnly = !grid.canEditActuals;
   const totals = useMemo(() => monthTotals(actuals), [actuals]);
-  // Source lines for the "paste month → BL" tool. MediaOcean actuals already key
-  // by the BL rowType, so the label is the rowType itself (an exact match).
-  const pasteSources = useMemo(
-    () => actuals.map((r) => ({ label: r.rowType, byMonth: r.months })),
-    [actuals]
-  );
 
   const types = availableTypes(config, actuals);
     const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
@@ -1908,17 +1880,9 @@ function ActualsSection({
 
   // Channel (editable) vs Campaign (read-only pivot) orientation, set by the
   // shared Reference Data toggle. Falls back to the editable Channel view when
-  // there are no campaigns to pivot. The pivot also drives the "Copy all to BL"
-  // payload (one project per campaign; the "no campaign" bucket is never copied).
+  // there are no campaigns to pivot.
   const pivot = useMemo(() => buildMediaOceanPivot(actuals), [actuals]);
   const view: ReferenceOrientation = pivot.hasCampaigns ? orientation : "channel";
-  const copyAllSources = useMemo(
-    () =>
-      pivot.byCampaign
-        .filter((node) => node.label !== NO_CAMPAIGN)
-        .map(campaignSource),
-    [pivot]
-  );
   // Per-source color: MediaOcean → pink, GAIA → purple, others → grey.
   const theme = actualsTheme(config.actualsLabel);
   // Project name(s) shown next to the MediaOcean label — the "project"
@@ -1974,10 +1938,6 @@ function ActualsSection({
                 onPick={(rowType) => grid.addActualsRow(rowType)}
               />
             )}
-            {blPaste && <TargetProjectSelect api={blPaste} />}
-            {blPaste && view === "campaign" && copyAllSources.length > 0 && (
-              <CopyAllCampaignsButton api={blPaste} campaigns={copyAllSources} />
-            )}
             {selection && (
               <SelectionCount
                 selection={selection}
@@ -2003,7 +1963,6 @@ function ActualsSection({
               ) : view === "campaign" ? (
         <ActualsCampaignView
           actuals={actuals}
-          blPaste={blPaste}
           showNotes={showNotes}
           colCount={colCount}
           theme={theme}
@@ -2115,23 +2074,12 @@ function ActualsSection({
           </td>
           {showNotes && <td className="bg-gray-200" />}
           {MONTHS.map((m) => (
-                        <td key={m} className="px-2.5 py-2 text-right align-middle">
-              <div className="flex items-center justify-end gap-1">
-                {blPaste && (
-                  <MonthPasteButton
-                    api={blPaste}
-                    rows={pasteSources}
-                    month={m}
-                    sourceLabel={config.actualsLabel}
-                    typeNoun={config.rowTypeLabel.toLowerCase()}
-                  />
-                )}
-                <p className="text-sm font-bold text-gray-900 tabular-nums">
-                  {totals[m]
-                    ? Math.round(totals[m]).toLocaleString("en-CA")
-                    : "—"}
-                </p>
-              </div>
+            <td key={m} className="px-2.5 py-2 text-right align-middle">
+              <p className="text-sm font-bold text-gray-900 tabular-nums">
+                {totals[m]
+                  ? Math.round(totals[m]).toLocaleString("en-CA")
+                  : "—"}
+              </p>
             </td>
           ))}
           <td className="px-2.5 py-2 text-right align-middle bg-gray-300">
