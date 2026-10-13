@@ -119,6 +119,8 @@ import {
   RowCheckbox,
   SelectionCount,
 } from "./reference-selection-controls";
+import CopyToSubmissionModal from "./copy-to-submission-modal";
+import { mediaboxLeaves, mediaoceanLeaves } from "../../lib/format/reference-copy";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -249,6 +251,26 @@ export default function ForecastGrid({
     refYear
   );
   const displayMediabox = crossYear ? referenceMediabox : mediabox;
+
+  // ─── "Copy to my submission" — ticked reference rows → BL ───────────────
+  // Leaf catalogs keyed like each strip's checkboxes, resolved to values when
+  // the dialog opens. Only the edited year is ever copied (see canSelectReference).
+  const [copySource, setCopySource] = useState<"mediaocean" | "mediabox" | null>(null);
+  const mediaboxCatalog = useMemo(
+    () =>
+      mediaboxLeaves(
+        mediabox.cad
+          ? config.axisId === "labs"
+            ? mediabox.cad.labsByPartner
+            : mediabox.cad.mediaByType
+          : []
+      ),
+    [mediabox.cad, config.axisId]
+  );
+  const mediaoceanCatalog = useMemo(
+    () => mediaoceanLeaves(grid.data.actuals),
+    [grid.data.actuals]
+  );
 
   // Cross-year MediaOcean rows — read-only, fetched on demand (the grid's own
   // `data.actuals` is bound to `selectedYear`, so we can't reuse it here).
@@ -624,6 +646,7 @@ export default function ForecastGrid({
                   blPaste={hasMediabox ? blPaste : undefined}
                   orientation={orientation}
                   selection={canSelectReference ? moSelection : undefined}
+                  onCopySelection={() => setCopySource("mediaocean")}
                 />
               )}
 
@@ -638,6 +661,7 @@ export default function ForecastGrid({
                 blPaste={crossYear ? undefined : blPaste}
                 orientation={orientation}
                 selection={canSelectReference ? mbSelection : undefined}
+                onCopySelection={() => setCopySource("mediabox")}
               />
             </tbody>
           </table>
@@ -648,6 +672,25 @@ export default function ForecastGrid({
         count={sel.selectionStats.count}
         sum={sel.selectionStats.sum}
       />
+
+      {copySource && canSelectReference && (() => {
+        const selection = copySource === "mediabox" ? mbSelection : moSelection;
+        const catalog = copySource === "mediabox" ? mediaboxCatalog : mediaoceanCatalog;
+        // Keys whose row vanished (e.g. a MediaBox refresh) are simply dropped.
+        const leaves = selection
+          .selectedLeaves()
+          .flatMap((k) => catalog.get(k) ?? []);
+        return (
+          <CopyToSubmissionModal
+            sourceLabel={copySource === "mediabox" ? "MediaBox" : config.actualsLabel}
+            leaves={leaves}
+            config={config}
+            grid={grid}
+            onClose={() => setCopySource(null)}
+            onCopied={selection.clear}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1827,6 +1870,7 @@ function ActualsSection({
   blPaste,
   orientation,
   selection,
+  onCopySelection,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
@@ -1843,6 +1887,8 @@ function ActualsSection({
   orientation: ReferenceOrientation;
   /** Row-checkbox selection; undefined hides the checkboxes. */
   selection?: ReferenceSelection;
+  /** Opens "Copy to my submission" for the ticked rows. */
+  onCopySelection: () => void;
 }) {
   const actuals = grid.data.actuals;
   const readOnly = !grid.canEditActuals;
@@ -1933,7 +1979,11 @@ function ActualsSection({
               <CopyAllCampaignsButton api={blPaste} campaigns={copyAllSources} />
             )}
             {selection && (
-              <SelectionCount selection={selection} className={theme.headerText} />
+              <SelectionCount
+                selection={selection}
+                onCopy={onCopySelection}
+                className={theme.headerText}
+              />
             )}
           </div>
         </td>

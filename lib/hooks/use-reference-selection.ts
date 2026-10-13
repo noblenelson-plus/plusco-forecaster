@@ -26,10 +26,8 @@ import { useCallback, useMemo, useState } from "react";
  */
 export type ReferenceOrientation = "campaign" | "channel";
 
-/** Stable key of one (channel × campaign) atom of a reference strip. */
-export function leafKey(channel: string, campaign: string): string {
-  return JSON.stringify([channel, campaign]);
-}
+// The leaf key lives with the pure copy planner; re-exported for the strips.
+export { leafKey } from "../format/reference-copy";
 
 export interface ReferenceSelection {
   /** Number of selected leaves. */

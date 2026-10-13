@@ -5,10 +5,11 @@
  * Small controls shared by the forecast grid's reference strips (MediaBox and
  * MediaOcean): the row checkbox (with a parent's indeterminate state), the
  * shared Campaign ↔ Channel orientation toggle that sits in the "Reference
- * Data" band, and the "N selected · Clear" readout in a strip header.
+ * Data" band, and the "Copy to my submission · Clear" control in a strip header.
  */
 
 import { useEffect, useRef } from "react";
+import { ClipboardPaste } from "lucide-react";
 import type {
   ReferenceOrientation,
   ReferenceSelection,
@@ -96,20 +97,40 @@ export function ReferenceOrientationToggle({
   );
 }
 
-/** "N selected · Clear" readout for a strip header; nothing when empty. */
+/**
+ * "Copy to my submission (N) · Clear" for a strip header — the single entry
+ * point of the structured copy; nothing while no row is ticked.
+ */
 export function SelectionCount({
   selection,
+  onCopy,
   className = "",
 }: {
   selection: ReferenceSelection;
+  /** Opens the copy dialog for this strip's ticked rows. */
+  onCopy?: () => void;
   className?: string;
 }) {
   if (selection.count === 0) return null;
   return (
     <span className={`flex items-center gap-1.5 text-[11px] normal-case ${className}`}>
-      <span className="font-semibold tabular-nums">
-        {selection.count} selected
-      </span>
+      {onCopy ? (
+        <button
+          type="button"
+          onClick={onCopy}
+          className="flex items-center gap-1 bg-gray-900 px-2 py-0.5 font-semibold text-white hover:bg-gray-700 transition-colors"
+        >
+          <ClipboardPaste size={11} />
+          Copy to my submission
+          <span className="bg-yellow-400 px-1 text-gray-900 tabular-nums">
+            {selection.count}
+          </span>
+        </button>
+      ) : (
+        <span className="font-semibold tabular-nums">
+          {selection.count} selected
+        </span>
+      )}
       <button
         type="button"
         onClick={selection.clear}

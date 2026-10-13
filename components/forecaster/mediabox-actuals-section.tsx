@@ -220,6 +220,7 @@ export default function MediaboxActualsSection({
   blPaste,
   orientation,
   selection,
+  onCopySelection,
 }: {
   axisId: AxisId;
   year: number | null;
@@ -236,6 +237,8 @@ export default function MediaboxActualsSection({
   /** Row-checkbox selection; undefined hides the checkboxes (locked RFQ,
    *  another year's reference data). */
   selection?: ReferenceSelection;
+  /** Opens "Copy to my submission" for the ticked rows. */
+  onCopySelection: () => void;
 }) {
   const { cad, totals, refreshing, triggering, loading, error, refresh } =
     mediabox;
@@ -385,7 +388,11 @@ export default function MediaboxActualsSection({
                 />
               )}
             {selection && (
-              <SelectionCount selection={selection} className="text-gray-900" />
+              <SelectionCount
+                selection={selection}
+                onCopy={onCopySelection}
+                className="text-gray-900"
+              />
             )}
           </div>
         </td>

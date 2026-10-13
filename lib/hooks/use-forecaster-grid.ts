@@ -36,6 +36,7 @@ import {
 } from "../services/annual-actuals-service";
 import { MONTHS, type MonthlyMap } from "../types/common.types";
 import type { SetByTypeUpdate } from "../format/mediabox-paste";
+import type { PlannedProject } from "../format/reference-copy";
 import { resolveClosedMonths, type RFQType } from "../types/rfq.types";
 import { useAutosave, type SaveStatus } from "./use-autosave";
 import {
@@ -212,6 +213,14 @@ export interface CampaignPasteResult {
   overwritten: number;
 }
 
+/** Summary of an applyReferencePaste run, for the confirmation toast. */
+export interface ReferencePasteResult {
+  /** Projects created. */
+  created: number;
+  /** Cells written. */
+  cells: number;
+}
+
 export interface UseForecasterGridResult {
   /** Is the client/year/RFQ triplet complete? The grid hides otherwise. */
   selectionReady: boolean;
@@ -276,6 +285,12 @@ export interface UseForecasterGridResult {
    * across all 12 months. A campaign whose name already matches a project
    * overwrites that project's rows; the rest are created. No-op when locked.
    */
+  /**
+   * Write a "Copy to my submission" plan (lib/format/reference-copy) in one
+   * undoable step: create the missing projects/rows, set the planned cells, and
+   * leave every other cell alone. Closed months the user can't edit are skipped.
+   */
+  applyReferencePaste: (projects: PlannedProject[]) => ReferencePasteResult;
   pasteCampaignsAsProjects: (
     campaigns: CampaignProjectPaste[]
   ) => CampaignPasteResult;
@@ -1066,6 +1081,76 @@ export function useForecasterGrid(
     [data, original, config, isCoordEditable]
   );
 
+  const applyReferencePaste = useCallback(
+    (planned: PlannedProject[]): ReferencePasteResult => {
+      if (locked || planned.length === 0) return { created: 0, cells: 0 };
+
+      const next = clone(data);
+      let created = 0;
+      let structureChanged = false;
+      const touched: { coord: CellCoord; value: number }[] = [];
+
+      for (const p of planned) {
+        const cells = p.cells.filter((c) =>
+          isCoordEditable({
+            category: "BL_INPUT",
+            bucketId: p.bucketId,
+            rowId: null,
+            month: c.month,
+          })
+        );
+        if (cells.length === 0) continue;
+
+        let bucket = p.bucketId
+          ? next.buckets.find((b) => b.bucketId === p.bucketId)
+          : undefined;
+        if (!bucket) {
+          bucket = newBucket(p.name);
+          next.buckets.push(bucket);
+          created++;
+          structureChanged = true;
+        }
+
+        for (const c of cells) {
+          let row = bucket.rows.find((r) => r.rowType === c.rowType);
+          if (!row) {
+            // No point creating a row just to store an empty cell.
+            if (c.value === 0) continue;
+            row = newRow(c.rowType, c.label);
+            bucket.rows.push(row);
+            structureChanged = true;
+          }
+          row.months[c.month] = c.value;
+          touched.push({
+            coord: {
+              category: "BL_INPUT",
+              bucketId: bucket.bucketId,
+              rowId: row.rowId,
+              month: c.month,
+            },
+            value: c.value,
+          });
+        }
+      }
+
+      if (touched.length === 0 && !structureChanged) return { created: 0, cells: 0 };
+
+      commitData(next);
+      setDirtyMap((prev) => {
+        const nextMap = new Map(prev);
+        for (const { coord, value } of touched) {
+          const key = buildCellKey(coord);
+          if (getValueIn(original, coord) !== value) nextMap.set(key, value);
+          else nextMap.delete(key);
+        }
+        return nextMap;
+      });
+      if (structureChanged) setStructureDirty(true);
+      return { created, cells: touched.length };
+    },
+    [data, original, locked, isCoordEditable]
+  );
+
   // ─── Structure (buckets / rows) ─────────────────────────────────────────
 
   const pasteCampaignsAsProjects = useCallback(
@@ -1636,6 +1721,7 @@ export function useForecasterGrid(
     setCells,
     addToCells,
     setCellsByType,
+    applyReferencePaste,
     addBucket,
     pasteCampaignsAsProjects,
     renameBucket,
