@@ -9,10 +9,12 @@
  *   bars on a proportional time axis (green done / yellow active / dark-gray
  *   upcoming) and a red "today" line — just enough to see where the round
  *   stands without stealing screen space.
- * - When the mouse enters the strip, the panel expands **upward as an
- *   overlay** (the outer sticky element keeps its rest height, so the page
- *   never reflows): bars grow into labeled gantt rows, month labels fade in,
- *   and each bar gets a detail tooltip on hover.
+ * - Clicking the strip expands the panel **upward as an overlay** (the outer
+ *   sticky element keeps its rest height, so the page never reflows): bars
+ *   grow into labeled gantt rows, month labels fade in, and each bar gets a
+ *   detail tooltip on hover. Click again, press Escape or click elsewhere on
+ *   the page to collapse it. (It used to expand on mouse hover, which popped
+ *   up whenever the pointer crossed the bottom of the page.)
  *
  * Overlapping periods stack on extra lanes (greedy first-fit packing).
  *
@@ -20,8 +22,8 @@
  * shows nothing when the selected RFQ has no periods.
  */
 
-import { useState } from "react";
-import { CalendarRange } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CalendarRange, ChevronDown, ChevronUp } from "lucide-react";
 import {
   RFQPeriod,
   PeriodStatus,
@@ -153,6 +155,24 @@ const OWNER_SHORT: Record<PeriodOwner, string> = Object.fromEntries(
 
 export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
   const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // While open, Escape or a click outside the panel collapses it.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (!panelRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open]);
 
   const today = todayISODate();
   const sorted = sortPeriods(periods);
@@ -188,12 +208,23 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
 
   return (
     // The sticky element keeps the rest height in the page flow; the panel
-    // inside expands upward as an overlay, so hovering never reflows the page.
+    // inside expands upward as an overlay, so opening never reflows the page.
     <div className="sticky bottom-0 z-30" style={{ height: restHeight }}>
       <div
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        className={`absolute inset-x-0 bottom-0 border-t border-gray-200 bg-white transition-all duration-200 ease-out motion-reduce:transition-none ${
+        ref={panelRef}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-label={open ? "Collapse the timeline" : "Expand the timeline"}
+        title={open ? undefined : "Click to expand the timeline"}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+        className={`absolute inset-x-0 bottom-0 cursor-pointer border-t border-gray-200 bg-white transition-all duration-200 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-yellow-400 motion-reduce:transition-none ${
           open ? "shadow-[0_-8px_24px_rgba(0,0,0,0.12)]" : ""
         }`}
         style={{ height: panelHeight }}
@@ -208,6 +239,7 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
               <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider leading-none text-gray-900">
                 <CalendarRange size={12} />
                 Timeline
+                {open ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
               </span>
             </div>
 
@@ -264,7 +296,9 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
               return (
                 <div
                   key={period.id}
-                  className={`group @container absolute z-20 flex cursor-default items-center overflow-visible border transition-all duration-200 ease-out motion-reduce:transition-none hover:z-30 hover:ring-2 hover:ring-gray-900 ${styles.bar}`}
+                  className={`group @container absolute z-20 flex items-center overflow-visible border transition-all duration-200 ease-out motion-reduce:transition-none ${
+                    open ? "hover:z-30 hover:ring-2 hover:ring-gray-900" : ""
+                  } ${styles.bar}`}
                   style={{
                     top: s.axis + lane * s.pitch + (s.pitch - s.bar) / 2,
                     height: s.bar,
@@ -295,10 +329,13 @@ export default function RFQTimelineBar({ periods }: { periods: RFQPeriod[] }) {
                     )}
                   </div>
 
-                  {/* Hover tooltip with the full details */}
+                  {/* Hover tooltip with the full details — only once the
+                      panel is expanded, so the slim strip never pops anything. */}
                   <div
                     role="tooltip"
-                    className={`pointer-events-none absolute bottom-full z-50 mb-2 w-max max-w-xs rounded-lg bg-gray-900 px-3 py-2 text-left opacity-0 shadow-lg ring-1 ring-gray-700 transition-opacity duration-150 group-hover:opacity-100 ${tooltipPos}`}
+                    className={`pointer-events-none absolute bottom-full z-50 mb-2 w-max max-w-xs rounded-lg bg-gray-900 px-3 py-2 text-left opacity-0 shadow-lg ring-1 ring-gray-700 transition-opacity duration-150 ${
+                      open ? "group-hover:opacity-100" : ""
+                    } ${tooltipPos}`}
                   >
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-semibold text-white">

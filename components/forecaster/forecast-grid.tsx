@@ -35,6 +35,8 @@ import {
   RotateCcw,
   Undo2,
   Redo2,
+  ArrowDownAZ,
+  ArrowUpAZ,
   FolderPlus,
   Ban,
   SplitSquareHorizontal,
@@ -903,10 +905,10 @@ function GridToolbar({
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const [addingBucket, setAddingBucket] = useState(false);
   const [bucketName, setBucketName] = useState("");
+  // Direction the next Sort click applies — alternates A→Z / Z→A.
+  const [sortAsc, setSortAsc] = useState(true);
 
-  // MediaBox rows for the export — same grouping as the grid section (media
-  // type on the Media axis, LABS partner on Labs; empty on Revenue).
-    // Two-step confirm for "Revert all changes": first click arms, second reverts.
+  // Two-step confirm for "Revert all changes": first click arms, second reverts.
   const [revertArmed, setRevertArmed] = useState(false);
 
   // Keyboard undo/redo — Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl+Y). Skipped
@@ -936,6 +938,9 @@ function GridToolbar({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [grid.locked, grid.undo, grid.redo]);
+
+  // MediaBox rows for the export — same grouping as the grid section (media
+  // type on the Media axis, LABS partner on Labs; empty on Revenue).
   const mediaboxRows = mediabox.cad
     ? config.axisId === "labs"
       ? mediabox.cad.labsByPartner
@@ -1009,6 +1014,26 @@ function GridToolbar({
               Add {config.bucketLabel.toLowerCase()}
             </button>
           ))}
+
+        {/* Sort the projects by name — a real reorder (saved with the doc,
+            undoable), alternating A→Z / Z→A on each click. */}
+        {!grid.locked &&
+          config.allowMultipleBuckets &&
+          grid.data.buckets.length > 1 && (
+            <button
+              onClick={() => {
+                grid.sortBuckets(sortAsc ? "asc" : "desc");
+                setSortAsc((v) => !v);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              title={`Sort ${config.bucketLabel.toLowerCase()} names ${
+                sortAsc ? "A to Z" : "Z to A"
+              }`}
+            >
+              {sortAsc ? <ArrowDownAZ size={14} /> : <ArrowUpAZ size={14} />}
+              Sort {sortAsc ? "A–Z" : "Z–A"}
+            </button>
+          )}
 
                 {!grid.locked && (
           <div className="flex items-center">
