@@ -9,7 +9,9 @@
  * source detail lines live.
  *
  * Rows come from buildMediaOceanPivot(actuals).byCampaign: each campaign expands
- * to the channels it spans. Every campaign (except the "— No campaign —" bucket)
+ * to the channels it spans. Every row carries a checkbox for the copy-to-
+ * submission selection (a campaign ticks all its channels); leaf keys are the
+ * same (channel × campaign) atoms the editable channel view uses. Every campaign (except the "— No campaign —" bucket)
  * carries a copy-to-BL button; "Copy all to BL" lives in the section header. The
  * copy reuses pasteCampaign(s), which maps each channel to the BL media type and
  * overwrites the project by name — so it can't double-count, and it's undoable
@@ -18,6 +20,11 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  leafKey,
+  type ReferenceSelection,
+} from "../../lib/hooks/use-reference-selection";
+import { RowCheckbox } from "./reference-selection-controls";
 import { MONTHS } from "../../lib/types/common.types";
 import {
   buildMediaOceanPivot,
@@ -52,12 +59,15 @@ export default function ActualsCampaignView({
   showNotes,
   colCount,
   theme,
+  selection,
 }: {
   actuals: ForecastRow[];
   blPaste?: BlPasteApi;
   showNotes: boolean;
   colCount: number;
   theme: Theme;
+  /** Row-checkbox selection; undefined hides the checkboxes. */
+  selection?: ReferenceSelection;
 }) {
   const pivot = useMemo(() => buildMediaOceanPivot(actuals), [actuals]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -83,12 +93,21 @@ export default function ActualsCampaignView({
       {pivot.byCampaign.map((node) => {
         const isOpen = expanded.has(node.key);
         const isNoCampaign = node.label === NO_CAMPAIGN;
+        const leaves = node.children.map((c) => leafKey(c.channelRowType, node.key));
         return (
           <Fragment key={node.key}>
             {/* Campaign row */}
             <tr className={`border-b border-gray-100 ${theme.rowBg}`}>
               <td className={`sticky left-0 z-10 ${theme.rowBg} px-4 py-2`}>
                 <div className="flex items-center gap-1.5">
+                  {selection && (
+                    <RowCheckbox
+                      selection={selection}
+                      keys={leaves}
+                      parent
+                      label={node.label}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => toggle(node.key)}
@@ -128,7 +147,16 @@ export default function ActualsCampaignView({
               node.children.map((child) => (
                 <tr key={child.key} className="border-b border-gray-100 bg-white">
                   <td className="sticky left-0 z-10 bg-white px-4 py-1.5">
-                    <span className="ml-6 text-xs text-gray-600">{child.label}</span>
+                    <div className="ml-6 flex items-center gap-1.5">
+                      {selection && (
+                        <RowCheckbox
+                          selection={selection}
+                          keys={[leafKey(child.channelRowType, node.key)]}
+                          label={`${child.label} (${node.label})`}
+                        />
+                      )}
+                      <span className="text-xs text-gray-600">{child.label}</span>
+                    </div>
                   </td>
                   {showNotes && <td className="bg-white" />}
                   {MONTHS.map((m) => (

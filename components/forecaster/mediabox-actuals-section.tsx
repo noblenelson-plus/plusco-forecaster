@@ -7,10 +7,12 @@
  * actuals layout — label + 12 month cells + total — but is never editable: the
  * numbers are synced from MediaBox.
  *
- * Shows for the Media and Labs axes only. One row per media type (total media
- * spend on the Media axis, the LABS subset on the Labs axis), each expandable
- * to reveal its campaigns underneath. Amounts are converted USD→CAD at read
- * time with the year's rate.
+ * Shows for the Media and Labs axes only. Grouped by campaign or by media type
+ * (total media spend on the Media axis, the LABS subset on the Labs axis) per
+ * the grid's shared Reference Data orientation, each group expandable to its
+ * children. Every row carries a checkbox (a parent ticks all its children) that
+ * feeds the copy-to-submission flow. Amounts are converted USD→CAD at read time
+ * with the year's rate.
  */
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
@@ -28,8 +30,15 @@ import type { UseMediaboxTotalsResult } from "../../lib/hooks/use-mediabox-total
 import { copyCellValue } from "../../lib/format/copy-cell";
 import {
   groupByCampaign,
+  NO_CAMPAIGN_LABEL,
   type MediaboxCadType,
 } from "../../lib/services/mediabox-totals-service";
+import {
+  leafKey,
+  type ReferenceOrientation,
+  type ReferenceSelection,
+} from "../../lib/hooks/use-reference-selection";
+import { RowCheckbox, SelectionCount } from "./reference-selection-controls";
 import {
   CopyCampaignButton,
   CopyAllCampaignsButton,
@@ -118,6 +127,7 @@ function MoneyRow({
   bold = false,
   expand,
   action,
+  check,
 }: {
   label: string;
   byMonth: MonthlyMap;
@@ -127,6 +137,8 @@ function MoneyRow({
   bold?: boolean;
   expand?: { expanded: boolean; onToggle: () => void };
   action?: ReactNode;
+  /** Row checkbox (copy-to-submission selection); absent when not selectable. */
+  check?: ReactNode;
 }) {
   const labelText = bold ? "font-medium" : "";
   return (
@@ -138,6 +150,7 @@ function MoneyRow({
         } ${labelText}`}
       >
         <div className="flex items-center gap-1 min-w-0">
+          {check}
           {expand ? (
             <button
               type="button"
@@ -205,6 +218,8 @@ export default function MediaboxActualsSection({
   showNotes,
   mediabox,
   blPaste,
+  orientation,
+  selection,
 }: {
   axisId: AxisId;
   year: number | null;
@@ -216,16 +231,20 @@ export default function MediaboxActualsSection({
    * section). Undefined disables pasting — e.g. while peeking at another year.
    */
   blPaste?: BlPasteApi;
+  /** Shared Reference Data orientation (one toggle drives both strips). */
+  orientation: ReferenceOrientation;
+  /** Row-checkbox selection; undefined hides the checkboxes (locked RFQ,
+   *  another year's reference data). */
+  selection?: ReferenceSelection;
 }) {
   const { cad, totals, refreshing, triggering, loading, error, refresh } =
     mediabox;
 
-  // Which media-type rows are expanded to show their campaigns.
+  // Which group rows are expanded to show their children.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Whole-section collapse: the header stays, the body is hidden.
   const [collapsed, setCollapsed] = useState(false);
-  // Reference-data hierarchy: campaign-first (default) or type/partner-first.
-  const [hierarchy, setHierarchy] = useState<"campaign" | "type">("campaign");
+  const hierarchy = orientation;
   const toggle = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -247,37 +266,50 @@ export default function MediaboxActualsSection({
   // Inverted view: campaign at the top, media types / partners nested.
   const campaignGroups = groupByCampaign(typeRows);
 
-  // Short label for the toggle: media -> "Channel", labs -> "Partner".
-  const typeLabelShort = axisId === "labs" ? "Partner" : "Channel";
-
   // Normalized rows for whichever hierarchy is active: a primary row that
-  // expands to its nested children, plus a flat summary of the OTHER dimension.
+  // expands to its nested children. Every row carries the selection leaf keys
+  // under it — one (type × campaign) atom per child, so a key means the same
+  // spend in both orientations; a type with no campaign breakdown is a single
+  // atom under "(No campaign)" (the same bucket groupByCampaign uses).
   const primaryRows =
     hierarchy === "campaign"
-      ? campaignGroups.map((g) => ({
-          key: g.name,
-          label: g.name,
-          byMonth: g.byMonth,
-          total: g.total,
-          campaign: g,
-          children: g.types.map((t) => ({
+      ? campaignGroups.map((g) => {
+          const children = g.types.map((t) => ({
             label: t.label,
             byMonth: t.byMonth,
             total: t.total,
-          })),
-        }))
-      : typeRows.map((t) => ({
-          key: t.label,
-          label: t.label,
-          byMonth: t.byMonth,
-          total: t.total,
-          campaign: undefined,
-          children: t.campaigns.map((c) => ({
+            leaf: leafKey(t.label, g.name),
+          }));
+          return {
+            key: g.name,
+            label: g.name,
+            byMonth: g.byMonth,
+            total: g.total,
+            campaign: g,
+            children,
+            leaves: [...new Set(children.map((c) => c.leaf))],
+          };
+        })
+      : typeRows.map((t) => {
+          const children = t.campaigns.map((c) => ({
             label: c.name,
             byMonth: c.byMonth,
             total: c.total,
-          })),
-        }));
+            leaf: leafKey(t.label, c.name),
+          }));
+          return {
+            key: t.label,
+            label: t.label,
+            byMonth: t.byMonth,
+            total: t.total,
+            campaign: undefined,
+            children,
+            leaves:
+              children.length > 0
+                ? [...new Set(children.map((c) => c.leaf))]
+                : [leafKey(t.label, NO_CAMPAIGN_LABEL)],
+          };
+        });
 
 
 
@@ -336,30 +368,6 @@ export default function MediaboxActualsSection({
               refreshing={refreshing}
               startedAt={totals?.refreshStartedAt}
             />
-            <div className="inline-flex overflow-hidden rounded-md border border-blue-600/40 text-[11px]">
-              <button
-                type="button"
-                onClick={() => setHierarchy("campaign")}
-                className={`px-2 py-0.5 font-medium transition-colors ${
-                  hierarchy === "campaign"
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-900 hover:bg-blue-300"
-                }`}
-              >
-                Campaign › {typeLabelShort}
-              </button>
-              <button
-                type="button"
-                onClick={() => setHierarchy("type")}
-                className={`px-2 py-0.5 font-medium transition-colors ${
-                  hierarchy === "type"
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-900 hover:bg-blue-300"
-                }`}
-              >
-                {typeLabelShort} › Campaign
-              </button>
-            </div>
             {cad && cad.hasUsd && !cad.usdConverted && (
               <span className="flex items-center gap-1 text-[11px] text-gray-900">
                 <AlertTriangle size={11} />
@@ -376,6 +384,9 @@ export default function MediaboxActualsSection({
                   campaigns={campaignGroups}
                 />
               )}
+            {selection && (
+              <SelectionCount selection={selection} className="text-gray-900" />
+            )}
           </div>
         </td>
       </tr>
@@ -422,6 +433,16 @@ export default function MediaboxActualsSection({
                       />
                     ) : undefined
                   }
+                  check={
+                    selection && (
+                      <RowCheckbox
+                        selection={selection}
+                        keys={group.leaves}
+                        parent
+                        label={group.label}
+                      />
+                    )
+                  }
                 />
                 {isOpen &&
                   group.children.map((c) => (
@@ -432,6 +453,15 @@ export default function MediaboxActualsSection({
                       total={c.total}
                       showNotes={showNotes}
                       indent
+                      check={
+                        selection && (
+                          <RowCheckbox
+                            selection={selection}
+                            keys={[c.leaf]}
+                            label={`${c.label} (${group.label})`}
+                          />
+                        )
+                      }
                     />
                   ))}
               </Fragment>

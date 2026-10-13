@@ -85,7 +85,8 @@ interface Leaf {
   months: MonthlyMap;
 }
 
-function campaignName(levels: string[] | undefined): string {
+/** Campaign name of a detail line (its level 0), or NO_CAMPAIGN when empty. */
+export function campaignName(levels: string[] | undefined): string {
   const raw = (levels?.[CAMPAIGN_LEVEL] ?? "").trim();
   return raw === "" ? NO_CAMPAIGN : raw;
 }

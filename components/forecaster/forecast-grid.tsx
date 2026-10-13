@@ -103,7 +103,22 @@ import {
   type BlPasteApi,
 } from "./bl-paste-target";
 import ActualsCampaignView, { campaignSource } from "./actuals-campaign-view";
-import { buildMediaOceanPivot, NO_CAMPAIGN } from "../../lib/format/mediaocean-pivot";
+import {
+  buildMediaOceanPivot,
+  campaignName,
+  NO_CAMPAIGN,
+} from "../../lib/format/mediaocean-pivot";
+import {
+  leafKey,
+  useReferenceSelection,
+  type ReferenceOrientation,
+  type ReferenceSelection,
+} from "../../lib/hooks/use-reference-selection";
+import {
+  ReferenceOrientationToggle,
+  RowCheckbox,
+  SelectionCount,
+} from "./reference-selection-controls";
 
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -181,13 +196,34 @@ export default function ForecastGrid({
   // (React's "adjust state on prop change" pattern) so it takes effect before
   // paint without an extra render, and without a setState-in-effect.
   const selectionKey = `${selectedClient?.cl_id ?? ""}|${selectedYear ?? ""}`;
+  // ─── Reference strips: shared orientation + row-checkbox selection ──────
+  // One Campaign ↔ Channel toggle (in the Reference Data band) drives both the
+  // MediaOcean and MediaBox strips. Each strip keeps its own selection — they
+  // report the same spend from two sources, so they're never copied together.
+  const [orientation, setOrientation] =
+    useState<ReferenceOrientation>("campaign");
+  const moSelection = useReferenceSelection();
+  const mbSelection = useReferenceSelection();
+  // Flipping the orientation regroups every row — start from a clean slate.
+  const changeOrientation = (next: ReferenceOrientation) => {
+    setOrientation(next);
+    moSelection.clear();
+    mbSelection.clear();
+  };
+
   const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
   if (selectionKey !== prevSelectionKey) {
     setPrevSelectionKey(selectionKey);
     setReferenceYear(selectedYear);
+    // Ticked rows belong to the previous client/year's reference data.
+    moSelection.clear();
+    mbSelection.clear();
   }
   const refYear = referenceYear ?? selectedYear;
   const crossYear = refYear != null && refYear !== selectedYear;
+  // Rows are selectable only when they can be copied: into an unlocked
+  // submission, from the edited year's reference data.
+  const canSelectReference = hasMediabox && !grid.locked && !crossYear;
 
   // Years the selector offers — those with an RFQ, plus the current year, newest
   // first. Only meaningful on axes that carry a MediaBox/MediaOcean reference.
@@ -541,14 +577,23 @@ export default function ForecastGrid({
                 colSpan={colCount}
                 gap
                 right={
-                  yearOptions.length > 1 && refYear != null ? (
-                    <ReferenceYearSelect
-                      value={refYear}
-                      currentYear={selectedYear}
-                      options={yearOptions}
-                      onChange={setReferenceYear}
-                    />
-                  ) : undefined
+                  <>
+                    {yearOptions.length > 1 && refYear != null && (
+                      <ReferenceYearSelect
+                        value={refYear}
+                        currentYear={selectedYear}
+                        options={yearOptions}
+                        onChange={setReferenceYear}
+                      />
+                    )}
+                    {hasMediabox && (
+                      <ReferenceOrientationToggle
+                        value={orientation}
+                        onChange={changeOrientation}
+                        typeLabel={config.axisId === "labs" ? "Partner" : "Channel"}
+                      />
+                    )}
+                  </>
                 }
               />
 
@@ -577,6 +622,8 @@ export default function ForecastGrid({
                   // MediaOcean → BL paste is Media/Labs only (Revenue's actuals
                   // source is GAIA, with computed rows — not a paste target).
                   blPaste={hasMediabox ? blPaste : undefined}
+                  orientation={orientation}
+                  selection={canSelectReference ? moSelection : undefined}
                 />
               )}
 
@@ -589,6 +636,8 @@ export default function ForecastGrid({
                 // Pasting into the BL only makes sense against the edited year;
                 // a cross-year peek (crossYear) shows the section read-only.
                 blPaste={crossYear ? undefined : blPaste}
+                orientation={orientation}
+                selection={canSelectReference ? mbSelection : undefined}
               />
             </tbody>
           </table>
@@ -1230,6 +1279,7 @@ function DataRow({
   onSpread,
   showNotes,
   expand,
+  check,
 }: {
   row: ForecastRow;
   category: InputCategory;
@@ -1253,6 +1303,8 @@ function DataRow({
   showNotes: boolean;
   /** Expand/collapse control for rows that carry detail lines (actuals only). */
   expand?: { expanded: boolean; onToggle: () => void; count: number };
+  /** Reference-row checkbox (MediaOcean copy selection), before the label. */
+  check?: React.ReactNode;
 }) {
   const r = rowIndex.get(row.rowId)!;
   // Closed periods only lock BL_INPUT cells, and only for users who can't edit
@@ -1273,6 +1325,7 @@ function DataRow({
     <tr className="group">
       <td className={`sticky left-0 z-10 ${rowBg} px-4 py-1.5 border-b border-gray-100`}>
         <div className={`flex items-center gap-1.5 ${expand ? "" : "pl-2"}`}>
+          {check}
           {expand && (
             <button
               onClick={expand.onToggle}
@@ -1649,6 +1702,7 @@ export function DetailRow({
   draggingRef,
   showNotes,
   productSlot,
+  check,
 }: {
   parentRowId: string;
   detail: RowDetail;
@@ -1661,6 +1715,8 @@ export function DetailRow({
   /** Optional control rendered under the detail's info fields — Revenue uses it
    *  for the "Product Fees" product selector. */
   productSlot?: React.ReactNode;
+  /** Reference-row checkbox (MediaOcean copy selection), before the levels. */
+  check?: React.ReactNode;
 }) {
   const r = rowIndex.get(detail.detailId)!;
 
@@ -1687,6 +1743,7 @@ export function DetailRow({
           scroll. */}
       <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-4 py-1 border-b border-gray-100">
         <div className="flex items-center gap-1.5 pl-8">
+          {check}
           {/* In stretch mode the container keeps the editing layout's width
               (3 × w-36 + gaps) as a minimum, so the label column doesn't
               shrink and level 1 stays fully readable. */}
@@ -1768,6 +1825,8 @@ function ActualsSection({
   expandedActuals,
   onToggleExpand,
   blPaste,
+  orientation,
+  selection,
 }: {
   config: AxisConfig;
   grid: UseForecasterGridResult;
@@ -1780,6 +1839,10 @@ function ActualsSection({
   onToggleExpand: (rowId: string) => void;
   /** "Paste this month into the BL" plumbing (shared with the MediaBox section). */
   blPaste?: BlPasteApi;
+  /** Shared Reference Data orientation (one toggle drives both strips). */
+  orientation: ReferenceOrientation;
+  /** Row-checkbox selection; undefined hides the checkboxes. */
+  selection?: ReferenceSelection;
 }) {
   const actuals = grid.data.actuals;
   const readOnly = !grid.canEditActuals;
@@ -1797,15 +1860,12 @@ function ActualsSection({
   const [collapsed, setCollapsed] = useState(false);
   const colCount = showNotes ? 15 : 14;
 
-  // Channel (editable, default) vs Campaign (read-only pivot) orientation, like
-  // the MediaBox strip. The pivot drives the toggle's availability and the
-  // "Copy all to BL" payload (one project per campaign; the "no campaign"
-  // bucket is never copied).
-    // Default to the Campaign view (matching the MediaBox strip's first option);
-  // fall back to the editable Channel view when there are no campaigns to pivot.
-  const [hierarchy, setHierarchy] = useState<"channel" | "campaign">("campaign");
+  // Channel (editable) vs Campaign (read-only pivot) orientation, set by the
+  // shared Reference Data toggle. Falls back to the editable Channel view when
+  // there are no campaigns to pivot. The pivot also drives the "Copy all to BL"
+  // payload (one project per campaign; the "no campaign" bucket is never copied).
   const pivot = useMemo(() => buildMediaOceanPivot(actuals), [actuals]);
-  const view: "channel" | "campaign" = pivot.hasCampaigns ? hierarchy : "channel";
+  const view: ReferenceOrientation = pivot.hasCampaigns ? orientation : "channel";
   const copyAllSources = useMemo(
     () =>
       pivot.byCampaign
@@ -1868,35 +1928,12 @@ function ActualsSection({
                 onPick={(rowType) => grid.addActualsRow(rowType)}
               />
             )}
-                          {pivot.hasCampaigns && (
-              <div className="inline-flex overflow-hidden border border-gray-300 text-[11px] font-medium">
-                <button
-                  type="button"
-                  onClick={() => setHierarchy("campaign")}
-                  className={`px-2 py-0.5 ${
-                    view === "campaign"
-                      ? "bg-gray-900 text-white"
-                      : "bg-white text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  Campaign › Channel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHierarchy("channel")}
-                  className={`px-2 py-0.5 ${
-                    view === "channel"
-                      ? "bg-gray-900 text-white"
-                      : "bg-white text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  Channel › Campaign
-                </button>
-              </div>
-            )}
             {blPaste && <TargetProjectSelect api={blPaste} />}
             {blPaste && view === "campaign" && copyAllSources.length > 0 && (
               <CopyAllCampaignsButton api={blPaste} campaigns={copyAllSources} />
+            )}
+            {selection && (
+              <SelectionCount selection={selection} className={theme.headerText} />
             )}
           </div>
         </td>
@@ -1920,6 +1957,7 @@ function ActualsSection({
           showNotes={showNotes}
           colCount={colCount}
           theme={theme}
+          selection={selection}
         />
       ) : (
         actuals.map((row) => {
@@ -1927,6 +1965,13 @@ function ActualsSection({
           const expanded = expandedActuals.has(row.rowId);
           // Nothing to expand for a read-only viewer with no details yet.
           const canExpand = !readOnly || details.length > 0;
+          // Selection atoms under this channel — one per campaign of its detail
+          // lines (lines sharing a campaign are one atom, as in the pivot), or
+          // the channel itself under NO_CAMPAIGN when it has no detail lines.
+          const leaves =
+            details.length > 0
+              ? [...new Set(details.map((d) => leafKey(row.rowType, campaignName(d.levels))))]
+              : [leafKey(row.rowType, NO_CAMPAIGN)];
           return (
             <Fragment key={row.rowId}>
               <DataRow
@@ -1954,21 +1999,43 @@ function ActualsSection({
                       }
                     : undefined
                 }
+                check={
+                  selection && (
+                    <RowCheckbox
+                      selection={selection}
+                      keys={leaves}
+                      parent
+                      label={row.label}
+                    />
+                  )
+                }
               />
               {expanded &&
-                details.map((detail) => (
-                  <DetailRow
-                    key={detail.detailId}
-                    parentRowId={row.rowId}
-                    detail={detail}
-                    readOnly={readOnly}
-                    grid={grid}
-                    sel={sel}
-                    rowIndex={rowIndex}
-                    draggingRef={draggingRef}
-                    showNotes={showNotes}
-                  />
-                ))}
+                details.map((detail) => {
+                  const campaign = campaignName(detail.levels);
+                  return (
+                    <DetailRow
+                      key={detail.detailId}
+                      parentRowId={row.rowId}
+                      detail={detail}
+                      readOnly={readOnly}
+                      grid={grid}
+                      sel={sel}
+                      rowIndex={rowIndex}
+                      draggingRef={draggingRef}
+                      showNotes={showNotes}
+                      check={
+                        selection && (
+                          <RowCheckbox
+                            selection={selection}
+                            keys={[leafKey(row.rowType, campaign)]}
+                            label={`${campaign} (${row.label})`}
+                          />
+                        )
+                      }
+                    />
+                  );
+                })}
               {expanded && !readOnly && (
                 <tr>
                   <td
