@@ -223,7 +223,7 @@ export interface MediaboxCadCampaignGroup extends MediaboxCadAxis {
 }
 
 /** Fallback group name for type rows that carry no campaign breakdown. */
-const NO_CAMPAIGN_LABEL = "(No campaign)";
+export const NO_CAMPAIGN_LABEL = "(No campaign)";
 
 /**
  * Invert the type→campaign hierarchy into campaign→type: one group per campaign

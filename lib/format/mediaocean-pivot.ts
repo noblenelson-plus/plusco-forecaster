@@ -18,7 +18,7 @@
  *     silently dropped).
  *
  * Pure and Firebase-free. The copy-to-BL mapping itself lives in the paste layer
- * (bl-paste-target / mediabox-paste); this module only reshapes the numbers.
+ * (reference-copy / mediabox-paste); this module only reshapes the numbers.
  */
 
 import type { ForecastRow } from "../types/forecaster.types";
@@ -69,7 +69,7 @@ export interface PivotNode {
 export interface MediaOceanPivot {
   /** Channel → campaigns (the default, matches the current strip). */
   byChannel: PivotNode[];
-  /** Campaign → channels (the inverted view; also what "Copy all to BL" uses). */
+  /** Campaign → channels (the inverted view; also the "Copy to my submission" leaves). */
   byCampaign: PivotNode[];
   /** Grand total across everything (equal in both orientations). */
   grand: MonthlyMap;
@@ -85,7 +85,8 @@ interface Leaf {
   months: MonthlyMap;
 }
 
-function campaignName(levels: string[] | undefined): string {
+/** Campaign name of a detail line (its level 0), or NO_CAMPAIGN when empty. */
+export function campaignName(levels: string[] | undefined): string {
   const raw = (levels?.[CAMPAIGN_LEVEL] ?? "").trim();
   return raw === "" ? NO_CAMPAIGN : raw;
 }

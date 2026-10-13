@@ -7,10 +7,14 @@
  * actuals layout — label + 12 month cells + total — but is never editable: the
  * numbers are synced from MediaBox.
  *
- * Shows for the Media and Labs axes only. One row per media type (total media
- * spend on the Media axis, the LABS subset on the Labs axis), each expandable
- * to reveal its campaigns underneath. Amounts are converted USD→CAD at read
- * time with the year's rate.
+ * Shows for the Media and Labs axes only. Grouped by campaign or by media type
+ * (total media spend on the Media axis, the LABS subset on the Labs axis) per
+ * the grid's shared Reference Data orientation, each group expandable to its
+ * children. Every row carries a checkbox (a parent ticks all its children) that
+ * feeds the copy-to-submission flow, and its month cells join the grid's cell
+ * selection (select + Ctrl/Cmd+C, read-only). Expand/collapse state is owned by
+ * the grid, which needs the visible rows to order the selection model. Amounts
+ * are converted USD→CAD at read time with the year's rate.
  */
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
@@ -25,18 +29,23 @@ import {
 import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import type { AxisId } from "../../lib/types/forecaster.types";
 import type { UseMediaboxTotalsResult } from "../../lib/hooks/use-mediabox-totals";
-import { copyCellValue } from "../../lib/format/copy-cell";
 import {
   groupByCampaign,
+  NO_CAMPAIGN_LABEL,
   type MediaboxCadType,
 } from "../../lib/services/mediabox-totals-service";
 import {
-  CopyCampaignButton,
-  CopyAllCampaignsButton,
-  MonthPasteButton,
-  TargetProjectSelect,
-  type BlPasteApi,
-} from "./bl-paste-target";
+  leafKey,
+  type ReferenceOrientation,
+  type ReferenceSelection,
+} from "../../lib/hooks/use-reference-selection";
+import { referenceRowKey } from "../../lib/format/reference-copy";
+import {
+  ReferenceMonthCells,
+  RowCheckbox,
+  SelectionCount,
+  type ReferenceCellsApi,
+} from "./reference-selection-controls";
 
 /** Axes that sit under MediaOcean and therefore get a MediaBox section. */
 export function axisHasMediabox(axisId: AxisId): boolean {
@@ -117,7 +126,9 @@ function MoneyRow({
   indent = false,
   bold = false,
   expand,
-  action,
+  check,
+  rowKey,
+  cells,
 }: {
   label: string;
   byMonth: MonthlyMap;
@@ -126,7 +137,11 @@ function MoneyRow({
   indent?: boolean;
   bold?: boolean;
   expand?: { expanded: boolean; onToggle: () => void };
-  action?: ReactNode;
+  /** Row checkbox (copy-to-submission selection); absent when not selectable. */
+  check?: ReactNode;
+  /** Key of this row in the grid's cell-selection model. */
+  rowKey: string;
+  cells: ReferenceCellsApi;
 }) {
   const labelText = bold ? "font-medium" : "";
   return (
@@ -138,6 +153,7 @@ function MoneyRow({
         } ${labelText}`}
       >
         <div className="flex items-center gap-1 min-w-0">
+          {check}
           {expand ? (
             <button
               type="button"
@@ -157,36 +173,11 @@ function MoneyRow({
               {label}
             </span>
           )}
-          {action ? <span className="shrink-0">{action}</span> : null}
         </div>
       </td>
       {showNotes && <td className="bg-gray-50 group-hover:bg-gray-100" />}
-      {MONTHS.map((m) => {
-        const v = byMonth[m] ?? 0;
-        return (
-          <td
-            key={m}
-            onClick={() => v && copyCellValue(v)}
-            title={v ? "Click to copy" : undefined}
-            className={`px-2.5 py-2 text-right align-middle ${v ? "cursor-copy" : ""}`}
-          >
-            <p
-              className={`text-sm tabular-nums ${
-                bold ? "font-medium text-gray-900" : "text-gray-700"
-              }`}
-            >
-              {money(v)}
-            </p>
-          </td>
-        );
-      })}
-      <td
-        onClick={() => total && copyCellValue(total)}
-        title={total ? "Click to copy" : undefined}
-        className={`px-2.5 py-2 text-right align-middle bg-gray-100 group-hover:bg-gray-200 ${
-          total ? "cursor-copy" : ""
-        }`}
-      >
+      <ReferenceMonthCells rowKey={rowKey} months={byMonth} cells={cells} />
+      <td className="px-2.5 py-2 text-right align-middle bg-gray-100 group-hover:bg-gray-200">
         <p
           className={`text-sm tabular-nums ${
             bold ? "font-semibold text-gray-900" : "text-gray-900"
@@ -199,98 +190,118 @@ function MoneyRow({
   );
 }
 
+/** MediaBox rows of the active axis: media types (Media) or LABS partners (Labs). */
+export function mediaboxTypeRows(
+  mediabox: UseMediaboxTotalsResult,
+  axisId: AxisId
+): MediaboxCadType[] {
+  const { cad } = mediabox;
+  if (!cad) return [];
+  return axisId === "labs" ? cad.labsByPartner : cad.mediaByType;
+}
+
+/**
+ * The strip's rows for an orientation: a primary row that expands to its nested
+ * children. Every row carries the selection leaf keys under it — one (type ×
+ * campaign) atom per child, so a key means the same spend in both orientations;
+ * a type with no campaign breakdown is a single atom under "(No campaign)" (the
+ * same bucket groupByCampaign uses). Shared with the grid, which orders the
+ * cell-selection model from the same rows.
+ */
+export function buildMediaboxGroups(
+  typeRows: MediaboxCadType[],
+  orientation: ReferenceOrientation
+) {
+  if (orientation === "campaign") {
+    return groupByCampaign(typeRows).map((g) => {
+      const children = g.types.map((t) => ({
+        label: t.label,
+        byMonth: t.byMonth,
+        total: t.total,
+        leaf: leafKey(t.label, g.name),
+      }));
+      return {
+        key: g.name,
+        label: g.name,
+        byMonth: g.byMonth,
+        total: g.total,
+        children,
+        leaves: [...new Set(children.map((c) => c.leaf))],
+      };
+    });
+  }
+  return typeRows.map((t) => {
+    const children = t.campaigns.map((c) => ({
+      label: c.name,
+      byMonth: c.byMonth,
+      total: c.total,
+      leaf: leafKey(t.label, c.name),
+    }));
+    return {
+      key: t.label,
+      label: t.label,
+      byMonth: t.byMonth,
+      total: t.total,
+      children,
+      leaves:
+        children.length > 0
+          ? [...new Set(children.map((c) => c.leaf))]
+          : [leafKey(t.label, NO_CAMPAIGN_LABEL)],
+    };
+  });
+}
+
 export default function MediaboxActualsSection({
   axisId,
   year,
   showNotes,
   mediabox,
-  blPaste,
+  orientation,
+  selection,
+  onCopySelection,
+  collapsed,
+  onToggleCollapsed,
+  expanded,
+  onToggleExpanded,
+  cells,
 }: {
   axisId: AxisId;
   year: number | null;
   showNotes: boolean;
   /** Owned by ForecastGrid so the CSV export shares the same data. */
   mediabox: UseMediaboxTotalsResult;
-  /**
-   * "Paste this month into the BL" plumbing (shared with the MediaOcean
-   * section). Undefined disables pasting — e.g. while peeking at another year.
-   */
-  blPaste?: BlPasteApi;
+  /** Shared Reference Data orientation (one toggle drives both strips). */
+  orientation: ReferenceOrientation;
+  /** Row-checkbox selection; undefined hides the checkboxes (locked RFQ,
+   *  another year's reference data). */
+  selection?: ReferenceSelection;
+  /** Opens "Copy to my submission" for the ticked rows. */
+  onCopySelection: () => void;
+  /** Whole-section collapse: the header stays, the body is hidden. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  /** Group rows expanded to show their children (keyed by group key). */
+  expanded: Set<string>;
+  onToggleExpanded: (groupKey: string) => void;
+  /** The grid's cell-selection plumbing for the month cells. */
+  cells: ReferenceCellsApi;
 }) {
   const { cad, totals, refreshing, triggering, loading, error, refresh } =
     mediabox;
-
-  // Which media-type rows are expanded to show their campaigns.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // Whole-section collapse: the header stays, the body is hidden.
-  const [collapsed, setCollapsed] = useState(false);
-  // Reference-data hierarchy: campaign-first (default) or type/partner-first.
-  const [hierarchy, setHierarchy] = useState<"campaign" | "type">("campaign");
-  const toggle = (key: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
 
   // Only Media and Labs sit under MediaOcean.
   if (!axisHasMediabox(axisId)) return null;
 
   const colSpan = showNotes ? 15 : 14;
   // Media axis groups by media type; Labs axis groups by LABS partner.
-  const typeRows: MediaboxCadType[] = cad
-    ? axisId === "labs"
-      ? cad.labsByPartner
-      : cad.mediaByType
-    : [];
-  // Inverted view: campaign at the top, media types / partners nested.
-  const campaignGroups = groupByCampaign(typeRows);
-
-  // Short label for the toggle: media -> "Channel", labs -> "Partner".
-  const typeLabelShort = axisId === "labs" ? "Partner" : "Channel";
-
-  // Normalized rows for whichever hierarchy is active: a primary row that
-  // expands to its nested children, plus a flat summary of the OTHER dimension.
-  const primaryRows =
-    hierarchy === "campaign"
-      ? campaignGroups.map((g) => ({
-          key: g.name,
-          label: g.name,
-          byMonth: g.byMonth,
-          total: g.total,
-          campaign: g,
-          children: g.types.map((t) => ({
-            label: t.label,
-            byMonth: t.byMonth,
-            total: t.total,
-          })),
-        }))
-      : typeRows.map((t) => ({
-          key: t.label,
-          label: t.label,
-          byMonth: t.byMonth,
-          total: t.total,
-          campaign: undefined,
-          children: t.campaigns.map((c) => ({
-            label: c.name,
-            byMonth: c.byMonth,
-            total: c.total,
-          })),
-        }));
-
-
+  const typeRows = mediaboxTypeRows(mediabox, axisId);
+  const primaryRows = buildMediaboxGroups(typeRows, orientation);
 
   // Grand total across every type/partner — the section's bottom line.
   const grandByMonth: MonthlyMap = {};
   for (const m of MONTHS)
     grandByMonth[m] = typeRows.reduce((acc, t) => acc + (t.byMonth[m] ?? 0), 0);
   const grandTotal = typeRows.reduce((acc, t) => acc + t.total, 0);
-
-  // Source lines for the per-month "paste month → BL" button: one line per media
-  // type / LABS partner, matched to a BL rowType (aliases + skips handled in the
-  // pure paste layer).
-  const pasteSources = typeRows.map((t) => ({ label: t.label, byMonth: t.byMonth }));
 
   const busy = loading || refreshing || triggering;
 
@@ -303,7 +314,7 @@ export default function MediaboxActualsSection({
           <div className="sticky left-0 z-10 flex w-fit items-center gap-2 px-4 py-2">
             <button
               type="button"
-              onClick={() => setCollapsed((c) => !c)}
+              onClick={onToggleCollapsed}
               title={collapsed ? "Expand section" : "Collapse section"}
               className="flex items-center gap-1.5 text-gray-900 hover:opacity-70 transition-opacity"
             >
@@ -336,46 +347,19 @@ export default function MediaboxActualsSection({
               refreshing={refreshing}
               startedAt={totals?.refreshStartedAt}
             />
-            <div className="inline-flex overflow-hidden rounded-md border border-blue-600/40 text-[11px]">
-              <button
-                type="button"
-                onClick={() => setHierarchy("campaign")}
-                className={`px-2 py-0.5 font-medium transition-colors ${
-                  hierarchy === "campaign"
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-900 hover:bg-blue-300"
-                }`}
-              >
-                Campaign › {typeLabelShort}
-              </button>
-              <button
-                type="button"
-                onClick={() => setHierarchy("type")}
-                className={`px-2 py-0.5 font-medium transition-colors ${
-                  hierarchy === "type"
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-900 hover:bg-blue-300"
-                }`}
-              >
-                {typeLabelShort} › Campaign
-              </button>
-            </div>
             {cad && cad.hasUsd && !cad.usdConverted && (
               <span className="flex items-center gap-1 text-[11px] text-gray-900">
                 <AlertTriangle size={11} />
                 USD not converted (no {year} rate)
               </span>
             )}
-            {blPaste && <TargetProjectSelect api={blPaste} />}
-            {blPaste &&
-
-              hierarchy === "campaign" &&
-              campaignGroups.length > 0 && (
-                <CopyAllCampaignsButton
-                  api={blPaste}
-                  campaigns={campaignGroups}
-                />
-              )}
+            {selection && (
+              <SelectionCount
+                selection={selection}
+                onCopy={onCopySelection}
+                className="text-gray-900"
+              />
+            )}
           </div>
         </td>
       </tr>
@@ -396,9 +380,10 @@ export default function MediaboxActualsSection({
         </tr>
       ) : (
         <>
-          {/* Active hierarchy: primary rows, each expandable to its children. */}
+          {/* Active orientation: primary rows, each expandable to its children. */}
           {primaryRows.map((group) => {
             const isOpen = expanded.has(group.key);
+            const groupRowKey = referenceRowKey.mediabox(group.key);
             return (
               <Fragment key={group.key}>
                 <MoneyRow
@@ -409,29 +394,41 @@ export default function MediaboxActualsSection({
                   bold
                   expand={{
                     expanded: isOpen,
-                    onToggle: () => toggle(group.key),
+                    onToggle: () => onToggleExpanded(group.key),
                   }}
-                  action={
-                    blPaste &&
-                    
-                    hierarchy === "campaign" &&
-                    group.campaign ? (
-                      <CopyCampaignButton
-                        api={blPaste}
-                        campaign={group.campaign}
+                  rowKey={groupRowKey}
+                  cells={cells}
+                  check={
+                    selection && (
+                      <RowCheckbox
+                        selection={selection}
+                        keys={group.leaves}
+                        parent
+                        label={group.label}
                       />
-                    ) : undefined
+                    )
                   }
                 />
                 {isOpen &&
-                  group.children.map((c) => (
+                  group.children.map((c, i) => (
                     <MoneyRow
-                      key={`${group.key}::${c.label}`}
+                      key={`${group.key}::${i}`}
+                      rowKey={referenceRowKey.mediabox(group.key, i)}
+                      cells={cells}
                       label={c.label}
                       byMonth={c.byMonth}
                       total={c.total}
                       showNotes={showNotes}
                       indent
+                      check={
+                        selection && (
+                          <RowCheckbox
+                            selection={selection}
+                            keys={[c.leaf]}
+                            label={`${c.label} (${group.label})`}
+                          />
+                        )
+                      }
                     />
                   ))}
               </Fragment>
@@ -453,36 +450,13 @@ export default function MediaboxActualsSection({
                   key={m}
                   className="px-2.5 py-2 text-right align-middle"
                 >
-                  <span className="inline-flex w-full items-center justify-end gap-1">
-                    {blPaste && (
-                      <MonthPasteButton
-                        api={blPaste}
-                        rows={pasteSources}
-                        month={m}
-                        sourceLabel="MediaBox"
-                        typeNoun={axisId === "labs" ? "partner" : "channel"}
-                      />
-                    )}
-                    <span
-                      onClick={() => v && copyCellValue(v)}
-                      title={v ? "Click to copy" : undefined}
-                      className={v ? "cursor-copy" : ""}
-                    >
-                      <span className="text-sm font-bold text-gray-900 tabular-nums">
-                        {money(v)}
-                      </span>
-                    </span>
+                  <span className="text-sm font-bold text-gray-900 tabular-nums">
+                    {money(v)}
                   </span>
                 </td>
               );
             })}
-            <td
-              onClick={() => grandTotal && copyCellValue(grandTotal)}
-              title={grandTotal ? "Click to copy" : undefined}
-              className={`px-2.5 py-2 text-right align-middle bg-gray-300 ${
-                grandTotal ? "cursor-copy" : ""
-              }`}
-            >
+            <td className="px-2.5 py-2 text-right align-middle bg-gray-300">
               <p className="text-sm font-bold text-gray-900 tabular-nums">
                 {money(grandTotal)}
               </p>

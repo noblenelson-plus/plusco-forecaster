@@ -9,25 +9,30 @@
  * source detail lines live.
  *
  * Rows come from buildMediaOceanPivot(actuals).byCampaign: each campaign expands
- * to the channels it spans. Every campaign (except the "— No campaign —" bucket)
- * carries a copy-to-BL button; "Copy all to BL" lives in the section header. The
- * copy reuses pasteCampaign(s), which maps each channel to the BL media type and
- * overwrites the project by name — so it can't double-count, and it's undoable
- * through the grid's history like any edit.
+ * to the channels it spans. Every row carries a checkbox for the "Copy to my
+ * submission" selection (a campaign ticks all its channels); leaf keys are the
+ * same (channel × campaign) atoms the editable channel view uses. Month cells
+ * join the grid's cell selection (select + Ctrl/Cmd+C, read-only); the grid
+ * owns the pivot and the expanded set, since it orders that selection model.
  */
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { MONTHS } from "../../lib/types/common.types";
 import {
-  buildMediaOceanPivot,
+  leafKey,
+  type ReferenceSelection,
+} from "../../lib/hooks/use-reference-selection";
+import {
+  ReferenceMonthCells,
+  RowCheckbox,
+  type ReferenceCellsApi,
+} from "./reference-selection-controls";
+import {
   sumMonths,
   NO_CAMPAIGN,
-  type PivotNode,
+  type MediaOceanPivot,
 } from "../../lib/format/mediaocean-pivot";
-import { CopyCampaignButton, type BlPasteApi, type CampaignCopySource } from "./bl-paste-target";
-import type { ForecastRow } from "../../lib/types/forecaster.types";
-import type { MonthlyMap } from "../../lib/types/common.types";
+import { referenceRowKey } from "../../lib/format/reference-copy";
 import type { actualsTheme } from "../../lib/format/actuals-theme";
 
 type Theme = ReturnType<typeof actualsTheme>;
@@ -37,37 +42,29 @@ function cell(value: number | undefined) {
   return value ? Math.round(value).toLocaleString("en-CA") : "—";
 }
 
-/** A pivot node → the copy payload: one entry per channel, keyed by the channel
- *  rowType value so the BL mapping is exact (no "not configured"). */
-export function campaignSource(node: PivotNode): CampaignCopySource {
-  return {
-    name: node.label,
-    types: node.children.map((c) => ({ label: c.channelRowType, byMonth: c.months })),
-  };
-}
-
 export default function ActualsCampaignView({
-  actuals,
-  blPaste,
+  pivot,
   showNotes,
   colCount,
   theme,
+  selection,
+  expanded,
+  onToggle,
+  cells,
 }: {
-  actuals: ForecastRow[];
-  blPaste?: BlPasteApi;
+  /** buildMediaOceanPivot(actuals), owned by the grid. */
+  pivot: MediaOceanPivot;
   showNotes: boolean;
   colCount: number;
   theme: Theme;
+  /** Row-checkbox selection; undefined hides the checkboxes. */
+  selection?: ReferenceSelection;
+  /** Campaign rows expanded to show their channels (keyed by campaign key). */
+  expanded: Set<string>;
+  onToggle: (campaignKey: string) => void;
+  /** The grid's cell-selection plumbing for the month cells. */
+  cells: ReferenceCellsApi;
 }) {
-  const pivot = useMemo(() => buildMediaOceanPivot(actuals), [actuals]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggle = (key: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-
   if (pivot.byCampaign.length === 0) {
     return (
       <tr>
@@ -83,15 +80,24 @@ export default function ActualsCampaignView({
       {pivot.byCampaign.map((node) => {
         const isOpen = expanded.has(node.key);
         const isNoCampaign = node.label === NO_CAMPAIGN;
+        const leaves = node.children.map((c) => leafKey(c.channelRowType, node.key));
         return (
           <Fragment key={node.key}>
             {/* Campaign row */}
             <tr className={`border-b border-gray-100 ${theme.rowBg}`}>
               <td className={`sticky left-0 z-10 ${theme.rowBg} px-4 py-2`}>
                 <div className="flex items-center gap-1.5">
+                  {selection && (
+                    <RowCheckbox
+                      selection={selection}
+                      keys={leaves}
+                      parent
+                      label={node.label}
+                    />
+                  )}
                   <button
                     type="button"
-                    onClick={() => toggle(node.key)}
+                    onClick={() => onToggle(node.key)}
                     title={isOpen ? "Collapse" : "Expand channels"}
                     className="flex items-center gap-1.5 text-xs font-medium text-gray-900 hover:opacity-70 transition-opacity"
                   >
@@ -103,19 +109,14 @@ export default function ActualsCampaignView({
                       ({node.children.length})
                     </span>
                   </button>
-                  {blPaste && !isNoCampaign && (
-                    <CopyCampaignButton api={blPaste} campaign={campaignSource(node)} />
-                  )}
                 </div>
               </td>
               {showNotes && <td className={theme.rowBg} />}
-              {MONTHS.map((m) => (
-                <td key={m} className="px-2.5 py-2 text-right align-middle">
-                  <p className="text-sm text-gray-700 tabular-nums">
-                    {cell(node.months[m])}
-                  </p>
-                </td>
-              ))}
+              <ReferenceMonthCells
+                rowKey={referenceRowKey.mediaocean(node.key)}
+                months={node.months}
+                cells={cells}
+              />
               <td className="px-2.5 py-2 text-right align-middle bg-gray-50">
                 <p className="text-sm font-semibold text-gray-900 tabular-nums">
                   {cell(sumMonths(node.months))}
@@ -128,16 +129,23 @@ export default function ActualsCampaignView({
               node.children.map((child) => (
                 <tr key={child.key} className="border-b border-gray-100 bg-white">
                   <td className="sticky left-0 z-10 bg-white px-4 py-1.5">
-                    <span className="ml-6 text-xs text-gray-600">{child.label}</span>
+                    <div className="ml-6 flex items-center gap-1.5">
+                      {selection && (
+                        <RowCheckbox
+                          selection={selection}
+                          keys={[leafKey(child.channelRowType, node.key)]}
+                          label={`${child.label} (${node.label})`}
+                        />
+                      )}
+                      <span className="text-xs text-gray-600">{child.label}</span>
+                    </div>
                   </td>
                   {showNotes && <td className="bg-white" />}
-                  {MONTHS.map((m) => (
-                    <td key={m} className="px-2.5 py-1.5 text-right align-middle">
-                      <p className="text-xs text-gray-500 tabular-nums">
-                        {cell((child.months as MonthlyMap)[m])}
-                      </p>
-                    </td>
-                  ))}
+                  <ReferenceMonthCells
+                    rowKey={referenceRowKey.mediaocean(node.key, child.key)}
+                    months={child.months}
+                    cells={cells}
+                  />
                   <td className="px-2.5 py-1.5 text-right align-middle bg-gray-50">
                     <p className="text-xs text-gray-600 tabular-nums">
                       {cell(sumMonths(child.months))}

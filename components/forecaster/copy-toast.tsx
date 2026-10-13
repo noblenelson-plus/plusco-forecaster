@@ -2,17 +2,13 @@
 "use client";
 
 /**
- * Tiny global toast for the forecast page. Two sources:
- *   — `forecast-cell-copied` — a read-only cell value was copied to the
- *     clipboard (dispatched by `copyCellValue`); rendered as "Copied {value}".
- *   — `forecast-toast` — a free-form action message (dispatched by
- *     `showForecastToast`), e.g. a MediaBox/MediaOcean month pasted into the BL.
- * Mounted once on the forecast page.
+ * Tiny global toast for the forecast page: renders the `forecast-toast`
+ * messages dispatched by `showForecastToast` (e.g. the result of "Copy to my
+ * submission"). Mounted once on the forecast page.
  */
 
 import { useEffect, useState } from "react";
 import { Check, AlertTriangle } from "lucide-react";
-import { CELL_COPIED_EVENT } from "../../lib/format/copy-cell";
 import {
   FORECAST_TOAST_EVENT,
   type ForecastToastDetail,
@@ -34,11 +30,6 @@ export default function CopyToast() {
       clearTimeout(timer);
       timer = setTimeout(() => setToast(null), ms);
     };
-    const onCopy = (e: Event) =>
-      show(
-        { message: `Copied ${(e as CustomEvent<string>).detail}`, kind: "success" },
-        1400
-      );
     const onToast = (e: Event) => {
       const detail = (e as CustomEvent<ForecastToastDetail>).detail;
       show(
@@ -46,10 +37,8 @@ export default function CopyToast() {
         detail.kind === "warning" ? 2600 : 1800
       );
     };
-    window.addEventListener(CELL_COPIED_EVENT, onCopy);
     window.addEventListener(FORECAST_TOAST_EVENT, onToast);
     return () => {
-      window.removeEventListener(CELL_COPIED_EVENT, onCopy);
       window.removeEventListener(FORECAST_TOAST_EVENT, onToast);
       clearTimeout(timer);
     };

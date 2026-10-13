@@ -182,7 +182,7 @@ const GROUPS: ChapterGroup[] = [
         id: "grid",
         label: "Read the grid",
         icon: ListChecks,
-        keywords: "project bucket row total months columns actuals mediaocean mediabox reference data bl submission closed period lock read only anatomy table layout sections",
+        keywords: "project bucket row total months columns actuals mediaocean mediabox reference data bl submission closed period lock read only anatomy table layout sections copy to my submission tick checkbox campaign channel toggle",
         body: () => (
           <>
             <Lead>
@@ -206,7 +206,18 @@ const GROUPS: ChapterGroup[] = [
                 forecast. <em>MediaOcean</em> holds the booked numbers
                 (admin-entered, one annual set per year); <em>MediaBox</em> is
                 synced automatically and expands per campaign. Business Leads
-                can&apos;t edit either.
+                can&apos;t edit either. One toggle on the REFERENCE DATA bar
+                groups both by <em>Campaign › Channel</em> or{" "}
+                <em>Channel › Campaign</em>.
+              </Step>
+              <Step n={3}>
+                <strong>Copy reference numbers into your forecast.</strong> Tick
+                the rows you want (ticking a campaign or channel ticks everything
+                under it), then click <Chip icon={null}>Copy to my submission</Chip>{" "}
+                in that strip&apos;s header. Choose where they go — one project,
+                or one project per campaign — and which months. You&apos;re warned
+                before any filled cell is overwritten, and Undo reverts the whole
+                copy.
               </Step>
             </Steps>
             <Callout tone="info" icon={Lock} title="Closed periods">
@@ -216,8 +227,8 @@ const GROUPS: ChapterGroup[] = [
               can&apos;t change.
             </Callout>
             <Note>
-              Read-only cells aren&apos;t dead ends: click one to copy its value
-              to the clipboard.
+              Read-only cells aren&apos;t dead ends: select them and press{" "}
+              <Kbd>Ctrl/⌘</Kbd>+<Kbd>C</Kbd> to copy them to Excel.
             </Note>
           </>
         ),
@@ -307,7 +318,8 @@ const GROUPS: ChapterGroup[] = [
               </Bullet>
               <Bullet>
                 <strong>Copy from read-only cells</strong> (MediaOcean,
-                MediaBox, locked months): a single click copies the value.
+                MediaBox, locked months): select them and press{" "}
+                <Kbd>Ctrl/⌘</Kbd>+<Kbd>C</Kbd>, like any other cell.
               </Bullet>
             </ul>
             <div className="overflow-hidden rounded-xl border border-gray-200">
@@ -822,7 +834,8 @@ const TOPICS: Topic[] = [
   { label: "Copy & paste from Excel", chapterId: "spreadsheet", keywords: "clipboard tsv block" },
   { label: "Fill down / fill right", chapterId: "spreadsheet", keywords: "ctrl d r repeat" },
   { label: "Keyboard shortcuts", chapterId: "spreadsheet", keywords: "keys hotkeys arrows tab" },
-  { label: "Copy a read-only cell", chapterId: "spreadsheet", keywords: "mediaocean mediabox click clipboard" },
+  { label: "Copy a read-only cell", chapterId: "spreadsheet", keywords: "mediaocean mediabox select clipboard" },
+  { label: "Copy MediaBox / MediaOcean into my forecast", chapterId: "grid", keywords: "copy to my submission tick checkbox campaign split project months overwrite reference" },
   { label: "Distribute one amount across months", chapterId: "spread", keywords: "spread tool fan curve" },
   { label: "Equal vs weighted split", chapterId: "spread", keywords: "mode shape" },
   { label: "Line total / replace / add", chapterId: "spread", keywords: "behaviour existing values" },
