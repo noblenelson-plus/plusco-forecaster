@@ -82,6 +82,7 @@ import { fetchAnnualActuals } from "../../lib/services/annual-actuals-service";
 import { SpreadsheetCell, TotalCell } from "./editable-cell";
 import SpreadDialog from "./spread-dialog";
 import NoteDialog from "./note-dialog";
+import NonCommissionableDialog from "./non-commissionable-dialog";
 import RowActionsMenu, { type RowAction } from "./row-actions-menu";
 import { useCopyRow } from "./copy-row-context";
 import SelectionTotal from "./selection-total";
@@ -1722,9 +1723,24 @@ function BucketSection({
   const bucketTotals = useMemo(() => monthTotals(bucket.rows), [bucket.rows]);
   const types = availableTypes(config, bucket.rows);
   const [spreadRow, setSpreadRow] = useState<ForecastRow | null>(null);
+  // Confirm dialog for the commission flag (Media only).
+  const [commissionDialog, setCommissionDialog] = useState(false);
 
   return (
     <>
+      {commissionDialog && (
+        <NonCommissionableDialog
+          projectName={bucket.name}
+          markNonCommissionable={!bucket.nonCommissionable}
+          onConfirm={() =>
+            grid.setBucketNonCommissionable(
+              bucket.bucketId,
+              !bucket.nonCommissionable
+            )
+          }
+          onClose={() => setCommissionDialog(false)}
+        />
+      )}
       {/* Bucket header — name + controls on the left, subtotal across the row */}
       <tr className="bg-gray-50 border-t border-gray-200">
         <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 border-b border-gray-100">
@@ -1751,35 +1767,21 @@ function BucketSection({
                 disabled:hover:border-transparent"
             />
 
-            {config.axisId === "media" &&
-              (bucket.nonCommissionable ? (
-                <button
-                  type="button" 
-                  disabled={readOnly}
-                  onClick={() =>
-                    grid.setBucketNonCommissionable(bucket.bucketId, false)
-                  }
-                  title="This project's media spend is excluded from the commission calculation. Click to make it commissionable again."
-                  className="ml-2 inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 transition-colors hover:bg-amber-200 disabled:cursor-default disabled:hover:bg-amber-100"
-                >
-                  <Ban size={11} />
-                  Non-commissionable
-                </button>
-              ) : (
-                !readOnly && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      grid.setBucketNonCommissionable(bucket.bucketId, true)
-                    }
-                    title="Mark this project non-commissionable — its media spend is excluded from the commission calculation, but still counts in every other total."
-                    className="ml-2 inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-gray-300 px-2.5 py-0.5 text-[11px] font-medium text-gray-600 transition-colors hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700"
-                  >
-                    <Ban size={11} />
-                    Mark non-commissionable
-                  </button>
-                )
-              ))}
+            {/* Non-commissionable state stays visible as a compact chip; the
+                change itself (either way) goes through a confirm dialog, since
+                a stray click used to silently drop the project's commission. */}
+            {config.axisId === "media" && bucket.nonCommissionable && (
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => setCommissionDialog(true)}
+                title="This project's media spend is excluded from the commission calculation."
+                className="ml-2 inline-flex flex-shrink-0 items-center gap-1 bg-yellow-400 px-2 py-0.5 text-[11px] font-semibold text-gray-900 transition-colors hover:bg-yellow-500 disabled:cursor-default disabled:hover:bg-yellow-400"
+              >
+                <Ban size={11} />
+                Non-commissionable
+              </button>
+            )}
 
             {!readOnly && (
               <>
@@ -1788,6 +1790,17 @@ function BucketSection({
                   options={types}
                   onPick={(rowType) => grid.addRow(bucket.bucketId, rowType)}
                 />
+                {config.axisId === "media" && !bucket.nonCommissionable && (
+                  <button
+                    type="button"
+                    onClick={() => setCommissionDialog(true)}
+                    className="p-1 rounded-lg text-gray-300 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                    title="Mark this project non-commissionable…"
+                    aria-label="Mark this project non-commissionable"
+                  >
+                    <Ban size={13} />
+                  </button>
+                )}
                 {/* The lone "General" project can't be removed — adding a second
                     project is what unlocks naming and removal. */}
                 {!lockName && (
