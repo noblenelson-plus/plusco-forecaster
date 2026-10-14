@@ -22,9 +22,40 @@ import type { MediaboxCSVTypeRow } from "./forecast-csv";
 
 type Cell = string | number;
 
+/** Cell look applied after the values are written. Colors are "#rrggbb". */
+export interface SheetCellStyle {
+  bold?: boolean;
+  italic?: boolean;
+  strikethrough?: boolean;
+  color?: string;
+  background?: string;
+  /** Sheets number-format pattern, e.g. "#,##0". */
+  numberFormat?: string;
+}
+
+/** A style over a block of cells — 0-based row/col, spans default to 1. */
+export interface SheetStyleRange {
+  row: number;
+  col: number;
+  rows?: number;
+  cols?: number;
+  style: SheetCellStyle;
+}
+
+/** Optional formatting of one tab (best effort: never fails the export). */
+export interface SheetLayout {
+  /** Applied in order, so a later range overrides an earlier one's fields. */
+  styles?: SheetStyleRange[];
+  frozenRows?: number;
+  frozenColumns?: number;
+  /** Column widths in pixels, by 0-based column index. */
+  columnWidths?: Record<number, number>;
+}
+
 export interface SheetTab {
   sheetTitle: string;
   matrix: Cell[][];
+  layout?: SheetLayout;
 }
 
 const MONTH_LABELS = [

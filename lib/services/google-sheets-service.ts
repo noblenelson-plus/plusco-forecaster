@@ -15,7 +15,9 @@
  * creates), so the consent stays narrow.
  */
 
-const GIS_SRC = "https://accounts.google.com/gsi/client";
+import type { SheetLayout } from "../format/forecast-sheets";
+
+const GIS_SRC ="https://accounts.google.com/gsi/client";
 const SCOPES =
   "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file";
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -280,6 +282,107 @@ export async function applyDataValidations(
         },
       },
     }));
+  if (requests.length === 0) return;
+  await api(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({ requests }),
+  });
+}
+
+/** "#rrggbb" → the Sheets API color (0–1 channels). */
+function sheetsColor(hex: string): { red: number; green: number; blue: number } {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return {
+    red: ((n >> 16) & 255) / 255,
+    green: ((n >> 8) & 255) / 255,
+    blue: (n & 255) / 255,
+  };
+}
+
+/**
+ * Formats one tab in a single batchUpdate: number formats, text styles and
+ * background colors per range (in order — later ranges override the fields
+ * they set), frozen rows/columns and column widths. Each range only touches
+ * the fields it sets, so overlapping ranges compose.
+ */
+export async function formatSheet(
+  spreadsheetId: string,
+  sheetId: number,
+  layout: SheetLayout
+): Promise<void> {
+  const requests: object[] = [];
+
+  for (const { row, col, rows = 1, cols = 1, style } of layout.styles ?? []) {
+    const format: Record<string, unknown> = {};
+    const textFormat: Record<string, unknown> = {};
+    const fields: string[] = [];
+    const text = (key: string, value: unknown) => {
+      textFormat[key] = value;
+      fields.push(`userEnteredFormat.textFormat.${key}`);
+    };
+    if (style.bold !== undefined) text("bold", style.bold);
+    if (style.italic !== undefined) text("italic", style.italic);
+    if (style.strikethrough !== undefined) text("strikethrough", style.strikethrough);
+    if (style.color) text("foregroundColor", sheetsColor(style.color));
+    if (Object.keys(textFormat).length > 0) format.textFormat = textFormat;
+    if (style.background) {
+      format.backgroundColor = sheetsColor(style.background);
+      fields.push("userEnteredFormat.backgroundColor");
+    }
+    if (style.numberFormat) {
+      format.numberFormat = { type: "NUMBER", pattern: style.numberFormat };
+      fields.push("userEnteredFormat.numberFormat");
+    }
+    if (fields.length === 0) continue;
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: row,
+          endRowIndex: row + rows,
+          startColumnIndex: col,
+          endColumnIndex: col + cols,
+        },
+        cell: { userEnteredFormat: format },
+        fields: fields.join(","),
+      },
+    });
+  }
+
+  if (layout.frozenRows !== undefined || layout.frozenColumns !== undefined) {
+    const gridProperties: Record<string, number> = {};
+    const fields: string[] = [];
+    if (layout.frozenRows !== undefined) {
+      gridProperties.frozenRowCount = layout.frozenRows;
+      fields.push("gridProperties.frozenRowCount");
+    }
+    if (layout.frozenColumns !== undefined) {
+      gridProperties.frozenColumnCount = layout.frozenColumns;
+      fields.push("gridProperties.frozenColumnCount");
+    }
+    requests.push({
+      updateSheetProperties: {
+        properties: { sheetId, gridProperties },
+        fields: fields.join(","),
+      },
+    });
+  }
+
+  for (const [col, pixelSize] of Object.entries(layout.columnWidths ?? {})) {
+    requests.push({
+      updateDimensionProperties: {
+        range: {
+          sheetId,
+          dimension: "COLUMNS",
+          startIndex: Number(col),
+          endIndex: Number(col) + 1,
+        },
+        properties: { pixelSize },
+        fields: "pixelSize",
+      },
+    });
+  }
+
   if (requests.length === 0) return;
   await api(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
     method: "POST",

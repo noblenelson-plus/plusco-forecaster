@@ -44,7 +44,6 @@ import {
   Lock,
   Loader2,
   RotateCcw,
-  Download,
   SplitSquareHorizontal,
   Sparkles,
   Flag,
@@ -94,7 +93,11 @@ import { useForecastSelection } from "../../lib/stores/forecast-selection.store"
 import { useProducts } from "../../lib/hooks/use-products";
 import { revenueDropdownProducts } from "../../lib/services/product-service";
 import type { ProductDefinition } from "../../lib/types/product.types";
-import { downloadAxisCSV } from "../../lib/format/forecast-csv";
+import {
+  buildRevenueSheetTab,
+  type RevenueSheetOptions,
+} from "../../lib/format/revenue-sheets";
+import ForecastSheetsExportButton from "./forecast-sheets-export-button";
 import type { CommissionBreakdown } from "../../lib/format/revenue-commission";
 import {
   officialRevenueByMonth,
@@ -453,7 +456,17 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
 
   return (
     <div className="space-y-4">
-      <RevenueToolbar grid={grid} showNotes={showNotes} onToggleNotes={toggleNotes} />
+      <RevenueToolbar
+        grid={grid}
+        showNotes={showNotes}
+        onToggleNotes={toggleNotes}
+        exportOptions={{
+          prevOfficial: prevOfficialTotals,
+          prevLabel: prevRefLabel,
+          hideGaia,
+          productName: (id) => productById.get(id)?.name,
+        }}
+      />
 
       {grid.error && (
         <div className="bg-red-500 border border-red-500 text-white px-4 py-3 rounded-lg text-sm">
@@ -955,16 +968,19 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
   );
 }
 
-// ─── Toolbar (lock badge + CSV + discard/save) ───────────────────────────────
+// ─── Toolbar (lock badge + Sheets export + discard/save)───────────────────────────────
 
 function RevenueToolbar({
   grid,
   showNotes,
   onToggleNotes,
+  exportOptions,
 }: {
   grid: UseForecasterGridResult;
   showNotes: boolean;
   onToggleNotes: () => void;
+  /** What the Sheets export needs beyond the axis data (reference, RFQ0). */
+  exportOptions: RevenueSheetOptions;
 }) {
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const [addingBucket, setAddingBucket] = useState(false);
@@ -977,14 +993,6 @@ function RevenueToolbar({
     if (name && name !== GENERAL_PROJECT_NAME) grid.addBucket(name);
     setBucketName("");
     setAddingBucket(false);
-  }
-
-  function downloadCSV() {
-    downloadAxisCSV(grid.data, REVENUE_AXIS_CONFIG, {
-      clientName: selectedClient?.CL_Name,
-      year: selectedYear,
-      rfqType: selectedRFQ?.type,
-    });
   }
 
   return (
@@ -1051,14 +1059,18 @@ function RevenueToolbar({
           Notes
         </button>
 
-        <button
-          onClick={downloadCSV}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors"
-          title="Download this axis as a CSV file"
-        >
-          <Download size={14} />
-          CSV
-        </button>
+        <ForecastSheetsExportButton
+          data={grid.data}
+          config={REVENUE_AXIS_CONFIG}
+          buildTabs={() => [buildRevenueSheetTab(grid.data, exportOptions)]}
+          tooltip="Export the Revenue grid to a new Google Sheet, with the same colors and struck-through (not counted) amounts"
+          context={{
+            clientName: selectedClient?.CL_Name,
+            year: selectedYear,
+            rfqType: selectedRFQ?.type,
+          }}
+          disabled={grid.loading}
+        />
 
         {grid.hasChanges && (
           <button
