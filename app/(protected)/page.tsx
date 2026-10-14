@@ -374,7 +374,7 @@ export default function DashboardPage() {
     comparisonUsdToCad,
     dataMonths
   );
-  const productData = useScopeProductTracking(scopedClientIds);
+  const productData = useScopeProductTracking(scopedClientIds, selectedYear);
   const { products, loading: productsLoading } = useProducts();
 
   const focusLoading = activeFocusId
@@ -682,6 +682,7 @@ export default function DashboardPage() {
           />
         ) : tab === "product" ? (
           <ProductTab
+            year={selectedYear}
             productData={productData}
             products={products}
             productsLoading={productsLoading}

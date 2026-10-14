@@ -4,8 +4,8 @@
 /**
  * Product tab for the Forecaster dashboard. Stacks the three product sections:
  * Overview (all statuses), Adoption (approved only), and Opportunity (pipeline).
- * All are counts from the current product-tracking snapshot — no Year/RFQ or
- * currency dimension — but they respect the in-scope client set (filters + USD).
+ * All are counts from the product tracking of the global Year — no RFQ or
+ * currency dimension — and they respect the in-scope client set (filters + USD).
  * Product Revenue ($) is intentionally deferred (needs a product-forecast source).
  *
  * The "Expected revenue timings" list (imported from the former standalone
@@ -43,7 +43,10 @@ export default function ProductTab({
   productsLoading,
   scopedClientIds,
   clientNameById,
+  year,
 }: {
+  /** The global Year the product tracking was read for. */
+  year: number | null;
   productData: ScopeProductData;
   products: ProductDefinition[];
   productsLoading: boolean;
@@ -83,7 +86,7 @@ export default function ProductTab({
   if (productData.entries.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
-        No product tracking for the clients in scope.
+        No product tracking{year ? ` for ${year}` : ""} for the clients in scope.
       </div>
     );
   }

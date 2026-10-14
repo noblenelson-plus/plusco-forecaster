@@ -4,7 +4,7 @@
 /**
  * Unified forecast page — a single page with four switchable tabs.
  * Media Spend / Revenue / Labs are powered by the same generic grid engine;
- * Product is a standalone always-on status grid (client-only, no year/RFQ).
+ * Product is a standalone status grid per client × year (no RFQ).
  *
  * Layout:
  *   [Context bar]  Client · Year · Submission selectors + panel toggles
@@ -234,7 +234,7 @@ function ForecastPageContent() {
   );
   const revenueNoRates = !yearRates || Object.keys(yearRates).length === 0;
 
-  // Active axis (grid tabs only — Product has no grid engine, no year/RFQ).
+  // Active axis (grid tabs only — Product has no grid engine and no RFQ).
   // On the Product tab these fall back to Media but are never rendered.
   const activeGrid =
     tab === "labs" ? labsGrid : tab === "revenue" ? revenueGrid : mediaGrid;
@@ -705,11 +705,11 @@ function ForecastPageContent() {
           below stays pinned to the bottom of the screen. */}
       <div className="flex-1 w-full p-6 max-w-[1700px] mx-auto">
         {tab === "product" ? (
-          // Product is always-on per client — only a client is required.
-          selectedClient ? (
-            <ProductGrid clientId={selectedClient.cl_id} />
+          // Product is tracked per client × year — the RFQ is not required.
+          selectedClient && selectedYear ? (
+            <ProductGrid clientId={selectedClient.cl_id} year={selectedYear} />
           ) : (
-            <SelectionPrompt clientOnly />
+            <SelectionPrompt withoutRfq />
           )
         ) : !activeGrid.selectionReady ? (
           <SelectionPrompt />
@@ -848,17 +848,15 @@ function ForecastCurrencyBadge({ currency }: { currency: Currency }) {
 
 // ─── Empty state — incomplete triplet ────────────────────────────────────────
 
-function SelectionPrompt({ clientOnly = false }: { clientOnly?: boolean }) {
+function SelectionPrompt({ withoutRfq = false }: { withoutRfq?: boolean }) {
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
 
-  // The Product tab is always-on: it only needs a client, not a year/RFQ.
-  const steps = clientOnly
-    ? [{ label: "Client", done: !!selectedClient }]
-    : [
-        { label: "Client", done: !!selectedClient },
-        { label: "Year", done: !!selectedYear },
-        { label: "RFQ", done: !!selectedRFQ },
-      ];
+  // The Product tab is tracked per client × year: it doesn't need an RFQ.
+  const steps = [
+    { label: "Client", done: !!selectedClient },
+    { label: "Year", done: !!selectedYear },
+    ...(withoutRfq ? [] : [{ label: "RFQ", done: !!selectedRFQ }]),
+  ];
 
   return (
     <div className="flex flex-col items-center justify-center py-24 text-gray-400 bg-white border border-gray-200 rounded-xl">

@@ -1,11 +1,12 @@
 // lib/types/product.types.ts
 
 /**
- * Product axis — always-on product tracking per client.
+ * Product axis — product pipeline tracking per client and year.
  *
- * Unlike the Media/Revenue/Labs axes there is no year, RFQ or monthly grid:
- * for each product of the catalog, the Business Lead tracks a pipeline status
- * and, optionally, a timing (the month revenue is expected to start).
+ * Unlike the Media/Revenue/Labs axes there is no RFQ or monthly grid: for each
+ * product of the catalog, the Business Lead tracks a pipeline status for the
+ * year and, optionally, a timing (the month revenue is expected to start). One
+ * record per client × year, so year-over-year opportunities can be compared.
  */
 
 // ─── Statuses ─────────────────────────────────────────────────────────────────
@@ -78,14 +79,30 @@ export interface ProductEntry {
   timing?: string;
   /** Free-text note. Optional, BL-entered. */
   note?: string;
+  /**
+   * The year the note was carried over from by "Copy from {year}" (shown as a
+   * subtle tag). Dropped as soon as the note is edited. Absent = written this year.
+   */
+  noteFrom?: number;
 }
 
 /** Per-product entries; a product with nothing tracked simply has no key. */
 export type ProductTrackingMap = Record<string, ProductEntry>;
 
-/** Firestore doc — collection `product_tracking`, one doc per client (ID = cl_id). */
+/**
+ * Firestore doc — collection `product_tracking`, one doc per client × year
+ * (ID = `{cl_id}_{year}`, see productTrackingDocId). Docs from before the
+ * per-year split are keyed by the bare cl_id and carry no `year`; they were
+ * migrated to 2026 and are no longer read.
+ */
 export interface ProductTrackingDoc {
   clientId: string;
+  year: number;
   products: ProductTrackingMap;
   updatedAt?: string;
+}
+
+/** Doc ID of a client's product tracking for a year: `{cl_id}_{year}`. */
+export function productTrackingDocId(clientId: string, year: number): string {
+  return `${clientId}_${year}`;
 }
