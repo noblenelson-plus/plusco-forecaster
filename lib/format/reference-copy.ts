@@ -62,6 +62,27 @@ export function isNoCampaign(name: string): boolean {
   return NO_CAMPAIGN_NAMES.has(name);
 }
 
+/** Display order of the reference strips: as delivered, or by name. */
+export type ReferenceSort = "default" | "asc" | "desc";
+
+/**
+ * Sorts reference rows by name (natural, case-insensitive: "Q2" before
+ * "Q10"); "default" keeps the given order. The "no campaign" bucket always
+ * stays last. View-only — reference data is never reordered in storage.
+ */
+export function sortReferenceRows<T>(rows: T[], label: (row: T) => string, dir: ReferenceSort): T[] {
+  if (dir === "default") return rows;
+  return [...rows].sort((a, b) => {
+    const la = label(a);
+    const lb = label(b);
+    const na = isNoCampaign(la);
+    const nb = isNoCampaign(lb);
+    if (na !== nb) return na ? 1 : -1;
+    const cmp = la.localeCompare(lb, undefined, { numeric: true, sensitivity: "base" });
+    return dir === "asc" ? cmp : -cmp;
+  });
+}
+
 /** Project names match case-insensitively, ignoring surrounding whitespace. */
 export function sameBucketName(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();

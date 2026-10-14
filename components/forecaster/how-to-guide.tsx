@@ -208,7 +208,8 @@ const GROUPS: ChapterGroup[] = [
                 synced automatically and expands per campaign. Business Leads
                 can&apos;t edit either. One toggle on the REFERENCE DATA bar
                 groups both by <em>Campaign › Channel</em> or{" "}
-                <em>Channel › Campaign</em>.
+                <em>Channel › Campaign</em>, and <em>Sort</em> orders them by name
+                (A–Z / Z–A — view only).
               </Step>
               <Step n={3}>
                 <strong>Copy reference numbers into your forecast.</strong> Tick
