@@ -2,15 +2,17 @@
 "use client";
 
 /**
- * Campaign → Channel view of the MediaOcean (pink) actuals strip — the inverted
- * orientation of the editable channel view. Read-only (like the MediaBox strip):
- * it exists to *see* the same numbers grouped by campaign and to copy them into
- * the BL, not to edit. Editing stays in the default channel view, where the
- * source detail lines live.
+ * Read-only pivot rows of the MediaOcean (pink) actuals strip. Two uses:
+ *   - the Campaign → Channel view of the edited year (the inverted orientation
+ *     of the editable channel view — editing stays there, where the source
+ *     detail lines live);
+ *   - either orientation of ANOTHER year's MediaOcean (the reference-year
+ *     peek), which is never editable.
  *
- * Rows come from buildMediaOceanPivot(actuals).byCampaign: each campaign expands
- * to the channels it spans. Every row carries a checkbox for the "Copy to my
- * submission" selection (a campaign ticks all its channels); leaf keys are the
+ * Rows come from buildMediaOceanPivot(actuals): `byCampaign` (each campaign
+ * expands to the channels it spans) or `byChannel` (each channel expands to its
+ * campaigns — the MIR estimates). Every row carries a checkbox for the "Copy to
+ * my submission" selection (a parent ticks all its children); leaf keys are the
  * same (channel × campaign) atoms the editable channel view uses. Month cells
  * join the grid's cell selection (select + Ctrl/Cmd+C, read-only); the grid
  * owns the pivot and the expanded set, since it orders that selection model.
@@ -20,6 +22,7 @@ import { Fragment } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   leafKey,
+  type ReferenceOrientation,
   type ReferenceSelection,
 } from "../../lib/hooks/use-reference-selection";
 import {
@@ -30,9 +33,8 @@ import {
 import {
   sumMonths,
   NO_CAMPAIGN,
-  type MediaOceanPivot,
+  type PivotNode,
 } from "../../lib/format/mediaocean-pivot";
-import { referenceRowKey } from "../../lib/format/reference-copy";
 import type { actualsTheme } from "../../lib/format/actuals-theme";
 
 type Theme = ReturnType<typeof actualsTheme>;
@@ -43,7 +45,9 @@ function cell(value: number | undefined) {
 }
 
 export default function ActualsCampaignView({
-  pivot,
+  nodes,
+  orientation,
+  rowKey,
   showNotes,
   colCount,
   theme,
@@ -52,20 +56,24 @@ export default function ActualsCampaignView({
   onToggle,
   cells,
 }: {
-  /** buildMediaOceanPivot(actuals), owned by the grid. */
-  pivot: MediaOceanPivot;
+  /** buildMediaOceanPivot(actuals).byCampaign or .byChannel, owned by the grid. */
+  nodes: PivotNode[];
+  /** Which pivot `nodes` is: parents are campaigns, or channels. */
+  orientation: ReferenceOrientation;
+  /** Selection-model key of a parent row, or of one of its children. */
+  rowKey: (parentKey: string, childKey?: string) => string;
   showNotes: boolean;
   colCount: number;
   theme: Theme;
   /** Row-checkbox selection; undefined hides the checkboxes. */
   selection?: ReferenceSelection;
-  /** Campaign rows expanded to show their channels (keyed by campaign key). */
+  /** Parent rows expanded to show their children (keyed by parent key). */
   expanded: Set<string>;
-  onToggle: (campaignKey: string) => void;
+  onToggle: (parentKey: string) => void;
   /** The grid's cell-selection plumbing for the month cells. */
   cells: ReferenceCellsApi;
 }) {
-  if (pivot.byCampaign.length === 0) {
+  if (nodes.length === 0) {
     return (
       <tr>
         <td colSpan={colCount} className={`px-8 py-2.5 text-xs ${theme.labelClass} ${theme.emptyRow}`}>
@@ -75,15 +83,25 @@ export default function ActualsCampaignView({
     );
   }
 
+  const byCampaign = orientation === "campaign";
+
   return (
     <>
-      {pivot.byCampaign.map((node) => {
-        const isOpen = expanded.has(node.key);
+      {nodes.map((node) => {
+        // The campaign half of a child's (channel × campaign) atom.
+        const campaignOf = (childKey: string) => (byCampaign ? node.key : childKey);
+        // A channel with no campaign lines only has a lone NO_CAMPAIGN child —
+        // nothing worth expanding to.
+        const expandable =
+          byCampaign || node.children.some((c) => c.label !== NO_CAMPAIGN);
+        const isOpen = expandable && expanded.has(node.key);
         const isNoCampaign = node.label === NO_CAMPAIGN;
-        const leaves = node.children.map((c) => leafKey(c.channelRowType, node.key));
+        const leaves = node.children.map((c) =>
+          leafKey(c.channelRowType, campaignOf(c.key))
+        );
         return (
           <Fragment key={node.key}>
-            {/* Campaign row */}
+            {/* Parent row (a campaign, or a channel) */}
             <tr className={`border-b border-gray-100 ${theme.rowBg}`}>
               <td className={`sticky left-0 z-10 ${theme.rowBg} px-4 py-2`}>
                 <div className="flex items-center gap-1.5">
@@ -95,25 +113,37 @@ export default function ActualsCampaignView({
                       label={node.label}
                     />
                   )}
-                  <button
-                    type="button"
-                    onClick={() => onToggle(node.key)}
-                    title={isOpen ? "Collapse" : "Expand channels"}
-                    className="flex items-center gap-1.5 text-xs font-medium text-gray-900 hover:opacity-70 transition-opacity"
-                  >
-                    {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    <span className={isNoCampaign ? "italic text-gray-500" : ""}>
+                  {expandable ? (
+                    <button
+                      type="button"
+                      onClick={() => onToggle(node.key)}
+                      title={
+                        isOpen
+                          ? "Collapse"
+                          : byCampaign
+                            ? "Expand channels"
+                            : "Expand campaigns"
+                      }
+                      className="flex items-center gap-1.5 text-xs font-medium text-gray-900 hover:opacity-70 transition-opacity"
+                    >
+                      {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      <span className={isNoCampaign ? "italic text-gray-500" : ""}>
+                        {node.label}
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        ({node.children.length})
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="pl-[18px] text-xs font-medium text-gray-900">
                       {node.label}
                     </span>
-                    <span className="text-[10px] text-gray-400">
-                      ({node.children.length})
-                    </span>
-                  </button>
+                  )}
                 </div>
               </td>
               {showNotes && <td className={theme.rowBg} />}
               <ReferenceMonthCells
-                rowKey={referenceRowKey.mediaocean(node.key)}
+                rowKey={rowKey(node.key)}
                 months={node.months}
                 cells={cells}
               />
@@ -124,7 +154,7 @@ export default function ActualsCampaignView({
               </td>
             </tr>
 
-            {/* Channel children */}
+            {/* Children (channels of a campaign, or campaigns of a channel) */}
             {isOpen &&
               node.children.map((child) => (
                 <tr key={child.key} className="border-b border-gray-100 bg-white">
@@ -133,16 +163,22 @@ export default function ActualsCampaignView({
                       {selection && (
                         <RowCheckbox
                           selection={selection}
-                          keys={[leafKey(child.channelRowType, node.key)]}
+                          keys={[leafKey(child.channelRowType, campaignOf(child.key))]}
                           label={`${child.label} (${node.label})`}
                         />
                       )}
-                      <span className="text-xs text-gray-600">{child.label}</span>
+                      <span
+                        className={`text-xs ${
+                          child.label === NO_CAMPAIGN ? "italic text-gray-400" : "text-gray-600"
+                        }`}
+                      >
+                        {child.label}
+                      </span>
                     </div>
                   </td>
                   {showNotes && <td className="bg-white" />}
                   <ReferenceMonthCells
-                    rowKey={referenceRowKey.mediaocean(node.key, child.key)}
+                    rowKey={rowKey(node.key, child.key)}
                     months={child.months}
                     cells={cells}
                   />
