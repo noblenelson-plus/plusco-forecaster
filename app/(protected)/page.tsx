@@ -444,7 +444,11 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {(tab !== "mediaocean" || mediaOceanSub === "kpis" || mediaOceanSub === "investments") && (
+        {/* The client filter bar only where it drives the content. Reports
+            (MIR Raw / Billing) filter their own snapshot rows with their own
+            bar, so a second client filter there did nothing and confused users. */}
+        {tab !== "reports" &&
+          (tab !== "mediaocean" || mediaOceanSub === "kpis" || mediaOceanSub === "investments") && (
           <DashboardFilterBar
             facetViews={facetViews}
             filteredCount={scopedClientIds.length}
