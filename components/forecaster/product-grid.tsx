@@ -249,7 +249,8 @@ export default function ProductGrid({ clientId, year }: ProductGridProps) {
 
   /**
    * "Copy from {previous year}": brings every entry over (status, timing,
-   * note) into the working copy — saved by the autosave, undone by Discard.
+   * note) into the working copy — saved by the autosave a moment later, so
+   * undoing it after that means clearing the entries.
    * A carried note remembers the year it was first written.
    */
   const copyFromPrevious = () => {
@@ -321,7 +322,7 @@ export default function ProductGrid({ clientId, year }: ProductGridProps) {
               type="button"
               onClick={copyFromPrevious}
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-lg hover:bg-yellow-500 transition-colors"
-              title={`Bring every ${previousYear} entry (status, timing, note) into ${year}. You can edit or Discard before it saves.`}
+              title={`Bring every ${previousYear} entry (status, timing, note) into ${year}. It saves automatically; to undo, clear the entries you don't want.`}
             >
               <Copy size={13} />
               Copy from {previousYear}
