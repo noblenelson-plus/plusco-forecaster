@@ -24,6 +24,10 @@ const FILTERS: RawFilterDef[] = [
   { field: "BU_REGION", label: "Region" },
   { field: "BUSINESS_LEAD", label: "Business Lead" },
   { field: "PLUSCO_CLIENT_NAME", label: "Client" },
+  // The MediaOcean client code/name. Some app clients are grouped under one
+  // Client name in MIR (e.g. SAAQ, CNESST under "GOVT QC - MINISTÈRES ET
+  // ORGANISMES"); this filter still reaches them individually.
+  { field: "CLIENT", label: "MediaOcean client" },
 ];
 
 // The columns shown and exported, in the team's order (live spellings).
