@@ -2,13 +2,14 @@
 "use client";
 
 /**
- * "Export to Sheets" for the forecast grid — replaces the old client-side CSV.
+ * "Export to Sheets" for the forecast grids — replaces the old client-side CSV.
  *
  * Creates one Google spreadsheet with three tabs (BL Submission / MediaOcean /
  * MediaBox) via buildAxisSheetTabs + exportToNewSheetWithTabs, so the room can
- * collaborate on the numbers instead of passing a file around. The Google popup
- * must open from inside the click handler to survive popup blockers, so connect
- * is awaited in `run` rather than pre-warmed.
+ * collaborate on the numbers instead of passing a file around. The Revenue grid
+ * passes its own `buildTabs` (one formatted tab, see revenue-sheets.ts). The
+ * Google popup must open from inside the click handler to survive popup
+ * blockers, so connect is awaited in `run` rather than pre-warmed.
  */
 
 import { useState } from "react";
@@ -17,7 +18,7 @@ import {
   exportToNewSheetWithTabs,
   SheetsUnavailableError,
 } from "./table/table-export";
-import { buildAxisSheetTabs } from "../../lib/format/forecast-sheets";
+import { buildAxisSheetTabs, type SheetTab } from "../../lib/format/forecast-sheets";
 import type { MediaboxCSVTypeRow } from "../../lib/format/forecast-csv";
 import type { AxisData, AxisConfig } from "../../lib/types/forecaster.types";
 
@@ -42,12 +43,18 @@ export default function ForecastSheetsExportButton({
   data,
   config,
   mediabox,
+  buildTabs,
+  tooltip = "Export BL Submission, MediaOcean and MediaBox to a new Google Sheet (3 tabs)",
   context,
   disabled,
 }: {
   data: AxisData;
   config: AxisConfig;
   mediabox?: MediaboxCSVTypeRow[];
+  /** Custom tabs (e.g. the Revenue layout); defaults to buildAxisSheetTabs. */
+  buildTabs?: () => SheetTab[];
+  /** Button hover text. */
+  tooltip?: string;
   context: { clientName?: string; year?: number | null; rfqType?: string };
   disabled?: boolean;
 }) {
@@ -56,7 +63,7 @@ export default function ForecastSheetsExportButton({
   const run = async () => {
     setStatus({ state: "working" });
     try {
-      const tabs = buildAxisSheetTabs(data, config, mediabox);
+      const tabs = buildTabs ? buildTabs() : buildAxisSheetTabs(data, config, mediabox);
       const url = await exportToNewSheetWithTabs({
         title: buildTitle(config, context),
         tabs,
@@ -98,7 +105,7 @@ export default function ForecastSheetsExportButton({
       onClick={() => void run()}
       disabled={working || disabled}
       className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-50 transition-colors"
-      title="Export BL Submission, MediaOcean and MediaBox to a new Google Sheet (3 tabs)"
+      title={tooltip}
     >
       {working ? (
         <Loader2 size={14} className="animate-spin" />

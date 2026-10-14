@@ -20,11 +20,13 @@ import {
   applyDataValidations,
   connect,
   createSpreadsheet,
+  formatSheet,
   isConnected,
   isGoogleConfigured,
   SHEETS_CELL_LIMIT,
   writeValues,
 } from "../../../lib/services/google-sheets-service";
+import type { SheetLayout } from "../../../lib/format/forecast-sheets";
 
 export type CellValue = string | number;
 
@@ -195,7 +197,13 @@ export async function exportToNewSheetWithTabs({
    * `dropdowns`: header label → allowed values, added as in-sheet dropdowns
    * (best effort: a failure here never fails the export).
    */
-  tabs: { sheetTitle: string; matrix: CellValue[][]; dropdowns?: Record<string, string[]> }[];
+  tabs: {
+    sheetTitle: string;
+    matrix: CellValue[][];
+    dropdowns?: Record<string, string[]>;
+    /** Colors, text styles, frozen panes (best effort, like dropdowns). */
+    layout?: SheetLayout;
+  }[];
 }): Promise<string> {
   if (!isGoogleConfigured()) {
     throw new SheetsUnavailableError(
@@ -234,6 +242,13 @@ export async function exportToNewSheetWithTabs({
         );
       } catch (err) {
         console.warn("Could not add dropdowns to the exported sheet:", err);
+      }
+    }
+    if (tab.layout && sheetId !== undefined) {
+      try {
+        await formatSheet(spreadsheet.spreadsheetId, sheetId, tab.layout);
+      } catch (err) {
+        console.warn("Could not format the exported sheet (data was exported):", err);
       }
     }
   }
