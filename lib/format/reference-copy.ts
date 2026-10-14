@@ -46,8 +46,9 @@ export const referenceRowKey = {
   /** MediaOcean campaign-view row, or its channel child. */
   mediaocean: (campaignKey: string, channelKey?: string) =>
     JSON.stringify(["mo", campaignKey, channelKey ?? null]),
-  /** Another year's MediaOcean row (reference-year peek). */
-  otherYear: (rowId: string) => JSON.stringify(["ref", rowId]),
+  /** Another year's MediaOcean pivot row (reference-year peek), or its child. */
+  otherYear: (parentKey: string, childKey?: string) =>
+    JSON.stringify(["ref", parentKey, childKey ?? null]),
 };
 
 /**
@@ -81,6 +82,19 @@ export function sortReferenceRows<T>(rows: T[], label: (row: T) => string, dir: 
     const cmp = la.localeCompare(lb, undefined, { numeric: true, sensitivity: "base" });
     return dir === "asc" ? cmp : -cmp;
   });
+}
+
+/** sortReferenceRows over a pivot's parent rows and, within each, its children. */
+export function sortPivotNodes<T extends { label: string; children: { label: string }[] }>(
+  nodes: T[],
+  dir: ReferenceSort
+): T[] {
+  if (dir === "default") return nodes;
+  return sortReferenceRows(
+    nodes.map((n) => ({ ...n, children: sortReferenceRows(n.children, (c) => c.label, dir) })),
+    (n) => n.label,
+    dir
+  );
 }
 
 /** Project names match case-insensitively, ignoring surrounding whitespace. */
