@@ -13,8 +13,9 @@
  *      maps to; a company-wide domain (config/company_domains, e.g.
  *      pluscompany.com) sees every agency, like an admin.
  *   3. Grants (dashboard_grants/{email}) — per tab, the clients of chosen
- *      agencies × regions, read-only; a Forecaster grant may also allow
- *      editing. Exec KPI and MediaBox Adoption are grants only.
+ *      agencies × regions, or specific clients (CLIENT_GRANT_TABS only),
+ *      read-only; a Forecaster grant may also allow editing. Exec KPI and
+ *      MediaBox Adoption are grants only.
  *   Admins see and edit everything. Disabled users get nothing. Tabs an
  *   admin hides (config/dashboard_access) disappear for everyone, admins too.
  *
@@ -24,6 +25,7 @@
 
 import {
   AGENCY_DEFAULT_TABS,
+  CLIENT_GRANT_TABS,
   DASHBOARD_TABS,
   type DashboardAccessConfig,
   type DashboardGrantDoc,
@@ -78,6 +80,15 @@ export function normalizeGrantScope(raw: unknown, tab: DashboardTabId): GrantSco
   if (!s || typeof s !== "object") return null;
   const list = (v: unknown) =>
     [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string" && !!x.trim()))].sort();
+  // Specific clients only on the tabs that allow them (never Media
+  // Investments / Reports, whose data is split by agency).
+  const clients = CLIENT_GRANT_TABS.includes(tab) ? list(s.clients) : [];
+  if (clients.length) {
+    // The "specific clients" kind: the agency × region rule stays empty.
+    const scope: GrantScope = { allAgencies: false, agencies: [], allRegions: false, regions: [], clients };
+    if (tab === "forecaster" && s.edit === true) scope.edit = true;
+    return scope;
+  }
   const scope: GrantScope = {
     allAgencies: s.allAgencies === true,
     agencies: s.allAgencies === true ? [] : list(s.agencies),
@@ -87,6 +98,11 @@ export function normalizeGrantScope(raw: unknown, tab: DashboardTabId): GrantSco
   if (tab === "forecaster" && s.edit === true) scope.edit = true;
   const empty = (!scope.allAgencies && !scope.agencies.length) || (!scope.allRegions && !scope.regions.length);
   return empty ? null : scope;
+}
+
+/** A grant of the "specific clients" kind. */
+export function isClientGrant(scope: GrantScope | null | undefined): boolean {
+  return !!scope?.clients?.length;
 }
 
 /** Tolerant read of a grant doc's tabs (empty scopes and unknown tabs dropped). */
@@ -100,11 +116,19 @@ export function normalizeGrantTabs(raw: unknown): DashboardGrantDoc["tabs"] {
   return out;
 }
 
-/** "All agencies · QC/East" — for lists. */
-export function grantScopeLabel(scope: GrantScope): string {
+/**
+ * "All agencies · QC/East", or "Clients: Acme, Globex" — for lists.
+ * `clientName` resolves a client id to its name (falls back to the id).
+ */
+export function grantScopeLabel(scope: GrantScope, clientName?: (id: string) => string | undefined): string {
+  const edit = scope.edit ? " · can edit" : "";
+  if (isClientGrant(scope)) {
+    const names = scope.clients!.map((id) => clientName?.(id) || id).sort((a, b) => a.localeCompare(b));
+    return `Clients: ${names.join(", ")}${edit}`;
+  }
   const a = scope.allAgencies ? "All agencies" : scope.agencies.join(", ");
   const r = scope.allRegions ? "all regions" : scope.regions.join(", ");
-  return `${a} · ${r}${scope.edit ? " · can edit" : ""}`;
+  return `${a} · ${r}${edit}`;
 }
 
 // ─── Agencies ─────────────────────────────────────────────────────────────────
@@ -142,19 +166,23 @@ export function domainScope(ctx: AccessContext): AgencyScope {
 
 // ─── Grants ───────────────────────────────────────────────────────────────────
 
-/** Whether a grant scope covers a client (agency × region). */
+/** Whether a grant scope covers a client (listed, or agency × region). */
 export function grantCoversClient(
   scope: GrantScope | null | undefined,
-  client: Pick<Client, "CL_Agency" | "CL_Business_Unit_Region">
+  client: Pick<Client, "cl_id" | "CL_Agency" | "CL_Business_Unit_Region">
 ): boolean {
   if (!scope) return false;
+  if (scope.clients?.includes(client.cl_id)) return true;
   return (
     (scope.allAgencies || scope.agencies.includes(client.CL_Agency)) &&
     (scope.allRegions || scope.regions.includes(client.CL_Business_Unit_Region))
   );
 }
 
-/** The agencies a grant scope covers, for agency-tagged data (regions don't apply). */
+/**
+ * The agencies a grant scope covers, for agency-tagged data (regions don't
+ * apply; specific-client grants open no agency data — their rule is empty).
+ */
 function grantAgencyScope(scope: GrantScope | null | undefined): AgencyScope {
   if (!scope) return NOTHING;
   return scope.allAgencies ? EVERYTHING : { all: false, agencies: scope.agencies, includesUnassigned: false };
@@ -209,7 +237,7 @@ export function openTabs(ctx: AccessContext, teamClientCount: number): Dashboard
 export function tabCoversClient(
   ctx: AccessContext,
   tab: DashboardTabId,
-  client: Pick<Client, "CL_Agency" | "CL_Business_Unit_Region" | "CL_Team_Emails">
+  client: Pick<Client, "cl_id" | "CL_Agency" | "CL_Business_Unit_Region" | "CL_Team_Emails">
 ): boolean {
   if (ctx.disabled) return false;
   if (ctx.isAdmin) return true;
@@ -239,17 +267,20 @@ export function readableAgencyScope(ctx: AccessContext): AgencyScope {
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
 /**
- * One `clients` query the rules can verify: the whole collection, or equality
- * filters on agency and/or region. The team's `array-contains` query is
- * separate.
+ * One `clients` read the rules can verify: the whole collection, equality
+ * filters on agency and/or region, or a single client by id (a get). The
+ * team's `array-contains` query is separate.
  */
 export interface ClientQuerySpec {
   agency?: string;
   region?: string;
+  /** One client doc, read by id (specific-client grants). */
+  id?: string;
 }
 
 /** The client queries covering one grant scope. */
 export function grantQuerySpecs(scope: GrantScope): ClientQuerySpec[] {
+  if (isClientGrant(scope)) return scope.clients!.map((id) => ({ id }));
   if (scope.allAgencies && scope.allRegions) return [{}];
   if (scope.allAgencies) return scope.regions.map((region) => ({ region }));
   if (scope.allRegions) return scope.agencies.map((agency) => ({ agency }));
@@ -258,10 +289,10 @@ export function grantQuerySpecs(scope: GrantScope): ClientQuerySpec[] {
 
 /** Dedupes specs; a whole-collection read makes the rest redundant. */
 function dedupeSpecs(specs: ClientQuerySpec[]): ClientQuerySpec[] {
-  if (specs.some((s) => !s.agency && !s.region)) return [{}];
+  if (specs.some((s) => !s.agency && !s.region && !s.id)) return [{}];
   const seen = new Set<string>();
   return specs.filter((s) => {
-    const key = `${s.agency ?? "*"}|${s.region ?? "*"}`;
+    const key = s.id ? `id:${s.id}` : `${s.agency ?? "*"}|${s.region ?? "*"}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -289,7 +320,7 @@ export function editableClientQueries(ctx: AccessContext): ClientQuerySpec[] {
   return g && !ctx.disabled ? dedupeSpecs(grantQuerySpecs(g)) : [];
 }
 
-type ClientAccessFields = Pick<Client, "CL_Agency" | "CL_Business_Unit_Region" | "CL_Team_Emails">;
+type ClientAccessFields = Pick<Client, "cl_id" | "CL_Agency" | "CL_Business_Unit_Region" | "CL_Team_Emails">;
 
 /**
  * Read a client and its data (forecast, milestones, product tracking, …):

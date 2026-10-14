@@ -82,10 +82,26 @@ export type GrantableDashboardId = (typeof GRANTABLE_DASHBOARDS)[number];
 export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "labs-pacing", "reports"];
 
 /**
- * A grant's scope on one tab: the clients of the chosen agencies × regions
- * (`all…` = every one, including those added later). Being a rule rather
- * than a client list, new clients that match are included automatically.
- * Agency-tagged data (Media Investments, Reports) follows the agencies only.
+ * Tabs a grant may name specific clients on. Media Investments and Reports
+ * are excluded: their data is split by agency, so a client can't be isolated
+ * there — they take agency × region grants only.
+ */
+export const CLIENT_GRANT_TABS: readonly DashboardTabId[] = [
+  "forecaster",
+  "labs-pacing",
+  "exec-kpis",
+  "mediabox",
+];
+
+/**
+ * A grant's scope on one tab, one of two kinds:
+ *   - a rule: the clients of the chosen agencies × regions (`all…` = every
+ *     one, including those added later) — new matching clients are included
+ *     automatically;
+ *   - specific clients (`clients`, on CLIENT_GRANT_TABS only), with the rule
+ *     left empty (no agencies, no regions).
+ * Agency-tagged data (Media Investments, Reports) follows the rule's agencies
+ * only — specific clients never open agency data.
  */
 export interface GrantScope {
   allAgencies: boolean;
@@ -94,6 +110,8 @@ export interface GrantScope {
   allRegions: boolean;
   /** CL_Business_Unit_Region values; used when `allRegions` is false. */
   regions: string[];
+  /** Specific client ids (cl_id) — the "specific clients" kind of grant. */
+  clients?: string[];
   /**
    * Forecaster only: may also EDIT those clients in Forecast (like a client
    * team member). Other grants are read-only.

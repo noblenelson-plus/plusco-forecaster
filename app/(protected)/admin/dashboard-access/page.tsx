@@ -98,8 +98,11 @@ export default function AdminDashboardAccessPage() {
   const [exportedUrl, setExportedUrl] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  // For the access report: every client and the email domain ↔ agency mapping.
+  // Every client (the access report, the grant editor's region list and
+  // client picker, client names on specific-client grants) and the email
+  // domain ↔ agency mapping.
   const [clients, setClients] = useState<Client[]>([]);
+  const clientNameById = useMemo(() => new Map(clients.map((c) => [c.cl_id, c.CL_Name])), [clients]);
   const [mapping, setMapping] = useState<{ agencyDomains: Record<string, string[]>; companyDomains: string[] }>({
     agencyDomains: {},
     companyDomains: [],
@@ -156,7 +159,7 @@ export default function AdminDashboardAccessPage() {
         tabs: [
           { sheetTitle: REPORT_TABS.allAccess, matrix: buildAllAccess(input) },
           { sheetTitle: REPORT_TABS.summary, matrix: buildAccessSummary(input) },
-          { sheetTitle: REPORT_TABS.grants, matrix: buildGrantSheet(grants ?? [], names, tabLabels) },
+          { sheetTitle: REPORT_TABS.grants, matrix: buildGrantSheet(grants ?? [], names, tabLabels, clients) },
           { sheetTitle: REPORT_TABS.clientAccess, matrix: asText(buildTeamSheet(clients)) },
           { sheetTitle: REPORT_TABS.grantClients, matrix: asText(buildGrantClients(input)) },
         ],
@@ -405,7 +408,7 @@ export default function AdminDashboardAccessPage() {
                                 <p className="text-sm font-medium text-gray-900 truncate">{nameOf(email)}</p>
                                 <p className="text-[11px] text-gray-400 truncate">{email}</p>
                               </div>
-                              <span className="text-xs text-gray-600 text-right">{grantScopeLabel(scope)}</span>
+                              <span className="text-xs text-gray-600 text-right">{grantScopeLabel(scope, (cid) => clientNameById.get(cid))}</span>
                               <button
                                 onClick={() => setEditing({ tab: id, label: page.label, email })}
                                 className="p-1 text-gray-400 hover:text-gray-900"
@@ -496,6 +499,7 @@ export default function AdminDashboardAccessPage() {
           email={editing.email}
           scope={editingScope}
           users={users}
+          clients={clients}
           taken={new Set((byTab.get(editing.tab) ?? []).map((p) => p.email))}
           createdBy={myEmail}
           onUserCreated={(u) => setUsers((prev) => [...prev, u])}
