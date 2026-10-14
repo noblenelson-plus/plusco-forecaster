@@ -112,6 +112,7 @@ import {
 import {
   ReferenceMonthCells,
   ReferenceOrientationToggle,
+  ReferenceSortToggle,
   RowCheckbox,
   SelectionCount,
   type ReferenceCellsApi,
@@ -121,6 +122,8 @@ import {
   mediaboxLeaves,
   mediaoceanLeaves,
   referenceRowKey,
+  sortReferenceRows,
+  type ReferenceSort,
 } from "../../lib/format/reference-copy";
 
 const MONTH_LABELS = [
@@ -354,15 +357,48 @@ export default function ForecastGrid({
       });
   // MediaOcean shows the campaign pivot (read-only) or the editable channel
   // rows; the pivot needs campaign detail lines, else it's channel view.
-  const moPivot = useMemo(
-    () => buildMediaOceanPivot(grid.data.actuals),
-    [grid.data.actuals]
-  );
+  // Display order of both strips (the "Default · A–Z · Z–A" control in the
+  // Reference Data band) — view-only, nothing is reordered in storage. Every
+  // list below is sorted once here so the rendered rows and the selection
+  // model always agree.
+  const [refSort, setRefSort] = useState<ReferenceSort>("default");
+  const moPivot = useMemo(() => {
+    const pivot = buildMediaOceanPivot(grid.data.actuals);
+    if (refSort === "default") return pivot;
+    return {
+      ...pivot,
+      byCampaign: sortReferenceRows(
+        pivot.byCampaign.map((n) => ({
+          ...n,
+          children: sortReferenceRows(n.children, (c) => c.label, refSort),
+        })),
+        (n) => n.label,
+        refSort
+      ),
+    };
+  }, [grid.data.actuals, refSort]);
   const moView: ReferenceOrientation = moPivot.hasCampaigns ? orientation : "channel";
+  // MediaOcean channel rows (editable view) and another year's rows, in order.
+  const moChannelRows = useMemo(
+    () => sortReferenceRows(grid.data.actuals, (r) => r.label, refSort),
+    [grid.data.actuals, refSort]
+  );
+  const refActualsShown = useMemo(
+    () => sortReferenceRows(refActuals, (r) => r.label, refSort),
+    [refActuals, refSort]
+  );
   const mbGroups = useMemo(
-    () => buildMediaboxGroups(mediaboxTypeRows(displayMediabox, config.axisId), orientation),
+    () =>
+      sortReferenceRows(
+        buildMediaboxGroups(mediaboxTypeRows(displayMediabox, config.axisId), orientation).map((g) => ({
+          ...g,
+          children: sortReferenceRows(g.children, (c) => c.label, refSort),
+        })),
+        (g) => g.label,
+        refSort
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [displayMediabox.cad, config.axisId, orientation]
+    [displayMediabox.cad, config.axisId, orientation, refSort]
   );
 
   // Read-only reference rows in display order — they join the selection model
@@ -372,7 +408,7 @@ export default function ForecastGrid({
     const list: { key: string; months: MonthlyMap }[] = [];
     if (crossYear) {
       if (!moCollapsed && !refActualsLoading) {
-        for (const row of refActuals)
+        for (const row of refActualsShown)
           list.push({ key: referenceRowKey.otherYear(row.rowId), months: row.months });
       }
     } else if (!moCollapsed && moView === "campaign") {
@@ -402,7 +438,7 @@ export default function ForecastGrid({
     crossYear,
     moCollapsed,
     refActualsLoading,
-    refActuals,
+    refActualsShown,
     moView,
     moPivot,
     moExpanded,
@@ -431,7 +467,7 @@ export default function ForecastGrid({
     // the campaign view) they're replaced by read-only reference rows, so they
     // must not be paste/keyboard targets.
     if (!crossYear && moView === "channel" && !moCollapsed) {
-      for (const row of grid.data.actuals) {
+      for (const row of moChannelRows) {
         list.push({
           key: row.rowId,
           rowId: row.rowId,
@@ -454,7 +490,7 @@ export default function ForecastGrid({
       }
     }
     return list;
-  }, [grid.data, collapsed, expandedActuals, crossYear, moView, moCollapsed]);
+  }, [grid.data, collapsed, expandedActuals, crossYear, moView, moCollapsed, moChannelRows]);
 
   const rowIndex = useMemo(
     () =>
@@ -707,6 +743,7 @@ export default function ForecastGrid({
                         typeLabel={config.axisId === "labs" ? "Partner" : "Channel"}
                       />
                     )}
+                    <ReferenceSortToggle value={refSort} onChange={setRefSort} />
                   </>
                 }
               />
@@ -717,7 +754,7 @@ export default function ForecastGrid({
               {crossYear ? (
                 <ReferenceActualsSection
                   config={config}
-                  rows={refActuals}
+                  rows={refActualsShown}
                   loading={refActualsLoading}
                   year={refYear}
                   showNotes={showNotes}
@@ -739,6 +776,7 @@ export default function ForecastGrid({
                   selection={canSelectReference ? moSelection : undefined}
                   onCopySelection={() => setCopySource("mediaocean")}
                   pivot={moPivot}
+                  channelRows={moChannelRows}
                   view={moView}
                   collapsed={moCollapsed}
                   onToggleCollapsed={() => setMoCollapsed((c) => !c)}
@@ -754,7 +792,7 @@ export default function ForecastGrid({
                 year={refYear}
                 showNotes={showNotes}
                 mediabox={displayMediabox}
-                orientation={orientation}
+                groups={mbGroups}
                 selection={canSelectReference ? mbSelection : undefined}
                 onCopySelection={() => setCopySource("mediabox")}
                 collapsed={mbCollapsed}
@@ -1974,6 +2012,7 @@ function ActualsSection({
   selection,
   onCopySelection,
   pivot,
+  channelRows,
   view,
   collapsed,
   onToggleCollapsed,
@@ -1995,8 +2034,10 @@ function ActualsSection({
   /** Opens "Copy to my submission" for the ticked rows. */
   onCopySelection: () => void;
   /** buildMediaOceanPivot(actuals) and the effective view, owned by the grid
-   *  (they decide which rows join its selection model). */
+   *  (they decide which rows join its selection model) — already sorted. */
   pivot: MediaOceanPivot;
+  /** The editable channel rows in display order (the grid's reference sort). */
+  channelRows: ForecastRow[];
   view: ReferenceOrientation;
   /** Whole-section collapse: the header stays, the rows/total are hidden. */
   collapsed: boolean;
@@ -2103,7 +2144,7 @@ function ActualsSection({
           cells={cells}
         />
       ) : (
-        actuals.map((row) => {
+        channelRows.map((row) => {
           const details = row.details ?? [];
           const expanded = expandedActuals.has(row.rowId);
           // Nothing to expand for a read-only viewer with no details yet.

@@ -13,6 +13,7 @@ import { ClipboardPaste } from "lucide-react";
 import { MONTHS, type MonthlyMap } from "../../lib/types/common.types";
 import type { GridSelection } from "../../lib/hooks/use-grid-selection";
 import { SpreadsheetCell } from "./editable-cell";
+import type { ReferenceSort } from "../../lib/format/reference-copy";
 
 /** The grid's cell-selection plumbing, handed to the read-only reference rows. */
 export interface ReferenceCellsApi {
@@ -144,6 +145,45 @@ export function ReferenceOrientationToggle({
     >
       {option("campaign", `Campaign › ${typeLabel}`)}
       {option("channel", `${typeLabel} › Campaign`)}
+    </div>
+  );
+}
+
+/**
+ * Display order of both reference strips — Default (as delivered) / A–Z /
+ * Z–A — styled for the dark "Reference Data" band. View-only.
+ */
+export function ReferenceSortToggle({
+  value,
+  onChange,
+}: {
+  value: ReferenceSort;
+  onChange: (value: ReferenceSort) => void;
+}) {
+  const options: [ReferenceSort, string][] = [
+    ["default", "Default"],
+    ["asc", "A–Z"],
+    ["desc", "Z–A"],
+  ];
+  return (
+    <div
+      className="inline-flex items-center border border-gray-700 text-[11px] font-medium"
+      title="Order the MediaOcean and MediaBox rows by name. View only — nothing is saved."
+    >
+      <span className="px-2 text-gray-400">Sort</span>
+      {options.map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => v !== value && onChange(v)}
+          aria-pressed={value === v}
+          className={`px-2 py-1 transition-colors ${
+            value === v ? "bg-white text-gray-900" : "text-gray-300 hover:bg-gray-800"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

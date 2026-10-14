@@ -256,7 +256,6 @@ export default function MediaboxActualsSection({
   year,
   showNotes,
   mediabox,
-  orientation,
   selection,
   onCopySelection,
   collapsed,
@@ -264,14 +263,13 @@ export default function MediaboxActualsSection({
   expanded,
   onToggleExpanded,
   cells,
+  groups,
 }: {
   axisId: AxisId;
   year: number | null;
   showNotes: boolean;
   /** Owned by ForecastGrid so the CSV export shares the same data. */
   mediabox: UseMediaboxTotalsResult;
-  /** Shared Reference Data orientation (one toggle drives both strips). */
-  orientation: ReferenceOrientation;
   /** Row-checkbox selection; undefined hides the checkboxes (locked RFQ,
    *  another year's reference data). */
   selection?: ReferenceSelection;
@@ -285,6 +283,9 @@ export default function MediaboxActualsSection({
   onToggleExpanded: (groupKey: string) => void;
   /** The grid's cell-selection plumbing for the month cells. */
   cells: ReferenceCellsApi;
+  /** The strip's rows (buildMediaboxGroups for the orientation), in display
+   *  order — owned by the grid, which also orders its selection model. */
+  groups: ReturnType<typeof buildMediaboxGroups>;
 }) {
   const { cad, totals, refreshing, triggering, loading, error, refresh } =
     mediabox;
@@ -295,7 +296,7 @@ export default function MediaboxActualsSection({
   const colSpan = showNotes ? 15 : 14;
   // Media axis groups by media type; Labs axis groups by LABS partner.
   const typeRows = mediaboxTypeRows(mediabox, axisId);
-  const primaryRows = buildMediaboxGroups(typeRows, orientation);
+  const primaryRows = groups;
 
   // Grand total across every type/partner — the section's bottom line.
   const grandByMonth: MonthlyMap = {};
