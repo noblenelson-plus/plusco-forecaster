@@ -1652,12 +1652,15 @@ export function NoteCell({
   readOnly,
   onClick,
   inverse = false,
+  tag,
 }: {
   note?: string;
   readOnly: boolean;
   onClick: () => void;
   /** Rendered on a dark row (e.g. the Official Revenue row) — light text. */
   inverse?: boolean;
+  /** Subtle prefix before the note, e.g. "From 2026" for a carried-over note. */
+  tag?: string;
 }) {
   const hasNote = !!note;
   return (
@@ -1669,7 +1672,7 @@ export function NoteCell({
       <button
         onClick={onClick}
         disabled={readOnly && !hasNote}
-        title={hasNote ? note : undefined}
+        title={hasNote ? (tag ? `${tag} · ${note}` : note) : undefined}
         className={`w-full text-left text-xs leading-snug line-clamp-2 break-words rounded px-1.5 py-1 transition-colors ${
           hasNote
             ? inverse
@@ -1682,6 +1685,11 @@ export function NoteCell({
                 : "italic text-gray-300 hover:text-gray-500 hover:bg-gray-100"
         }`}
       >
+        {hasNote && tag && (
+          <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+            {tag} ·
+          </span>
+        )}
         {hasNote ? note : readOnly ? "" : "Add a note…"}
       </button>
     </td>

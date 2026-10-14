@@ -2,12 +2,12 @@
 
 /**
  * Fetches the product tracking docs for the whole dashboard scope (every
- * filtered client) and flattens them into one row per (client × product)
- * entry. One Firestore read per client, run in parallel.
+ * filtered client) and the global Year, and flattens them into one row per
+ * (client × product) entry. One Firestore read per client, run in parallel.
  *
- * Unlike the forecast data there is no Year/RFQ/month dimension — product
- * tracking is always-on per client — so the fetch only depends on the client
- * scope. A stale request (filters changed mid-flight) is discarded via a
+ * Unlike the forecast data there is no RFQ/month dimension — product tracking
+ * is per client × year — so the fetch depends on the client scope and the
+ * year only. A stale request (filters changed mid-flight) is discarded via a
  * cancellation flag, mirroring use-scope-forecast-data.
  */
 
@@ -37,16 +37,20 @@ export interface ScopeProductData {
   entries: ClientProductEntry[];
 }
 
-export function useScopeProductTracking(clientIds: string[]): ScopeProductData {
+export function useScopeProductTracking(
+  clientIds: string[],
+  year: number | null
+): ScopeProductData {
   const [raw, setRaw] = useState<ClientProductEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Stable dependency key — array identity changes every render otherwise.
-  const clientKey = clientIds.join(",");
+  // Stable dependency key — array identity changes every render otherwise. No
+  // year selected → nothing to read (treated like an empty scope).
+  const clientKey = year === null ? "" : clientIds.join(",");
 
   useEffect(() => {
-    if (clientKey === "") return;
+    if (clientKey === "" || year === null) return;
     const ids = clientKey.split(",");
 
     let cancelled = false;
@@ -56,7 +60,9 @@ export function useScopeProductTracking(clientIds: string[]): ScopeProductData {
       setLoading(true);
       setError(null);
       try {
-        const docs = await Promise.all(ids.map(fetchProductTracking));
+        const docs = await Promise.all(
+          ids.map((id) => fetchProductTracking(id, year))
+        );
         if (cancelled) return;
 
         const next: ClientProductEntry[] = [];
@@ -92,7 +98,7 @@ export function useScopeProductTracking(clientIds: string[]): ScopeProductData {
     return () => {
       cancelled = true;
     };
-  }, [clientKey]);
+  }, [clientKey, year]);
 
   return useMemo(() => {
     // An empty scope collapses to empty data without writing state from an

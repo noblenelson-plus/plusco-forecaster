@@ -428,14 +428,28 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     // ─── product_tracking ──────────────────────────────────────────────────────
-    // Document ID = the client's cl_id (one always-on doc per client, no
-    // year/RFQ). Not tied to a submission, so RFQ locking does not apply: the
-    // team (or an admin) may write at any time.
-    match /product_tracking/{clientId} {
-      allow read: if canReadClientData(clientId);
-      // The doc must stay keyed to its client (clientId field matches the id).
-      allow create, update: if request.resource.data.clientId == clientId &&
-        canWriteClient(clientId);
+    // Document ID = `{cl_id}_{year}` (one doc per client × year). Docs from
+    // before the per-year split are keyed by the bare cl_id (no `year`); they
+    // are kept as a backup, readable but no longer written by the app. Not
+    // tied to a submission, so RFQ locking does not apply: the team (or an
+    // admin) may write at any time.
+    match /product_tracking/{docId} {
+      // A missing doc (resource == null) is the normal "nothing tracked that
+      // year" case — the dashboard reads one doc per in-scope client. Reading
+      // absent data leaks nothing.
+      allow read: if isCompanyUser() &&
+        (resource == null || canReadClientData(resource.data.clientId));
+      // The doc must stay keyed to its client and year (ID = clientId_year),
+      // and an update may not move it to another client.
+      allow create: if request.resource.data.year is int &&
+        docId == request.resource.data.clientId + '_' +
+          string(request.resource.data.year) &&
+        canWriteClient(request.resource.data.clientId);
+      allow update: if request.resource.data.year is int &&
+        docId == request.resource.data.clientId + '_' +
+          string(request.resource.data.year) &&
+        request.resource.data.clientId == resource.data.clientId &&
+        canWriteClient(request.resource.data.clientId);
       // Delete: admins only — client-deletion cleanup (deleteClient).
       allow delete: if isAdmin();
     }

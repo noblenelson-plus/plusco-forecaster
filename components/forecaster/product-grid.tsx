@@ -2,10 +2,13 @@
 "use client";
 
 /**
- * Product axis grid — always-on product tracking for the selected client.
+ * Product axis grid — product pipeline tracking for the selected client and
+ * year (the page's Year selector; the RFQ does not apply).
  *
- * No year/RFQ context and no monthly values: one row per catalog product, one
- * column per pipeline status. Clicking a status cell selects it (clicking the
+ * No monthly values: one row per catalog product, one column per pipeline
+ * status. An empty year offers "Copy from {previous year}", which brings every
+ * entry over into the working copy (saved like any edit); carried notes keep a
+ * subtle "From {year}" tag until they are edited. Clicking a status cell selects it (clicking the
  * active one clears it). Statuses on the revenue path (everything except
  * Rejected) may optionally carry a timing — the month revenue is expected to
  * start. Each product also has a free-text note (NoteCell/NoteDialog, same as
@@ -15,7 +18,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Package, RotateCcw } from "lucide-react";
+import { CalendarDays, Check, Copy, Loader2, RotateCcw } from "lucide-react";
 import {
   PRODUCT_STATUS_LABELS,
   PRODUCT_STATUS_ORDER,
@@ -25,6 +28,7 @@ import {
   type ProductTrackingMap,
 } from "../../lib/types/product.types";
 import {
+  fetchProductTracking,
   saveProductTracking,
   subscribeToProductTracking,
 } from "../../lib/services/product-tracking-service";
@@ -58,7 +62,7 @@ const STATUS_THEME: Record<ProductStatus, { selected: string; dot: string }> = {
 /**
  * Loaded grid state, updated atomically: the live Firestore snapshot, the
  * local working copy, and the doc's last-updated stamp. `null` while the
- * first snapshot for the current client is in flight.
+ * first snapshot for the current client × year is in flight.
  */
 interface GridState {
   snapshot: ProductTrackingMap;
@@ -68,10 +72,15 @@ interface GridState {
 
 interface ProductGridProps {
   clientId: string;
+  year: number;
 }
 
-export default function ProductGrid({ clientId }: ProductGridProps) {
+export default function ProductGrid({ clientId, year }: ProductGridProps) {
   const [state, setState] = useState<GridState | null>(null);
+  // The previous year's entries, offered by "Copy from {year}" while this
+  // year is empty. Null until loaded (or when it can't be read).
+  const [previous, setPrevious] = useState<ProductTrackingMap | null>(null);
+  const previousYear = year - 1;
   const [saving, setSaving] = useState(false);
   // Load and save failures are tracked separately: a load failure replaces the
   // grid with a banner, while a save failure keeps the (dirty) grid editable
@@ -88,19 +97,38 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
     [products]
   );
 
-  // Reset when the selected client changes — render-time state adjustment
-  // (avoids a setState-in-effect cascade); the effect below resubscribes.
-  const [loadedFor, setLoadedFor] = useState(clientId);
-  if (loadedFor !== clientId) {
-    setLoadedFor(clientId);
+  // Reset when the selected client or year changes — render-time state
+  // adjustment (avoids a setState-in-effect cascade); the effects below
+  // resubscribe.
+  const loadKey = `${clientId}_${year}`;
+  const [loadedFor, setLoadedFor] = useState(loadKey);
+  if (loadedFor !== loadKey) {
+    setLoadedFor(loadKey);
     setState(null);
+    setPrevious(null);
     setLoadError(null);
     setSaveError(null);
   }
 
   useEffect(() => {
+    let cancelled = false;
+    fetchProductTracking(clientId, previousYear)
+      .then((data) => {
+        if (!cancelled) setPrevious(data?.products ?? {});
+      })
+      .catch((err) => {
+        // Only the copy offer depends on it — the grid itself still works.
+        console.warn("Could not read the previous year's product tracking:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, previousYear]);
+
+  useEffect(() => {
     const unsubscribe = subscribeToProductTracking(
       clientId,
+      year,
       (data) => {
         const remote = data?.products ?? {};
         // Follow the remote copy unless local edits are pending, so a
@@ -120,9 +148,16 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
       }
     );
     return () => unsubscribe();
-  }, [clientId]);
+  }, [clientId, year]);
 
   const hasChanges = state !== null && !sameMap(state.working, state.snapshot);
+  // Offer the copy only on an untouched, empty year with something to bring.
+  const canCopy =
+    state !== null &&
+    Object.keys(state.snapshot).length === 0 &&
+    Object.keys(state.working).length === 0 &&
+    previous !== null &&
+    Object.keys(previous).length > 0;
   const dirtyCount = useMemo(
     () => (state ? countChangedProducts(state.working, state.snapshot) : 0),
     [state]
@@ -168,6 +203,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
       ...(entry.status ? { status: entry.status } : {}),
       ...(entry.timing ? { timing: entry.timing } : {}),
       ...(entry.note ? { note: entry.note } : {}),
+      ...(entry.note && entry.noteFrom ? { noteFrom: entry.noteFrom } : {}),
     };
     const next = { ...working };
     if (Object.keys(clean).length === 0) delete next[productId];
@@ -188,6 +224,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
             ? current?.timing
             : undefined,
         note: current?.note,
+        noteFrom: current?.noteFrom,
       });
     });
 
@@ -199,12 +236,35 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
     });
 
   const setNote = (productId: string, note: string) =>
-    updateWorking((working) =>
-      putEntry(working, productId, {
-        ...working[productId],
-        note: note.trim(),
-      })
-    );
+    updateWorking((working) => {
+      const current = working[productId];
+      const next = note.trim();
+      return putEntry(working, productId, {
+        ...current,
+        note: next,
+        // An edited note is this year's own — it loses the "From {year}" tag.
+        noteFrom: next === (current?.note ?? "") ? current?.noteFrom : undefined,
+      });
+    });
+
+  /**
+   * "Copy from {previous year}": brings every entry over (status, timing,
+   * note) into the working copy — saved by the autosave, undone by Discard.
+   * A carried note remembers the year it was first written.
+   */
+  const copyFromPrevious = () => {
+    if (!previous) return;
+    updateWorking(() => {
+      let next: ProductTrackingMap = {};
+      for (const [productId, entry] of Object.entries(previous)) {
+        next = putEntry(next, productId, {
+          ...entry,
+          noteFrom: entry.note ? entry.noteFrom ?? previousYear : undefined,
+        });
+      }
+      return next;
+    });
+  };
 
   const discard = () =>
     setState((prev) => (prev ? { ...prev, working: prev.snapshot } : prev));
@@ -218,7 +278,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
     setSaving(true);
     setSaveError(null);
     try {
-      await saveProductTracking(clientId, state.working);
+      await saveProductTracking(clientId, year, state.working);
     } catch (err) {
       console.error("Product tracking save failed:", err);
       setSaveError("Save failed — please try again.");
@@ -249,10 +309,24 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
       {/* ─── Toolbar ─── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 text-xs text-gray-400">
-          <span className="flex items-center gap-1.5 px-3 py-2 font-medium rounded-lg bg-gray-50 text-gray-500 border border-gray-200">
-            <Package size={12} />
-            Always on — not tied to a year or submission
+          <span
+            className="flex items-center gap-1.5 px-3 py-2 font-medium rounded-lg bg-gray-50 text-gray-500 border border-gray-200"
+            title="The pipeline is tracked per year (Year selector above); the RFQ does not apply."
+          >
+            <CalendarDays size={12} />
+            {year} pipeline
           </span>
+          {canCopy && (
+            <button
+              type="button"
+              onClick={copyFromPrevious}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-900 bg-yellow-400 rounded-lg hover:bg-yellow-500 transition-colors"
+              title={`Bring every ${previousYear} entry (status, timing, note) into ${year}. You can edit or Discard before it saves.`}
+            >
+              <Copy size={13} />
+              Copy from {previousYear}
+            </button>
+          )}
           {state?.lastUpdated && (
             <span>
               Last updated{" "}
@@ -420,6 +494,7 @@ export default function ProductGrid({ clientId }: ProductGridProps) {
                       note={entry?.note}
                       readOnly={false}
                       onClick={() => setNoteFor(product.productId)}
+                      tag={entry?.noteFrom ? `From ${entry.noteFrom}` : undefined}
                     />
                   </tr>
                 );
@@ -449,7 +524,8 @@ function sameEntry(a?: ProductEntry, b?: ProductEntry): boolean {
   return (
     a.status === b.status &&
     (a.timing ?? "") === (b.timing ?? "") &&
-    (a.note ?? "") === (b.note ?? "")
+    (a.note ?? "") === (b.note ?? "") &&
+    a.noteFrom === b.noteFrom
   );
 }
 
