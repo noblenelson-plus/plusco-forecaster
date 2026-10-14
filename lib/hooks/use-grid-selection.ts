@@ -75,6 +75,8 @@ export interface GridSelection {
   hasRangeSelection: boolean;
   /** Live count + sum of the cells in the current selection rectangle. */
   selectionStats: { count: number; sum: number };
+  /** The selection as TSV (rows × months, cents) — what Ctrl/Cmd+C copies. */
+  selectionText: () => string;
 
   /** Mouse: plain click, Shift+click (extend), or drag start. */
   selectCell: (r: number, c: number, extend?: boolean) => void;
@@ -243,24 +245,31 @@ export function useGridSelection({
 
   // ─── Clipboard ──────────────────────────────────────────────────────────
 
+  // The selection as TSV, so a block round-trips with Excel. Shared by
+  // Ctrl/Cmd+C and the selection box's "Copy cells" button.
+  const selectionText = useCallback(() => {
+    if (!rect) return "";
+    const lines: string[] = [];
+    for (let r = rect.minR; r <= rect.maxR; r++) {
+      const cells: string[] = [];
+      for (let c = rect.minC; c <= rect.maxC; c++) {
+        // Round to cents: reference rows (MediaBox) carry USD→CAD
+        // conversions with long float tails that would paste as-is.
+        const v = Math.round(read(r, c) * 100) / 100;
+        cells.push(v === 0 ? "" : String(v));
+      }
+      lines.push(cells.join("\t"));
+    }
+    return lines.join("\n");
+  }, [rect, read]);
+
   const onCopy = useCallback(
     (e: React.ClipboardEvent) => {
       if (!rect || editing) return;
-      const lines: string[] = [];
-      for (let r = rect.minR; r <= rect.maxR; r++) {
-        const cells: string[] = [];
-        for (let c = rect.minC; c <= rect.maxC; c++) {
-          // Round to cents: reference rows (MediaBox) carry USD→CAD
-          // conversions with long float tails that would paste as-is.
-          const v = Math.round(read(r, c) * 100) / 100;
-          cells.push(v === 0 ? "" : String(v));
-        }
-        lines.push(cells.join("\t"));
-      }
-      e.clipboardData.setData("text/plain", lines.join("\n"));
+      e.clipboardData.setData("text/plain", selectionText());
       e.preventDefault();
     },
-    [rect, editing, read]
+    [rect, editing, selectionText]
   );
 
   const onPaste = useCallback(
@@ -443,6 +452,7 @@ export function useGridSelection({
     hasRangeSelection:
       !!rect && (rect.minR !== rect.maxR || rect.minC !== rect.maxC),
     selectionStats,
+    selectionText,
     selectCell,
     startDrag,
     dragOver,

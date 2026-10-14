@@ -949,6 +949,7 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
       <SelectionTotal
         count={sel.selectionStats.count}
         sum={sel.selectionStats.sum}
+        getCopyText={sel.selectionText}
       />
     </div>
   );

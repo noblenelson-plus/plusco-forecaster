@@ -771,6 +771,7 @@ export default function ForecastGrid({
       <SelectionTotal
         count={sel.selectionStats.count}
         sum={sel.selectionStats.sum}
+        getCopyText={sel.selectionText}
       />
 
       {copySource && canSelectReference && (() => {
