@@ -7,11 +7,11 @@
  * collaborators) is resolved into `CL_Team_Emails` on the client doc
  * (computeTeamEmails), and a person's team clients are the ones listing their
  * email. A Forecaster grant with "edit" adds the clients of its agencies ×
- * regions. Admins get every client. What else a person may READ (their
+ * regions, or its listed clients. Admins get every client. What else a person may READ (their
  * domain's agencies, their grants) comes from lib/format/access.ts.
  */
 
-import { collection, getDocs, query, where, type QueryConstraint } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, where, type QueryConstraint } from "firebase/firestore";
 import { db } from "../firebase";
 import type { UserProfile } from "./user-service";
 import type { Client } from "../types/client.types";
@@ -26,11 +26,20 @@ function toClient(d: { id: string; data: () => unknown }): Client {
 
 const byName = (a: Client, b: Client) => a.CL_Name.localeCompare(b.CL_Name);
 
-/** Runs `clients` queries (equality on agency / region — the shapes the rules verify). */
+/**
+ * Runs `clients` reads — equality queries on agency / region, or one doc by id
+ * (specific-client grants): the shapes the rules verify. A listed client that
+ * was deleted (or can't be read) is skipped rather than failing the batch.
+ */
 async function runClientQueries(specs: ClientQuerySpec[]): Promise<Client[]> {
   const ref = collection(db, "clients");
   const results = await Promise.all(
     specs.map((s) => {
+      if (s.id) {
+        return getDoc(doc(db, "clients", s.id))
+          .then((d) => (d.exists() ? [toClient(d)] : []))
+          .catch(() => [] as Client[]);
+      }
       const where_: QueryConstraint[] = [];
       if (s.agency) where_.push(where("CL_Agency", "==", s.agency));
       if (s.region) where_.push(where("CL_Business_Unit_Region", "==", s.region));
@@ -105,7 +114,7 @@ export async function fetchReadableClients(
  * rejected for; the rules stay the enforcement.
  */
 export function canWriteClient(
-  client: Pick<Client, "CL_Team_Emails" | "CL_Agency" | "CL_Business_Unit_Region">,
+  client: Pick<Client, "cl_id" | "CL_Team_Emails" | "CL_Agency" | "CL_Business_Unit_Region">,
   profile: Pick<UserProfile, "email" | "disabled"> | null,
   isAdmin: boolean,
   editGrant: GrantScope | null = null

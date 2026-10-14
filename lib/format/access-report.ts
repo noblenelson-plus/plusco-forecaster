@@ -53,6 +53,8 @@ const day = (u: UserRecord | undefined) => u?.lastLoginAt?.toDate?.().toISOStrin
 /** Summary tab: one row per person (users + anyone granted without a row). */
 export function buildAccessSummary(input: AccessReportInput): string[][] {
   const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, tabLabels } = input;
+  const clientNames = new Map(clients.map((c) => [c.cl_id, c.CL_Name]));
+  const clientName = (id: string) => clientNames.get(id);
   // What the dashboard shows: hidden and test clients are left out.
   const shown = clients.filter((c) => !isClientHidden(c) && !isTestClient(c.CL_Name));
   const memberships = teamMemberships(clients);
@@ -106,7 +108,7 @@ export function buildAccessSummary(input: AccessReportInput): string[][] {
           parts.push(d.all ? "All agencies" : `Agency: ${d.agencies.join(", ")}`);
         }
         const g = ctx.grants[tab];
-        if (g) parts.push(`Grant: ${grantScopeLabel(g)}`);
+        if (g) parts.push(`Grant: ${grantScopeLabel(g, clientName)}`);
         const n = shown.filter((c) => tabCoversClient(ctx, tab, c)).length;
         const text = `${parts.join(" + ")} — ${n} client${n !== 1 ? "s" : ""}`;
         return hidden.has(tab) ? `${text} (tab hidden)` : text;
@@ -124,7 +126,7 @@ export function buildAccessSummary(input: AccessReportInput): string[][] {
         isAdmin ? "Admin" : topRole ? TEAM_ROLE_LABELS[topRole] : "—",
         String(teamCount),
         ...DASHBOARD_TABS.map(tabCell),
-        isAdmin ? "Everything" : edit ? `${grantScopeLabel(edit)} — ${shown.filter((c) => grantCoversClient(edit, c) && !isOnClientTeam(email, c)).length} more clients` : "",
+        isAdmin ? "Everything" : edit ? `${grantScopeLabel(edit, clientName)} — ${shown.filter((c) => grantCoversClient(edit, c) && !isOnClientTeam(email, c)).length} more clients` : "",
       ];
     });
   return [header, ...rows];

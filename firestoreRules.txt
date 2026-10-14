@@ -11,7 +11,8 @@ service cloud.firestore {
     //     company-wide domain (config/company_domains) reads every agency,
     //     "_unassigned" rows included — like an admin, read-only.
     //   - dashboard_grants/{email}: per tab, the clients of chosen agencies ×
-    //     regions (read-only; a Forecaster grant with `edit` also writes).
+    //     regions, or specific clients (`clients`: ids; not on mediaocean /
+    //     reports) — read-only; a Forecaster grant with `edit` also writes.
     //   - Admins: everything.
 
     function isAuthenticated() {
@@ -77,18 +78,29 @@ service cloud.firestore {
       return scopeCoversAgency(s, agency) &&
         (s.get('allRegions', false) == true || region in s.get('regions', []));
     }
-    function grantCovers(tabs, id, agency, region) {
+    // A tab grant covers a client: its rule, or the client listed by id.
+    function grantCovers(tabs, id, clientId, agency, region) {
+      return id in tabs && (
+        scopeCovers(tabs[id], agency, region) || clientId in tabs[id].get('clients', [])
+      );
+    }
+    // Media Investments / Reports: agency × region rules only — their data is
+    // split by agency, so specific clients are never honoured there.
+    function ruleGrantCovers(tabs, id, agency, region) {
       return id in tabs && scopeCovers(tabs[id], agency, region);
     }
     function grantCoversAgency(tabs, id, agency) {
       return id in tabs && scopeCoversAgency(tabs[id], agency);
     }
-    // Any of the six tab grants covers a client (agency × region).
-    function anyGrantCovers(agency, region) {
+    // Any of the six tab grants covers a client (listed, or agency × region).
+    function anyGrantCovers(clientId, agency, region) {
       let t = myGrantTabs();
-      return grantCovers(t, 'forecaster', agency, region) || grantCovers(t, 'labs-pacing', agency, region) ||
-        grantCovers(t, 'exec-kpis', agency, region) || grantCovers(t, 'mediaocean', agency, region) ||
-        grantCovers(t, 'mediabox', agency, region) || grantCovers(t, 'reports', agency, region);
+      return grantCovers(t, 'forecaster', clientId, agency, region) ||
+        grantCovers(t, 'labs-pacing', clientId, agency, region) ||
+        grantCovers(t, 'exec-kpis', clientId, agency, region) ||
+        grantCovers(t, 'mediabox', clientId, agency, region) ||
+        ruleGrantCovers(t, 'mediaocean', agency, region) ||
+        ruleGrantCovers(t, 'reports', agency, region);
     }
     // Any tab grant covers an agency (agency-tagged data: regions don't apply).
     function anyGrantCoversAgency(agency) {
@@ -98,10 +110,10 @@ service cloud.firestore {
         grantCoversAgency(t, 'mediabox', agency) || grantCoversAgency(t, 'reports', agency);
     }
     // The Forecaster grant with `edit` covers a client.
-    function editGrantCovers(agency, region) {
+    function editGrantCovers(clientId, agency, region) {
       let t = myGrantTabs();
       return 'forecaster' in t && t['forecaster'].get('edit', false) == true &&
-        scopeCovers(t['forecaster'], agency, region);
+        grantCovers(t, 'forecaster', clientId, agency, region);
     }
     function grantedTab(id) {
       return id in myGrantTabs();
@@ -112,10 +124,10 @@ service cloud.firestore {
       return isCompanyDomain() || (agency != '_unassigned' && domainOwnsAgency(agency));
     }
     // Read a client doc's data (from its fields): team, domain's agency, grant.
-    function canReadClientFields(d) {
+    function canReadClientFields(clientId, d) {
       return myEmail() in d.get('CL_Team_Emails', []) ||
         domainCoversAgency(d.CL_Agency) ||
-        anyGrantCovers(d.CL_Agency, d.get('CL_Business_Unit_Region', ''));
+        anyGrantCovers(clientId, d.CL_Agency, d.get('CL_Business_Unit_Region', ''));
     }
 
     // ─── Clients ───────────────────────────────────────────────────────────────
@@ -131,7 +143,7 @@ service cloud.firestore {
     function canReadClientData(clientId) {
       return isAdmin() || (
         isActive() && exists(clientPath(clientId)) &&
-        canReadClientFields(get(clientPath(clientId)).data)
+        canReadClientFields(clientId, get(clientPath(clientId)).data)
       );
     }
     // Write a client's data (forecast, flags, milestones, product tracking,
@@ -140,7 +152,7 @@ service cloud.firestore {
     function canWriteClient(clientId) {
       return isAdmin() || isOnClientTeam(clientId) || (
         isActive() && exists(clientPath(clientId)) &&
-        editGrantCovers(get(clientPath(clientId)).data.CL_Agency,
+        editGrantCovers(clientId, get(clientPath(clientId)).data.CL_Agency,
                         get(clientPath(clientId)).data.get('CL_Business_Unit_Region', ''))
       );
     }
@@ -200,12 +212,13 @@ service cloud.firestore {
       // Admin; the team (the "my clients" array-contains query); the email
       // domain's agencies (`CL_Agency ==` queries; a company-wide domain the
       // whole collection); a grant (equality queries on CL_Agency and/or
-      // CL_Business_Unit_Region). Fields are read off the document itself.
+      // CL_Business_Unit_Region, or a get of a listed client). Fields are read
+      // off the document itself.
       allow read: if isAdmin() || (
         isActive() && (
           myEmail() in resource.data.CL_Team_Emails ||
           domainCoversAgency(resource.data.CL_Agency) ||
-          anyGrantCovers(resource.data.CL_Agency, resource.data.CL_Business_Unit_Region)
+          anyGrantCovers(clientId, resource.data.CL_Agency, resource.data.CL_Business_Unit_Region)
         )
       );
 

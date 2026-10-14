@@ -84,13 +84,13 @@ export default function GrantSheetImportModal({
         // An older single-tab grants export: the linked tab is the grants list.
         setPlans({
           source: `${wb.fileName} › ${wb.linked.title}`,
-          grants: planGrantSheetImport(wb.linked.table, current, userEmails, tabLabels),
+          grants: planGrantSheetImport(wb.linked.table, current, userEmails, tabLabels, clients),
           team: null,
         });
       } else {
         setPlans({
           source: wb.fileName,
-          grants: grantsTable ? planGrantSheetImport(grantsTable, current, userEmails, tabLabels) : null,
+          grants: grantsTable ? planGrantSheetImport(grantsTable, current, userEmails, tabLabels, clients) : null,
           team: teamTable ? planTeamSheetImport(teamTable, clients, userEmails) : null,
         });
       }
@@ -183,8 +183,10 @@ export default function GrantSheetImportModal({
                   </li>
                   <li>
                     <strong>{REPORT_TABS.grants}</strong> — one row per person per tab; Agencies / Regions are{" "}
-                    <strong>All</strong> (includes clients added later) or a list. It&apos;s the full list: anyone without
-                    a row loses their grants.
+                    <strong>All</strong> (includes clients added later) or a list. To give specific clients instead,
+                    fill <strong>Clients</strong> (names or IDs separated by &ldquo;;&rdquo;) and leave Agencies /
+                    Regions blank — not on Media Investments or Reports. It&apos;s the full list: anyone without a row
+                    loses their grants.
                   </li>
                   <li>
                     <strong>{REPORT_TABS.clientAccess}</strong> — one row per person per client (Client ID, Role, Email).
