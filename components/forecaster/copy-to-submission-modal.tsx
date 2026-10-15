@@ -9,11 +9,14 @@
  *   1. Destination — into one existing project, or split by campaign (one
  *      project per campaign, matched by name; a missing one is created). The
  *      campaign → project mapping is previewed before confirming.
- *   2. Period — which months to copy (defaults to every month with data).
+ *   2. Period — which months to copy. None are ticked at first: the user must
+ *      pick them (a shortcut ticks every month with data).
  *
- * The outcome is planned live (lib/format/reference-copy) so the dialog can warn
- * exactly how many filled cells will be overwritten, and report channels that
- * match no BL row type or are skipped on purpose. Confirming writes the plan
+ * The outcome is planned live (lib/format/reference-copy) so the dialog always
+ * says what happens to the data already in the submission: copied values
+ * replace (never add to) the matching cells, and every filled cell that would
+ * change is listed with its current and new value. It also reports channels
+ * that match no BL row type or are skipped on purpose. Confirming writes the plan
  * through grid.applyReferencePaste — one undoable step, then autosaved.
  */
 
@@ -79,9 +82,8 @@ export default function CopyToSubmissionModal({
     buckets.length > 0 ? "project" : "split"
   );
   const [bucketId, setBucketId] = useState<string>(buckets[0]?.bucketId ?? "");
-  const [months, setMonths] = useState<Set<number>>(
-    () => new Set(dataMonths.filter(isMonthOpen))
-  );
+  // No month is preselected: the user chooses what to copy on purpose.
+  const [months, setMonths] = useState<Set<number>>(() => new Set());
 
   const destination: CopyDestination | null =
     kind === "split"
@@ -331,18 +333,59 @@ export default function CopyToSubmissionModal({
           {/* Outcome + warnings */}
           {plan && (
             <section className="space-y-2 text-xs">
-              {overwriting && (
-                <div className="flex gap-2 bg-yellow-400 px-3 py-2 text-gray-900">
-                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-                  <span>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                3 · What happens to your existing data?
+              </h3>
+              <p className="text-gray-600">
+                Copied amounts <strong className="text-gray-900">replace</strong> what is
+                already in the chosen months for the matching {typeNoun}s — they are
+                not added on top. Other months, {typeNoun}s and {bucketNoun}s are left
+                as they are.
+              </p>
+              {chosenMonths.length === 0 ? null : overwriting ? (
+                <div className="space-y-1.5 bg-yellow-400 px-3 py-2 text-gray-900">
+                  <div className="flex gap-2">
+                    <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                     <strong>
                       {plural(plan.overwrittenCells, "filled cell")} across{" "}
-                      {plural(plan.overwrittenRows, "row")} will be overwritten.
-                    </strong>{" "}
-                    Other months and {typeNoun}s are left as they are.
-                  </span>
+                      {plural(plan.overwrittenRows, "row")} will be replaced:
+                    </strong>
+                  </div>
+                  <div className="max-h-36 overflow-y-auto bg-white">
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 bg-gray-100 text-gray-500">
+                        <tr>
+                          <th className="px-2 py-1 text-left font-medium">{config.bucketLabel}</th>
+                          <th className="px-2 py-1 text-left font-medium">{config.rowTypeLabel}</th>
+                          <th className="px-2 py-1 text-left font-medium">Month</th>
+                          <th className="px-2 py-1 text-right font-medium">Now</th>
+                          <th className="px-2 py-1 text-right font-medium">After</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {plan.overwrites.map((o) => (
+                          <tr key={`${o.project}|${o.label}|${o.month}`}>
+                            <td className="max-w-[8rem] truncate px-2 py-1" title={o.project}>{o.project}</td>
+                            <td className="max-w-[8rem] truncate px-2 py-1" title={o.label}>{o.label}</td>
+                            <td className="px-2 py-1">{MONTH_LABELS[o.month - 1]}</td>
+                            <td className="px-2 py-1 text-right tabular-nums text-gray-500 line-through">
+                              {money(o.current)}
+                            </td>
+                            <td className="px-2 py-1 text-right font-semibold tabular-nums">
+                              {money(o.value)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              )}
+              ) : plan.cellCount > 0 ? (
+                <p className="bg-green-500 px-3 py-2 font-medium text-white">
+                  Nothing already in your submission will be replaced — these cells are
+                  empty today.
+                </p>
+              ) : null}
               {plan.unmatched.length > 0 && (
                 <p className="text-gray-600">
                   <strong className="text-gray-900">
@@ -367,7 +410,7 @@ export default function CopyToSubmissionModal({
               {plan.cellCount === 0 ? (
                 <p className="text-gray-500">
                   {chosenMonths.length === 0
-                    ? "Pick at least one month."
+                    ? "Pick the months to copy (step 2)."
                     : "Nothing to copy with these choices."}
                 </p>
               ) : (
@@ -400,7 +443,9 @@ export default function CopyToSubmissionModal({
             }`}
           >
             <ClipboardPaste size={14} />
-            {overwriting ? "Copy & overwrite" : "Copy"}
+            {overwriting
+              ? `Copy & replace ${plural(plan!.overwrittenCells, "cell")}`
+              : "Copy"}
           </button>
         </div>
       </div>

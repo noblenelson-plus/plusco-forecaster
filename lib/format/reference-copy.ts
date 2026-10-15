@@ -204,6 +204,17 @@ export interface PlannedProject {
   cells: PlannedCell[];
 }
 
+/** One filled BL cell the copy will change (shown before confirming). */
+export interface OverwrittenCell {
+  project: string;
+  label: string;
+  month: number;
+  /** Value in the submission today. */
+  current: number;
+  /** Value after the copy (replaces it — never added to it). */
+  value: number;
+}
+
 export interface CopyPlan {
   projects: PlannedProject[];
   /** Cells set in total. */
@@ -212,6 +223,8 @@ export interface CopyPlan {
   overwrittenCells: number;
   /** Distinct (project, row type) rows holding those cells. */
   overwrittenRows: number;
+  /** The overwritten cells themselves, in project / row / month order. */
+  overwrites: OverwrittenCell[];
   /** Channel labels that match no BL row type (not copied). */
   unmatched: string[];
   /** Catch-all channels skipped on purpose (e.g. "Other"). */
@@ -307,6 +320,7 @@ export function planReferenceCopy({
   let overwrittenCells = 0;
   let overwrittenRows = 0;
   let createdProjects = 0;
+  const overwrites: OverwrittenCell[] = [];
   const result: PlannedProject[] = [];
 
   for (const { project, sums } of projects.values()) {
@@ -327,6 +341,7 @@ export function planReferenceCopy({
         if (current !== 0 && current !== value) {
           overwrittenCells++;
           rowHit = true;
+          overwrites.push({ project: project.name, label, month: m, current, value });
         }
       }
       if (rowHit) overwrittenRows++;
@@ -340,6 +355,7 @@ export function planReferenceCopy({
     cellCount,
     overwrittenCells,
     overwrittenRows,
+    overwrites,
     unmatched: [...unmatched],
     skipped: [...skipped],
     noCampaignLeaves,
