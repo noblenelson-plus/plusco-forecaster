@@ -17,8 +17,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { useAgencyScope } from "../../hooks/use-agency-scope";
-import { fetchAgencyScopedDocs } from "./agency-scoped-query";
+import { useDashboardDocScope } from "../../hooks/use-agency-scope";
+import { fetchDashboardRowDocs } from "./agency-scoped-query";
 
 const COLLECTION = "mediaocean_investment_mix";
 
@@ -68,7 +68,8 @@ export interface MediaInvestmentResult {
 
 /**
  * One-shot read of `mediaocean_investment_mix` (~21.8k docs), limited to the
- * user's agency scope (Admin: every agency — see agency-scoped-query.ts).
+ * tab's scope: its agencies, plus its clients one by one (useDashboardDocScope;
+ * Admin: every agency — see agency-scoped-query.ts).
  * Read in full and filter/roll-up in memory (same pattern as useMoKpiByClient),
  * which keeps the dashboard filters instant and avoids per-interaction queries.
  */
@@ -76,7 +77,7 @@ export function useMediaoceanInvestmentMix(): MediaInvestmentResult {
   const [rows, setRows] = useState<MediaInvestmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { scope, loading: scopeLoading } = useAgencyScope();
+  const { scope, clientIds, key, loading: scopeLoading } = useDashboardDocScope();
 
   useEffect(() => {
     if (scopeLoading) return;
@@ -86,7 +87,7 @@ export function useMediaoceanInvestmentMix(): MediaInvestmentResult {
       setLoading(true);
       setError(null);
       try {
-        const docs = await fetchAgencyScopedDocs(COLLECTION, scope);
+        const docs = await fetchDashboardRowDocs(COLLECTION, { scope, clientIds });
         if (cancelled) return;
         const out = docs.map((d) => ({
           id: d.id,
@@ -109,7 +110,9 @@ export function useMediaoceanInvestmentMix(): MediaInvestmentResult {
     return () => {
       cancelled = true;
     };
-  }, [scope, scopeLoading]);
+    // `key` covers scope + clientIds (both memoized on it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, scopeLoading]);
 
   return { rows, loading: loading || scopeLoading, error };
 }

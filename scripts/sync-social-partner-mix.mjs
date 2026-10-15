@@ -27,6 +27,7 @@
 import admin from "firebase-admin";
 import bigqueryPkg from "@google-cloud/bigquery";
 import { normalizeAgency, countByAgency, logAgencySplit } from "./lib/agency.mjs";
+import { fetchClientIdByName, withClientId, logClientIdSplit } from "./lib/client-ids.mjs";
 import {
   reconcileCollection,
   reconcileFlags,
@@ -76,8 +77,12 @@ async function main() {
 
   // `_agency` is what Firestore rules scope reads on (see scripts/lib/agency.mjs).
   // Not a grain field, so doc ids are unchanged.
-  const rows = bqRows.map((r) => ({ ...r, _agency: normalizeAgency(r.AGENCY) }));
+  // `_clientId` lets people read their own clients' rows (MediaBox
+  // allocations; scripts/lib/client-ids.mjs). Not a grain field either.
+  const idByName = await fetchClientIdByName(bq);
+  const rows = bqRows.map((r) => withClientId({ ...r, _agency: normalizeAgency(r.AGENCY) }, idByName));
   logAgencySplit(COLLECTION, countByAgency(rows, (r) => r._agency));
+  logClientIdSplit(COLLECTION, rows);
 
   const { dryRun, force } = reconcileFlags();
   const res = await reconcileCollection({

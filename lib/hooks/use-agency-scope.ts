@@ -30,10 +30,13 @@ export function useAgencyScope(): {
 
 /**
  * Where per-client agency-tagged docs (mo_kpi_by_client, keyed by client id)
- * come from on the current dashboard tab: the tab's agency scope (`scope`,
- * as useAgencyScope) and, on the Forecaster tab for a non-admin, their team
- * clients one by one (`clientIds` — the rules let a team member get their own
- * client's doc, whatever its agency). `key` changes only when either does.
+ * (and per-client rows: mediaocean_investment_mix, social_partner_mix) come
+ * from on the current dashboard tab: the tab's agency scope (`scope`, as
+ * useAgencyScope) and the clients read one by one (`clientIds`,
+ * tabClientIds in lib/format/access.ts — a non-admin's team clients on the
+ * Forecaster tab; their allocated clients on an allocation tab while MediaBox
+ * allocations are on). The rules let them read those clients' data whatever
+ * the agency. `key` changes only when either does.
  */
 export function useDashboardDocScope(): {
   scope: AgencyScope;
@@ -44,14 +47,15 @@ export function useDashboardDocScope(): {
   const access = useAccess();
   const tab = useDashboardTab();
   const { scope, key: scopeKey, loading } = useAgencyScope();
-  const byClient = !access.ctx.isAdmin && tab === "forecaster";
-  const idsKey = byClient ? access.teamClientIds.join("|") : "";
+  const ids = tab ? access.tabClientIds(tab) : null;
+  // "" (none) vs "ids:…" (a list, possibly empty) — one key covers both.
+  const idsKey = ids ? `ids:${ids.join("|")}` : "";
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const clientIds = useMemo(() => (byClient ? access.teamClientIds : null), [byClient, idsKey]);
+  const clientIds = useMemo(() => ids, [idsKey]);
   return {
     scope,
     clientIds,
-    key: byClient ? `${scopeKey}+clients:${idsKey}` : scopeKey,
+    key: ids ? `${scopeKey}+${idsKey}` : scopeKey,
     loading,
   };
 }

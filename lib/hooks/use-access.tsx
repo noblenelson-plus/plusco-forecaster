@@ -34,6 +34,7 @@ import {
   readableAgencyScope,
   readableClientQueries,
   tabAgencyScope,
+  tabClientIds as resolveTabClientIds,
   tabCoversClient,
   type AccessContext as AccessCtx,
   type ClientQuerySpec,
@@ -74,6 +75,8 @@ interface AccessState {
   allocatedClientIds: string[];
   /** Agency-tagged data a tab shows. */
   tabAgencyScope: (tab: DashboardTabId) => DashboardScope;
+  /** Clients whose per-client rows a tab reads one by one, beyond its agency scope (null: none). */
+  tabClientIds: (tab: DashboardTabId) => string[] | null;
   /** Agency-tagged data they may read on any tab. */
   readable: DashboardScope;
   /** `clients` queries (beyond the team's) loading everything they may read. */
@@ -88,6 +91,9 @@ interface AccessState {
 
 const AccessContext = createContext<AccessState | null>(null);
 
+/** A team client, as much as access needs (its MediaBox links decide the allocation tabs). */
+type TeamClient = Pick<Client, "cl_id" | "CL_MediaBox_IDs">;
+
 interface AgencyMapping {
   agencyDomains: Record<string, string[]>;
   companyDomains: string[];
@@ -98,7 +104,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   const disabled = !!profile?.disabled;
   const [config, setConfig] = useState<DashboardAccessConfig | null>(null);
   const [grants, setGrants] = useState<{ email: string; tabs: DashboardGrantDoc["tabs"] } | null>(null);
-  const [team, setTeam] = useState<{ email: string; ids: string[] } | null>(null);
+  const [team, setTeam] = useState<{ email: string; clients: TeamClient[] } | null>(null);
   const [mapping, setMapping] = useState<AgencyMapping | null>(null);
   const [allocationsConfig, setAllocationsConfig] = useState<MediaboxAllocationsConfig | null>(null);
   // On for everyone, or for this person as a pilot (null until loaded).
@@ -169,11 +175,11 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     fetchAccessibleClients({ email, disabled }, false)
       .then((clients) => {
-        if (!cancelled) setTeam({ email, ids: clients.map((c) => c.cl_id).sort() });
+        if (!cancelled) setTeam({ email, clients: clients.map((c) => ({ cl_id: c.cl_id, CL_MediaBox_IDs: c.CL_MediaBox_IDs })) });
       })
       .catch((err) => {
         console.error("Failed to load team clients:", err);
-        if (!cancelled) setTeam({ email, ids: [] });
+        if (!cancelled) setTeam({ email, clients: [] });
       });
     return () => {
       cancelled = true;
@@ -184,7 +190,8 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     const dashboardAccess = config ?? normalizeDashboardAccess(null);
     const myGrants = grants?.email === email ? grants.tabs : {};
     const teamReady = isAdmin || disabled || team?.email === email;
-    const teamClientIds = team?.email === email ? team.ids : [];
+    const teamClients = team?.email === email ? team.clients : [];
+    const teamClientIds = teamClients.map((c) => c.cl_id).sort();
     const teamClientCount = teamClientIds.length;
     const mediaboxAllocations = allocations === true;
     const allocatedReady = isAdmin || disabled || !mediaboxAllocations || allocated?.email === email;
@@ -223,6 +230,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       mediaboxAllocations,
       allocatedClientIds,
       tabAgencyScope: (tab) => tabAgencyScope(ctx, tab),
+      tabClientIds: (tab) => resolveTabClientIds(ctx, tab, teamClients, allocatedClientIds),
       readable: readableAgencyScope(ctx),
       readableQueries: readableClientQueries(ctx),
       editGrant: resolveEditGrant(ctx),

@@ -87,9 +87,11 @@ export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "la
  * (CL_MediaBox_Emails) — plus, for clients with no MediaBox link, those whose
  * team it is on — instead of its whole agency. A company-wide domain still
  * sees every client; grants still add on top. MediaBox Adoption opens for
- * allocated people too (otherwise it is grants only).
+ * allocated people too (otherwise it is grants only). On Media Investments the
+ * MediaOcean rows follow too: they are read by client (`_clientId`) instead
+ * of by agency.
  */
-export const ALLOCATION_TABS: readonly DashboardTabId[] = ["labs-pacing", "mediabox"];
+export const ALLOCATION_TABS: readonly DashboardTabId[] = ["labs-pacing", "mediabox", "mediaocean"];
 
 /** `config/mediabox_allocations` — the allocations switch. */
 export interface MediaboxAllocationsConfig {
