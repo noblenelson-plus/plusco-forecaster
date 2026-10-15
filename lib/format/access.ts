@@ -302,13 +302,39 @@ export function tabCoversClient(
 /**
  * The agencies of agency-tagged data (Media Investments collections, Reports
  * files, KPI docs) a tab shows: the domain's agencies on the agency-default
- * tabs, plus the tab's grant.
+ * tabs, plus the tab's grant. While allocations replace the domain on an
+ * allocation tab, the domain's agencies drop out — that tab's rows are read by
+ * client instead (tabClientIds).
  */
 export function tabAgencyScope(ctx: AccessContext, tab: DashboardTabId): AgencyScope {
   if (ctx.disabled) return NOTHING;
   if (ctx.isAdmin) return EVERYTHING;
-  const base = AGENCY_DEFAULT_TABS.includes(tab) ? domainScope(ctx) : NOTHING;
+  const byAllocation = allocationsReplaceDomain(ctx) && ALLOCATION_TABS.includes(tab);
+  const base = AGENCY_DEFAULT_TABS.includes(tab) && !byAllocation ? domainScope(ctx) : NOTHING;
   return unionScopes(base, grantAgencyScope(ctx.grants[tab]));
+}
+
+/**
+ * The clients whose per-client rows a tab reads one by one, beyond its agency
+ * scope (null: none) — the rules let these be read whatever their agency:
+ *   - Forecaster (non-admin): their team clients;
+ *   - an allocation tab while allocations replace the domain: their allocated
+ *     clients plus their team's clients with no MediaBox link.
+ * `teamClients` / `allocatedClientIds` come from use-access.
+ */
+export function tabClientIds(
+  ctx: AccessContext,
+  tab: DashboardTabId,
+  teamClients: Pick<Client, "cl_id" | "CL_MediaBox_IDs">[],
+  allocatedClientIds: string[]
+): string[] | null {
+  if (ctx.disabled || ctx.isAdmin) return null;
+  if (tab === "forecaster") return teamClients.map((c) => c.cl_id).sort();
+  if (allocationsReplaceDomain(ctx) && ALLOCATION_TABS.includes(tab)) {
+    const unlinked = teamClients.filter((c) => !(c.CL_MediaBox_IDs ?? []).length).map((c) => c.cl_id);
+    return [...new Set([...allocatedClientIds, ...unlinked])].sort();
+  }
+  return null;
 }
 
 /** Every agency the caller may read agency-tagged data for (any tab). */

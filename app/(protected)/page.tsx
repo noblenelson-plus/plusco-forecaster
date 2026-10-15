@@ -155,7 +155,7 @@ export default function DashboardPage() {
   // reads): the client team on Forecaster, the email domain's agencies on
   // Media Investments / Labs Pacing / Reports, plus the person's grant for
   // that tab (agencies × regions). Admin: every client. While MediaBox
-  // allocations are on, Labs Pacing and MediaBox Adoption follow those instead.
+  // allocations are on, the allocation tabs (ALLOCATION_TABS) follow those instead.
   // The filter bar, forecast data and charts all derive from this list.
   const { tabCovers } = access;
   const clients = useMemo(

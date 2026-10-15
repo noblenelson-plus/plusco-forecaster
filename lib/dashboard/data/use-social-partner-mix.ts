@@ -23,8 +23,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { useAgencyScope } from "../../hooks/use-agency-scope";
-import { fetchAgencyScopedDocs } from "./agency-scoped-query";
+import { useDashboardDocScope } from "../../hooks/use-agency-scope";
+import { fetchDashboardRowDocs } from "./agency-scoped-query";
 
 const COLLECTION = "social_partner_mix";
 
@@ -62,7 +62,7 @@ export function useSocialPartnerMix(): SocialPartnerResult {
   const [rows, setRows] = useState<SocialPartnerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { scope, loading: scopeLoading } = useAgencyScope();
+  const { scope, clientIds, key, loading: scopeLoading } = useDashboardDocScope();
 
   useEffect(() => {
     if (scopeLoading) return;
@@ -72,7 +72,7 @@ export function useSocialPartnerMix(): SocialPartnerResult {
       setLoading(true);
       setError(null);
       try {
-        const docs = await fetchAgencyScopedDocs(COLLECTION, scope);
+        const docs = await fetchDashboardRowDocs(COLLECTION, { scope, clientIds });
         if (cancelled) return;
         const out = docs.map((d) => ({
           id: d.id,
@@ -95,7 +95,9 @@ export function useSocialPartnerMix(): SocialPartnerResult {
     return () => {
       cancelled = true;
     };
-  }, [scope, scopeLoading]);
+    // `key` covers scope + clientIds (both memoized on it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, scopeLoading]);
 
   return { rows, loading: loading || scopeLoading, error };
 }

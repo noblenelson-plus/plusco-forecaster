@@ -40,6 +40,28 @@ export async function fetchAgencyScopedDocs(
 }
 
 /**
+ * A row-level agency-tagged collection (docs carry `_agency` and, for rows
+ * mapped to a Forecaster client, `_clientId`) on the current dashboard tab
+ * (useDashboardDocScope): the agency-scoped read, plus the listed clients'
+ * rows — one `_clientId ==` query per client (the form the rules verify with
+ * that client's data access). A refused client query is skipped rather than
+ * failing the whole read; rows are deduped by doc id.
+ */
+export async function fetchDashboardRowDocs(
+  collectionName: string,
+  { scope, clientIds }: { scope: AgencyScope; clientIds: string[] | null }
+): Promise<QueryDocumentSnapshot[]> {
+  const ref = collection(db, collectionName);
+  const [byAgency, results] = await Promise.all([
+    fetchAgencyScopedDocs(collectionName, scope),
+    Promise.allSettled((clientIds ?? []).map((id) => getDocs(query(ref, where("_clientId", "==", id))))),
+  ]);
+  const byId = new Map<string, QueryDocumentSnapshot>(byAgency.map((d) => [d.id, d]));
+  for (const r of results) if (r.status === "fulfilled") for (const d of r.value.docs) byId.set(d.id, d);
+  return [...byId.values()];
+}
+
+/**
  * A per-client collection (doc id = client id) on the current dashboard tab
  * (useDashboardDocScope): the agency-scoped read above, plus the listed
  * clients' docs one by one. A missing doc, or one the rules deny, is skipped

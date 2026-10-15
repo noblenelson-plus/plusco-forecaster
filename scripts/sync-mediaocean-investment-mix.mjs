@@ -39,6 +39,7 @@ import crypto from "crypto";
 import admin from "firebase-admin";
 import bigqueryPkg from "@google-cloud/bigquery";
 import { normalizeAgency, countByAgency, logAgencySplit } from "./lib/agency.mjs";
+import { fetchClientIdByName, withClientId, logClientIdSplit } from "./lib/client-ids.mjs";
 
 const { BigQuery } = bigqueryPkg;
 
@@ -136,6 +137,9 @@ async function main() {
     process.exit(1);
   }
 
+  // Forecaster client id per client name (`_clientId`, see scripts/lib/client-ids.mjs).
+  const idByName = await fetchClientIdByName(bq);
+
   const syncedAt = new Date().toISOString();
   const current = new Map(); // id -> data
   let bqDuplicates = 0;
@@ -150,10 +154,12 @@ async function main() {
     // What Firestore rules scope reads on (see scripts/lib/agency.mjs). Not a
     // grain field, so doc ids are unchanged.
     data._agency = normalizeAgency(data.AGENCY);
-    current.set(id, data);
+    // Who may read the row by client (MediaBox allocations). Not a grain field either.
+    current.set(id, withClientId(data, idByName));
   }
   console.log(`Unique current grain id(s): ${current.size}`);
   logAgencySplit(COLLECTION, countByAgency([...current.values()], (d) => d._agency));
+  logClientIdSplit(COLLECTION, [...current.values()]);
   if (bqDuplicates > 0) {
     console.warn(
       `Note: ${bqDuplicates} BQ row(s) shared a grain hash (collapsed, last kept).`
