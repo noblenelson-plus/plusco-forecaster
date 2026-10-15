@@ -63,17 +63,20 @@ export default function DashboardContextBar({
     return (
       <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50">
         <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 select-none mr-2">
-          Pipeline year
+          Time &amp; Context
         </span>
         <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
         <ForecastSelectors orientation="horizontal" theme="light" fields={["year"]} />
-        <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-gray-900 text-yellow-400">
-          <CalendarDays size={13} />
-          Showing the {selectedYear ?? "—"} product pipeline
+        {/* Same chip shape as the bar's other controls, kept neutral. */}
+        <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
+        <span
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-700"
+          title="The product pipeline is tracked per year — RFQ rounds don't apply to products."
+        >
+          <CalendarDays size={13} className="text-gray-400" />
+          Product pipeline · {selectedYear ?? "—"}
         </span>
-        <span className="text-xs text-gray-500">
-          Tracked per year — RFQ rounds don&apos;t apply to products.
-        </span>
+        <span className="text-xs text-gray-500">Tracked per year — no RFQ rounds</span>
       </div>
     );
   }
