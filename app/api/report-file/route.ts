@@ -9,10 +9,14 @@
  * fetch" for those users. Routing the download through pluscoops.web.app means
  * anyone who can open Forecaster can load Reports.
  *
- * Security: this route has NO privileges of its own. It forwards the caller's
- * Firebase ID token to the Storage REST endpoint, so storage.rules decide
- * access exactly as for a direct download (per-agency scoping included). Only
- * the report paths below are allowed — it is not a general proxy.
+ * Security: the route verifies the caller's Firebase ID token and applies the
+ * same access logic as storage.rules (lib/server/report-access.ts, built on
+ * lib/format/access.ts), then serves the file with the server's credentials.
+ * storage.rules' cross-service lookups refused every non-admin, so agency
+ * users (e.g. @cossettemedia.com) could never load their own agency's file.
+ * If that server path fails for an infrastructure reason, the route falls
+ * back to forwarding the caller's token to Storage (rules decide, as before).
+ * Only the report paths below are allowed — it is not a general proxy.
  *
  * Every response carries `x-report-proxy: 1` so the client can tell this
  * route's answers (incl. a real 404 "not published") apart from the route
@@ -20,11 +24,11 @@
  */
 
 import { NextResponse } from "next/server";
+import { REPORT_BUCKET, readReportFile } from "@/lib/server/report-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BUCKET = "pluscoops.firebasestorage.app";
 const ALLOWED_PATH =
   /^reports\/(manifest\.json|(mir|billing)\/[A-Za-z0-9 _-]{1,64}\/data\.json\.gz)$/;
 const UPSTREAM_TIMEOUT_MS = 25_000;
@@ -44,10 +48,26 @@ export async function GET(req: Request) {
   const token = auth.replace(/^(Bearer|Firebase)\s+/i, "").trim();
   if (!token) return reply(401, "Missing sign-in token.");
 
+  try {
+    const out = await readReportFile(path, token);
+    if (!out.ok) return reply(out.status, out.error);
+    return new Response(new Uint8Array(out.body), {
+      status: 200,
+      headers: {
+        "Content-Type": out.contentType,
+        // Per-user data: never cache at the CDN or in shared caches.
+        "Cache-Control": "private, no-store",
+        "x-report-proxy": "1",
+      },
+    });
+  } catch (e) {
+    console.error("report-file: server access check failed, forwarding the token to Storage:", e);
+  }
+
   let upstream: Response;
   try {
     upstream = await fetch(
-      `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(path)}?alt=media`,
+      `https://firebasestorage.googleapis.com/v0/b/${REPORT_BUCKET}/o/${encodeURIComponent(path)}?alt=media`,
       {
         headers: { Authorization: `Firebase ${token}` },
         cache: "no-store",
