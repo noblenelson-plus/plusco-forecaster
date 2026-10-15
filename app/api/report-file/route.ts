@@ -51,7 +51,7 @@ export async function GET(req: Request) {
   try {
     const out = await readReportFile(path, token);
     if (!out.ok) return reply(out.status, out.error);
-    return new Response(new Uint8Array(out.body), {
+    return new Response(out.body, {
       status: 200,
       headers: {
         "Content-Type": out.contentType,
