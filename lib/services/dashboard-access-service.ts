@@ -11,8 +11,9 @@
 
 import { doc, onSnapshot, setDoc, type Unsubscribe } from "firebase/firestore";
 import { db } from "../firebase";
-import type { DashboardAccessConfig } from "../types/access.types";
+import type { DashboardAccessConfig, MediaboxAllocationsConfig } from "../types/access.types";
 import { normalizeDashboardAccess } from "../format/access";
+import { normalizeEmailList } from "../format/email";
 
 const CONFIG_COLLECTION = "config";
 const DASHBOARD_ACCESS_DOC = "dashboard_access";
@@ -37,4 +38,48 @@ export function subscribeToDashboardAccess(
 /** Replaces the whole config (admin). Values are normalized first. */
 export async function saveDashboardAccess(config: DashboardAccessConfig): Promise<void> {
   await setDoc(doc(db, CONFIG_COLLECTION, DASHBOARD_ACCESS_DOC), normalizeDashboardAccess(config));
+}
+
+// ─── MediaBox allocations switch ──────────────────────────────────────────────
+
+/**
+ * `config/mediabox_allocations` — `{enabled, pilotEmails}`: when on (for
+ * everyone, or for the pilot emails only), the allocation tabs
+ * (ALLOCATION_TABS) show agency emails only the clients they are allocated to
+ * in MediaBox (CL_MediaBox_Emails) instead of their whole agency. Its own doc
+ * so a hidden-pages save (which replaces config/dashboard_access) can never
+ * reset it. The security rules read the same doc.
+ */
+const MEDIABOX_ALLOCATIONS_DOC = "mediabox_allocations";
+
+function normalizeAllocations(raw: unknown): MediaboxAllocationsConfig {
+  const d = raw as { enabled?: unknown; pilotEmails?: unknown } | null;
+  const pilot = Array.isArray(d?.pilotEmails) ? (d.pilotEmails as unknown[]) : [];
+  return {
+    enabled: d?.enabled === true,
+    pilotEmails: normalizeEmailList(pilot.filter((e): e is string => typeof e === "string")),
+  };
+}
+
+/** Real-time switch. A missing doc or a failed read means off. */
+export function subscribeToMediaboxAllocations(
+  callback: (config: MediaboxAllocationsConfig) => void
+): Unsubscribe {
+  return onSnapshot(
+    doc(db, CONFIG_COLLECTION, MEDIABOX_ALLOCATIONS_DOC),
+    (snapshot) => callback(normalizeAllocations(snapshot.data() ?? null)),
+    (err) => {
+      console.error("MediaBox allocations subscription failed:", err);
+      callback(normalizeAllocations(null));
+    }
+  );
+}
+
+/** Saves the switch (admin). Pilot emails are normalized. */
+export async function saveMediaboxAllocations(config: MediaboxAllocationsConfig, by: string): Promise<void> {
+  await setDoc(doc(db, CONFIG_COLLECTION, MEDIABOX_ALLOCATIONS_DOC), {
+    ...normalizeAllocations(config),
+    updatedAt: new Date().toISOString(),
+    updatedBy: by,
+  });
 }

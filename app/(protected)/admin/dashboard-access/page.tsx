@@ -26,6 +26,7 @@ import {
   Eye,
   EyeOff,
   LayoutDashboard,
+  Link2,
   Loader2,
   Pencil,
   Save,
@@ -48,7 +49,9 @@ import type { Client } from "../../../../lib/types/client.types";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import {
   saveDashboardAccess,
+  saveMediaboxAllocations,
   subscribeToDashboardAccess,
+  subscribeToMediaboxAllocations,
 } from "../../../../lib/services/dashboard-access-service";
 import { fetchAllGrants, saveGrant } from "../../../../lib/services/dashboard-grants-service";
 import { fetchUsers, type UserProfile } from "../../../../lib/services/user-service";
@@ -57,15 +60,22 @@ import { grantScopeLabel, normalizeDashboardAccess } from "../../../../lib/forma
 import { nameFromEmail } from "../../../../lib/format/email";
 import {
   AGENCY_DEFAULT_TABS,
+  ALLOCATION_TABS,
   type DashboardAccessConfig,
   type DashboardGrantDoc,
   type DashboardTabId,
   type GrantScope,
+  type MediaboxAllocationsConfig,
 } from "../../../../lib/types/access.types";
 
 /** Who sees each tab without a grant. */
-function defaultAccess(tab: DashboardTabId): { icon: React.ReactNode; text: string } {
+function defaultAccess(tab: DashboardTabId, allocationsOn: boolean): { icon: React.ReactNode; text: string } {
   if (tab === "forecaster") return { icon: <Briefcase size={13} />, text: "Client teams — their own clients" };
+  if (allocationsOn && ALLOCATION_TABS.includes(tab))
+    return {
+      icon: <Link2 size={13} />,
+      text: "Everyone — their MediaBox-allocated clients (Plus Company emails: all clients)",
+    };
   if (AGENCY_DEFAULT_TABS.includes(tab))
     return { icon: <Building2 size={13} />, text: "Everyone — their own agency (Plus Company emails: all agencies)" };
   return { icon: <Users size={13} />, text: "Nobody — only the people below" };
@@ -107,6 +117,14 @@ export default function AdminDashboardAccessPage() {
     agencyDomains: {},
     companyDomains: [],
   });
+
+  // The MediaBox allocations switch (saved at once).
+  const [allocations, setAllocations] = useState<MediaboxAllocationsConfig | null>(null);
+  const allocationsOn = allocations?.enabled === true;
+  useEffect(() => {
+    if (!isAdmin) return;
+    return subscribeToMediaboxAllocations(setAllocations);
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -152,6 +170,7 @@ export default function AdminDashboardAccessPage() {
         agencyDomains: mapping.agencyDomains,
         companyDomains: mapping.companyDomains,
         dashboardAccess: config,
+        mediaboxAllocations: allocationsOn,
         tabLabels,
       };
       const url = await exportToNewSheetWithTabs({
@@ -360,6 +379,9 @@ export default function AdminDashboardAccessPage() {
                 {saveError ? `Couldn't save: ${saveError}` : loadError}
               </div>
             )}
+            {allocations && (
+              <MediaboxAllocationsCard config={allocations} clients={clients} by={myEmail} nameOf={nameOf} />
+            )}
             {saved === null || grants === null ? (
               <div className="flex h-64 items-center justify-center text-gray-400">
                 <Loader2 size={20} className="animate-spin" />
@@ -368,7 +390,7 @@ export default function AdminDashboardAccessPage() {
               DASHBOARD_PAGES.map((page) => {
                 const id = page.id as DashboardTabId;
                 const hiddenTab = config.hiddenTabs.includes(id);
-                const def = defaultAccess(id);
+                const def = defaultAccess(id, allocationsOn);
                 const people = byTab.get(id) ?? [];
                 return (
                   <section key={id} className={`border border-gray-200 bg-white ${hiddenTab ? "opacity-70" : ""}`}>
@@ -511,6 +533,156 @@ export default function AdminDashboardAccessPage() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The MediaBox allocations switch (config/mediabox_allocations). Saved at once
+ * — turning it on or off for everyone asks for a confirmation; pilot emails
+ * try it for a few people first.
+ */
+function MediaboxAllocationsCard({
+  config,
+  clients,
+  by,
+  nameOf,
+}: {
+  config: MediaboxAllocationsConfig;
+  clients: Client[];
+  by: string;
+  nameOf: (email: string) => string;
+}) {
+  const enabled = config.enabled;
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pilotInput, setPilotInput] = useState("");
+  const linked = clients.filter((c) => (c.CL_MediaBox_IDs ?? []).length > 0).length;
+  const people = new Set(clients.flatMap((c) => c.CL_MediaBox_Emails ?? [])).size;
+
+  async function save(next: MediaboxAllocationsConfig) {
+    setBusy(true);
+    setError(null);
+    try {
+      await saveMediaboxAllocations(next, by);
+      setArmed(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const flip = () => save({ ...config, enabled: !enabled });
+  const addPilot = () => {
+    const emails = pilotInput.split(/[\s,;]+/).filter((e) => e.includes("@"));
+    if (!emails.length) return;
+    setPilotInput("");
+    void save({ ...config, pilotEmails: [...config.pilotEmails, ...emails] });
+  };
+  const removePilot = (email: string) => save({ ...config, pilotEmails: config.pilotEmails.filter((e) => e !== email) });
+
+  return (
+    <section className="border border-gray-200 bg-white">
+      <div className="flex items-start justify-between gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+            <Link2 size={15} />
+            MediaBox allocations
+            <span
+              className={`px-2 py-0.5 text-[11px] font-semibold ${
+                enabled ? "bg-green-500 text-white" : config.pilotEmails.length ? "bg-yellow-400 text-gray-900" : "bg-gray-200 text-gray-600"
+              }`}
+            >
+              {enabled ? "On" : config.pilotEmails.length ? "Pilot" : "Off"}
+            </span>
+          </h2>
+          <p className="mt-1 max-w-2xl text-xs text-gray-500">
+            When on, Labs Pacing and MediaBox Adoption show agency emails only the clients they are allocated to in
+            MediaBox / Planner (plus their team&apos;s clients that have no MediaBox link), instead of their whole
+            agency. Plus Company emails, admins and the people given access below are unchanged. Allocations update
+            live from MediaBox.
+          </p>
+          <p className="mt-1 text-xs text-gray-400">
+            {linked} clients linked to MediaBox · {people} people allocated
+          </p>
+          {error && <p className="mt-1 text-xs text-red-600">Couldn&apos;t save: {error}</p>}
+        </div>
+        {busy ? (
+          <Loader2 size={16} className="mt-1 flex-shrink-0 animate-spin text-gray-400" />
+        ) : armed ? (
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setArmed(false)}
+              className="border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void flip()}
+              className={`px-2.5 py-1 text-xs font-semibold text-white ${enabled ? "bg-red-500" : "bg-gray-900"}`}
+            >
+              {enabled ? "Turn off for everyone?" : "Turn on for everyone?"}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setArmed(true)}
+            className="flex-shrink-0 border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-gray-900"
+          >
+            {enabled ? "Turn off" : "Turn on"}
+          </button>
+        )}
+      </div>
+
+      {/* Pilot: on for these people only (moot once on for everyone). */}
+      {!enabled && (
+        <div className="border-t border-gray-100 px-4 py-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Pilot{config.pilotEmails.length ? ` (${config.pilotEmails.length})` : ""}
+            <span className="ml-2 font-normal normal-case tracking-normal text-gray-400">
+              On for these people only — to try it before turning it on for everyone
+            </span>
+          </p>
+          {config.pilotEmails.length > 0 && (
+            <ul className="mb-2 divide-y divide-gray-100 border border-gray-100">
+              {config.pilotEmails.map((email) => (
+                <li key={email} className="flex items-center gap-3 px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">{nameOf(email)}</p>
+                    <p className="truncate text-[11px] text-gray-400">{email}</p>
+                  </div>
+                  <span className="text-xs text-gray-600">
+                    {clients.filter((c) => (c.CL_MediaBox_Emails ?? []).includes(email)).length} allocated clients
+                  </span>
+                  <RemoveButton onConfirm={() => removePilot(email)} />
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-center gap-2">
+            <input
+              value={pilotInput}
+              onChange={(e) => setPilotInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addPilot()}
+              placeholder="name@agency.com"
+              className="w-72 border border-gray-200 px-2.5 py-1 text-sm focus:border-gray-900 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={addPilot}
+              disabled={busy || !pilotInput.includes("@")}
+              className="flex items-center gap-1.5 border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-gray-900 disabled:opacity-40"
+            >
+              <UserPlus size={13} />
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
