@@ -98,6 +98,12 @@ export interface Client {
    * summed together. Empty/absent → no MediaBox actuals for this client.
    */
   CL_MediaBox_IDs?: string[];
+  /**
+   * Derived, never edited by hand: the people allocated in MediaBox to the
+   * client's MediaBox client(s) (lowercase emails, from `mediabox_clients`),
+   * kept current by the Cloud Functions in functions/. Absent until backfilled.
+   */
+  CL_MediaBox_Emails?: string[];
   Client_Notes?: string;
   commissionsConfig: CommissionsConfig;
   createdAt?: string;
