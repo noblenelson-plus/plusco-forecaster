@@ -566,7 +566,12 @@ function ForecastPageContent() {
           paint over the open dropdowns. */}
       <div className="sticky top-0 z-40 bg-white border-b border-gray-200">
         <div className="flex flex-wrap items-center gap-3 px-6 py-3">
-          <ForecastSelectors orientation="horizontal" theme="light" />
+          {/* Product is tracked per client × year: no RFQ selector there. */}
+          <ForecastSelectors
+            orientation="horizontal"
+            theme="light"
+            fields={tab === "product" ? ["client", "year"] : undefined}
+          />
 
           {/* Labs penetration panel toggle (Labs tab only). */}
           {tab === "labs" && (
@@ -802,10 +807,9 @@ function ForecastPageContent() {
       </div>
 
       {/* Sticky timeline (échéancier) — shown with a full context selected.
-          Renders nothing when the RFQ has no periods. The Product tab has no
-          RFQ selectors of its own but still shows the timeline of the
-          globally selected RFQ (empty selection → no periods → nothing). */}
-      {(tab === "product" || activeGrid.selectionReady) && (
+          Renders nothing when the RFQ has no periods. Hidden on the Product
+          tab, which is tracked per year and has no RFQ. */}
+      {tab !== "product" && activeGrid.selectionReady && (
         <RFQTimelineBar periods={timelinePeriods} />
       )}
 

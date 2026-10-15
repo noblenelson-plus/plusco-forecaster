@@ -1,6 +1,17 @@
 // lib/services/product-tracking-service.ts
 
-import { doc, getDoc, onSnapshot, setDoc, Unsubscribe } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  query,
+  setDoc,
+  where,
+  writeBatch,
+  Unsubscribe,
+} from "firebase/firestore";
 import { db } from "../firebase";
 import {
   productTrackingDocId,
@@ -62,4 +73,38 @@ export async function saveProductTracking(
     updatedAt: new Date().toISOString(),
   };
   await setDoc(doc(db, COLLECTION, productTrackingDocId(clientId, year)), payload);
+}
+
+/**
+ * Every client's product tracking for a year (admin only — the rules let a
+ * non-admin read only the clients they can see, so a collection query would
+ * be refused). Used by the admin roll-over to the next year.
+ */
+export async function fetchAllProductTrackingForYear(
+  year: number
+): Promise<ProductTrackingDoc[]> {
+  const snap = await getDocs(
+    query(collection(db, COLLECTION), where("year", "==", year))
+  );
+  return snap.docs.map((d) => d.data() as ProductTrackingDoc);
+}
+
+/**
+ * Admin roll-over: write each client's carried-over map as its `year` doc, in
+ * batches of 500. Callers pass only clients whose target year is empty (see
+ * planProductYearCopy) — this writes the docs wholesale like saveProductTracking.
+ */
+export async function writeProductTrackingCopies(
+  year: number,
+  copies: { clientId: string; products: ProductTrackingMap }[]
+): Promise<void> {
+  const updatedAt = new Date().toISOString();
+  for (let i = 0; i < copies.length; i += 500) {
+    const batch = writeBatch(db);
+    for (const { clientId, products } of copies.slice(i, i + 500)) {
+      const payload: ProductTrackingDoc = { clientId, year, products, updatedAt };
+      batch.set(doc(db, COLLECTION, productTrackingDocId(clientId, year)), payload);
+    }
+    await batch.commit();
+  }
 }

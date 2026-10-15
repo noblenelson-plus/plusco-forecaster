@@ -194,6 +194,21 @@ export default function ForecastSelectors({
     [rfqs, selectedYear]
   );
 
+  // Without the RFQ field (year-only pages such as Product), a year change
+  // keeps an RFQ of that year selected — the same round if it exists, else the
+  // latest — so the RFQ-based pages still have a full context afterwards.
+  const selectYear = (year: number) => {
+    if (showRFQ || selectedRFQ?.year === year) {
+      setYear(year);
+      return;
+    }
+    const ofYear = getRFQsForYear(rfqs, year);
+    const next =
+      ofYear.find((r) => r.type === selectedRFQ?.type) ?? ofYear[ofYear.length - 1];
+    if (next) setRFQ(next); // also aligns the year
+    else setYear(year);
+  };
+
   const horizontal = orientation === "horizontal";
   const containerClass = horizontal
     ? "flex flex-wrap items-center gap-2"
@@ -233,7 +248,7 @@ export default function ForecastSelectors({
             key: String(y),
             label: String(y),
             selected: selectedYear === y,
-            onSelect: () => setYear(y),
+            onSelect: () => selectYear(y),
           }))}
           emptyMessage="No RFQs created yet"
         />

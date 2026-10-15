@@ -21,6 +21,7 @@ import {
   type ProductInput,
 } from "../../../../lib/services/product-service";
 import PageHeader from "../../../../components/_shared/page-header";
+import ProductYearRollover from "../../../../components/forecaster/product-year-rollover";
 
 export default function AdminProductsPage() {
   const { isAdmin, loading: profileLoading } = useUserProfile();
@@ -139,6 +140,8 @@ export default function AdminProductsPage() {
             <AddProductForm onCreate={handleCreate} />
           </div>
         )}
+
+        <ProductYearRollover />
       </div>
     </div>
   );
