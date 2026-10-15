@@ -93,6 +93,15 @@ export default function ProductTab({
 
   return (
     <div className="space-y-8">
+      {/* Which year's pipeline is on screen — every section below is this year. */}
+      {year && (
+        <h2 className="text-lg font-semibold text-foreground">
+          {year} product pipeline
+          <span className="ml-2 text-sm font-normal text-muted-foreground">
+            Statuses, timings and notes entered for {year}
+          </span>
+        </h2>
+      )}
       <div data-scroll-section data-scroll-label="Overview">
         <ProductOverviewSection productData={productData} products={products} scopedClientIds={scopedClientIds} />
       </div>

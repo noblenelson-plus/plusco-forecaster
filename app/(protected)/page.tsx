@@ -124,6 +124,25 @@ export default function DashboardPage() {
   const access = useAccess();
   // Top-level tab — declared up here because it picks the client universe.
   const [topTab, setTopTab] = useState<ForecasterTab>("forecaster");
+  // The sub-tab chosen inside the Forecaster Dashboard. Declared up here too:
+  // the Product sub-tab has no currency, so it changes the client universe.
+  const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
+  // Tabs: the ones open to the person (openTabs — team, email domain,
+  // grants). Tabs and sub-tabs an admin hid are hidden from everyone,
+  // admins included.
+  const hiddenPages = access.hiddenSubtabs;
+  const forecasterSubtabs = useMemo(
+    () => visibleSubtabs("forecaster", FORECASTER_SUBTABS, hiddenPages),
+    [hiddenPages]
+  );
+  // A hidden sub-tab shows the first visible one instead — derived, so the
+  // choice returns once it is visible again.
+  const activeForecasterSub = forecasterSubtabs.some((t) => t.id === forecasterSub)
+    ? forecasterSub
+    : (forecasterSubtabs[0]?.id ?? forecasterSub);
+  // Product pipeline view: tracked per year only — no RFQ, comparison, months
+  // or currency (the CAD / USD toggle is hidden and every client counts).
+  const isProductView = topTab === "forecaster" && activeForecasterSub === "product";
   // Test clients are hidden from the dashboard only (they stay in the editing
   // grid). Filtering here removes them from every tab, chart, KPI and table,
   // since the whole dashboard scope derives from this list.
@@ -230,8 +249,11 @@ export default function DashboardPage() {
   // In USD mode, feed only USD clients into the (already dynamic) filter engine
   // so every dropdown cascades to USD clients — matching Looker's behavior.
   const currencyClients = useMemo(
-    () => (viewCurrency === "USD" ? clients.filter((c) => (c.CL_Currency ?? "CAD") === "USD") : clients),
-    [viewCurrency, clients]
+    () =>
+      viewCurrency === "USD" && !isProductView
+        ? clients.filter((c) => (c.CL_Currency ?? "CAD") === "USD")
+        : clients,
+    [viewCurrency, clients, isProductView]
   );
 
   const { facetViews, filteredClientIds, totalAccessible, hasActiveFilters, reset } =
@@ -298,21 +320,11 @@ export default function DashboardPage() {
   const [mirPeriod, setMirPeriod] = useState<MonthPeriod>(() =>
     calendarYearPeriod(new Date().getFullYear())
   );
-  // The sub-tab chosen inside the Forecaster Dashboard (top tab: see above).
-  const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
   const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
-  // Tabs: the ones open to the person (openTabs — team, email domain,
-  // grants). Tabs and sub-tabs an admin hid are hidden from everyone,
-  // admins included.
-  const hiddenPages = access.hiddenSubtabs;
   const { openTabs } = access;
   const visibleTabs = useMemo(
     () => FORECASTER_TABS.filter((t) => openTabs.includes(t.id) && isTabVisible(t.id, hiddenPages)),
     [openTabs, hiddenPages]
-  );
-  const forecasterSubtabs = useMemo(
-    () => visibleSubtabs("forecaster", FORECASTER_SUBTABS, hiddenPages),
-    [hiddenPages]
   );
   // If the active tab isn't open to the user, fall back to the first tab they
   // can see. Wait for access to resolve first, else the provisional empty view
@@ -323,11 +335,6 @@ export default function DashboardPage() {
       setTopTab(visibleTabs[0].id);
     }
   }, [access.loading, visibleTabs, topTab]);
-  // A hidden sub-tab shows the first visible one instead — derived, so the
-  // choice returns once it is visible again.
-  const activeForecasterSub = forecasterSubtabs.some((t) => t.id === forecasterSub)
-    ? forecasterSub
-    : (forecasterSubtabs[0]?.id ?? forecasterSub);
   // The page on screen: a Forecaster Dashboard sub-tab, or the top-level tab.
   const tab: ForecasterSubTab | Exclude<ForecasterTab, "forecaster"> =
     topTab === "forecaster" ? activeForecasterSub : topTab;
@@ -398,13 +405,17 @@ export default function DashboardPage() {
       <header className="sticky top-0 z-40 flex flex-col bg-white">
         {/* Header row by tab. The Forecaster tab keeps its original Time &
             Context bar (Year / RFQ vs, Months, CAD note, CAD / USD toggle) —
-            unchanged. Media Investments gets the MIR period row. The other tabs
+            unchanged — except its Product sub-tab, tracked per year only, which
+            gets a Year-only bar (no RFQ / vs / Months / currency).
+            Media Investments gets the MIR period row. The other tabs
             have no row here: Labs Pacing / Exec KPI / MediaBox carry the CAD /
             USD toggle in the filter bar; Reports and the KPI sub-tab need none. */}
         {isMirTab ? (
           topTab === "mediaocean" && mediaOceanSub === "investments" ? (
             <MirContextBar period={mirPeriod} onPeriodChange={setMirPeriod} />
           ) : null
+        ) : isProductView ? (
+          <DashboardContextBar yearOnly />
         ) : topTab === "forecaster" ? (
           <div className="relative">
             <DashboardContextBar

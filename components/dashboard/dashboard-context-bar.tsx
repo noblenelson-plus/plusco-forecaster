@@ -12,12 +12,17 @@
  *
  * The bar also carries the currency indicator: the dashboard always aggregates
  * and displays amounts in CAD, converting USD clients with the year's rate.
+ *
+ * `yearOnly` (Product sub-tab): the product pipeline is tracked per year, with
+ * no RFQ, comparison, month or currency dimension — the bar then shows the
+ * Year alone, labelled so it is clear which year's pipeline is on screen.
  */
 
-import { DollarSign, AlertTriangle } from "lucide-react";
+import { DollarSign, AlertTriangle, CalendarDays } from "lucide-react";
 import ForecastSelectors from "../_shared/forecast-selectors";
 import MultiSelectDropdown from "../_shared/multi-select-dropdown";
 import { useComparisonSelection } from "../../lib/stores/comparison-selection.store";
+import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 
 const MONTH_OPTIONS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -34,6 +39,8 @@ interface DashboardContextBarProps {
   /** Month filter (1..12) applied to every aggregation; empty = all months. */
   months?: number[];
   onMonthsChange?: (months: number[]) => void;
+  /** Year selector only (Product pipeline): no RFQ, comparison, months or currency. */
+  yearOnly?: boolean;
 }
 
 export default function DashboardContextBar({
@@ -42,6 +49,7 @@ export default function DashboardContextBar({
   missingRate = false,
   months = [],
   onMonthsChange,
+  yearOnly = false,
 }: DashboardContextBarProps = {}) {
   const {
     comparisonYear,
@@ -49,6 +57,26 @@ export default function DashboardContextBar({
     setComparisonYear,
     setComparisonRFQ,
   } = useComparisonSelection();
+  const selectedYear = useForecastSelection((s) => s.selectedYear);
+
+  if (yearOnly) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 select-none mr-2">
+          Pipeline year
+        </span>
+        <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
+        <ForecastSelectors orientation="horizontal" theme="light" fields={["year"]} />
+        <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-gray-900 text-yellow-400">
+          <CalendarDays size={13} />
+          Showing the {selectedYear ?? "—"} product pipeline
+        </span>
+        <span className="text-xs text-gray-500">
+          Tracked per year — RFQ rounds don&apos;t apply to products.
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50">

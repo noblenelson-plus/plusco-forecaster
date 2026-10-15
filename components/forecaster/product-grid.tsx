@@ -33,6 +33,7 @@ import {
   subscribeToProductTracking,
 } from "../../lib/services/product-tracking-service";
 import { pipelineProducts } from "../../lib/services/product-service";
+import { carryProductEntries, cleanProductEntry } from "../../lib/format/product-copy";
 import { useProducts } from "../../lib/hooks/use-products";
 import { useAutosave } from "../../lib/hooks/use-autosave";
 import SaveStatusIndicator from "./save-status";
@@ -199,14 +200,9 @@ export default function ProductGrid({ clientId, year }: ProductGridProps) {
     productId: string,
     entry: ProductEntry
   ): ProductTrackingMap => {
-    const clean: ProductEntry = {
-      ...(entry.status ? { status: entry.status } : {}),
-      ...(entry.timing ? { timing: entry.timing } : {}),
-      ...(entry.note ? { note: entry.note } : {}),
-      ...(entry.note && entry.noteFrom ? { noteFrom: entry.noteFrom } : {}),
-    };
+    const clean = cleanProductEntry(entry);
     const next = { ...working };
-    if (Object.keys(clean).length === 0) delete next[productId];
+    if (!clean) delete next[productId];
     else next[productId] = clean;
     return next;
   };
@@ -255,16 +251,7 @@ export default function ProductGrid({ clientId, year }: ProductGridProps) {
    */
   const copyFromPrevious = () => {
     if (!previous) return;
-    updateWorking(() => {
-      let next: ProductTrackingMap = {};
-      for (const [productId, entry] of Object.entries(previous)) {
-        next = putEntry(next, productId, {
-          ...entry,
-          noteFrom: entry.note ? entry.noteFrom ?? previousYear : undefined,
-        });
-      }
-      return next;
-    });
+    updateWorking(() => carryProductEntries(previous, previousYear));
   };
 
   const discard = () =>
@@ -311,11 +298,11 @@ export default function ProductGrid({ clientId, year }: ProductGridProps) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 text-xs text-gray-400">
           <span
-            className="flex items-center gap-1.5 px-3 py-2 font-medium rounded-lg bg-gray-50 text-gray-500 border border-gray-200"
-            title="The pipeline is tracked per year (Year selector above); the RFQ does not apply."
+            className="flex items-center gap-1.5 px-3 py-2 font-semibold rounded-lg bg-gray-900 text-yellow-400"
+            title="The pipeline is tracked per year (Year selector above); RFQ rounds don't apply."
           >
             <CalendarDays size={12} />
-            {year} pipeline
+            Editing the {year} pipeline
           </span>
           {canCopy && (
             <button
