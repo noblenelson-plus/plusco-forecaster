@@ -27,9 +27,10 @@ function toClient(d: { id: string; data: () => unknown }): Client {
 const byName = (a: Client, b: Client) => a.CL_Name.localeCompare(b.CL_Name);
 
 /**
- * Runs `clients` reads — equality queries on agency / region, or one doc by id
- * (specific-client grants): the shapes the rules verify. A listed client that
- * was deleted (or can't be read) is skipped rather than failing the batch.
+ * Runs `clients` reads — equality queries on agency / region, one doc by id
+ * (specific-client grants), or the MediaBox allocations' `array-contains`:
+ * the shapes the rules verify. A listed client that was deleted (or can't be
+ * read) is skipped rather than failing the batch.
  */
 async function runClientQueries(specs: ClientQuerySpec[]): Promise<Client[]> {
   const ref = collection(db, "clients");
@@ -39,6 +40,11 @@ async function runClientQueries(specs: ClientQuerySpec[]): Promise<Client[]> {
         return getDoc(doc(db, "clients", s.id))
           .then((d) => (d.exists() ? [toClient(d)] : []))
           .catch(() => [] as Client[]);
+      }
+      if (s.allocatedTo) {
+        return getDocs(query(ref, where("CL_MediaBox_Emails", "array-contains", s.allocatedTo))).then((snap) =>
+          snap.docs.map(toClient)
+        );
       }
       const where_: QueryConstraint[] = [];
       if (s.agency) where_.push(where("CL_Agency", "==", s.agency));
@@ -88,8 +94,21 @@ export async function fetchAccessibleClients(
 }
 
 /**
+ * The ids of the clients allocated to the person in MediaBox
+ * (`CL_MediaBox_Emails` array-contains — readable only while the allocations
+ * switch is on). Sorted.
+ */
+export async function fetchAllocatedClientIds(email: string): Promise<string[]> {
+  const e = normalizeEmail(email);
+  if (!e) return [];
+  const snap = await getDocs(query(collection(db, "clients"), where("CL_MediaBox_Emails", "array-contains", e)));
+  return snap.docs.map((d) => d.id).sort();
+}
+
+/**
  * Every client the person may READ: their team clients plus `queries`
- * (readableClientQueries: their domain's agencies and their grants). Admin →
+ * (readableClientQueries: their domain's agencies, MediaBox allocations and
+ * grants). Admin →
  * all. Deduped, sorted by name, hidden clients included (callers filter).
  * Feeds the dashboard, whose tabs then narrow it (tabCoversClient).
  */

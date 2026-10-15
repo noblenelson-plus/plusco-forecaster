@@ -154,7 +154,8 @@ export default function DashboardPage() {
   // lib/format/access.ts; presentation only — the security rules govern
   // reads): the client team on Forecaster, the email domain's agencies on
   // Media Investments / Labs Pacing / Reports, plus the person's grant for
-  // that tab (agencies × regions). Admin: every client.
+  // that tab (agencies × regions). Admin: every client. While MediaBox
+  // allocations are on, Labs Pacing and MediaBox Adoption follow those instead.
   // The filter bar, forecast data and charts all derive from this list.
   const { tabCovers } = access;
   const clients = useMemo(
@@ -259,8 +260,16 @@ export default function DashboardPage() {
   const { facetViews, filteredClientIds, totalAccessible, hasActiveFilters, reset } =
     useDashboardFilters(currencyClients, usersMap, selectedYear ?? new Date().getFullYear());
 
-  // Filters already run on the currency-scoped set, so this IS the final scope.
-  const scopedClientIds = filteredClientIds;
+  // Filters already run on the currency-scoped set, so this IS the final scope —
+  // minus clients whose data the person may not load (canReadClient; the rules
+  // can't tell which tab is asking). That only bites while MediaBox
+  // allocations are on: an agency email then reads its allocated clients'
+  // data, while Media Investments still lists its agency's clients.
+  const { canReadData } = access;
+  const scopedClientIds = useMemo(() => {
+    const readable = new Set(currencyClients.filter(canReadData).map((c) => c.cl_id));
+    return filteredClientIds.filter((id) => readable.has(id));
+  }, [filteredClientIds, currencyClients, canReadData]);
 
   // A focused client that leaves the scope (filter change, CAD→USD) is ignored
   // rather than cleared, so the focus returns if the scope widens again.

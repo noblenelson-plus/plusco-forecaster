@@ -82,6 +82,24 @@ export type GrantableDashboardId = (typeof GRANTABLE_DASHBOARDS)[number];
 export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "labs-pacing", "reports"];
 
 /**
+ * Tabs that follow MediaBox allocations once `config/mediabox_allocations` is
+ * on: an agency email sees the clients it is allocated to in MediaBox
+ * (CL_MediaBox_Emails) — plus, for clients with no MediaBox link, those whose
+ * team it is on — instead of its whole agency. A company-wide domain still
+ * sees every client; grants still add on top. MediaBox Adoption opens for
+ * allocated people too (otherwise it is grants only).
+ */
+export const ALLOCATION_TABS: readonly DashboardTabId[] = ["labs-pacing", "mediabox"];
+
+/** `config/mediabox_allocations` — the allocations switch. */
+export interface MediaboxAllocationsConfig {
+  /** On for everyone. */
+  enabled: boolean;
+  /** On for these emails only (lowercase) — to try it before `enabled`. */
+  pilotEmails: string[];
+}
+
+/**
  * Tabs a grant may name specific clients on. Media Investments and Reports
  * are excluded: their data is split by agency, so a client can't be isolated
  * there — they take agency × region grants only.

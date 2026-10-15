@@ -15,6 +15,7 @@
 
 import {
   AGENCY_DEFAULT_TABS,
+  ALLOCATION_TABS,
   DASHBOARD_TABS,
   type DashboardAccessConfig,
   type DashboardGrantDoc,
@@ -23,12 +24,15 @@ import {
 } from "../types/access.types";
 import type { Client } from "../types/client.types";
 import {
+  allocationCoversClient,
   canOpenTab,
   domainScope,
   editGrant,
   grantCoversClient,
   grantScopeLabel,
   hiddenPagesFor,
+  isAllocatedTo,
+  isCompanyDomain,
   myAgencies,
   tabCoversClient,
   type AccessContext,
@@ -45,14 +49,21 @@ export interface AccessReportInput {
   agencyDomains: Record<string, string[]>;
   companyDomains: string[];
   dashboardAccess: DashboardAccessConfig;
+  /** config/mediabox_allocations is on. */
+  mediaboxAllocations?: boolean;
   tabLabels: Record<DashboardTabId, string>;
+}
+
+/** The tab follows MediaBox allocations for this (non-admin) person. */
+function followsAllocations(ctx: AccessContext, tab: DashboardTabId): boolean {
+  return !!ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab) && !isCompanyDomain(ctx.email, ctx.companyDomains);
 }
 
 const day = (u: UserRecord | undefined) => u?.lastLoginAt?.toDate?.().toISOString().slice(0, 10) ?? "";
 
 /** Summary tab: one row per person (users + anyone granted without a row). */
 export function buildAccessSummary(input: AccessReportInput): string[][] {
-  const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, tabLabels } = input;
+  const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, mediaboxAllocations, tabLabels } = input;
   const clientNames = new Map(clients.map((c) => [c.cl_id, c.CL_Name]));
   const clientName = (id: string) => clientNames.get(id);
   // What the dashboard shows: hidden and test clients are left out.
@@ -89,7 +100,9 @@ export function buildAccessSummary(input: AccessReportInput): string[][] {
         companyDomains,
         grants: grantBy.get(email) ?? {},
         dashboardAccess,
+        mediaboxAllocations,
       };
+      const allocatedCount = mediaboxAllocations ? shown.filter((c) => isAllocatedTo(email, c)).length : 0;
       const mine = memberships.get(email) ?? new Map();
       const held = new Set([...mine.values()].flat());
       const topRole = TEAM_ROLES.find((r) => held.has(r));
@@ -100,10 +113,12 @@ export function buildAccessSummary(input: AccessReportInput): string[][] {
       const tabCell = (tab: DashboardTabId): string => {
         if (disabled) return "Revoked";
         if (isAdmin) return hidden.has(tab) ? "Hidden tab" : `Admin — all ${shown.length} clients`;
-        if (!canOpenTab(ctx, tab, teamCount)) return "—";
+        if (!canOpenTab(ctx, tab, teamCount, allocatedCount)) return "—";
         const parts: string[] = [];
         if (tab === "forecaster" && teamCount) parts.push("Own clients");
-        if (AGENCY_DEFAULT_TABS.includes(tab)) {
+        if (followsAllocations(ctx, tab)) parts.push("MediaBox allocations");
+        else if (ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab)) parts.push("All agencies");
+        else if (AGENCY_DEFAULT_TABS.includes(tab)) {
           const d = domainScope(ctx);
           parts.push(d.all ? "All agencies" : `Agency: ${d.agencies.join(", ")}`);
         }
@@ -163,7 +178,7 @@ export function buildGrantClients(input: AccessReportInput): string[][] {
  * Dashboard Access). Hidden tabs are left out (nobody sees them); revoked people and people with no access get one row saying so.
  */
 export function buildAllAccess(input: AccessReportInput): string[][] {
-  const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, tabLabels } = input;
+  const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, mediaboxAllocations, tabLabels } = input;
   const shown = clients.filter((c) => !isClientHidden(c) && !isTestClient(c.CL_Name));
   const userBy = new Map(users.map((u) => [u.email, u]));
   const grantBy = new Map(grants.map((g) => [normalizeEmail(g.email), g.tabs]));
@@ -197,9 +212,11 @@ export function buildAllAccess(input: AccessReportInput): string[][] {
       companyDomains,
       grants: grantBy.get(email) ?? {},
       dashboardAccess,
+      mediaboxAllocations,
     };
     const hidden = hiddenPagesFor(ctx);
     const team = shown.filter((c) => isOnClientTeam(email, c));
+    const allocated = mediaboxAllocations ? shown.filter((c) => allocationCoversClient(ctx, c)) : [];
     const start = rows.length;
 
     for (const tab of DASHBOARD_TABS) {
@@ -208,7 +225,14 @@ export function buildAllAccess(input: AccessReportInput): string[][] {
       if (tab === "forecaster" && team.length) {
         row("Client team", label, uniq(team.map((c) => c.CL_Agency)), uniq(team.map((c) => c.CL_Business_Unit_Region)), team.length, "Yes");
       }
-      if (AGENCY_DEFAULT_TABS.includes(tab)) {
+      if (followsAllocations(ctx, tab)) {
+        if (allocated.length) {
+          row("MediaBox", label, uniq(allocated.map((c) => c.CL_Agency)), uniq(allocated.map((c) => c.CL_Business_Unit_Region)), allocated.length, "No");
+        }
+      } else if (ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab)) {
+        // A company-wide domain keeps every client.
+        row("Global", label, "All agencies", "All regions", shown.length, "No");
+      } else if (AGENCY_DEFAULT_TABS.includes(tab)) {
         const d = domainScope(ctx);
         if (d.all) row("Global", label, "All agencies", "All regions", shown.length, "No");
         else if (d.agencies.length) {

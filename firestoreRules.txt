@@ -13,6 +13,10 @@ service cloud.firestore {
     //   - dashboard_grants/{email}: per tab, the clients of chosen agencies ×
     //     regions, or specific clients (`clients`: ids; not on mediaocean /
     //     reports) — read-only; a Forecaster grant with `edit` also writes.
+    //   - MediaBox allocations (CL_MediaBox_Emails on the client doc), while
+    //     config/mediabox_allocations.enabled is on: an agency email reads the
+    //     data of its allocated clients instead of its agency's (their client
+    //     docs too); company-wide domains are unaffected.
     //   - Admins: everything.
 
     function isAuthenticated() {
@@ -123,10 +127,34 @@ service cloud.firestore {
     function domainCoversAgency(agency) {
       return isCompanyDomain() || (agency != '_unassigned' && domainOwnsAgency(agency));
     }
-    // Read a client doc's data (from its fields): team, domain's agency, grant.
+    // ─── MediaBox allocations ──────────────────────────────────────────────────
+    // On for everyone (`enabled`), or for the pilot emails only.
+    function allocationsOn() {
+      let path = /databases/$(database)/documents/config/mediabox_allocations;
+      return exists(path) && (
+        get(path).data.get('enabled', false) == true ||
+        myEmail() in get(path).data.get('pilotEmails', [])
+      );
+    }
+    // The client doc lists me as allocated in MediaBox (switch on).
+    function allocatedTo(d) {
+      return allocationsOn() && myEmail() in d.get('CL_MediaBox_Emails', []);
+    }
+    // The email domain reads this client's data: a company-wide domain →
+    // every client; else, with allocations on, only allocated clients, or
+    // with them off, its agencies' clients.
+    function domainCoversClientData(d) {
+      return isCompanyDomain() || (
+        allocationsOn()
+          ? myEmail() in d.get('CL_MediaBox_Emails', [])
+          : (d.CL_Agency != '_unassigned' && domainOwnsAgency(d.CL_Agency))
+      );
+    }
+    // Read a client doc's data (from its fields): team, domain (agency or
+    // allocations), grant.
     function canReadClientFields(clientId, d) {
       return myEmail() in d.get('CL_Team_Emails', []) ||
-        domainCoversAgency(d.CL_Agency) ||
+        domainCoversClientData(d) ||
         anyGrantCovers(clientId, d.CL_Agency, d.get('CL_Business_Unit_Region', ''));
     }
 
@@ -212,12 +240,16 @@ service cloud.firestore {
       // Admin; the team (the "my clients" array-contains query); the email
       // domain's agencies (`CL_Agency ==` queries; a company-wide domain the
       // whole collection); a grant (equality queries on CL_Agency and/or
-      // CL_Business_Unit_Region, or a get of a listed client). Fields are read
-      // off the document itself.
+      // CL_Business_Unit_Region, or a get of a listed client); with MediaBox
+      // allocations on, the allocated clients (`CL_MediaBox_Emails`
+      // array-contains — they may sit in another agency). The agency's docs
+      // stay readable (Media Investments still lists them); their data
+      // narrows (canReadClientFields). Fields are read off the document itself.
       allow read: if isAdmin() || (
         isActive() && (
           myEmail() in resource.data.CL_Team_Emails ||
           domainCoversAgency(resource.data.CL_Agency) ||
+          allocatedTo(resource.data) ||
           anyGrantCovers(clientId, resource.data.CL_Agency, resource.data.CL_Business_Unit_Region)
         )
       );

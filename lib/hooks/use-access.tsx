@@ -10,18 +10,22 @@
  *   - `hasAnyAccess`: either of the above (else "Access pending");
  *   - `tabCovers` / `tabAgencyScope`: which clients and agency-tagged data
  *     each tab shows; `readable` / `readableQueries`: what the rules let them
- *     read; `editGrant` / `editQueries`: the clients a grant lets them edit.
+ *     read; `canReadData`: whose data (forecast, MediaBox totals, …) they may
+ *     load; `editGrant` / `editQueries`: the clients a grant lets them edit.
+ *   - `mediaboxAllocations`: the allocations switch (config/mediabox_allocations)
+ *     is on for them (for everyone, or as a pilot).
  * Presentation only — the security rules enforce the same model.
  */
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useUserProfile } from "./use-user-profile";
-import { fetchAccessibleClients } from "../services/assignment-service";
-import { subscribeToDashboardAccess } from "../services/dashboard-access-service";
+import { fetchAccessibleClients, fetchAllocatedClientIds } from "../services/assignment-service";
+import { subscribeToDashboardAccess, subscribeToMediaboxAllocations } from "../services/dashboard-access-service";
 import { subscribeToMyGrants } from "../services/dashboard-grants-service";
 import { fetchAgencies, fetchCompanyDomains } from "../services/agency-service";
 import {
   canOpenTeamSpaces,
+  canReadClient,
   editableClientQueries,
   editGrant as resolveEditGrant,
   hiddenPagesFor,
@@ -40,7 +44,9 @@ import type {
   DashboardGrantDoc,
   DashboardTabId,
   GrantScope,
+  MediaboxAllocationsConfig,
 } from "../types/access.types";
+import { normalizeEmail } from "../format/email";
 import type { Client } from "../types/client.types";
 
 interface AccessState {
@@ -60,6 +66,12 @@ interface AccessState {
   ctx: AccessCtx;
   /** Whether a tab shows a client. */
   tabCovers: (tab: DashboardTabId, client: Client) => boolean;
+  /** Whether they may load the client's data (rules: canReadClientData). */
+  canReadData: (client: Client) => boolean;
+  /** The MediaBox allocations switch is on. */
+  mediaboxAllocations: boolean;
+  /** Clients allocated to them in MediaBox (loaded only while the switch is on). */
+  allocatedClientIds: string[];
   /** Agency-tagged data a tab shows. */
   tabAgencyScope: (tab: DashboardTabId) => DashboardScope;
   /** Agency-tagged data they may read on any tab. */
@@ -88,12 +100,42 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   const [grants, setGrants] = useState<{ email: string; tabs: DashboardGrantDoc["tabs"] } | null>(null);
   const [team, setTeam] = useState<{ email: string; ids: string[] } | null>(null);
   const [mapping, setMapping] = useState<AgencyMapping | null>(null);
+  const [allocationsConfig, setAllocationsConfig] = useState<MediaboxAllocationsConfig | null>(null);
+  // On for everyone, or for this person as a pilot (null until loaded).
+  const allocations =
+    allocationsConfig === null
+      ? null
+      : allocationsConfig.enabled || allocationsConfig.pilotEmails.includes(normalizeEmail(email));
+  const [allocated, setAllocated] = useState<{ email: string; ids: string[] } | null>(null);
 
   // Subscribe once signed in (a signed-out read is denied and would stick).
   useEffect(() => {
     if (!email) return;
     return subscribeToDashboardAccess(setConfig);
   }, [email]);
+
+  useEffect(() => {
+    if (!email) return;
+    return subscribeToMediaboxAllocations(setAllocationsConfig);
+  }, [email]);
+
+  // Their MediaBox allocations — only readable (and only needed) while the
+  // switch is on. A failure leaves them with none.
+  useEffect(() => {
+    if (!email || isAdmin || disabled || !allocations) return;
+    let cancelled = false;
+    fetchAllocatedClientIds(email)
+      .then((ids) => {
+        if (!cancelled) setAllocated({ email, ids });
+      })
+      .catch((err) => {
+        console.error("Failed to load MediaBox allocations:", err);
+        if (!cancelled) setAllocated({ email, ids: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [email, isAdmin, disabled, allocations]);
 
   useEffect(() => {
     if (!email) return;
@@ -144,6 +186,9 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     const teamReady = isAdmin || disabled || team?.email === email;
     const teamClientIds = team?.email === email ? team.ids : [];
     const teamClientCount = teamClientIds.length;
+    const mediaboxAllocations = allocations === true;
+    const allocatedReady = isAdmin || disabled || !mediaboxAllocations || allocated?.email === email;
+    const allocatedClientIds = mediaboxAllocations && allocated?.email === email ? allocated.ids : [];
     const ctx: AccessCtx = {
       email,
       isAdmin,
@@ -152,11 +197,19 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       companyDomains: mapping?.companyDomains ?? [],
       grants: myGrants,
       dashboardAccess,
+      mediaboxAllocations,
     };
-    const open = resolveOpenTabs(ctx, teamClientCount);
+    const open = resolveOpenTabs(ctx, teamClientCount, allocatedClientIds.length);
     const hasTeamSpaces = canOpenTeamSpaces(ctx, teamClientCount);
     return {
-      loading: profileLoading || !config || !mapping || !teamReady || (!!email && grants?.email !== email),
+      loading:
+        profileLoading ||
+        !config ||
+        !mapping ||
+        !teamReady ||
+        allocations === null ||
+        !allocatedReady ||
+        (!!email && grants?.email !== email),
       teamClientCount,
       teamClientIds,
       dashboardAccess,
@@ -166,6 +219,9 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       hasAnyAccess: hasTeamSpaces || open.length > 0,
       ctx,
       tabCovers: (tab, client) => tabCoversClient(ctx, tab, client),
+      canReadData: (client) => canReadClient(ctx, client),
+      mediaboxAllocations,
+      allocatedClientIds,
       tabAgencyScope: (tab) => tabAgencyScope(ctx, tab),
       readable: readableAgencyScope(ctx),
       readableQueries: readableClientQueries(ctx),
@@ -173,7 +229,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       editQueries: editableClientQueries(ctx),
       hiddenSubtabs: hiddenPagesFor(ctx),
     };
-  }, [config, grants, mapping, team, email, isAdmin, disabled, profileLoading]);
+  }, [config, grants, mapping, team, allocations, allocated, email, isAdmin, disabled, profileLoading]);
 
   return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;
 }
