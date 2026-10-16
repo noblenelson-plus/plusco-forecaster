@@ -17,10 +17,23 @@
  *
  * Mirrors storage.rules: the manifest needs an active user; an agency file
  * needs admin, or an active user whose domain or grants cover the agency.
+ * While MediaBox allocations apply to an agency email
+ * (config/mediabox_allocations), its domain no longer covers the agency:
+ * instead it gets the file filtered to its clients (allocated in MediaBox,
+ * plus its team's clients with no MediaBox link — tabClientIds in
+ * lib/format/access.ts), possibly empty (lib/server/report-filter.ts).
  */
 
-import { normalizeGrantTabs, readableAgencyScope, scopeCoversAgency } from "../format/access";
-import { emailDomain, normalizeDomain, normalizeEmail } from "../format/email";
+import {
+  isCompanyDomain,
+  normalizeGrantTabs,
+  readableAgencyScope,
+  scopeCoversAgency,
+  tabClientIds,
+  type AccessContext,
+} from "../format/access";
+import { emailDomain, normalizeDomain, normalizeEmail, normalizeEmailList } from "../format/email";
+import { filterSnapshotByClients } from "./report-filter";
 
 export const REPORT_BUCKET = "pluscoops.firebasestorage.app";
 const PROJECT_ID = "pluscoops";
@@ -90,6 +103,36 @@ async function getDoc(path: string, token: string): Promise<Record<string, unkno
   return decodeFields(((await res.json()) as { fields?: RestFields }).fields);
 }
 
+/**
+ * The clients an `array-contains` query returns (structured query on
+ * `clients`), as id + MediaBox links.
+ */
+async function queryClientsContaining(
+  field: string,
+  email: string,
+  token: string
+): Promise<{ cl_id: string; CL_MediaBox_IDs: string[] }[]> {
+  const res = await getJson(`${FIRESTORE}:runQuery`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: "clients" }],
+        where: { fieldFilter: { field: { fieldPath: field }, op: "ARRAY_CONTAINS", value: { stringValue: email } } },
+        select: { fields: [{ fieldPath: "CL_MediaBox_IDs" }] },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Firestore clients query (${field}): HTTP ${res.status}`);
+  const rows = (await res.json()) as { document?: { name: string; fields?: RestFields } }[];
+  return rows
+    .filter((r) => r.document)
+    .map((r) => ({
+      cl_id: decodeURIComponent(r.document!.name.slice(r.document!.name.lastIndexOf("/") + 1)),
+      CL_MediaBox_IDs: strings(decodeFields(r.document!.fields).CL_MediaBox_IDs),
+    }));
+}
+
 /** Agency doc id → its `domains`. */
 async function fetchAgencyDomains(token: string): Promise<Record<string, string[]>> {
   const out: Record<string, string[]> = {};
@@ -138,8 +181,8 @@ export async function readReportFile(path: string, idToken: string): Promise<Rep
   if (!caller) return { ok: false, status: 401, error: "Invalid or expired sign-in token." };
 
   const token = await serviceToken();
-  const denied = await checkReportAccess(path, caller.email, caller.emailVerified, token);
-  if (denied) return denied;
+  const access = await checkReportAccess(path, caller.email, caller.emailVerified, token);
+  if ("ok" in access) return access;
 
   const res = await getJson(
     `https://storage.googleapis.com/storage/v1/b/${REPORT_BUCKET}/o/${encodeURIComponent(path)}?alt=media`,
@@ -147,33 +190,44 @@ export async function readReportFile(path: string, idToken: string): Promise<Rep
   );
   if (res.status === 404) return { ok: false, status: 404, error: "Not published." };
   if (!res.ok) throw new Error(`Storage download HTTP ${res.status}`);
+  const body = await res.arrayBuffer();
   return {
     ok: true,
-    body: await res.arrayBuffer(),
+    body: access.clientIds ? filterSnapshotByClients(body, access.clientIds) : body,
     contentType: res.headers.get("content-type") ?? "application/octet-stream",
   };
 }
 
+/** Allowed: the whole file (`clientIds` null), or only these clients' rows. */
+type ReportGrant = { clientIds: ReadonlySet<string> | null };
+
+/** config/mediabox_allocations is on for this email (for everyone, or as a pilot). */
+function allocationsOnFor(config: Record<string, unknown> | null, email: string): boolean {
+  return config?.enabled === true || normalizeEmailList(strings(config?.pilotEmails)).includes(email);
+}
+
 /**
- * The storage.rules decision for one caller: null = allowed, else the refusal.
- * `token` is a service-account access token.
+ * The storage.rules decision for one caller — plus, while MediaBox
+ * allocations apply, the clients whose rows they get. `token` is a
+ * service-account access token.
  */
 export async function checkReportAccess(
   path: string,
   rawEmail: string | undefined,
   emailVerified: boolean,
   token: string
-): Promise<Refusal | null> {
+): Promise<Refusal | ReportGrant> {
   const email = normalizeEmail(rawEmail);
   if (!email || !emailVerified) {
     return { ok: false, status: 403, error: "A verified company email is required." };
   }
 
-  const [user, signIn, company, grant] = await Promise.all([
+  const [user, signIn, company, grant, allocations] = await Promise.all([
     getDoc(`users/${email}`, token),
     getDoc("config/sign_in_domains", token),
     getDoc("config/company_domains", token),
     getDoc(`dashboard_grants/${email}`, token),
+    getDoc("config/mediabox_allocations", token),
   ]);
 
   // isActive: company domain allowed to sign in, a users row, not revoked.
@@ -183,19 +237,31 @@ export async function checkReportAccess(
   }
 
   const agencyMatch = path.match(/^reports\/[^/]+\/([^/]+)\/data\.json\.gz$/);
-  if (agencyMatch) {
-    const scope = readableAgencyScope({
-      email,
-      isAdmin: user.role === "ADMIN",
-      disabled: false,
-      agencyDomains: await fetchAgencyDomains(token),
-      companyDomains: strings(company?.domains),
-      grants: normalizeGrantTabs(grant?.tabs),
-      dashboardAccess: { hiddenTabs: [], hiddenSubtabs: [] },
-    });
-    if (!scopeCoversAgency(scope, agencyMatch[1])) {
-      return { ok: false, status: 403, error: "No access to this agency's report." };
-    }
+  if (!agencyMatch) return { clientIds: null };
+
+  const ctx: AccessContext = {
+    email,
+    isAdmin: user.role === "ADMIN",
+    disabled: false,
+    agencyDomains: await fetchAgencyDomains(token),
+    companyDomains: strings(company?.domains),
+    grants: normalizeGrantTabs(grant?.tabs),
+    dashboardAccess: { hiddenTabs: [], hiddenSubtabs: [] },
+    mediaboxAllocations: allocationsOnFor(allocations, email),
+  };
+  // The whole file: admin, company-wide domain, grants — and the domain's
+  // agencies while allocations don't apply (readableAgencyScope drops those
+  // while they do).
+  if (scopeCoversAgency(readableAgencyScope(ctx), agencyMatch[1])) return { clientIds: null };
+
+  // Allocations: their clients' rows only (an empty file when they have none here).
+  if (ctx.mediaboxAllocations && !ctx.isAdmin && !isCompanyDomain(email, ctx.companyDomains)) {
+    const [allocated, team] = await Promise.all([
+      queryClientsContaining("CL_MediaBox_Emails", email, token),
+      queryClientsContaining("CL_Team_Emails", email, token),
+    ]);
+    const ids = tabClientIds(ctx, "reports", team, allocated.map((c) => c.cl_id)) ?? [];
+    if (ids.length) return { clientIds: new Set(ids) };
   }
-  return null;
+  return { ok: false, status: 403, error: "No access to this agency's report." };
 }

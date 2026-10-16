@@ -89,9 +89,10 @@ export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "la
  * sees every client; grants still add on top. MediaBox Adoption opens for
  * allocated people too (otherwise it is grants only). On Media Investments the
  * MediaOcean rows follow too: they are read by client (`_clientId`) instead
- * of by agency.
+ * of by agency, and the Reports files come filtered to their clients (the
+ * report-file route, lib/server/report-access.ts).
  */
-export const ALLOCATION_TABS: readonly DashboardTabId[] = ["labs-pacing", "mediabox", "mediaocean"];
+export const ALLOCATION_TABS: readonly DashboardTabId[] = ["labs-pacing", "mediabox", "mediaocean", "reports"];
 
 /** `config/mediabox_allocations` — the allocations switch. */
 export interface MediaboxAllocationsConfig {

@@ -35,7 +35,7 @@ import {
   isConnected,
   isGoogleConfigured,
 } from "../../../lib/services/google-sheets-service";
-import { useAgencyScope } from "../../../lib/hooks/use-agency-scope";
+import { useDashboardDocScope } from "../../../lib/hooks/use-agency-scope";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { disambiguatePersonOptions, personLabel } from "../../../lib/format/person";
 import { agencyScopeLabel } from "../../../lib/format/agency-scope";
@@ -151,7 +151,10 @@ export default function RawTablePage({
   moneyFields,
   exportTitle,
 }: RawTablePageProps) {
-  const { scope, loading: scopeLoading } = useAgencyScope();
+  // `clientIds`: while MediaBox allocations apply, the person's clients — the
+  // other agencies' files then come filtered to them (report-file route).
+  const { scope, clientIds, loading: scopeLoading } = useDashboardDocScope();
+  const byClient = !!clientIds?.length;
   const [report, setReport] = useState<LoadedReport | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
@@ -170,7 +173,7 @@ export default function RawTablePage({
       setLoading(true);
       setError(null);
       try {
-        const loaded = await loadReport(tableKey, scope);
+        const loaded = await loadReport(tableKey, scope, byClient);
         if (!cancelled) setReport(loaded);
       } catch (e) {
         if (!cancelled) {
@@ -184,7 +187,7 @@ export default function RawTablePage({
     return () => {
       cancelled = true;
     };
-  }, [tableKey, scope, scopeLoading]);
+  }, [tableKey, scope, byClient, scopeLoading]);
 
   const table = report?.table ?? null;
 

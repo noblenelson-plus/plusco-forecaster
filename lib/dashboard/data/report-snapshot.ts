@@ -25,7 +25,7 @@
  */
 
 import { auth } from "../../firebase";
-import { scopeCoversAgency, type AgencyScope } from "../../format/agency-scope";
+import { UNASSIGNED_AGENCY, scopeCoversAgency, type AgencyScope } from "../../format/agency-scope";
 
 export type ReportTable = "mir" | "billing";
 
@@ -186,10 +186,12 @@ const fileCache = new Map<string, Promise<ColumnarTable>>();
 function loadAgencyFile(
   table: ReportTable,
   agency: string,
-  syncedAt: string
+  syncedAt: string,
+  byClient = false
 ): Promise<ColumnarTable> {
   const path = `reports/${table}/${agency}/data.json.gz`;
-  const key = `${path}@${syncedAt}`;
+  // A by-client file (filtered server-side) is cached apart from a whole one.
+  const key = `${path}@${syncedAt}${byClient ? "#mine" : ""}`;
   let p = fileCache.get(key);
   if (!p) {
     p = (async () => {
@@ -278,11 +280,15 @@ function mergeTables(parts: ColumnarTable[]): ColumnarTable {
 /**
  * Loads one report table for the Reports dashboard's scope: the published
  * agency files the scope covers (the "_unassigned" file only for admins and
- * Global mode).
+ * Global mode). `byClient` (MediaBox allocations apply to the person): every
+ * other agency's file too, which the report-file route filters to the
+ * person's clients — agencies where they have none come back empty and are
+ * left out.
  */
 export async function loadReport(
   table: ReportTable,
-  scope: AgencyScope
+  scope: AgencyScope,
+  byClient = false
 ): Promise<LoadedReport> {
   const manifest = await fetchManifest();
   const entry = manifest.tables?.[table];
@@ -291,18 +297,27 @@ export async function loadReport(
       "This report hasn't been published yet. It appears after the next monthly data sync."
     );
   }
-  const agencies = entry.agencies.filter((a) => scopeCoversAgency(scope, a));
-  if (agencies.length === 0) {
+  const whole = entry.agencies.filter((a) => scopeCoversAgency(scope, a));
+  const mine = byClient
+    ? entry.agencies.filter((a) => a !== UNASSIGNED_AGENCY && !whole.includes(a))
+    : [];
+  const loaded = await Promise.all([
+    ...whole.map((a) => loadAgencyFile(table, a, entry.syncedAt).then((t) => ({ a, t }))),
+    ...mine.map((a) => loadAgencyFile(table, a, entry.syncedAt, true).then((t) => ({ a, t }))),
+  ]);
+  const parts = loaded.filter(({ a, t }) => whole.includes(a) || t.rowCount > 0);
+  if (parts.length === 0) {
     return {
       table: { columns: [], rowCount: 0, dicts: {}, idx: {} },
       agencies: [],
       syncedAt: entry.syncedAt,
     };
   }
-  const parts = await Promise.all(
-    agencies.map((a) => loadAgencyFile(table, a, entry.syncedAt))
-  );
-  return { table: mergeTables(parts), agencies, syncedAt: entry.syncedAt };
+  return {
+    table: mergeTables(parts.map((p) => p.t)),
+    agencies: parts.map((p) => p.a).sort(),
+    syncedAt: entry.syncedAt,
+  };
 }
 
 // ─── Query helpers (pure, in memory) ──────────────────────────────────────────
