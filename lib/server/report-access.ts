@@ -17,15 +17,14 @@
  *
  * Mirrors storage.rules: the manifest needs an active user; an agency file
  * needs admin, or an active user whose domain or grants cover the agency.
- * While MediaBox allocations apply to an agency email
- * (config/mediabox_allocations), its domain no longer covers the agency:
+ * While MediaBox allocations apply to a non-admin (config/mediabox_allocations;
+ * any domain, company-wide ones included), its domain no longer covers the agency:
  * instead it gets the file filtered to its clients (allocated in MediaBox,
  * plus every client whose team it is on — tabClientIds in
  * lib/format/access.ts), possibly empty (lib/server/report-filter.ts).
  */
 
 import {
-  isCompanyDomain,
   normalizeGrantTabs,
   readableAgencyScope,
   scopeCoversAgency,
@@ -249,13 +248,13 @@ export async function checkReportAccess(
     dashboardAccess: { hiddenTabs: [], hiddenSubtabs: [] },
     mediaboxAllocations: allocationsOnFor(allocations, email),
   };
-  // The whole file: admin, company-wide domain, grants — and the domain's
-  // agencies while allocations don't apply (readableAgencyScope drops those
-  // while they do).
+  // The whole file: admin, grants — and the domain's agencies (every agency
+  // for a company-wide domain) while allocations don't apply
+  // (readableAgencyScope drops the domain while they do).
   if (scopeCoversAgency(readableAgencyScope(ctx), agencyMatch[1])) return { clientIds: null };
 
   // Allocations: their clients' rows only (an empty file when they have none here).
-  if (ctx.mediaboxAllocations && !ctx.isAdmin && !isCompanyDomain(email, ctx.companyDomains)) {
+  if (ctx.mediaboxAllocations && !ctx.isAdmin) {
     const [allocated, team] = await Promise.all([
       queryClientsContaining("CL_MediaBox_Emails", email, token),
       queryClientsContaining("CL_Team_Emails", email, token),
