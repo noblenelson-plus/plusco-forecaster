@@ -14,9 +14,10 @@ service cloud.firestore {
     //     regions, or specific clients (`clients`: ids; not on mediaocean /
     //     reports) — read-only; a Forecaster grant with `edit` also writes.
     //   - MediaBox allocations (CL_MediaBox_Emails on the client doc), while
-    //     config/mediabox_allocations.enabled is on: an agency email reads the
-    //     data of its allocated clients instead of its agency's (their client
-    //     docs too); company-wide domains are unaffected.
+    //     config/mediabox_allocations.enabled is on: every non-admin email,
+    //     company-wide domains included, reads the data of its allocated
+    //     clients instead of its domain's agencies (their client docs too);
+    //     a wider view comes from grants.
     //   - Admins: everything.
 
     function isAuthenticated() {
@@ -140,15 +141,13 @@ service cloud.firestore {
     function allocatedTo(d) {
       return allocationsOn() && myEmail() in d.get('CL_MediaBox_Emails', []);
     }
-    // The email domain reads this client's data: a company-wide domain →
-    // every client; else, with allocations on, only allocated clients, or
-    // with them off, its agencies' clients.
+    // The email domain reads this client's data: with allocations on, only
+    // allocated clients (any domain); with them off, its agencies' clients (a
+    // company-wide domain → every client).
     function domainCoversClientData(d) {
-      return isCompanyDomain() || (
-        allocationsOn()
-          ? myEmail() in d.get('CL_MediaBox_Emails', [])
-          : (d.CL_Agency != '_unassigned' && domainOwnsAgency(d.CL_Agency))
-      );
+      return allocationsOn()
+        ? myEmail() in d.get('CL_MediaBox_Emails', [])
+        : (isCompanyDomain() || (d.CL_Agency != '_unassigned' && domainOwnsAgency(d.CL_Agency)));
     }
     // Read a client doc's data (from its fields): team, domain (agency or
     // allocations), grant.
@@ -187,12 +186,12 @@ service cloud.firestore {
     // Agency-tagged dashboard data (MediaOcean collections; storage.rules
     // mirrors it for the Reports snapshots). Non-admin queries filter
     // `_agency == <agency>` unless the caller covers every agency. While
-    // MediaBox allocations are on, an agency email no longer reads its
-    // agency's rows wholesale — only its clients' rows, by `_clientId`
-    // (canReadClientRow). Company-wide domains and grants are unchanged.
+    // MediaBox allocations are on, no email domain (company-wide ones
+    // included) reads agency rows wholesale — only its clients' rows, by
+    // `_clientId` (canReadClientRow). Grants are unchanged.
     function canReadAgencyData(agency) {
       return isAdmin() || (isActive() && (
-        (domainCoversAgency(agency) && (isCompanyDomain() || !allocationsOn())) ||
+        (domainCoversAgency(agency) && !allocationsOn()) ||
         anyGrantCoversAgency(agency)
       ));
     }

@@ -32,7 +32,6 @@ import {
   grantScopeLabel,
   hiddenPagesFor,
   isAllocatedTo,
-  isCompanyDomain,
   myAgencies,
   tabCoversClient,
   type AccessContext,
@@ -54,9 +53,9 @@ export interface AccessReportInput {
   tabLabels: Record<DashboardTabId, string>;
 }
 
-/** The tab follows MediaBox allocations for this (non-admin) person. */
+/** The tab follows MediaBox allocations for this (non-admin) person — any domain. */
 function followsAllocations(ctx: AccessContext, tab: DashboardTabId): boolean {
-  return !!ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab) && !isCompanyDomain(ctx.email, ctx.companyDomains);
+  return !!ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab);
 }
 
 const day = (u: UserRecord | undefined) => u?.lastLoginAt?.toDate?.().toISOString().slice(0, 10) ?? "";
@@ -117,7 +116,6 @@ export function buildAccessSummary(input: AccessReportInput): string[][] {
         const parts: string[] = [];
         if (tab === "forecaster" && teamCount) parts.push("Own clients");
         if (followsAllocations(ctx, tab)) parts.push("MediaBox allocations");
-        else if (ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab)) parts.push("All agencies");
         else if (AGENCY_DEFAULT_TABS.includes(tab)) {
           const d = domainScope(ctx);
           parts.push(d.all ? "All agencies" : `Agency: ${d.agencies.join(", ")}`);
@@ -229,9 +227,6 @@ export function buildAllAccess(input: AccessReportInput): string[][] {
         if (allocated.length) {
           row("MediaBox", label, uniq(allocated.map((c) => c.CL_Agency)), uniq(allocated.map((c) => c.CL_Business_Unit_Region)), allocated.length, "No");
         }
-      } else if (ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab)) {
-        // A company-wide domain keeps every client.
-        row("Global", label, "All agencies", "All regions", shown.length, "No");
       } else if (AGENCY_DEFAULT_TABS.includes(tab)) {
         const d = domainScope(ctx);
         if (d.all) row("Global", label, "All agencies", "All regions", shown.length, "No");

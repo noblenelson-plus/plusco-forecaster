@@ -2,24 +2,25 @@
 
 /**
  * Access resolution, as pure functions (no Firebase). This is the reference
- * logic: firestoreRules.txt and storage.rules mirror it â€” change them
+ * logic: firestoreRules.txt and storage.rules mirror it — change them
  * together.
  *
  * A person's access comes from three sources:
- *   1. Client team (CL_Team_Emails) â€” read + edit their clients; the team
+ *   1. Client team (CL_Team_Emails) — read + edit their clients; the team
  *      spaces (Forecast, Flags, Milestones, Clients) and the Forecaster tab.
- *   2. Email domain â€” every company email sees Media Investments, Labs
+ *   2. Email domain — every company email sees Media Investments, Labs
  *      Pacing and Reports (AGENCY_DEFAULT_TABS) for the agencies its domain
  *      maps to; a company-wide domain (config/company_domains, e.g.
  *      pluscompany.com) sees every agency, like an admin.
- *   3. Grants (dashboard_grants/{email}) â€” per tab, the clients of chosen
- *      agencies Ã— regions, or specific clients (CLIENT_GRANT_TABS only),
+ *   3. Grants (dashboard_grants/{email}) — per tab, the clients of chosen
+ *      agencies × regions, or specific clients (CLIENT_GRANT_TABS only),
  *      read-only; a Forecaster grant may also allow editing. Exec KPI and
  *      MediaBox Adoption are grants only.
  *   4. MediaBox allocations (CL_MediaBox_Emails), once the switch
- *      (config/mediabox_allocations) is on: on ALLOCATION_TABS an agency
- *      email sees its allocated clients plus its own team clients instead of
- *      its whole agency, and reads only their data.
+ *      (config/mediabox_allocations) is on: on ALLOCATION_TABS every non-admin
+ *      (company-wide domains included) sees its allocated clients plus its
+ *      own team clients instead of its domain's agencies, and reads only their
+ *      data; a wider view comes from grants.
  *   Admins see and edit everything. Disabled users get nothing. Tabs an
  *   admin hides (config/dashboard_access) disappear for everyone, admins too.
  *
@@ -51,7 +52,7 @@ export interface AccessContext {
   email: string;
   isAdmin: boolean;
   disabled?: boolean;
-  /** agency name â†’ its email domains (the `agencies` collection). */
+  /** agency name → its email domains (the `agencies` collection). */
   agencyDomains: Record<string, string[]>;
   /** config/company_domains: domains that map to every agency. */
   companyDomains: string[];
@@ -67,7 +68,7 @@ export interface AccessContext {
 const EVERYTHING: AgencyScope = { all: true, agencies: [], includesUnassigned: true };
 const NOTHING: AgencyScope = { all: false, agencies: [], includesUnassigned: false };
 
-// â”€â”€â”€ Normalization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Normalization ────────────────────────────────────────────────────────────
 
 const TAB_SET = new Set<string>(DASHBOARD_TABS);
 
@@ -91,7 +92,7 @@ export function normalizeGrantScope(raw: unknown, tab: DashboardTabId): GrantSco
   // Investments / Reports, whose data is split by agency).
   const clients = CLIENT_GRANT_TABS.includes(tab) ? list(s.clients) : [];
   if (clients.length) {
-    // The "specific clients" kind: the agency Ã— region rule stays empty.
+    // The "specific clients" kind: the agency × region rule stays empty.
     const scope: GrantScope = { allAgencies: false, agencies: [], allRegions: false, regions: [], clients };
     if (tab === "forecaster" && s.edit === true) scope.edit = true;
     return scope;
@@ -124,21 +125,21 @@ export function normalizeGrantTabs(raw: unknown): DashboardGrantDoc["tabs"] {
 }
 
 /**
- * "All agencies Â· QC/East", or "Clients: Acme, Globex" â€” for lists.
+ * "All agencies · QC/East", or "Clients: Acme, Globex" — for lists.
  * `clientName` resolves a client id to its name (falls back to the id).
  */
 export function grantScopeLabel(scope: GrantScope, clientName?: (id: string) => string | undefined): string {
-  const edit = scope.edit ? " Â· can edit" : "";
+  const edit = scope.edit ? " · can edit" : "";
   if (isClientGrant(scope)) {
     const names = scope.clients!.map((id) => clientName?.(id) || id).sort((a, b) => a.localeCompare(b));
     return `Clients: ${names.join(", ")}${edit}`;
   }
   const a = scope.allAgencies ? "All agencies" : scope.agencies.join(", ");
   const r = scope.allRegions ? "all regions" : scope.regions.join(", ");
-  return `${a} Â· ${r}${edit}`;
+  return `${a} · ${r}${edit}`;
 }
 
-// â”€â”€â”€ Agencies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Agencies ─────────────────────────────────────────────────────────────────
 
 /** The caller's domain is company-wide (maps to every agency). */
 export function isCompanyDomain(email: string, companyDomains: string[]): boolean {
@@ -171,7 +172,7 @@ export function domainScope(ctx: AccessContext): AgencyScope {
   return { all: false, agencies: mine.agencies, includesUnassigned: false };
 }
 
-// â”€â”€â”€ MediaBox allocations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── MediaBox allocations ─────────────────────────────────────────────────────
 
 type AllocationFields = Pick<Client, "CL_MediaBox_IDs" | "CL_MediaBox_Emails" | "CL_Team_Emails">;
 
@@ -182,11 +183,12 @@ export function isAllocatedTo(email: string, client: Pick<Client, "CL_MediaBox_E
 }
 
 /**
- * Allocations replace the email domain for this person: the switch is on and
- * the domain isn't company-wide (those keep every client). Admins aside.
+ * Allocations replace the email domain for this person: the switch is on (any
+ * domain, company-wide ones included — a wider view comes from grants).
+ * Admins aside.
  */
 function allocationsReplaceDomain(ctx: AccessContext): boolean {
-  return !!ctx.mediaboxAllocations && !ctx.isAdmin && !isCompanyDomain(ctx.email, ctx.companyDomains);
+  return !!ctx.mediaboxAllocations && !ctx.isAdmin;
 }
 
 /**
@@ -198,9 +200,9 @@ export function allocationCoversClient(ctx: AccessContext, client: AllocationFie
   return isAllocatedTo(ctx.email, client) || isOnClientTeam(ctx.email, client);
 }
 
-// â”€â”€â”€ Grants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Grants ───────────────────────────────────────────────────────────────────
 
-/** Whether a grant scope covers a client (listed, or agency Ã— region). */
+/** Whether a grant scope covers a client (listed, or agency × region). */
 export function grantCoversClient(
   scope: GrantScope | null | undefined,
   client: Pick<Client, "cl_id" | "CL_Agency" | "CL_Business_Unit_Region">
@@ -215,7 +217,7 @@ export function grantCoversClient(
 
 /**
  * The agencies a grant scope covers, for agency-tagged data (regions don't
- * apply; specific-client grants open no agency data â€” their rule is empty).
+ * apply; specific-client grants open no agency data — their rule is empty).
  */
 function grantAgencyScope(scope: GrantScope | null | undefined): AgencyScope {
   if (!scope) return NOTHING;
@@ -237,10 +239,10 @@ export function editGrant(ctx: AccessContext): GrantScope | null {
   return g?.edit ? g : null;
 }
 
-// â”€â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
 
 /**
- * Tab and sub-tab ids hidden on the dashboard â€” for everyone, admins
+ * Tab and sub-tab ids hidden on the dashboard — for everyone, admins
  * included (they unhide them on Dashboard Access, which always lists them).
  * Hiding is presentation only; it doesn't change what anyone may read.
  */
@@ -249,7 +251,7 @@ export function hiddenPagesFor(ctx: Pick<AccessContext, "dashboardAccess">): Set
 }
 
 /**
- * Whether the caller may open a tab (ignores hiding â€” see openTabs).
+ * Whether the caller may open a tab (ignores hiding — see openTabs).
  * `allocatedClientCount`: clients whose CL_MediaBox_Emails lists them (only
  * loaded while allocations are on).
  */
@@ -264,9 +266,7 @@ export function canOpenTab(
   if (ctx.grants[tab]) return true;
   if (tab === "forecaster") return teamClientCount > 0;
   if (ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab)) {
-    // Company-wide domains keep every client; agency emails need an
-    // allocation or a team client.
-    if (isCompanyDomain(ctx.email, ctx.companyDomains)) return true;
+    // An allocation or a team client (a grant is handled above).
     return allocatedClientCount > 0 || teamClientCount > 0;
   }
   if (AGENCY_DEFAULT_TABS.includes(tab)) {
@@ -293,7 +293,7 @@ export function tabCoversClient(
   if (grantCoversClient(ctx.grants[tab], client)) return true;
   if (tab === "forecaster") return isOnClientTeam(ctx.email, client);
   if (ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab)) {
-    return isCompanyDomain(ctx.email, ctx.companyDomains) || allocationCoversClient(ctx, client);
+    return allocationCoversClient(ctx, client);
   }
   if (AGENCY_DEFAULT_TABS.includes(tab)) return scopeCoversAgency(domainScope(ctx), client.CL_Agency);
   return false;
@@ -342,7 +342,7 @@ export function readableAgencyScope(ctx: AccessContext): AgencyScope {
   return DASHBOARD_TABS.reduce((acc, t) => unionScopes(acc, tabAgencyScope(ctx, t)), NOTHING);
 }
 
-// â”€â”€â”€ Clients â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Clients ──────────────────────────────────────────────────────────────────
 
 /**
  * One `clients` read the rules can verify: the whole collection, equality
@@ -386,7 +386,7 @@ function dedupeSpecs(specs: ClientQuerySpec[]): ClientQuerySpec[] {
 /**
  * Every client query (beyond the team's) needed to load what the caller may
  * read: the domain's agencies, their MediaBox allocations (while the switch
- * is on â€” those clients may sit in another agency), then each grant scope.
+ * is on — those clients may sit in another agency), then each grant scope.
  * The domain's agency docs stay readable with allocations on (Media
  * Investments / Reports still follow agencies); only their data narrows.
  */
@@ -415,8 +415,8 @@ type ClientAccessFields = Pick<
 
 /**
  * Read a client's data (forecast, milestones, product tracking, MediaBox
- * totals, â€¦): admin, team member, any grant covering it, or through the email
- * domain â€” its agency, or, while allocations are on for an agency email, only
+ * totals, …): admin, team member, any grant covering it, or through the email
+ * domain — its agency, or, while allocations are on for an agency email, only
  * its MediaBox allocations. Rules: canReadClientData.
  */
 export function canReadClient(ctx: AccessContext, client: ClientAccessFields): boolean {

@@ -73,12 +73,12 @@ service firebase.storage {
       );
     }
     // Mirrors canReadAgencyData in firestoreRules.txt: admin; the email
-    // domain's agencies (not while allocations apply — those people get
-    // their clients' rows through the report-file route instead); any grant
-    // covering the agency.
+    // domain's agencies (not while allocations apply, company-wide domains
+    // included — those people get their clients' rows through the
+    // report-file route instead); any grant covering the agency.
     function canReadAgency(agency) {
       return isAdmin() || (isActive() && (
-        (domainCoversAgency(agency) && (isCompanyDomain() || !allocationsOn())) ||
+        (domainCoversAgency(agency) && !allocationsOn()) ||
         anyGrantCoversAgency(agency)
       ));
     }

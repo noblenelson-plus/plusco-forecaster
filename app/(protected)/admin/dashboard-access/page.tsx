@@ -74,7 +74,7 @@ function defaultAccess(tab: DashboardTabId, allocationsOn: boolean): { icon: Rea
   if (allocationsOn && ALLOCATION_TABS.includes(tab))
     return {
       icon: <Link2 size={13} />,
-      text: "Everyone — their MediaBox-allocated clients (Plus Company emails: all clients)",
+      text: "Everyone — their MediaBox-allocated clients and their own team clients",
     };
   if (AGENCY_DEFAULT_TABS.includes(tab))
     return { icon: <Building2 size={13} />, text: "Everyone — their own agency (Plus Company emails: all agencies)" };
@@ -597,10 +597,10 @@ function MediaboxAllocationsCard({
             </span>
           </h2>
           <p className="mt-1 max-w-2xl text-xs text-gray-500">
-            When on, Media Investments, Labs Pacing, MediaBox Adoption and Reports show agency emails only the clients they are allocated to in
-            MediaBox / Planner (plus the clients they are on the team for — nobody loses their own clients), instead of their whole
-            agency. Plus Company emails, admins and the people given access below are unchanged. Allocations update
-            live from MediaBox.
+            When on, Media Investments, Labs Pacing, MediaBox Adoption and Reports show everyone (Plus Company emails
+            included) only the clients they are allocated to in MediaBox / Planner, plus the clients they are on the team
+            for — nobody loses their own clients — instead of their whole agency. Admins and the people given access
+            below are unchanged: give a grant to anyone who needs a wider view. Allocations update live from MediaBox.
           </p>
           <p className="mt-1 text-xs text-gray-400">
             {linked} clients linked to MediaBox · {people} people allocated
