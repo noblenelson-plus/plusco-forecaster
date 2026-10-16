@@ -42,6 +42,8 @@ import { canWriteClient } from "../../lib/services/assignment-service";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useAccess } from "../../lib/hooks/use-access";
 import { triggerMediaboxRefresh } from "../../lib/services/mediabox-totals-service";
+import { fetchMediaboxClients, type MediaboxClientOption } from "../../lib/services/mediabox-clients-service";
+import MediaboxClientPicker from "./mediabox-client-picker";
 import { fetchUsers, type UserProfile } from "../../lib/services/user-service";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import {
@@ -105,6 +107,11 @@ const REQUIRED_FIELDS: Array<[keyof ClientFormData, string]> = [
   ["CL_Currency", "Currency"],
 ];
 
+/** "a, b, ,c" → ["a", "b", "c"] (the MediaBox ids are kept as one string in the form). */
+function splitIds(s: string): string[] {
+  return [...new Set(s.split(",").map((x) => x.trim()).filter(Boolean))];
+}
+
 /** Map any retired NEW_CLIENT status to ACTIVE (New == Active) when loading a
  * client into the form, so the edit panel never shows a status that is no
  * longer selectable; saving then persists ACTIVE. */
@@ -152,6 +159,29 @@ export default function ClientDrawer({
   const [form, setForm] = useState<ClientFormData>(EMPTY_FORM);
   const [gaiaInput, setGaiaInput] = useState("");
   const [mediaboxInput, setMediaboxInput] = useState("");
+  // MediaBox clients for the picker (admin-only read); null while loading or unavailable.
+  const [mediaboxOptions, setMediaboxOptions] = useState<MediaboxClientOption[] | null>(null);
+  useEffect(() => {
+    if (!open || !isAdmin || mediaboxOptions) return;
+    let cancelled = false;
+    fetchMediaboxClients()
+      .then((list) => {
+        if (!cancelled) setMediaboxOptions(list);
+      })
+      .catch((err) => console.warn("Couldn't load MediaBox clients:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isAdmin, mediaboxOptions]);
+  // MediaBox client id → the OTHER Forecaster clients already linked to it.
+  const mediaboxLinkedElsewhere = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const c of allClients) {
+      if (c.cl_id === client?.cl_id) continue;
+      for (const id of c.CL_MediaBox_IDs ?? []) m.set(id, [...(m.get(id) ?? []), c.CL_Name]);
+    }
+    return m;
+  }, [allClients, client?.cl_id]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -400,10 +430,7 @@ export default function ClientDrawer({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const mediaboxIds = mediaboxInput
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const mediaboxIds = splitIds(mediaboxInput);
 
     setSaving(true);
     setError("");
@@ -856,15 +883,19 @@ export default function ClientDrawer({
               </p>
             </Field>
 
-            <Field label="MediaBox client ID(s)">
-              <Input
-                value={mediaboxInput}
-                onChange={setMediaboxInput}
-                placeholder="e.g. abc123, def456"
+            <Field label="MediaBox client(s)">
+              <MediaboxClientPicker
+                value={splitIds(mediaboxInput)}
+                onChange={(ids) => setMediaboxInput(ids.join(", "))}
+                options={mediaboxOptions}
+                linkedElsewhere={mediaboxLinkedElsewhere}
+                disabled={!isAdmin}
               />
               <p className="text-xs text-gray-400 mt-1">
-                MediaBox client document IDs this client maps to (their actuals
-                are summed). Separate multiple IDs with commas.
+                The MediaBox / Planner client(s) this client is. People allocated
+                to them in MediaBox see this client on Labs Pacing, Media
+                Investments, Reports and MediaBox Adoption, and their MediaBox
+                actuals are summed here.
               </p>
             </Field>
 
