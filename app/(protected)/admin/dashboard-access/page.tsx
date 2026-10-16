@@ -597,7 +597,7 @@ function MediaboxAllocationsCard({
             </span>
           </h2>
           <p className="mt-1 max-w-2xl text-xs text-gray-500">
-            When on, Media Investments, Labs Pacing and MediaBox Adoption show agency emails only the clients they are allocated to in
+            When on, Media Investments, Labs Pacing, MediaBox Adoption and Reports show agency emails only the clients they are allocated to in
             MediaBox / Planner (plus their team&apos;s clients that have no MediaBox link), instead of their whole
             agency. Plus Company emails, admins and the people given access below are unchanged. Allocations update
             live from MediaBox.
