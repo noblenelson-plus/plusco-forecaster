@@ -84,8 +84,8 @@ export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "la
 /**
  * Tabs that follow MediaBox allocations once `config/mediabox_allocations` is
  * on: an agency email sees the clients it is allocated to in MediaBox
- * (CL_MediaBox_Emails) — plus, for clients with no MediaBox link, those whose
- * team it is on — instead of its whole agency. A company-wide domain still
+ * (CL_MediaBox_Emails) — plus every client whose team it is on (BL, DL, GM Pod,
+ * collaborator: nobody loses their own clients) — instead of its whole agency. A company-wide domain still
  * sees every client; grants still add on top. MediaBox Adoption opens for
  * allocated people too (otherwise it is grants only). On Media Investments the
  * MediaOcean rows follow too: they are read by client (`_clientId`) instead

@@ -20,7 +20,7 @@
  * While MediaBox allocations apply to an agency email
  * (config/mediabox_allocations), its domain no longer covers the agency:
  * instead it gets the file filtered to its clients (allocated in MediaBox,
- * plus its team's clients with no MediaBox link — tabClientIds in
+ * plus every client whose team it is on — tabClientIds in
  * lib/format/access.ts), possibly empty (lib/server/report-filter.ts).
  */
 
