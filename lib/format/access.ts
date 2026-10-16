@@ -18,8 +18,8 @@
  *      MediaBox Adoption are grants only.
  *   4. MediaBox allocations (CL_MediaBox_Emails), once the switch
  *      (config/mediabox_allocations) is on: on ALLOCATION_TABS an agency
- *      email sees its allocated clients (and its team's clients with no
- *      MediaBox link) instead of its whole agency, and reads only their data.
+ *      email sees its allocated clients plus its own team clients instead of
+ *      its whole agency, and reads only their data.
  *   Admins see and edit everything. Disabled users get nothing. Tabs an
  *   admin hides (config/dashboard_access) disappear for everyone, admins too.
  *
@@ -190,12 +190,12 @@ function allocationsReplaceDomain(ctx: AccessContext): boolean {
 }
 
 /**
- * With allocations on: the person's allocated clients, plus their team's
- * clients that have no MediaBox link (nobody can be allocated to those).
+ * With allocations on: the person's allocated clients, plus every client whose
+ * team they are on (BL, DL, GM Pod, collaborator) — someone never loses their
+ * own clients, MediaBox link or not.
  */
 export function allocationCoversClient(ctx: AccessContext, client: AllocationFields): boolean {
-  if (isAllocatedTo(ctx.email, client)) return true;
-  return !(client.CL_MediaBox_IDs ?? []).length && isOnClientTeam(ctx.email, client);
+  return isAllocatedTo(ctx.email, client) || isOnClientTeam(ctx.email, client);
 }
 
 // â”€â”€â”€ Grants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -265,7 +265,7 @@ export function canOpenTab(
   if (tab === "forecaster") return teamClientCount > 0;
   if (ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab)) {
     // Company-wide domains keep every client; agency emails need an
-    // allocation, or a team client (its unlinked clients show there).
+    // allocation or a team client.
     if (isCompanyDomain(ctx.email, ctx.companyDomains)) return true;
     return allocatedClientCount > 0 || teamClientCount > 0;
   }
@@ -319,20 +319,20 @@ export function tabAgencyScope(ctx: AccessContext, tab: DashboardTabId): AgencyS
  * scope (null: none) — the rules let these be read whatever their agency:
  *   - Forecaster (non-admin): their team clients;
  *   - an allocation tab while allocations replace the domain: their allocated
- *     clients plus their team's clients with no MediaBox link.
+ *     clients plus all their team clients.
  * `teamClients` / `allocatedClientIds` come from use-access.
  */
 export function tabClientIds(
   ctx: AccessContext,
   tab: DashboardTabId,
-  teamClients: Pick<Client, "cl_id" | "CL_MediaBox_IDs">[],
+  teamClients: Pick<Client, "cl_id">[],
   allocatedClientIds: string[]
 ): string[] | null {
   if (ctx.disabled || ctx.isAdmin) return null;
-  if (tab === "forecaster") return teamClients.map((c) => c.cl_id).sort();
+  const team = teamClients.map((c) => c.cl_id);
+  if (tab === "forecaster") return team.sort();
   if (allocationsReplaceDomain(ctx) && ALLOCATION_TABS.includes(tab)) {
-    const unlinked = teamClients.filter((c) => !(c.CL_MediaBox_IDs ?? []).length).map((c) => c.cl_id);
-    return [...new Set([...allocatedClientIds, ...unlinked])].sort();
+    return [...new Set([...allocatedClientIds, ...team])].sort();
   }
   return null;
 }
