@@ -26,6 +26,7 @@
 
 import { auth } from "../../firebase";
 import { UNASSIGNED_AGENCY, scopeCoversAgency, type AgencyScope } from "../../format/agency-scope";
+import { REPORT_CLIENT_COLUMN } from "../../format/report-client-column";
 
 export type ReportTable = "mir" | "billing";
 
@@ -283,12 +284,14 @@ function mergeTables(parts: ColumnarTable[]): ColumnarTable {
  * Global mode). `byClient` (MediaBox allocations apply to the person): every
  * other agency's file too, which the report-file route filters to the
  * person's clients — agencies where they have none come back empty and are
- * left out.
+ * left out. `localClientIds` (an admin viewing as someone): the route gives the
+ * admin whole files, so those files are filtered to these clients here.
  */
 export async function loadReport(
   table: ReportTable,
   scope: AgencyScope,
-  byClient = false
+  byClient = false,
+  localClientIds: ReadonlySet<string> | null = null
 ): Promise<LoadedReport> {
   const manifest = await fetchManifest();
   const entry = manifest.tables?.[table];
@@ -303,7 +306,12 @@ export async function loadReport(
     : [];
   const loaded = await Promise.all([
     ...whole.map((a) => loadAgencyFile(table, a, entry.syncedAt).then((t) => ({ a, t }))),
-    ...mine.map((a) => loadAgencyFile(table, a, entry.syncedAt, true).then((t) => ({ a, t }))),
+    ...mine.map((a) =>
+      loadAgencyFile(table, a, entry.syncedAt, true).then((t) => ({
+        a,
+        t: localClientIds ? filterTableByClients(t, REPORT_CLIENT_COLUMN[table], localClientIds) : t,
+      }))
+    ),
   ]);
   const parts = loaded.filter(({ a, t }) => whole.includes(a) || t.rowCount > 0);
   if (parts.length === 0) {
@@ -318,6 +326,22 @@ export async function loadReport(
     agencies: parts.map((p) => p.a).sort(),
     syncedAt: entry.syncedAt,
   };
+}
+
+/** The rows of `t` whose `column` is one of `ids` (dictionaries kept as they are). */
+function filterTableByClients(t: ColumnarTable, column: string, ids: ReadonlySet<string>): ColumnarTable {
+  const dict = t.dicts[column];
+  const idx = t.idx[column];
+  if (!dict || !idx) return { columns: t.columns, rowCount: 0, dicts: t.dicts, idx: Object.fromEntries(t.columns.map((c) => [c, new Uint32Array(0)])) };
+  const allowed = dict.map((v) => v !== null && v !== undefined && ids.has(String(v).trim()));
+  const keep: number[] = [];
+  for (let r = 0; r < t.rowCount; r++) if (allowed[idx[r]]) keep.push(r);
+  const out: Record<string, Uint32Array> = {};
+  for (const c of t.columns) {
+    const src = t.idx[c];
+    out[c] = Uint32Array.from(keep, (r) => src[r]);
+  }
+  return { columns: t.columns, rowCount: keep.length, dicts: t.dicts, idx: out };
 }
 
 // ─── Query helpers (pure, in memory) ──────────────────────────────────────────

@@ -98,6 +98,12 @@ export async function fetchUsers(): Promise<UserRecord[]> {
     .sort((a, b) => a.email.localeCompare(b.email));
 }
 
+/** One person's row, or null when they have none (never signed in, not added). */
+export async function fetchUserRecord(email: string): Promise<UserRecord | null> {
+  const snap = await getDoc(userRef(email));
+  return snap.exists() ? toUser(snap) : null;
+}
+
 /**
  * Adds a person by email before they sign in (admin). Refuses an email that
  * already has a row so an existing person's role or links are never reset.

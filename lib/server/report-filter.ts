@@ -10,12 +10,9 @@
  */
 
 import { gunzipSync, gzipSync } from "node:zlib";
+import { REPORT_CLIENT_COLUMN } from "../format/report-client-column";
 
-/** The Forecaster client id column of each report table. */
-export const REPORT_CLIENT_COLUMN: Record<string, string> = {
-  mir: "PLUSCO_CLIENT_ID",
-  billing: "forecaster_client_id",
-};
+export { REPORT_CLIENT_COLUMN };
 
 interface SnapshotColumn {
   name: string;
