@@ -36,7 +36,7 @@ import ExportSheetButton from "../table/export-sheet-button";
 import { computeClientTable, type ClientTableRow } from "./client-table-data";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
 
 type View = "media" | "labs";
@@ -90,7 +90,7 @@ export default function ClientDetailTable({
   const { selectedYear } = useForecastSelection();
   const { primary, comparison } = useSubmissionLabels();
   const usersMap = useUsersMap();
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
 
   const rows = useMemo(
     () =>

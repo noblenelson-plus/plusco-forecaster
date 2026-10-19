@@ -32,7 +32,7 @@ import { useScopeProductRevenue } from "../../../lib/dashboard/data/use-scope-pr
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../../lib/stores/comparison-selection.store";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import { useProducts } from "../../../lib/hooks/use-products";
 import { formatMoney } from "../../../lib/format/money";
 import type { RevenueMode } from "../../../lib/dashboard/data/use-scope-forecast-data";
@@ -83,7 +83,7 @@ export default function ProductRevenueSection({
   const { selectedYear, selectedRFQ } = useForecastSelection();
   const { comparisonYear, comparisonRFQ } = useComparisonSelection();
   const usersMap = useUsersMap();
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
   const { products } = useProducts();
 
   const hasComparison = comparisonYear !== null && comparisonRFQ !== null;

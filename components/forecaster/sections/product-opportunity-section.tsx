@@ -14,7 +14,7 @@ import ChartCard from "../../dashboard/charts/chart-card";
 import StackedBarChart from "../charts/stacked-bar-chart";
 import { computeProductAdoption, PRODUCT_PALETTE } from "./product-adoption-data";
 import { PRODUCT_STATUS_LABELS, PRODUCT_STATUS_ORDER } from "../../../lib/types/product.types";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import type { ScopeProductData } from "../../../lib/dashboard/data/use-scope-product-tracking";
 import type { ProductDefinition, ProductStatus } from "../../../lib/types/product.types";
 
@@ -36,7 +36,7 @@ export default function ProductOpportunitySection({
   products: ProductDefinition[];
   scopedClientIds: string[];
 }) {
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
 
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
   const scopedClients = useMemo(() => clients.filter((c) => scopeSet.has(c.cl_id)), [clients, scopeSet]);

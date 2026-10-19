@@ -18,7 +18,7 @@ import DonutChart from "../../dashboard/charts/donut-chart";
 import { CATEGORICAL_COLORS } from "../../dashboard/charts/colors";
 import { useScopeProductRevenue } from "../../../lib/dashboard/data/use-scope-product-revenue";
 import { computeProductRevenue } from "../sections/product-revenue-data";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import { useProducts } from "../../../lib/hooks/use-products";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
@@ -146,7 +146,7 @@ export default function ExecSummaryTab({
   // Product revenue by product (mirrors Revenue mix). Reads per-product BL
   // revenue for the scope; narrows to the focused client like the other charts.
   const { selectedYear, selectedRFQ } = useForecastSelection();
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
   const { products } = useProducts();
   const usersMap = useUsersMap();
   const productNameById = useMemo(

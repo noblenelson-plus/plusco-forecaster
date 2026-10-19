@@ -33,7 +33,7 @@ import {
   getLabsPartnersForYear,
 } from "../../../lib/services/labs-partner-service";
 import { isEligibleForPartner } from "../../../lib/format/client";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { Client } from "../../../lib/types/client.types";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
@@ -107,7 +107,7 @@ export default function InvestmentKpisClientDetail({
 }: {
   row: KpiByClientRow | null;
 }) {
-  const { clients, loading: clientsLoading } = useAccessibleClients();
+  const { clients, loading: clientsLoading } = useReadableClients();
   const [partners, setPartners] = useState<LabsPartner[]>([]);
 
   useEffect(() => {
