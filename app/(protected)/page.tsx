@@ -20,7 +20,7 @@
  */
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Loader2, X, Flag } from "lucide-react";
 import DashboardContextBar from "../../components/dashboard/dashboard-context-bar";
 import CurrencyToggle from "../../components/dashboard/currency-toggle";
@@ -141,9 +141,11 @@ export default function DashboardPage() {
 function DashboardWithViewAs() {
   const { isAdmin } = useUserProfile();
   const params = useSearchParams();
-  const router = useRouter();
   const viewAs = isAdmin ? normalizeEmail(params.get("viewAs")) : "";
-  const setViewAs = (email: string) => router.replace(email ? `/?viewAs=${encodeURIComponent(email)}` : "/");
+  // A client-side URL update (Next syncs native history with useSearchParams).
+  // router.replace kept the old ?viewAs= on the live site, so Exit never left.
+  const setViewAs = (email: string) =>
+    window.history.replaceState(null, "", email ? `/?viewAs=${encodeURIComponent(email)}` : "/");
 
   if (!viewAs) {
     return (
