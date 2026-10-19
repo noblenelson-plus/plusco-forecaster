@@ -28,15 +28,19 @@ interface UseAccessibleClientsResult {
 }
 
 export function useAccessibleClients(): UseAccessibleClientsResult {
-  const { profile, isAdmin } = useUserProfile();
-  const { editQueries, loading: accessLoading } = useAccess();
+  const { profile: myProfile, isAdmin: amAdmin } = useUserProfile();
+  const { editQueries, loading: accessLoading, viewAs, ctx } = useAccess();
+  // An admin viewing the dashboard as someone (ViewAsProvider): that person's
+  // team spaces — the admin's own reads reach them.
+  const profile = viewAs ? { email: viewAs, disabled: ctx.disabled } : myProfile;
+  const isAdmin = viewAs ? ctx.isAdmin : amAdmin;
   const editKey = JSON.stringify(editQueries);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || (viewAs && accessLoading)) return;
 
     let cancelled = false;
 
@@ -64,7 +68,7 @@ export function useAccessibleClients(): UseAccessibleClientsResult {
     };
     // editQueries is tracked through editKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, isAdmin, editKey, accessLoading]);
+  }, [profile?.email, profile?.disabled, isAdmin, editKey, accessLoading]);
 
   return { clients, loading, error };
 }

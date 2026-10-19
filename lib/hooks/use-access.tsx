@@ -22,6 +22,7 @@ import { useUserProfile } from "./use-user-profile";
 import { fetchAccessibleClients, fetchAllocatedClientIds } from "../services/assignment-service";
 import { subscribeToDashboardAccess, subscribeToMediaboxAllocations } from "../services/dashboard-access-service";
 import { subscribeToMyGrants } from "../services/dashboard-grants-service";
+import { fetchUserRecord } from "../services/user-service";
 import { fetchAgencies, fetchCompanyDomains } from "../services/agency-service";
 import {
   canOpenTeamSpaces,
@@ -73,6 +74,12 @@ interface AccessState {
   mediaboxAllocations: boolean;
   /** Clients allocated to them in MediaBox (loaded only while the switch is on). */
   allocatedClientIds: string[];
+  /** The allocations switch doc (null until loaded). */
+  allocationsConfig: MediaboxAllocationsConfig | null;
+  /** The agency ↔ domain mapping (null until loaded). */
+  mapping: AgencyMapping | null;
+  /** Set when an admin is previewing this person's dashboard (ViewAsProvider). */
+  viewAs: string | null;
   /** Agency-tagged data a tab shows. */
   tabAgencyScope: (tab: DashboardTabId) => DashboardScope;
   /** Clients whose per-client rows a tab reads one by one, beyond its agency scope (null: none). */
@@ -186,58 +193,174 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     };
   }, [email, isAdmin, disabled]);
 
+  const value = useMemo<AccessState>(
+    () =>
+      buildAccessState({
+        email,
+        isAdmin,
+        disabled,
+        config,
+        mapping,
+        allocationsConfig,
+        grants: grants?.email === email ? grants.tabs : null,
+        teamClients: isAdmin || disabled ? [] : team?.email === email ? team.clients : null,
+        allocatedIds: allocated?.email === email ? allocated.ids : null,
+        pending: profileLoading,
+        viewAs: null,
+      }),
+    [config, grants, mapping, team, allocationsConfig, allocated, email, isAdmin, disabled, profileLoading]
+  );
+
+  return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;
+}
+
+/** Everything one person's access is resolved from (null = still loading). */
+interface AccessInputs {
+  email: string;
+  isAdmin: boolean;
+  disabled: boolean;
+  config: DashboardAccessConfig | null;
+  mapping: AgencyMapping | null;
+  allocationsConfig: MediaboxAllocationsConfig | null;
+  grants: DashboardGrantDoc["tabs"] | null;
+  /** [] for admins / disabled (not needed). */
+  teamClients: TeamClient[] | null;
+  /** Only needed while allocations are on for them. */
+  allocatedIds: string[] | null;
+  /** Something else is still loading. */
+  pending: boolean;
+  /** Set when an admin previews this person's dashboard (ViewAsProvider). */
+  viewAs: string | null;
+}
+
+/** The resolved access of one person — the signed-in one, or the one an admin views as. */
+function buildAccessState(i: AccessInputs): AccessState {
+  const dashboardAccess = i.config ?? normalizeDashboardAccess(null);
+  const myGrants = i.grants ?? {};
+  const teamClients = i.teamClients ?? [];
+  const teamClientIds = teamClients.map((c) => c.cl_id).sort();
+  const teamClientCount = teamClientIds.length;
+  // On for everyone, or for this person as a pilot (unknown until loaded).
+  const allocationsKnown = i.allocationsConfig !== null;
+  const mediaboxAllocations =
+    !!i.allocationsConfig &&
+    (i.allocationsConfig.enabled || i.allocationsConfig.pilotEmails.includes(normalizeEmail(i.email)));
+  const allocatedReady = i.isAdmin || i.disabled || !mediaboxAllocations || i.allocatedIds !== null;
+  const allocatedClientIds = mediaboxAllocations ? i.allocatedIds ?? [] : [];
+  const ctx: AccessCtx = {
+    email: i.email,
+    isAdmin: i.isAdmin,
+    disabled: i.disabled,
+    agencyDomains: i.mapping?.agencyDomains ?? {},
+    companyDomains: i.mapping?.companyDomains ?? [],
+    grants: myGrants,
+    dashboardAccess,
+    mediaboxAllocations,
+  };
+  const open = resolveOpenTabs(ctx, teamClientCount, allocatedClientIds.length);
+  const hasTeamSpaces = canOpenTeamSpaces(ctx, teamClientCount);
+  return {
+    loading:
+      i.pending ||
+      !i.config ||
+      !i.mapping ||
+      i.teamClients === null ||
+      !allocationsKnown ||
+      !allocatedReady ||
+      (!!i.email && i.grants === null),
+    teamClientCount,
+    teamClientIds,
+    dashboardAccess,
+    grants: myGrants,
+    openTabs: open,
+    hasTeamSpaces,
+    hasAnyAccess: hasTeamSpaces || open.length > 0,
+    ctx,
+    tabCovers: (tab, client) => tabCoversClient(ctx, tab, client),
+    canReadData: (client) => canReadClient(ctx, client),
+    mediaboxAllocations,
+    allocatedClientIds,
+    allocationsConfig: i.allocationsConfig,
+    mapping: i.mapping,
+    viewAs: i.viewAs,
+    tabAgencyScope: (tab) => tabAgencyScope(ctx, tab),
+    tabClientIds: (tab) => resolveTabClientIds(ctx, tab, teamClients, allocatedClientIds),
+    readable: readableAgencyScope(ctx),
+    readableQueries: readableClientQueries(ctx),
+    editGrant: resolveEditGrant(ctx),
+    editQueries: editableClientQueries(ctx),
+    hiddenSubtabs: hiddenPagesFor(ctx),
+  };
+}
+
+// ─── View as (admin preview) ──────────────────────────────────────────────────
+
+/**
+ * Re-resolves access for `email` — the person an admin previews — for the
+ * subtree (the dashboard): their tabs, client universe per tab, agency scope
+ * and per-client reads, from their own users row, grants, team and MediaBox
+ * allocations, with the same reference logic. The admin's own reads still
+ * reach everything (admins may read it all), so what the subtree loads is
+ * exactly that person's scope. Presentation only and dashboard-only: the
+ * protected shell, team spaces and admin pages keep the admin's access.
+ */
+export function ViewAsProvider({ email, children }: { email: string; children: ReactNode }) {
+  const outer = useAccess();
+  const target = normalizeEmail(email);
+  const [user, setUser] = useState<{ email: string; isAdmin: boolean; disabled: boolean; exists: boolean } | null>(null);
+  const [grants, setGrants] = useState<{ email: string; tabs: DashboardGrantDoc["tabs"] } | null>(null);
+  const [team, setTeam] = useState<{ email: string; clients: TeamClient[] } | null>(null);
+  const [allocated, setAllocated] = useState<{ email: string; ids: string[] } | null>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    let cancelled = false;
+    fetchUserRecord(target)
+      .then((u) => {
+        if (!cancelled)
+          setUser({ email: target, isAdmin: u?.role === "ADMIN", disabled: !!u?.disabled, exists: !!u });
+      })
+      .catch(() => {
+        if (!cancelled) setUser({ email: target, isAdmin: false, disabled: false, exists: false });
+      });
+    const unsubGrants = subscribeToMyGrants(target, (tabs) => setGrants({ email: target, tabs }));
+    fetchAccessibleClients({ email: target, disabled: false }, false)
+      .then((clients) => {
+        if (!cancelled)
+          setTeam({ email: target, clients: clients.map((c) => ({ cl_id: c.cl_id, CL_MediaBox_IDs: c.CL_MediaBox_IDs })) });
+      })
+      .catch(() => {
+        if (!cancelled) setTeam({ email: target, clients: [] });
+      });
+    fetchAllocatedClientIds(target)
+      .then((ids) => {
+        if (!cancelled) setAllocated({ email: target, ids });
+      })
+      .catch(() => {
+        if (!cancelled) setAllocated({ email: target, ids: [] });
+      });
+    return () => {
+      cancelled = true;
+      unsubGrants();
+    };
+  }, [target]);
+
   const value = useMemo<AccessState>(() => {
-    const dashboardAccess = config ?? normalizeDashboardAccess(null);
-    const myGrants = grants?.email === email ? grants.tabs : {};
-    const teamReady = isAdmin || disabled || team?.email === email;
-    const teamClients = team?.email === email ? team.clients : [];
-    const teamClientIds = teamClients.map((c) => c.cl_id).sort();
-    const teamClientCount = teamClientIds.length;
-    const mediaboxAllocations = allocations === true;
-    const allocatedReady = isAdmin || disabled || !mediaboxAllocations || allocated?.email === email;
-    const allocatedClientIds = mediaboxAllocations && allocated?.email === email ? allocated.ids : [];
-    const ctx: AccessCtx = {
-      email,
-      isAdmin,
-      disabled,
-      agencyDomains: mapping?.agencyDomains ?? {},
-      companyDomains: mapping?.companyDomains ?? [],
-      grants: myGrants,
-      dashboardAccess,
-      mediaboxAllocations,
-    };
-    const open = resolveOpenTabs(ctx, teamClientCount, allocatedClientIds.length);
-    const hasTeamSpaces = canOpenTeamSpaces(ctx, teamClientCount);
-    return {
-      loading:
-        profileLoading ||
-        !config ||
-        !mapping ||
-        !teamReady ||
-        allocations === null ||
-        !allocatedReady ||
-        (!!email && grants?.email !== email),
-      teamClientCount,
-      teamClientIds,
-      dashboardAccess,
-      grants: myGrants,
-      openTabs: open,
-      hasTeamSpaces,
-      hasAnyAccess: hasTeamSpaces || open.length > 0,
-      ctx,
-      tabCovers: (tab, client) => tabCoversClient(ctx, tab, client),
-      canReadData: (client) => canReadClient(ctx, client),
-      mediaboxAllocations,
-      allocatedClientIds,
-      tabAgencyScope: (tab) => tabAgencyScope(ctx, tab),
-      tabClientIds: (tab) => resolveTabClientIds(ctx, tab, teamClients, allocatedClientIds),
-      readable: readableAgencyScope(ctx),
-      readableQueries: readableClientQueries(ctx),
-      editGrant: resolveEditGrant(ctx),
-      editQueries: editableClientQueries(ctx),
-      hiddenSubtabs: hiddenPagesFor(ctx),
-    };
-  }, [config, grants, mapping, team, allocations, allocated, email, isAdmin, disabled, profileLoading]);
+    const u = user?.email === target ? user : null;
+    return buildAccessState({
+      email: target,
+      isAdmin: !!u?.isAdmin,
+      disabled: !!u?.disabled,
+      config: outer.dashboardAccess,
+      mapping: outer.mapping,
+      allocationsConfig: outer.allocationsConfig,
+      grants: grants?.email === target ? grants.tabs : null,
+      teamClients: team?.email === target ? team.clients : null,
+      allocatedIds: allocated?.email === target ? allocated.ids : null,
+      pending: outer.loading || !u,
+      viewAs: target,
+    });
+  }, [outer.dashboardAccess, outer.mapping, outer.allocationsConfig, outer.loading, user, grants, team, allocated, target]);
 
   return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;
 }

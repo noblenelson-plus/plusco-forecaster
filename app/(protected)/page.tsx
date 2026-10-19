@@ -19,7 +19,8 @@
  * best/worst ratios, expected timings) now live inside the tabs below.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, X, Flag } from "lucide-react";
 import DashboardContextBar from "../../components/dashboard/dashboard-context-bar";
 import CurrencyToggle from "../../components/dashboard/currency-toggle";
@@ -54,7 +55,10 @@ import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
 import { useProducts } from "../../lib/hooks/use-products";
 import { useReadableClients } from "../../lib/hooks/use-readable-clients";
-import { DashboardTabScope, useAccess } from "../../lib/hooks/use-access";
+import { DashboardTabScope, ViewAsProvider, useAccess } from "../../lib/hooks/use-access";
+import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import { normalizeEmail } from "../../lib/format/email";
+import { ViewAsBanner, ViewAsPicker } from "../../components/dashboard/view-as-bar";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
@@ -119,7 +123,70 @@ function ModeToggle({
 /** "Every month" — a stable empty months list for tabs without the filter. */
 const ALL_MONTHS: number[] = [];
 
+/**
+ * The dashboard, plus the admin-only "View as" preview: `?viewAs=<email>`
+ * re-resolves access for that person around the dashboard (ViewAsProvider),
+ * so an admin sees exactly their tabs, clients and data. Read-only and
+ * dashboard-only.
+ */
 export default function DashboardPage() {
+  // useSearchParams needs a Suspense boundary on a statically rendered page.
+  return (
+    <Suspense fallback={null}>
+      <DashboardWithViewAs />
+    </Suspense>
+  );
+}
+
+function DashboardWithViewAs() {
+  const { isAdmin } = useUserProfile();
+  const params = useSearchParams();
+  const router = useRouter();
+  const viewAs = isAdmin ? normalizeEmail(params.get("viewAs")) : "";
+  const setViewAs = (email: string) => router.replace(email ? `/?viewAs=${encodeURIComponent(email)}` : "/");
+
+  if (!viewAs) {
+    return (
+      <>
+        {isAdmin && (
+          <div className="flex justify-end bg-muted px-4 pt-2">
+            <ViewAsPicker onPick={setViewAs} />
+          </div>
+        )}
+        <DashboardContent />
+      </>
+    );
+  }
+  return (
+    <ViewAsProvider email={viewAs}>
+      <ViewAsBanner email={viewAs} onExit={() => setViewAs("")} />
+      <ViewAsBody key={viewAs} email={viewAs} />
+    </ViewAsProvider>
+  );
+}
+
+/** Inside the preview: the dashboard, or a note when the person sees no tab. */
+function ViewAsBody({ email }: { email: string }) {
+  const access = useAccess();
+  if (access.loading) {
+    return (
+      <div className="flex h-64 items-center justify-center text-gray-400">
+        <Loader2 size={20} className="animate-spin" />
+      </div>
+    );
+  }
+  if (!access.openTabs.length) {
+    return (
+      <div className="mx-auto max-w-xl p-8 text-sm text-gray-600">
+        <strong>{email}</strong> doesn&apos;t see any dashboard tab: no client team, no MediaBox allocation and no
+        grant (or their account is revoked). Give them access on Dashboard Access, or have them allocated in MediaBox.
+      </div>
+    );
+  }
+  return <DashboardContent />;
+}
+
+function DashboardContent() {
   const { clients: allClients, loading, error } = useReadableClients();
   const access = useAccess();
   // Top-level tab — declared up here because it picks the client universe.

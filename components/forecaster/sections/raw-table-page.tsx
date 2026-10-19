@@ -36,6 +36,7 @@ import {
   isGoogleConfigured,
 } from "../../../lib/services/google-sheets-service";
 import { useDashboardDocScope } from "../../../lib/hooks/use-agency-scope";
+import { useAccess } from "../../../lib/hooks/use-access";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { disambiguatePersonOptions, personLabel } from "../../../lib/format/person";
 import { agencyScopeLabel } from "../../../lib/format/agency-scope";
@@ -155,6 +156,13 @@ export default function RawTablePage({
   // other agencies' files then come filtered to them (report-file route).
   const { scope, clientIds, loading: scopeLoading } = useDashboardDocScope();
   const byClient = !!clientIds?.length;
+  // An admin viewing as someone gets whole files from the route, so the
+  // by-client files are filtered to that person's clients in the browser.
+  const { viewAs } = useAccess();
+  const localClientIds = useMemo(
+    () => (viewAs && clientIds?.length ? new Set(clientIds) : null),
+    [viewAs, clientIds]
+  );
   const [report, setReport] = useState<LoadedReport | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
@@ -173,7 +181,7 @@ export default function RawTablePage({
       setLoading(true);
       setError(null);
       try {
-        const loaded = await loadReport(tableKey, scope, byClient);
+        const loaded = await loadReport(tableKey, scope, byClient, localClientIds);
         if (!cancelled) setReport(loaded);
       } catch (e) {
         if (!cancelled) {
@@ -187,7 +195,7 @@ export default function RawTablePage({
     return () => {
       cancelled = true;
     };
-  }, [tableKey, scope, byClient, scopeLoading]);
+  }, [tableKey, scope, byClient, localClientIds, scopeLoading]);
 
   const table = report?.table ?? null;
 
