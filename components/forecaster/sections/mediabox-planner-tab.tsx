@@ -64,6 +64,12 @@ import {
 import { describePeriod, inPeriod, monthsWithinOneYear, type MonthPeriod } from "../../../lib/format/period";
 
 const TOP_N = 20;
+// Spend with no Plus partner mapping (the sync's label). Counted in the Deal /
+// Non-Deal totals, but not ranked as a partner.
+const NO_PARTNER = "(No partner mapped)";
+// Left out of the Social Partners table and shares entirely (media team's
+// call: unmapped spend, plus partners too small to track).
+const SOCIAL_EXCLUDED = new Set([NO_PARTNER, "X", "FOURSQUARE"].map((p) => p.toUpperCase()));
 const BAR_COLOR = "#3b82f6";
 const COLOR_2025 = "#3b82f6";
 const COLOR_2026 = "#f59e0b";
@@ -336,12 +342,20 @@ function TopPartnersSection({
   period: MonthPeriod;
 }) {
   const [facets, setFacets] = useState<PartnerFilters>(EMPTY_PARTNER_FILTERS);
-  const options = useMemo(() => partnerFilterOptions(toInvestmentRows(allRows, currency)), [allRows, currency]);
+  const options = useMemo(() => {
+    const o = partnerFilterOptions(toInvestmentRows(allRows, currency));
+    return { ...o, partner: o.partner.filter((p) => p !== NO_PARTNER) };
+  }, [allRows, currency]);
   const top = useMemo(
     () => computeTopPartners(applyPartnerFilters(toInvestmentRows(rows, currency), facets)),
     [rows, currency, facets]
   );
-  const topPartners: PartnerSlice[] = useMemo(() => top.partners.slice(0, TOP_N), [top.partners]);
+  // The ranking skips unmapped spend (still in the Deal / Non-Deal totals above).
+  const unmapped = useMemo(() => top.partners.find((p) => p.partner === NO_PARTNER)?.net ?? 0, [top.partners]);
+  const topPartners: PartnerSlice[] = useMemo(
+    () => top.partners.filter((p) => p.partner !== NO_PARTNER).slice(0, TOP_N),
+    [top.partners]
+  );
   const label = `Planned (${currency})`;
   const barSeries: StackSeries[] = useMemo(() => [{ key: "net", label, color: BAR_COLOR }], [label]);
   const barRows: StackRow[] = topPartners.map((p) => ({ label: p.partner, values: { net: p.net } }));
@@ -404,6 +418,7 @@ function TopPartnersSection({
         <ChartCard
           title={`Top ${TOP_N} Partners`}
           icon={Table}
+          subtitle={unmapped ? `Excludes ${money(unmapped)} with no mapped partner` : undefined}
           action={
             <SheetExportButton
               title={`Top ${TOP_N} Partners`}
@@ -463,7 +478,9 @@ function SocialSection({
 }) {
   const summary = useMemo(() => {
     const social = toSocialRows(rows, currency).filter(
-      (r) => selMonths.length === 0 || selMonths.includes(Number(r.MONTH))
+      (r) =>
+        !SOCIAL_EXCLUDED.has(String(r.PLUSCO_MEDIA_PARTNER ?? "").trim().toUpperCase()) &&
+        (selMonths.length === 0 || selMonths.includes(Number(r.MONTH)))
     );
     return computeSocialSummary(social);
   }, [rows, currency, selMonths]);
