@@ -26,7 +26,7 @@ import ExportSheetButton from "../table/export-sheet-button";
 import type { TableColumn } from "../table/table-column.types";
 import { subscribeToLabsPartners, getLabsPartnersForYear } from "../../../lib/services/labs-partner-service";
 import { isEligibleForPartner } from "../../../lib/format/client";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import type { LabsPartner } from "../../../lib/types/labs.types";
 
 interface EligibilityRow {
@@ -75,7 +75,7 @@ export default function LabsEligibilityTable({
   scopedClientIds: string[];
   focusedClientId: string | null;
 }) {
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
 
   const [partners, setPartners] = useState<LabsPartner[]>([]);
   useEffect(() => {

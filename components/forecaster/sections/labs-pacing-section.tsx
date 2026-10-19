@@ -48,7 +48,7 @@ import {
   getLabsPartnersForYear,
 } from "../../../lib/services/labs-partner-service";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
 import {
@@ -89,7 +89,7 @@ export default function LabsPacingSection({
   showPodBreakdown?: boolean;
 }) {
   const { selectedYear, selectedRFQ } = useForecastSelection();
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
   const usersMap = useUsersMap();
 
   const gmPodByClient = useMemo(

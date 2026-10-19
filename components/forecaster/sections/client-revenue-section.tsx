@@ -29,7 +29,7 @@ import ExportSheetButton from "../table/export-sheet-button";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../../lib/stores/comparison-selection.store";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import type {
   ScopeForecastData,
   RevenueMode,
@@ -62,7 +62,7 @@ export default function ClientRevenueSection({
   const { selectedYear, selectedRFQ } = useForecastSelection();
   const { comparisonYear, comparisonRFQ } = useComparisonSelection();
   const usersMap = useUsersMap();
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
 
   const hasComparison = comparisonData.hasContext;
 

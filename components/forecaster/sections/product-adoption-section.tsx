@@ -17,7 +17,7 @@ import ForecasterPieChart from "../charts/pie-chart";
 import StackedBarChart from "../charts/stacked-bar-chart";
 import TextTable, { type TextColumnSpec } from "../table/text-table";
 import { computeProductAdoption, PRODUCT_PALETTE } from "./product-adoption-data";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import type { ScopeProductData } from "../../../lib/dashboard/data/use-scope-product-tracking";
 import type { ProductDefinition } from "../../../lib/types/product.types";
@@ -38,7 +38,7 @@ export default function ProductAdoptionSection({
   products: ProductDefinition[];
   scopedClientIds: string[];
 }) {
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
   const usersMap = useUsersMap();
 
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);

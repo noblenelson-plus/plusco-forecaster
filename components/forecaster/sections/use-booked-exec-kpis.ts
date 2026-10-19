@@ -41,7 +41,7 @@ import {
   getLabsPartnersForYear,
 } from "../../../lib/services/labs-partner-service";
 import type { LabsPartner } from "../../../lib/types/labs.types";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import { isEligibleForPartner } from "../../../lib/format/client";
 import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
 
@@ -145,7 +145,7 @@ export function useBookedExecKpis(
   // From each client's Labs eligibility toggles in the Forecaster (Edit client →
   // Labs eligibility) for the year's MIQ-Social and AIM-Social partners. Only
   // "Not Eligible" is called out; an eligible client has no entry ("—").
-  const { clients: accessibleClients } = useAccessibleClients();
+  const { clients: accessibleClients } = useReadableClients();
   const miqScenarioById = useMemo(() => {
     const yearPartners = getLabsPartnersForYear(labsPartners, year);
     const watched = ["MIQ-Social", "AIM-Social"]

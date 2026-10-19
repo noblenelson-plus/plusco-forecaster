@@ -25,7 +25,7 @@ import { DollarSign, PieChart, Percent } from "lucide-react";
 import MultiSelectDropdown from "../../_shared/multi-select-dropdown";
 import StatCard from "../../dashboard/charts/stat-card";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
-import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
+import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
 import {
   describeMonthPeriod,
@@ -96,7 +96,7 @@ export default function LabsTargetVsBookedSection({
   usdToCad?: number;
 }) {
     const { selectedYear, selectedRFQ } = useForecastSelection();
-  const { clients } = useAccessibleClients();
+  const { clients } = useReadableClients();
   const lastSync = useLastSync();
 
   // Label the forecast column + caption after the primary submission (Time &
