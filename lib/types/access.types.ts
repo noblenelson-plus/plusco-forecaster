@@ -104,6 +104,17 @@ export const ALLOCATION_TABS: readonly DashboardTabId[] = [
   "reports",
 ];
 
+/**
+ * The admins who get "View as" on the dashboard (lowercase emails). They must
+ * also be admins — the preview relies on admin reads. Presentation only: it
+ * shows nothing beyond what an admin may already read.
+ */
+export const VIEW_AS_EMAILS: readonly string[] = [
+  "noble.nelson@pluscompany.com",
+  "tristan.b-parent@pluscompany.com",
+  "adriana.novoa@pluscompany.com",
+];
+
 /** `config/mediabox_allocations` — the allocations switch. */
 export interface MediaboxAllocationsConfig {
   /** On for everyone. */

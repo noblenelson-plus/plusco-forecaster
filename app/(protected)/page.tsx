@@ -60,6 +60,7 @@ import { DashboardTabScope, ViewAsProvider, useAccess } from "../../lib/hooks/us
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { normalizeEmail } from "../../lib/format/email";
 import { ViewAsBanner, ViewAsPicker } from "../../components/dashboard/view-as-bar";
+import { VIEW_AS_EMAILS } from "../../lib/types/access.types";
 import { useUsersMap } from "../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { useScopeForecastData } from "../../lib/dashboard/data/use-scope-forecast-data";
@@ -140,9 +141,12 @@ export default function DashboardPage() {
 }
 
 function DashboardWithViewAs() {
-  const { isAdmin } = useUserProfile();
+  const { isAdmin, email } = useUserProfile();
   const params = useSearchParams();
-  const viewAs = isAdmin ? normalizeEmail(params.get("viewAs")) : "";
+  // Only the listed admins get View as (VIEW_AS_EMAILS); for anyone else the
+  // picker is hidden and a ?viewAs= link is ignored.
+  const canViewAs = isAdmin && VIEW_AS_EMAILS.includes(normalizeEmail(email));
+  const viewAs = canViewAs ? normalizeEmail(params.get("viewAs")) : "";
   // A client-side URL update (Next syncs native history with useSearchParams).
   // router.replace kept the old ?viewAs= on the live site, so Exit never left.
   const setViewAs = (email: string) =>
@@ -151,7 +155,7 @@ function DashboardWithViewAs() {
   if (!viewAs) {
     return (
       <>
-        {isAdmin && (
+        {canViewAs && (
           <div className="flex justify-end bg-muted px-4 pt-2">
             <ViewAsPicker onPick={setViewAs} />
           </div>
