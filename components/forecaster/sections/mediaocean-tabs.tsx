@@ -17,8 +17,14 @@
  * At the bottom of Media Investments, the Investment KPIs section repeats the
  * Exec KPI Dashboard's booked (MIR) scorecards + KPIs by Client table.
  *
- * The active sub-tab is controlled by the parent (page.tsx) so the parent can
- * show the global filter bar on both sub-pages.
+ * Media Investments has a data switch: Mediaocean (booked, the sections above)
+ * or MediaBox (planned budgets — MediaboxPlannerTab: the same charts over the
+ * MediaBox finance table, plus a by-status view). Same period, client filter
+ * and access; the KPIs sub-tab stays Mediaocean-only.
+ *
+ * The active sub-tab and data source are controlled by the parent (page.tsx)
+ * so the parent can show the global filter bar on both sub-pages and the
+ * matching "as of" stamp on the period bar.
  */
 
 import InvestmentKpisSection from "./investment-kpis-section";
@@ -26,6 +32,7 @@ import MediaoceanInvestmentSection from "./mediaocean-investment-section";
 import MediaoceanTopPartnersSection from "./mediaocean-top-partners-section";
 import MediaoceanSocialSection from "./mediaocean-social-section";
 import InvestmentKpisBookedSection from "./investment-kpis-booked-section";
+import MediaboxPlannerTab from "./mediabox-planner-tab";
 import SubTabBar from "../sub-tab-bar";
 import { monthsWithinOneYear, type MonthPeriod } from "../../../lib/format/period";
 import type { Client } from "../../../lib/types/client.types";
@@ -37,7 +44,46 @@ import {
 
 export type { MediaOceanSubTab };
 
+/** Whose data Media Investments shows: Mediaocean (booked) or MediaBox (planned). */
+export type MediaOceanSource = "mediaocean" | "mediabox";
+
+const SOURCES: { id: MediaOceanSource; label: string; hint: string }[] = [
+  { id: "mediaocean", label: "Mediaocean", hint: "Booked (MIR) spend" },
+  { id: "mediabox", label: "MediaBox Planner", hint: "Planned net budgets from MediaBox" },
+];
+
 const NO_HIDDEN: ReadonlySet<string> = new Set();
+
+/** The Mediaocean | MediaBox Planner switch (styled like the CAD / USD toggle). */
+function SourceSwitch({
+  value,
+  onChange,
+}: {
+  value: MediaOceanSource;
+  onChange: (s: MediaOceanSource) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Data</span>
+      <div className="inline-flex overflow-hidden rounded-lg border border-border text-xs font-semibold" role="group">
+        {SOURCES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            title={s.hint}
+            aria-pressed={value === s.id}
+            onClick={() => onChange(s.id)}
+            className={`px-3 py-1.5 transition-colors ${
+              value === s.id ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The year the KPI sections cover. KPI_BY_CLIENT is built per year in BigQuery
@@ -49,6 +95,8 @@ const KPI_DATA_YEAR = 2026;
 export default function MediaOceanTabs({
   sub,
   onSubChange,
+  source,
+  onSourceChange,
   scopedClientIds,
   clients,
   period,
@@ -56,6 +104,9 @@ export default function MediaOceanTabs({
 }: {
   sub: MediaOceanSubTab;
   onSubChange: (s: MediaOceanSubTab) => void;
+  /** Media Investments' data: Mediaocean (booked) or MediaBox (planned). */
+  source: MediaOceanSource;
+  onSourceChange: (s: MediaOceanSource) => void;
   scopedClientIds: string[];
   clients: Client[];
   /** The MIR From → To period (MIR context bar). */
@@ -76,7 +127,13 @@ export default function MediaOceanTabs({
         <InvestmentKpisSection scopedClientIds={scopedClientIds} />
       )}
 
-      {active === "investments" && (
+      {active === "investments" && <SourceSwitch value={source} onChange={onSourceChange} />}
+
+      {active === "investments" && source === "mediabox" && (
+        <MediaboxPlannerTab scopedClientIds={scopedClientIds} period={period} />
+      )}
+
+      {active === "investments" && source === "mediaocean" && (
         <div className="space-y-10">
           <MediaoceanInvestmentSection
             scopedClientIds={scopedClientIds}

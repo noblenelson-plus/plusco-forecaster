@@ -12,8 +12,7 @@ service cloud.firestore {
     //     "_unassigned" rows included — like an admin, read-only.
     //   - dashboard_grants/{email}: per tab, the clients of chosen agencies ×
     //     regions, or specific clients (`clients`: ids; not on mediaocean /
-    //     mediabox-planner / reports) — read-only; a Forecaster grant with
-    //     `edit` also writes.
+    //     reports) — read-only; a Forecaster grant with `edit` also writes.
     //   - MediaBox allocations (CL_MediaBox_Emails on the client doc), while
     //     config/mediabox_allocations.enabled is on: every non-admin email,
     //     company-wide domains included, reads the data of its allocated
@@ -90,16 +89,15 @@ service cloud.firestore {
         scopeCovers(tabs[id], agency, region) || clientId in tabs[id].get('clients', [])
       );
     }
-    // Media Investments / MediaBox Planner / Reports: agency × region rules
-    // only — their data is split by agency, so specific clients are never
-    // honoured there.
+    // Media Investments / Reports: agency × region rules only — their data is
+    // split by agency, so specific clients are never honoured there.
     function ruleGrantCovers(tabs, id, agency, region) {
       return id in tabs && scopeCovers(tabs[id], agency, region);
     }
     function grantCoversAgency(tabs, id, agency) {
       return id in tabs && scopeCoversAgency(tabs[id], agency);
     }
-    // Any of the seven tab grants covers a client (listed, or agency × region).
+    // Any of the six tab grants covers a client (listed, or agency × region).
     function anyGrantCovers(clientId, agency, region) {
       let t = myGrantTabs();
       return grantCovers(t, 'forecaster', clientId, agency, region) ||
@@ -107,7 +105,6 @@ service cloud.firestore {
         grantCovers(t, 'exec-kpis', clientId, agency, region) ||
         grantCovers(t, 'mediabox', clientId, agency, region) ||
         ruleGrantCovers(t, 'mediaocean', agency, region) ||
-        ruleGrantCovers(t, 'mediabox-planner', agency, region) ||
         ruleGrantCovers(t, 'reports', agency, region);
     }
     // Any tab grant covers an agency (agency-tagged data: regions don't apply).
@@ -115,7 +112,6 @@ service cloud.firestore {
       let t = myGrantTabs();
       return grantCoversAgency(t, 'forecaster', agency) || grantCoversAgency(t, 'labs-pacing', agency) ||
         grantCoversAgency(t, 'exec-kpis', agency) || grantCoversAgency(t, 'mediaocean', agency) ||
-        grantCoversAgency(t, 'mediabox-planner', agency) ||
         grantCoversAgency(t, 'mediabox', agency) || grantCoversAgency(t, 'reports', agency);
     }
     // The Forecaster grant with `edit` covers a client.
@@ -549,7 +545,8 @@ service cloud.firestore {
       allow create, update: if false;
       allow delete: if isAdmin();
     }
-    // mediabox_planner_mix — MediaBox planned budgets (MediaBox Planner tab),
+    // mediabox_planner_mix — MediaBox planned budgets (Media Investments →
+    // MediaBox view),
     // client × month × channel × partner × status grain. Same as above.
     match /mediabox_planner_mix/{docId} {
       allow read: if canReadAgencyData(resource.data._agency) || canReadClientRow(resource.data);

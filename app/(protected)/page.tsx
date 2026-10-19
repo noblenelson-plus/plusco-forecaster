@@ -41,8 +41,10 @@ import ClientNoteCard from "../../components/forecaster/sections/client-note-car
 import ReportsTabs from "../../components/forecaster/sections/reports-tabs";
 import BillupsSection from "../../components/forecaster/sections/billups-section";
 import ExecKpisTabs from "../../components/forecaster/sections/exec-kpis-tabs";
-import MediaOceanTabs, { type MediaOceanSubTab } from "../../components/forecaster/sections/mediaocean-tabs";
-import MediaboxPlannerTab from "../../components/forecaster/sections/mediabox-planner-tab";
+import MediaOceanTabs, {
+  type MediaOceanSource,
+  type MediaOceanSubTab,
+} from "../../components/forecaster/sections/mediaocean-tabs";
 import LabsPacingPage from "../../components/forecaster/sections/labs-pacing-page";
 import SubTabBar from "../../components/forecaster/sub-tab-bar";
 import {
@@ -198,6 +200,11 @@ function DashboardContent() {
   const access = useAccess();
   // Top-level tab — declared up here because it picks the client universe.
   const [topTab, setTopTab] = useState<ForecasterTab>("forecaster");
+  // Media Investments: its sub-tab, and its data (Mediaocean booked / MediaBox
+  // planned). Up here too: the MediaBox view keeps every client in USD mode.
+  const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
+  const [mediaOceanSource, setMediaOceanSource] = useState<MediaOceanSource>("mediaocean");
+  const isPlannerView = topTab === "mediaocean" && mediaOceanSub === "investments" && mediaOceanSource === "mediabox";
   // The sub-tab chosen inside the Forecaster Dashboard. Declared up here too:
   // the Product sub-tab has no currency, so it changes the client universe.
   const [forecasterSub, setForecasterSub] = useState<ForecasterSubTab>("exec");
@@ -323,14 +330,14 @@ function DashboardContent() {
 
   // In USD mode, feed only USD clients into the (already dynamic) filter engine
   // so every dropdown cascades to USD clients — matching Looker's behavior.
-  // MediaBox Planner converts its amounts instead (its own CAD / USD switch),
-  // so every client stays in scope there.
+  // The MediaBox planned view converts its amounts instead (its own CAD / USD
+  // switch), so every client stays in scope there.
   const currencyClients = useMemo(
     () =>
-      viewCurrency === "USD" && !isProductView && topTab !== "mediabox-planner"
+      viewCurrency === "USD" && !isProductView && !isPlannerView
         ? clients.filter((c) => (c.CL_Currency ?? "CAD") === "USD")
         : clients,
-    [viewCurrency, clients, isProductView, topTab]
+    [viewCurrency, clients, isProductView, isPlannerView]
   );
 
   const { facetViews, filteredClientIds, totalAccessible, hasActiveFilters, reset } =
@@ -398,15 +405,13 @@ function DashboardContent() {
   const [selMonths, setSelMonths] = useState<number[]>([]);
   // MIR tabs (no RFQ): their own From → To month period instead of Year / RFQ /
   // Months. Defaults to the current calendar year (the previous behaviour).
-  // MediaBox Planner (planned budgets, no RFQ either) shares that period.
-  const isMirTab = topTab === "mediaocean" || topTab === "reports" || topTab === "mediabox-planner";
+  const isMirTab = topTab === "mediaocean" || topTab === "reports";
   // The Months filter is shown on the Forecaster tab only, so the shared
   // forecast data ignores it elsewhere (no hidden filter on Exec KPI etc.).
   const dataMonths = topTab === "forecaster" ? selMonths : ALL_MONTHS;
   const [mirPeriod, setMirPeriod] = useState<MonthPeriod>(() =>
     calendarYearPeriod(new Date().getFullYear())
   );
-  const [mediaOceanSub, setMediaOceanSub] = useState<MediaOceanSubTab>("investments");
   const { openTabs } = access;
   const visibleTabs = useMemo(
     () => FORECASTER_TABS.filter((t) => openTabs.includes(t.id) && isTabVisible(t.id, hiddenPages)),
@@ -498,9 +503,11 @@ function DashboardContent() {
             USD toggle in the filter bar; Reports and the KPI sub-tab need none. */}
         {isMirTab ? (
           topTab === "mediaocean" && mediaOceanSub === "investments" ? (
-            <MirContextBar period={mirPeriod} onPeriodChange={setMirPeriod} />
-          ) : topTab === "mediabox-planner" ? (
-            <MirContextBar period={mirPeriod} onPeriodChange={setMirPeriod} source="mediabox" />
+            <MirContextBar
+              period={mirPeriod}
+              onPeriodChange={setMirPeriod}
+              source={mediaOceanSource === "mediabox" ? "mediabox" : "mir"}
+            />
           ) : null
         ) : isProductView ? (
           <DashboardContextBar yearOnly />
@@ -676,13 +683,13 @@ function DashboardContent() {
           <MediaOceanTabs
             sub={mediaOceanSub}
             onSubChange={setMediaOceanSub}
+            source={mediaOceanSource}
+            onSourceChange={setMediaOceanSource}
             scopedClientIds={scopedClientIds}
             clients={clients}
             period={mirPeriod}
             hidden={hiddenPages}
           />
-        ) : tab === "mediabox-planner" ? (
-          <MediaboxPlannerTab scopedClientIds={scopedClientIds} period={mirPeriod} />
         ) : tab === "labs-pacing" ? (
           <LabsPacingPage
             scopedClientIds={scopedClientIds}

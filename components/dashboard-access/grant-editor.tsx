@@ -279,7 +279,7 @@ export default function GrantEditor({
                       : undefined
                   }
                 />
-                {(tab === "mediaocean" || tab === "mediabox-planner" || tab === "reports") && (
+                {(tab === "mediaocean" || tab === "reports") && (
                   <p className="-mt-3 text-[11px] text-gray-400">
                     This tab&apos;s data is split by agency only — the region limits its client list, not its agency figures.
                   </p>

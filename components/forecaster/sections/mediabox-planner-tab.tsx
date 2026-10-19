@@ -2,7 +2,8 @@
 "use client";
 
 /**
- * MediaBox Planner tab — the Media Investments page's charts over MediaBox
+ * MediaBox Planner view (Media Investments → Data: MediaBox Planner, see
+ * mediaocean-tabs.tsx) — the Media Investments page's charts over MediaBox
  * PLANNED budgets (finance_master_mapping, via useMediaboxPlannerMix) instead of
  * MediaOcean booked spend:
  *   - Total Planned Investment: total + digital share, by channel, media mix and
