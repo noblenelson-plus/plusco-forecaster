@@ -42,6 +42,7 @@ import ReportsTabs from "../../components/forecaster/sections/reports-tabs";
 import BillupsSection from "../../components/forecaster/sections/billups-section";
 import ExecKpisTabs from "../../components/forecaster/sections/exec-kpis-tabs";
 import MediaOceanTabs, { type MediaOceanSubTab } from "../../components/forecaster/sections/mediaocean-tabs";
+import MediaboxPlannerTab from "../../components/forecaster/sections/mediabox-planner-tab";
 import LabsPacingPage from "../../components/forecaster/sections/labs-pacing-page";
 import SubTabBar from "../../components/forecaster/sub-tab-bar";
 import {
@@ -318,12 +319,14 @@ function DashboardContent() {
 
   // In USD mode, feed only USD clients into the (already dynamic) filter engine
   // so every dropdown cascades to USD clients — matching Looker's behavior.
+  // MediaBox Planner converts its amounts instead (its own CAD / USD switch),
+  // so every client stays in scope there.
   const currencyClients = useMemo(
     () =>
-      viewCurrency === "USD" && !isProductView
+      viewCurrency === "USD" && !isProductView && topTab !== "mediabox-planner"
         ? clients.filter((c) => (c.CL_Currency ?? "CAD") === "USD")
         : clients,
-    [viewCurrency, clients, isProductView]
+    [viewCurrency, clients, isProductView, topTab]
   );
 
   const { facetViews, filteredClientIds, totalAccessible, hasActiveFilters, reset } =
@@ -391,7 +394,8 @@ function DashboardContent() {
   const [selMonths, setSelMonths] = useState<number[]>([]);
   // MIR tabs (no RFQ): their own From → To month period instead of Year / RFQ /
   // Months. Defaults to the current calendar year (the previous behaviour).
-  const isMirTab = topTab === "mediaocean" || topTab === "reports";
+  // MediaBox Planner (planned budgets, no RFQ either) shares that period.
+  const isMirTab = topTab === "mediaocean" || topTab === "reports" || topTab === "mediabox-planner";
   // The Months filter is shown on the Forecaster tab only, so the shared
   // forecast data ignores it elsewhere (no hidden filter on Exec KPI etc.).
   const dataMonths = topTab === "forecaster" ? selMonths : ALL_MONTHS;
@@ -491,6 +495,8 @@ function DashboardContent() {
         {isMirTab ? (
           topTab === "mediaocean" && mediaOceanSub === "investments" ? (
             <MirContextBar period={mirPeriod} onPeriodChange={setMirPeriod} />
+          ) : topTab === "mediabox-planner" ? (
+            <MirContextBar period={mirPeriod} onPeriodChange={setMirPeriod} source="mediabox" />
           ) : null
         ) : isProductView ? (
           <DashboardContextBar yearOnly />
@@ -671,6 +677,8 @@ function DashboardContent() {
             period={mirPeriod}
             hidden={hiddenPages}
           />
+        ) : tab === "mediabox-planner" ? (
+          <MediaboxPlannerTab scopedClientIds={scopedClientIds} period={mirPeriod} />
         ) : tab === "labs-pacing" ? (
           <LabsPacingPage
             scopedClientIds={scopedClientIds}

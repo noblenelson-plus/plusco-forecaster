@@ -47,6 +47,7 @@ export type MediaOceanSubTab = (typeof MEDIAOCEAN_SUBTABS)[number]["id"];
 export const REPORTS_SUBTABS = [
   { id: "mir-raw", label: "Mediaocean Data (MIR)" },
   { id: "billing", label: "Mediaocean Billing Summary" },
+  { id: "mediabox-planner", label: "MediaBox Planner Data" },
 ] as const satisfies readonly SubTabDef[];
 export type ReportsSubTab = (typeof REPORTS_SUBTABS)[number]["id"];
 

@@ -12,7 +12,7 @@
  *   The dashboard reads Firestore (and, for the Reports tab, the per-agency
  *   snapshots mir-raw / billing-summary-raw publish to Storage), never
  *   BigQuery. Rebuilding the BigQuery tables
- *   does nothing to the app until these syncs run. Running six scripts by hand,
+ *   does nothing to the app until these syncs run. Running every script by hand,
  *   in order, and noticing if one quietly failed is exactly where a half-updated
  *   dashboard comes from. This makes the whole push one command, all-or-nothing.
  *
@@ -26,7 +26,7 @@
  *   to Firestore.
  *
  * ORDER NOTE
- *   The six syncs are independent reads (each copies one already-built BigQuery
+ *   The syncs are independent reads (each copies one already-built BigQuery
  *   table), so their order does not affect correctness. mir-raw runs first only
  *   because it is the largest and the most common auth/permission failures show
  *   up there immediately.
@@ -55,9 +55,9 @@ const FIRESTORE_PROJECT = "pluscoops";
 const META_COLLECTION = "dashboard_meta";
 const META_DOC = "last_sync";
 
-// The six monthly syncs, in run order. Each already reads one built BigQuery
-// table and writes one Firestore collection (or, for the two raw report tables,
-// per-agency Storage snapshots); each exits non-zero on failure.
+// The monthly syncs, in run order. Each reads one built BigQuery table and
+// writes one Firestore collection and/or per-agency Storage report snapshots;
+// each exits non-zero on failure.
 const SYNCS = [
   "sync-mir-raw.mjs", // PCC_Dashboard_NATIVE               -> Storage reports/mir/*
   "sync-kpi-by-client.mjs", // KPI_BY_CLIENT_2025_vs_2026         -> mo_kpi_by_client
@@ -65,6 +65,7 @@ const SYNCS = [
   "sync-mediaocean-investment-mix.mjs", // MEDIAOCEAN_INVESTMENT_MIX          -> mediaocean_investment_mix
   "sync-social-partner-mix.mjs", // SOCIAL_PARTNER_MIX_2025_vs_2026    -> social_partner_mix
   "sync-billing-summary-raw.mjs", // Billing_summary_master             -> Storage reports/billing/*
+  "sync-mediabox-planner.mjs", // finance_master_mapping             -> mediabox_planner_mix + reports/mediabox_planner/*
 ];
 
 const __filename = fileURLToPath(import.meta.url);

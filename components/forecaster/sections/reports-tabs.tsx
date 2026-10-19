@@ -2,9 +2,9 @@
 "use client";
 
 /**
- * Reports — sub-tab container. Groups the two data-export pages that replace
+ * Reports — sub-tab container. Groups the data-export pages that replace
  * Looker's export function under a single top-level tab:
- *   MIR Raw Data · Billing Summary
+ *   MIR Raw Data · Billing Summary · MediaBox Planner Data
  *
  * Self-contained: the active sub-tab is local state (like ExecKpisTabs), since
  * neither section needs props and the parent doesn't depend on which sub-page
@@ -16,6 +16,7 @@
 import { useState } from "react";
 import MirRawSection from "./mir-raw-section";
 import BillingSummarySection from "./billing-summary-section";
+import MediaboxPlannerRawSection from "./mediabox-planner-raw-section";
 import SubTabBar from "../sub-tab-bar";
 import {
   REPORTS_SUBTABS,
@@ -43,6 +44,7 @@ export default function ReportsTabs({
       {/* Active sub-page — each keeps its own filters and export controls. */}
       {active === "mir-raw" && <MirRawSection />}
       {active === "billing" && <BillingSummarySection />}
+      {active === "mediabox-planner" && <MediaboxPlannerRawSection />}
     </div>
   );
 }

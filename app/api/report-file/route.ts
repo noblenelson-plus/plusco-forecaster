@@ -30,7 +30,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ALLOWED_PATH =
-  /^reports\/(manifest\.json|(mir|billing)\/[A-Za-z0-9 _-]{1,64}\/data\.json\.gz)$/;
+  /^reports\/(manifest\.json|(mir|billing|mediabox_planner)\/[A-Za-z0-9 _-]{1,64}\/data\.json\.gz)$/;
 const UPSTREAM_TIMEOUT_MS = 25_000;
 
 function reply(status: number, error: string) {

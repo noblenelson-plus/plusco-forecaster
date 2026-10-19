@@ -28,7 +28,7 @@ import { auth } from "../../firebase";
 import { UNASSIGNED_AGENCY, scopeCoversAgency, type AgencyScope } from "../../format/agency-scope";
 import { REPORT_CLIENT_COLUMN } from "../../format/report-client-column";
 
-export type ReportTable = "mir" | "billing";
+export type ReportTable = "mir" | "billing" | "mediabox_planner";
 
 export type Cell = string | number | boolean | null;
 export type ReportRow = Record<string, Cell>;
