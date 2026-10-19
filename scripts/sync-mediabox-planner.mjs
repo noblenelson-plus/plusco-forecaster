@@ -1,7 +1,8 @@
 // scripts/sync-mediabox-planner.mjs
 /**
  * Sync: BigQuery finance_master_mapping (MediaBox planned budgets) → the
- * MediaBox Planner dashboard tab + its Reports raw-data download.
+ * MediaBox Planner view (Media Investments → Data: MediaBox Planner) + its
+ * Reports raw-data download.
  *
  * Source: plusco-media-invest-solutions.PCC_Media_Investment.finance_master_mapping,
  * rebuilt daily by the `Concatenated_finance_table` scheduled query (MediaBox v1 +

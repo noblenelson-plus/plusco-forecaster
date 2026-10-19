@@ -7,7 +7,7 @@
  * 2025 + 2026, so e.g. Apr 2025 → Mar 2026 works — with quick picks, and the
  * MIR vintage ("as of" the last sync) on the right.
  *
- * `source="mediabox"` reuses the bar on the MediaBox Planner tab (MediaBox
+ * `source="mediabox"`: Media Investments showing MediaBox Planner data (MediaBox
  * planned budgets, 2025 onwards): the right-hand stamp then shows that sync.
  *
  * Styled to sit with the filter bar below it: an icon + uppercase label like

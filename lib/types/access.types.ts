@@ -45,15 +45,15 @@ export interface UserRecord {
 // ─── Dashboard access ─────────────────────────────────────────────────────────
 
 /**
- * The seven dashboard tabs, in tab-bar order. Ids match FORECASTER_TABS in
+ * The six dashboard tabs, in tab-bar order. Ids match FORECASTER_TABS in
  * components/forecaster/forecaster-tabs.config.ts.
  *
  * Who sees a tab (lib/format/access.ts; mirrored by the security rules):
  *   - Forecaster: client-team members (their clients) + people granted it.
- *   - Media Investments, MediaBox Planner, Labs Pacing, Reports
- *     (AGENCY_DEFAULT_TABS): every company email, for the agencies its domain
- *     maps to (a company-wide domain such as pluscompany.com: every agency) +
- *     people granted it.
+ *   - Media Investments (incl. its MediaBox planned view), Labs Pacing,
+ *     Reports (AGENCY_DEFAULT_TABS): every company email, for the agencies its
+ *     domain maps to (a company-wide domain such as pluscompany.com: every
+ *     agency) + people granted it.
  *   - Exec KPI, MediaBox Adoption: only people granted it.
  *   - Admins: every tab, every client — hidden tabs included.
  */
@@ -62,7 +62,6 @@ export const DASHBOARD_TABS = [
   "labs-pacing",
   "exec-kpis",
   "mediaocean",
-  "mediabox-planner",
   "mediabox",
   "reports",
 ] as const;
@@ -74,7 +73,6 @@ export const GRANTABLE_DASHBOARDS = [
   "labs-pacing",
   "exec-kpis",
   "mediaocean",
-  "mediabox-planner",
   "mediabox",
   "reports",
 ] as const;
@@ -82,7 +80,7 @@ export const GRANTABLE_DASHBOARDS = [
 export type GrantableDashboardId = (typeof GRANTABLE_DASHBOARDS)[number];
 
 /** Tabs every company email sees for its own agency, with no grant. */
-export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "mediabox-planner", "labs-pacing", "reports"];
+export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "labs-pacing", "reports"];
 
 /**
  * Tabs that follow MediaBox allocations once `config/mediabox_allocations` is
@@ -91,18 +89,12 @@ export const AGENCY_DEFAULT_TABS: readonly DashboardTabId[] = ["mediaocean", "me
  * Pod, collaborator: nobody loses their own clients) — instead of its whole
  * agency. Company-wide domains (pluscompany.com) included: a wider view comes
  * from grants, which still add on top. MediaBox Adoption opens for
- * allocated people too (otherwise it is grants only). On Media Investments and
- * MediaBox Planner the rows follow too: they are read by client (`_clientId`)
- * instead of by agency, and the Reports files come filtered to their clients
- * (the report-file route, lib/server/report-access.ts).
+ * allocated people too (otherwise it is grants only). On Media Investments the
+ * rows follow too (MediaOcean and MediaBox planned): they are read by client
+ * (`_clientId`) instead of by agency, and the Reports files come filtered to
+ * their clients (the report-file route, lib/server/report-access.ts).
  */
-export const ALLOCATION_TABS: readonly DashboardTabId[] = [
-  "labs-pacing",
-  "mediabox",
-  "mediaocean",
-  "mediabox-planner",
-  "reports",
-];
+export const ALLOCATION_TABS: readonly DashboardTabId[] = ["labs-pacing", "mediabox", "mediaocean", "reports"];
 
 /**
  * The admins who get "View as" on the dashboard (lowercase emails). They must
@@ -124,9 +116,9 @@ export interface MediaboxAllocationsConfig {
 }
 
 /**
- * Tabs a grant may name specific clients on. Media Investments, MediaBox
- * Planner and Reports are excluded: their data is split by agency, so a client
- * can't be isolated there — they take agency × region grants only.
+ * Tabs a grant may name specific clients on. Media Investments and Reports
+ * are excluded: their data is split by agency, so a client can't be isolated
+ * there — they take agency × region grants only.
  */
 export const CLIENT_GRANT_TABS: readonly DashboardTabId[] = [
   "forecaster",
