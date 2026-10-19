@@ -40,7 +40,9 @@ export function ViewAsPicker({ onPick }: { onPick: (email: string) => void }) {
     );
   }
   return (
-    <div className="flex items-center gap-2">
+    // Above the dashboard's sticky header (z-40) while open, so the result
+    // list isn't hidden behind the Time & Context bar.
+    <div className="relative z-50 flex items-center gap-2">
       <div className="w-72">
         {users ? (
           <UserSearch users={users} exclude={new Set()} onPick={onPick} placeholder="View the dashboard as… (name or email)" />
