@@ -6,6 +6,7 @@ import {
   Activity,
   Box,
   Waves,
+  ClipboardList,
   FileText,
   type LucideIcon,
 } from "lucide-react";
@@ -24,8 +25,8 @@ export type ForecasterTab = "forecaster" | GrantableDashboardId;
  *   - Every other tab → admins and people granted it in Admin → Dashboard
  *     Access (by email domain or person); it shows every client (Global mode)
  *     or the clients of their agencies (Agency mode). Agency-partitioned data
- *     (Media Investments Report, Reports) follows the same scope, enforced by
- *     Firestore/Storage rules — see lib/format/access.ts.
+ *     (Media Investments Report, MediaBox Planner, Reports) follows the same
+ *     scope, enforced by Firestore/Storage rules — see lib/format/access.ts.
  */
 export const FORECASTER_TABS: {
   id: ForecasterTab;
@@ -36,6 +37,7 @@ export const FORECASTER_TABS: {
   { id: "labs-pacing", label: "Labs Pacing", icon: Activity },
   { id: "exec-kpis", label: "Exec KPI Dashboard", icon: Gauge },
   { id: "mediaocean", label: "Media Investments Report (Mediaocean)", icon: Waves },
+  { id: "mediabox-planner", label: "MediaBox Planner", icon: ClipboardList },
   { id: "mediabox", label: "MediaBox Adoption", icon: Box },
   { id: "reports", label: "Reports (Raw Data Download)", icon: FileText },
 ];

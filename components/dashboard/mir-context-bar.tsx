@@ -7,6 +7,9 @@
  * 2025 + 2026, so e.g. Apr 2025 → Mar 2026 works — with quick picks, and the
  * MIR vintage ("as of" the last sync) on the right.
  *
+ * `source="mediabox"` reuses the bar on the MediaBox Planner tab (MediaBox
+ * planned budgets, 2025 onwards): the right-hand stamp then shows that sync.
+ *
  * Styled to sit with the filter bar below it: an icon + uppercase label like
  * "FILTERS", pickers shaped like the filter dropdowns, the quick picks as one
  * segmented control like the CAD / USD toggle. Only shown where the period
@@ -15,6 +18,7 @@
 
 import { CalendarRange, Database } from "lucide-react";
 import { useLastSync } from "../../lib/dashboard/data/use-last-sync";
+import { useMediaboxPlannerSyncedAt } from "../../lib/dashboard/data/use-mediabox-planner-mix";
 import {
   calendarYearPeriod,
   describePeriod,
@@ -34,12 +38,29 @@ const MIR_FIRST_YEAR = 2025;
 const selectClass =
   "min-w-[120px] px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400";
 
+/** The MediaBox Planner sync stamp (its own doc, read only on that tab). */
+function MediaboxAsOf() {
+  const syncedAt = useMediaboxPlannerSyncedAt();
+  return (
+    <span
+      className="ml-auto flex items-center gap-1.5 text-xs text-gray-500"
+      title="MediaBox planned budgets (finance_master_mapping) — no RFQ or forecast comparison applies here."
+    >
+      <Database size={13} />
+      MediaBox · as of {syncedAt ?? "latest sync"}
+    </span>
+  );
+}
+
 export default function MirContextBar({
   period,
   onPeriodChange,
+  source = "mir",
 }: {
   period: MonthPeriod;
   onPeriodChange: (p: MonthPeriod) => void;
+  /** Whose data the period applies to (the right-hand "as of" stamp). */
+  source?: "mir" | "mediabox";
 }) {
   const lastSync = useLastSync();
   const now = new Date();
@@ -104,13 +125,17 @@ export default function MirContextBar({
         ))}
       </div>
 
-      <span
-        className="ml-auto flex items-center gap-1.5 text-xs text-gray-500"
-        title="MediaOcean (MIR) booked data — no RFQ or forecast comparison applies here."
-      >
-        <Database size={13} />
-        MIR · as of {lastSync.labelShort ?? "latest sync"}
-      </span>
+      {source === "mediabox" ? (
+        <MediaboxAsOf />
+      ) : (
+        <span
+          className="ml-auto flex items-center gap-1.5 text-xs text-gray-500"
+          title="MediaOcean (MIR) booked data — no RFQ or forecast comparison applies here."
+        >
+          <Database size={13} />
+          MIR · as of {lastSync.labelShort ?? "latest sync"}
+        </span>
+      )}
     </div>
   );
 }
