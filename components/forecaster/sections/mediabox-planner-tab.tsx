@@ -29,6 +29,7 @@ import {
   Loader2,
   Percent,
   PieChart,
+  Receipt,
   Share2,
   Table,
   TrendingUp,
@@ -52,6 +53,7 @@ import {
 } from "../../../lib/dashboard/data/use-mediaocean-investment-mix";
 import { computeSocialSummary } from "../../../lib/dashboard/data/use-social-partner-mix";
 import {
+  clientCostTotals,
   plannedAmount,
   plannerMonth,
   plannerStatuses,
@@ -245,6 +247,132 @@ function TotalInvestmentSection({
           <ForecasterPieChart segments={toSegments(totals.digitalMix)} valueFormat={money} />
         </ChartCard>
       </div>
+    </div>
+  );
+}
+
+// ─── Client Cost ──────────────────────────────────────────────────────────────
+// Client Cost = Planned Net + Commission (without taxes), + Taxes (with taxes).
+// Other MediaBox fees (adserving, production, tech…) are shown, not included.
+// Fees exist for MediaBox v2 plans only: v1 plans count in Planned Net with no fees.
+
+function ClientCostSection({
+  rows,
+  currency,
+  period,
+}: {
+  rows: PlannerRow[];
+  currency: PlannerCurrency;
+  period: MonthPeriod;
+}) {
+  const totals = useMemo(() => clientCostTotals(rows, currency), [rows, currency]);
+  const byChannel = useMemo(() => {
+    const groups = new Map<string, { label: string; rows: PlannerRow[] }>();
+    for (const r of rows) {
+      const label = String(r.PLUSCO_MEDIA_CHANNEL ?? "").trim() || "N/A";
+      const key = label.toUpperCase();
+      const g = groups.get(key) ?? { label, rows: [] };
+      g.rows.push(r);
+      groups.set(key, g);
+    }
+    return [...groups.values()]
+      .map((g) => ({ channel: g.label, ...clientCostTotals(g.rows, currency) }))
+      .sort((a, b) => b.clientCostInclTaxes - a.clientCostInclTaxes);
+  }, [rows, currency]);
+  const cur = `(${currency})`;
+  const commissionPct = totals.plannedNet ? totals.commission / totals.plannedNet : null;
+  const COLS = ["Planned Net", "Commission", "Taxes", "Client Cost (without taxes)", "Client Cost (with taxes)", "Other fees"];
+  const values = (t: typeof totals) => [
+    t.plannedNet,
+    t.commission,
+    t.taxes,
+    t.clientCostExclTaxes,
+    t.clientCostInclTaxes,
+    t.otherFees,
+  ];
+
+  return (
+    <div data-scroll-section data-scroll-label="Client Cost" className="space-y-6">
+      <div className="flex items-center gap-2">
+        <Receipt size={18} className="text-primary" />
+        <h2 className="text-lg font-semibold text-foreground">Client Cost</h2>
+        <span className="text-xs font-medium text-muted-foreground">· {describePeriod(period)}</span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Client Cost = Planned Net + Commission, with or without Taxes. Other MediaBox fees (adserving, production,
+        tech…) are listed separately and not included.
+        {totals.noFeeData > 0 &&
+          ` ${money(totals.noFeeData)} of Planned Net is from MediaBox v1 plans, which have no fee data.`}
+      </p>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard icon={TrendingUp} label="Planned Net" value={money(totals.plannedNet)} />
+        <StatCard
+          icon={Receipt}
+          label="Commission"
+          value={money(totals.commission)}
+          sub={`${pct(commissionPct, 1)} of Planned Net`}
+        />
+        <StatCard icon={Receipt} label="Taxes" value={money(totals.taxes)} />
+        <StatCard icon={Receipt} label="Client Cost (without taxes)" value={money(totals.clientCostExclTaxes)} />
+        <StatCard icon={Receipt} label="Client Cost (with taxes)" value={money(totals.clientCostInclTaxes)} />
+        <StatCard
+          icon={Receipt}
+          label="Other fees"
+          value={money(totals.otherFees)}
+          sub="Not included in Client Cost"
+        />
+      </div>
+      <ChartCard
+        title="Client Cost by Channel"
+        icon={Table}
+        action={
+          <SheetExportButton
+            title="Client Cost by Channel"
+            sheetTitle="Client Cost by Channel"
+            disabled={byChannel.length === 0}
+            buildMatrix={() => [
+              ["Channel", ...COLS.map((c) => `${c} ${cur}`)],
+              ...byChannel.map((c) => [c.channel, ...values(c)]),
+              ["Grand total", ...values(totals)],
+            ]}
+          />
+        }
+      >
+        <div className="overflow-x-auto pt-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
+                <th className={`${TH} text-left`}>Channel</th>
+                {COLS.map((c) => (
+                  <th key={c} className={`${TH} pl-4 text-right`}>
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {byChannel.map((c) => (
+                <tr key={c.channel} className="border-b border-border/60">
+                  <td className="py-2 text-left text-foreground">{c.channel}</td>
+                  {values(c).map((v, i) => (
+                    <td key={COLS[i]} className={`${TD} pl-4 text-right`}>
+                      {money(v)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="border-t-2 border-border font-semibold">
+                <td className="py-2 text-left text-foreground">Grand total</td>
+                {values(totals).map((v, i) => (
+                  <td key={COLS[i]} className="py-2 pl-4 text-right tabular-nums text-foreground">
+                    {money(v)}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </ChartCard>
     </div>
   );
 }
@@ -676,6 +804,7 @@ export default function MediaboxPlannerTab({
       </div>
 
       <TotalInvestmentSection rows={inRange} currency={currency} period={period} />
+      <ClientCostSection rows={inRange} currency={currency} period={period} />
       <StatusSection rows={inRange} currency={currency} />
       <TopPartnersSection rows={inRange} allRows={scoped} currency={currency} period={period} />
       <SocialSection rows={scoped} currency={currency} selMonths={monthsWithinOneYear(period)} />

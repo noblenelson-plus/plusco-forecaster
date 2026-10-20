@@ -5,8 +5,10 @@
  * MEDIABOX PLANNER DATA page (Reports). Thin config over RawTablePage: the
  * per-agency Storage snapshots of PCC_Media_Investment.finance_master_mapping
  * published by scripts/sync-mediabox-planner.mjs — one row per MediaBox tactic ×
- * month, planned net budget in the campaign currency plus its CAD conversion
- * (FX_RATE_TO_CAD, BUDGET_CAD). AGENCY_APP is the app agency the row is filed
+ * month, planned net budget and MediaBox fees (commission / taxes / other_fees,
+ * MediaBox v2 only) in the campaign currency, plus their CAD conversion
+ * (FX_RATE_TO_CAD, BUDGET_CAD, COMMISSION_CAD, TAXES_CAD, OTHER_FEES_CAD,
+ * CLIENT_COST_EXCL_TAXES_CAD, CLIENT_COST_INCL_TAXES_CAD). AGENCY_APP is the app agency the row is filed
  * under (the client's agency, else MediaBox's). Columns not listed below are
  * appended after these.
  */
@@ -47,8 +49,19 @@ const COLUMN_ORDER = [
   "month",
   "ref_currency",
   "monthly_tactic_media_budget",
+  "commission",
+  "taxes",
+  "other_fees",
   "FX_RATE_TO_CAD",
   "BUDGET_CAD",
+  "COMMISSION_CAD",
+  "TAXES_CAD",
+  "OTHER_FEES_CAD",
+  "CLIENT_COST_EXCL_TAXES_CAD",
+  "CLIENT_COST_INCL_TAXES_CAD",
+  "commission_labels",
+  "tax_labels",
+  "other_fee_labels",
   "total_tactic_media_budget_ref_currency",
   "cmp_po",
   "tac_po",
@@ -62,7 +75,15 @@ const COLUMN_ORDER = [
 
 const MONEY_FIELDS = new Set([
   "monthly_tactic_media_budget",
+  "commission",
+  "taxes",
+  "other_fees",
   "BUDGET_CAD",
+  "COMMISSION_CAD",
+  "TAXES_CAD",
+  "OTHER_FEES_CAD",
+  "CLIENT_COST_EXCL_TAXES_CAD",
+  "CLIENT_COST_INCL_TAXES_CAD",
   "total_tactic_media_budget_ref_currency",
 ]);
 
