@@ -275,7 +275,7 @@ function DashboardContent() {
   // dashboard should open on the latest submission, so we FORCE the current
   // submission on each mount rather than only filling an empty selection —
   // otherwise a previously-persisted (localStorage) primary would pin an older
-  // round. Primary → current submission (latest year + highest round);
+  // round. Primary → current submission (earliest unlocked round);
   // comparison → the round immediately before it. A manual change made after
   // mount still sticks, because the ref stops this from running again.
   const seededDefaultsRef = useRef(false);

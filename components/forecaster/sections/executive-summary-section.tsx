@@ -10,7 +10,8 @@
  * Actuals are computed live over the dashboard scope:
  *   - Media Labs booked + Meta (all) — from `mo_kpi_by_client` via
  *     computeInvestmentKpis (plus a raw Total LABS Spend sum).
- *   - Media Labs forecast — from the page's forecast scope (`data.labs`).
+ *   - Media Labs + MIQ-Social forecast — from the page's forecast scope
+ *     (`data.labs`, `data.labsDetail`), i.e. the selected Year + RFQ.
  *   - Billups booked + forecast — the same path as the Billups section
  *     (computeBillupsKpis over MIR rows and mapped forecast rows).
  *
@@ -21,6 +22,8 @@
  * The booked (MIR) view comes from useBookedExecKpis, shared with the Media
  * Investments page's Investment KPIs section so both show the same numbers;
  * this page adds the Forecaster view, the Meta trend and the by-GM table.
+ * The source toggle only switches the scorecard band: the snapshots and tables
+ * below it are MIR-only and say so.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -63,6 +66,7 @@ export default function ExecutiveSummarySection({
   usersMap,
   scopedClientIds,
   year,
+  rfqLabel,
 }: {
   forecastData: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -70,6 +74,8 @@ export default function ExecutiveSummarySection({
   usersMap: Map<string, string>;
   scopedClientIds: string[];
   year: number;
+  /** The selected RFQ round (e.g. "FINAL") the Forecaster view reads. */
+  rfqLabel?: string;
 }) {
   // Booked (MIR) scorecards + the scoped mo_kpi_by_client rows (shared hook).
   const booked = useBookedExecKpis(scopedClientIds, year);
@@ -153,6 +159,16 @@ export default function ExecutiveSummarySection({
     ? fcLabsTotal - comparisonData.labs.totalLabs
     : null;
 
+  // MIQ-Social Labs forecast for the selected Year + RFQ (live), matched by
+  // partner name like the Billups partners above.
+  const fcMiqSocial = useMemo(
+    () =>
+      forecastData.labsDetail
+        .filter((r) => r.partnerName.trim().toLowerCase() === "miq-social")
+        .reduce((acc, r) => acc + r.total, 0),
+    [forecastData.labsDetail]
+  );
+
   // -- Source of truth (MIR vs Forecaster) drives the KPI band ----------------
   const [source, setSource] = useState<"mir" | "forecaster">("mir");
 
@@ -212,13 +228,10 @@ export default function ExecutiveSummarySection({
           {
             icon: DollarSign,
             label: "MIQ-Social Forecast",
-            value: money(inv.meta.miqSocialForecast2026),
-            // % of the latest RFQ forecast that's booked (MIR) to date.
-            pctOfTarget: ratioTo(
-              inv.meta.miqSocialSpend2026,
-              inv.meta.miqSocialForecast2026
-            ),
-            goalLabel: `Booked ${moneyCompact(inv.meta.miqSocialSpend2026)}`,
+            value: money(fcMiqSocial),
+            // % of the selected RFQ's forecast that's booked (MIR) to date.
+            pctOfTarget: ratioTo(inv.meta.miqSocialSpend2026, fcMiqSocial),
+            goalLabel: `Booked (MIR) ${moneyCompact(inv.meta.miqSocialSpend2026)}`,
           },
         ],
       },
@@ -230,6 +243,7 @@ export default function ExecutiveSummarySection({
     fcLabsShare,
     fcLabsTotal,
     fcLabsDelta,
+    fcMiqSocial,
     goals,
     labsShareGoal,
   ]);
@@ -239,7 +253,12 @@ export default function ExecutiveSummarySection({
   const periodLabel =
     source === "mir"
       ? `${year} · ${mirSourceLabel}`
-      : `${year} · Forecaster (live)`;
+      : `${year} · ${rfqLabel ?? "No RFQ selected"} · Forecaster (live)`;
+  // The snapshots and tables below the band are always MIR.
+  const mirOnlyLabel =
+    source === "forecaster"
+      ? `${mirSourceLabel} · not affected by the source toggle`
+      : mirSourceLabel;
 
   // -- Loading / error --------------------------------------------------------
   const busy = booked.loading || forecastData.loading;
@@ -263,47 +282,57 @@ export default function ExecutiveSummarySection({
   // -- Render --------------------------------------------------------------
   return (
     <div data-scroll-section data-scroll-label="Media & Labs KPIs" className="space-y-6">
-      {/* Header — one tight row: title + as-of date (left), RAG legend (center),
-          source toggle (right), so the scorecards are the first thing seen. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Plusco Exec KPIs
-          </p>
-          <h2 className="text-xl font-bold text-foreground">Media &amp; Labs KPIs</h2>
-          <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-            <Calendar size={12} className="flex-shrink-0" />
-            {periodLabel}
-          </div>
-        </div>
-
-      
-
-        <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
-          {(
-            [
-              ["mir", "Booked to date (MIR)"],
-              ["forecaster", "Forecaster"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setSource(id)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                source === id
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+      {/* Header — title + the scorecards' source / as-of label. */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Plusco Exec KPIs
+        </p>
+        <h2 className="text-xl font-bold text-foreground">Media &amp; Labs KPIs</h2>
+        <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+          <Calendar size={12} className="flex-shrink-0" />
+          {periodLabel}
         </div>
       </div>
 
-      {/* Total Plusco KPI band (drives off the selected source) */}
-            <ExecSummaryKpiBand pillars={pillars} />
+      {/* Total Plusco KPI band (drives off the selected source), with its
+          source toggle right above it — the toggle covers the band only. */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Scorecards
+          </p>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-muted-foreground">Source</span>
+            <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+              {(
+                [
+                  ["mir", "Booked to date (MIR)"],
+                  ["forecaster", "Forecaster"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSource(id)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    source === id
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <ExecSummaryKpiBand pillars={pillars} />
+      </div>
+
+      <p className="border-t border-border pt-4 text-[11px] font-medium text-muted-foreground">
+        Everything below: {mirSourceLabel}. The source toggle only switches the
+        scorecards above.
+      </p>
 
       {/* Client-status snapshots, below the scorecards: Billups eligibility
           (under the Billups pillar's story) beside the Meta Share Trend. */}
@@ -315,7 +344,7 @@ export default function ExecutiveSummarySection({
           year={ELIGIBILITY_YEAR}
         />
         <div className="rounded-lg border border-border bg-card p-4">
-          <MetaShareTrendStrip data={metaTrend} />
+          <MetaShareTrendStrip data={metaTrend} sourceLabel="MIR" />
         </div>
       </div>
 
@@ -324,7 +353,7 @@ export default function ExecutiveSummarySection({
         rows={scopedKpiRows}
         labsShareGoal={labsShareGoal}
         billupsShareGoal={goals.billupsShare}
-        sourceLabel={mirSourceLabel}
+        sourceLabel={mirOnlyLabel}
       />
 
       {/* By client */}
@@ -333,7 +362,7 @@ export default function ExecutiveSummarySection({
         scenarioById={booked.miqScenarioById}
         labsShareGoal={labsShareGoal}
         billupsShareGoal={goals.billupsShare}
-        sourceLabel={mirSourceLabel}
+        sourceLabel={mirOnlyLabel}
       />
     </div>
   );
