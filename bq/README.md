@@ -15,6 +15,10 @@ local copy, so a monthly rebuild never undoes a fix.
 | `SOCIAL_PARTNER_MIX_2025_vs_2026.sql` | `SOCIAL_PARTNER_MIX_2025_vs_2026` | `social_partner_mix` (`scripts/sync-social-partner-mix.mjs`) |
 | `CHANNEL_MIX_2025_vs_2026.sql` | `CHANNEL_MIX_2025_vs_2026` | — (Looker only) |
 
+`mir_live/` builds the automated MIR (`MIR_Live.MIR`) daily from MediaOcean raw on a
+scheduled query, plus the QA against a manual MIR. In QA — not yet feeding
+`PCC_Dashboard_NATIVE`. See `mir_live/README.md`.
+
 **Rebuild order after a MIR change** (each reads `PCC_Dashboard_NATIVE`, so
 rebuild NATIVE first, then *all* of these, then `node scripts/sync-all.mjs`):
 `KPI_BY_CLIENT` · `MEDIAOCEAN_INVESTMENT_MIX` · `SOCIAL_PARTNER_MIX` ·
