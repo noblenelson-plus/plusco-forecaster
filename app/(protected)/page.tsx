@@ -22,7 +22,10 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, X, Flag } from "lucide-react";
-import DashboardContextBar from "../../components/dashboard/dashboard-context-bar";
+import DashboardContextBar, {
+  MONTH_OPTIONS,
+} from "../../components/dashboard/dashboard-context-bar";
+import MultiSelectDropdown from "../../components/_shared/multi-select-dropdown";
 import CurrencyToggle from "../../components/dashboard/currency-toggle";
 import MirContextBar from "../../components/dashboard/mir-context-bar";
 import { calendarYearPeriod, type MonthPeriod } from "../../lib/format/period";
@@ -406,9 +409,11 @@ function DashboardContent() {
   // MIR tabs (no RFQ): their own From → To month period instead of Year / RFQ /
   // Months. Defaults to the current calendar year (the previous behaviour).
   const isMirTab = topTab === "mediaocean" || topTab === "reports";
-  // The Months filter is shown on the Forecaster tab only, so the shared
-  // forecast data ignores it elsewhere (no hidden filter on Exec KPI etc.).
-  const dataMonths = topTab === "forecaster" ? selMonths : ALL_MONTHS;
+  // The Months filter is shown on the Forecaster and MediaBox Adoption tabs
+  // only (one shared selection), so the shared forecast data ignores it
+  // elsewhere (no hidden filter on Exec KPI etc.).
+  const showsMonths = topTab === "forecaster" || topTab === "mediabox";
+  const dataMonths = showsMonths ? selMonths : ALL_MONTHS;
   const [mirPeriod, setMirPeriod] = useState<MonthPeriod>(() =>
     calendarYearPeriod(new Date().getFullYear())
   );
@@ -500,7 +505,8 @@ function DashboardContent() {
             gets a Year-only bar (no RFQ / vs / Months / currency).
             Media Investments gets the MIR period row. The other tabs
             have no row here: Labs Pacing / Exec KPI / MediaBox carry the CAD /
-            USD toggle in the filter bar; Reports and the KPI sub-tab need none. */}
+            USD toggle in the filter bar (MediaBox also its Months filter);
+            Reports and the KPI sub-tab need none. */}
         {isMirTab ? (
           topTab === "mediaocean" && mediaOceanSub === "investments" ? (
             <MirContextBar
@@ -564,13 +570,24 @@ function DashboardContent() {
             roomy={topTab !== "forecaster"}
             trailing={
               !isMirTab && topTab !== "forecaster" ? (
-                <CurrencyToggle
-                  viewCurrency={viewCurrency}
-                  onChange={setViewCurrency}
-                  usdToCad={usdToCad}
-                  usdClientCount={forecastData.usdClientCount}
-                  missingRate={forecastData.missingRate}
-                />
+                <div className="flex items-center gap-3">
+                  {/* MediaBox Adoption: same Months filter as the Forecaster tab. */}
+                  {topTab === "mediabox" && (
+                    <MultiSelectDropdown
+                      label="Months"
+                      options={MONTH_OPTIONS}
+                      selectedValues={selMonths.map(String)}
+                      onChange={(vals) => setSelMonths(vals.map(Number))}
+                    />
+                  )}
+                  <CurrencyToggle
+                    viewCurrency={viewCurrency}
+                    onChange={setViewCurrency}
+                    usdToCad={usdToCad}
+                    usdClientCount={forecastData.usdClientCount}
+                    missingRate={forecastData.missingRate}
+                  />
+                </div>
               ) : undefined
             }
           />
