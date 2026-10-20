@@ -82,6 +82,7 @@ export default function ExecKpisTabs({
           usersMap={usersMap}
           scopedClientIds={scopedClientIds}
           year={year}
+          rfqLabel={rfqLabel}
         />
       )}
 

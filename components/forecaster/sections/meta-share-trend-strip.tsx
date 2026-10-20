@@ -4,8 +4,11 @@
 // always render identically.
 export default function MetaShareTrendStrip({
   data,
+  sourceLabel,
 }: {
   data: { label: string; count: number }[];
+  /** Optional data-source tag appended to the caption, e.g. "MIR". */
+  sourceLabel?: string;
 }) {
   const total = data.reduce((acc, d) => acc + d.count, 0);
   if (total === 0) return null;
@@ -20,6 +23,7 @@ export default function MetaShareTrendStrip({
     <div>
       <p className="mb-2 text-xs font-medium text-muted-foreground">
         Meta Share Trend · % of {total} client{total === 1 ? "" : "s"}
+        {sourceLabel ? ` · ${sourceLabel}` : ""}
       </p>
       <div className="space-y-2">
         {data.map((d) => {

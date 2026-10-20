@@ -21,6 +21,8 @@
  * The booked (MIR) view comes from useBookedExecKpis, shared with the Media
  * Investments page's Investment KPIs section so both show the same numbers;
  * this page adds the Forecaster view, the Meta trend and the by-GM table.
+ * The source toggle only switches the scorecard band: the snapshots and tables
+ * below it are MIR-only and say so.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -63,6 +65,7 @@ export default function ExecutiveSummarySection({
   usersMap,
   scopedClientIds,
   year,
+  rfqLabel,
 }: {
   forecastData: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -70,6 +73,8 @@ export default function ExecutiveSummarySection({
   usersMap: Map<string, string>;
   scopedClientIds: string[];
   year: number;
+  /** The selected RFQ round (e.g. "RFQ3") the Forecaster view reads. */
+  rfqLabel?: string;
 }) {
   // Booked (MIR) scorecards + the scoped mo_kpi_by_client rows (shared hook).
   const booked = useBookedExecKpis(scopedClientIds, year);
@@ -218,7 +223,10 @@ export default function ExecutiveSummarySection({
               inv.meta.miqSocialSpend2026,
               inv.meta.miqSocialForecast2026
             ),
-            goalLabel: `Booked ${moneyCompact(inv.meta.miqSocialSpend2026)}`,
+            goalLabel: `Booked (MIR) ${moneyCompact(inv.meta.miqSocialSpend2026)}`,
+            // From the monthly BigQuery sync, which is fixed to RFQ3 — it
+            // doesn't follow the selected RFQ, so say which round it is.
+            sub: "RFQ3 forecast (monthly sync)",
           },
         ],
       },
@@ -239,7 +247,12 @@ export default function ExecutiveSummarySection({
   const periodLabel =
     source === "mir"
       ? `${year} · ${mirSourceLabel}`
-      : `${year} · Forecaster (live)`;
+      : `${year} · ${rfqLabel ?? "No RFQ selected"} submission · Forecaster (live)`;
+  // The snapshots and tables below the band are always MIR.
+  const mirOnlyLabel =
+    source === "forecaster"
+      ? `${mirSourceLabel} · not affected by the source toggle`
+      : mirSourceLabel;
 
   // -- Loading / error --------------------------------------------------------
   const busy = booked.loading || forecastData.loading;
@@ -303,7 +316,12 @@ export default function ExecutiveSummarySection({
       </div>
 
       {/* Total Plusco KPI band (drives off the selected source) */}
-            <ExecSummaryKpiBand pillars={pillars} />
+      <ExecSummaryKpiBand pillars={pillars} />
+
+      <p className="text-[11px] font-medium text-muted-foreground">
+        Everything below: {mirSourceLabel}. The source toggle only switches the
+        scorecards above.
+      </p>
 
       {/* Client-status snapshots, below the scorecards: Billups eligibility
           (under the Billups pillar's story) beside the Meta Share Trend. */}
@@ -315,7 +333,7 @@ export default function ExecutiveSummarySection({
           year={ELIGIBILITY_YEAR}
         />
         <div className="rounded-lg border border-border bg-card p-4">
-          <MetaShareTrendStrip data={metaTrend} />
+          <MetaShareTrendStrip data={metaTrend} sourceLabel="MIR" />
         </div>
       </div>
 
@@ -324,7 +342,7 @@ export default function ExecutiveSummarySection({
         rows={scopedKpiRows}
         labsShareGoal={labsShareGoal}
         billupsShareGoal={goals.billupsShare}
-        sourceLabel={mirSourceLabel}
+        sourceLabel={mirOnlyLabel}
       />
 
       {/* By client */}
@@ -333,7 +351,7 @@ export default function ExecutiveSummarySection({
         scenarioById={booked.miqScenarioById}
         labsShareGoal={labsShareGoal}
         billupsShareGoal={goals.billupsShare}
-        sourceLabel={mirSourceLabel}
+        sourceLabel={mirOnlyLabel}
       />
     </div>
   );
