@@ -24,7 +24,8 @@ import MultiSelectDropdown from "../_shared/multi-select-dropdown";
 import { useComparisonSelection } from "../../lib/stores/comparison-selection.store";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 
-const MONTH_OPTIONS = [
+/** Jan..Dec as Months-filter options (value "1".."12"); shared with the MediaBox tab. */
+export const MONTH_OPTIONS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ].map((label, i) => ({ value: String(i + 1), label }));
