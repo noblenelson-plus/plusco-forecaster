@@ -64,7 +64,8 @@ export default function MirContextBar({
 }) {
   const lastSync = useLastSync();
   const now = new Date();
-  const lastYear = Math.max(now.getFullYear(), MIR_FIRST_YEAR + 1);
+  // MediaBox also holds next year's plans; MIR is booked spend (up to this year).
+  const lastYear = Math.max(now.getFullYear() + (source === "mediabox" ? 1 : 0), MIR_FIRST_YEAR + 1);
   const options = monthKeysBetween(MIR_FIRST_YEAR, lastYear);
 
   const presets: { label: string; period: MonthPeriod }[] = [

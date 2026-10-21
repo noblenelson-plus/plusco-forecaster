@@ -14,6 +14,8 @@ local copy, so a monthly rebuild never undoes a fix.
 | `MEDIAOCEAN_INVESTMENT_MIX.sql` | `MEDIAOCEAN_INVESTMENT_MIX` | `mediaocean_investment_mix` (`scripts/sync-mediaocean-investment-mix.mjs`) |
 | `SOCIAL_PARTNER_MIX_2025_vs_2026.sql` | `SOCIAL_PARTNER_MIX_2025_vs_2026` | `social_partner_mix` (`scripts/sync-social-partner-mix.mjs`) |
 | `CHANNEL_MIX_2025_vs_2026.sql` | `CHANNEL_MIX_2025_vs_2026` | — (Looker only) |
+| `Concatenated_finance_table.sql` | `Finance_mediabox.finance_combined` → `finance_Mediabox_combined` → `PCC_Media_Investment.finance_master_mapping` → `finance_mapped_client_segmentation` (scheduled query, daily 13:00 UTC; copy — the schedule is the source of truth) | `mediabox_planner_mix` + `reports/mediabox_planner/*` (`scripts/sync-mediabox-planner.mjs`) |
+| `fee_label_mapping.sql` | `Finance_mediabox.fee_label_mapping` (MediaBox fee label → Commission / Taxes / Other fees) | — (read by the finance pipeline) |
 
 `mir_live/` builds the automated MIR (`MIR_Live.MIR`) daily from MediaOcean raw on a
 scheduled query, plus the QA against a manual MIR. In QA — not yet feeding

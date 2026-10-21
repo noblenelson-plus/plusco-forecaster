@@ -44,8 +44,21 @@ export interface PlannerRow {
   CMP_STATUS: string;
   PLANNED_CAD: number;
   PLANNED_USD: number;
+  /** MediaBox fees by bucket (MediaBox v2 only; 0 where the plan is from v1). */
+  COMMISSION_CAD?: number;
+  COMMISSION_USD?: number;
+  TAXES_CAD?: number;
+  TAXES_USD?: number;
+  OTHER_FEES_CAD?: number;
+  OTHER_FEES_USD?: number;
+  /** The part of PLANNED_* from MediaBox v1, which has no fee data. */
+  NO_FEE_DATA_CAD?: number;
+  NO_FEE_DATA_USD?: number;
   [key: string]: unknown;
 }
+
+/** A summed amount of a planner row. Client Cost is derived (amountOf). */
+export type PlannerMetric = "PLANNED" | "COMMISSION" | "TAXES" | "OTHER_FEES" | "NO_FEE_DATA";
 
 /** One currency's rate to CAD for one year, as the sync recorded it. */
 export interface PlannerFxRate {
@@ -132,10 +145,43 @@ export function useMediaboxPlannerSyncedAt(): string | null {
   return label;
 }
 
-/** The planned amount in the chosen currency. */
-export function plannedAmount(r: PlannerRow, currency: PlannerCurrency): number {
-  const v = currency === "USD" ? r.PLANNED_USD : r.PLANNED_CAD;
+/** One summed amount of a row in the chosen currency (missing = 0). */
+export function amountOf(r: PlannerRow, metric: PlannerMetric, currency: PlannerCurrency): number {
+  const v = r[`${metric}_${currency}`];
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+/** The planned amount (Planned Net) in the chosen currency. */
+export function plannedAmount(r: PlannerRow, currency: PlannerCurrency): number {
+  return amountOf(r, "PLANNED", currency);
+}
+
+/** Client Cost totals over some rows (Client Cost = Planned Net + Commission (+ Taxes)). */
+export interface ClientCostTotals {
+  plannedNet: number;
+  commission: number;
+  taxes: number;
+  otherFees: number;
+  clientCostExclTaxes: number;
+  clientCostInclTaxes: number;
+  /** Planned Net from MediaBox v1 plans, which carry no fees. */
+  noFeeData: number;
+}
+
+export function clientCostTotals(rows: PlannerRow[], currency: PlannerCurrency): ClientCostTotals {
+  const t = { plannedNet: 0, commission: 0, taxes: 0, otherFees: 0, noFeeData: 0 };
+  for (const r of rows) {
+    t.plannedNet += amountOf(r, "PLANNED", currency);
+    t.commission += amountOf(r, "COMMISSION", currency);
+    t.taxes += amountOf(r, "TAXES", currency);
+    t.otherFees += amountOf(r, "OTHER_FEES", currency);
+    t.noFeeData += amountOf(r, "NO_FEE_DATA", currency);
+  }
+  return {
+    ...t,
+    clientCostExclTaxes: t.plannedNet + t.commission,
+    clientCostInclTaxes: t.plannedNet + t.commission + t.taxes,
+  };
 }
 
 /** Calendar month (1–12) of a planner row, from "YYYY-MM". */

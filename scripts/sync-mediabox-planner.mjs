@@ -5,19 +5,27 @@
  * Reports raw-data download.
  *
  * Source: plusco-media-invest-solutions.PCC_Media_Investment.finance_master_mapping,
- * rebuilt daily by the `Concatenated_finance_table` scheduled query (MediaBox v1 +
- * v2 finance, deduplicated, mapped to Forecaster clients and Plus partners /
- * channels / deals). One row per tactic × month; `monthly_tactic_media_budget`
- * is the planned net budget in the campaign's reference currency.
+ * rebuilt daily by the `Concatenated_finance_table` scheduled query (v5: MediaBox
+ * v2 from mediabox-1cd44.mediabox_3.finance, v1 from canadian-sandbox; mapped to
+ * Forecaster clients and Plus partners / channels / deals). One row per tactic ×
+ * month, amounts in the campaign's reference currency:
+ *   monthly_tactic_media_budget = Planned Net; commission / taxes / other_fees =
+ *   the MediaBox fees by bucket (Finance_mediabox.fee_label_mapping). Fees exist
+ *   for MediaBox v2 only (NULL for v1).
  *
  * Writes:
  *   1. Firestore `mediabox_planner_mix` — the tab's charts. Rows summed to
  *      year × month × agency × client × channel × partner × deal × campaign
- *      status, amounts converted to CAD (PLANNED_CAD) and to USD (PLANNED_USD).
- *      Tagged `_agency` (rules) and `_clientId` (MediaBox allocations).
+ *      status; every amount in CAD and USD: PLANNED_*, COMMISSION_*, TAXES_*,
+ *      OTHER_FEES_*, and NO_FEE_DATA_* (the part of Planned Net from MediaBox v1,
+ *      which has no fee data). Tagged `_agency` (rules) and `_clientId`
+ *      (MediaBox allocations).
  *   2. Storage `reports/mediabox_planner/{agency}/data.json.gz` — every column of
- *      the source table plus FX_RATE_TO_CAD / BUDGET_CAD, one file per agency
- *      (scripts/lib/report-snapshot.mjs).
+ *      the source table plus FX_RATE_TO_CAD and the CAD amounts (BUDGET_CAD,
+ *      COMMISSION_CAD, TAXES_CAD, OTHER_FEES_CAD, CLIENT_COST_EXCL_TAXES_CAD,
+ *      CLIENT_COST_INCL_TAXES_CAD), one file per agency
+ *      (scripts/lib/report-snapshot.mjs). Client Cost = Planned Net + Commission
+ *      (+ Taxes); other fees are not included.
  *   3. `dashboard_meta/mediabox_planner` — sync time + the rates used, shown on
  *      the tab.
  *
@@ -48,6 +56,8 @@ const COLLECTION = "mediabox_planner_mix";
 const REPORT_TABLE = "mediabox_planner";
 const META_DOC = "mediabox_planner";
 const NO_PARTNER = "(No partner mapped)";
+// Summed amounts on each dashboard row, in CAD and USD.
+const AMOUNT_FIELDS = ["PLANNED", "COMMISSION", "TAXES", "OTHER_FEES", "NO_FEE_DATA"].flatMap((n) => [`${n}_CAD`, `${n}_USD`]);
 
 // Doc id = hash of these, in this order. Never reorder once data is stored.
 const GRAIN_FIELDS = [
@@ -117,11 +127,22 @@ async function main() {
     const rate = toCad(cur, year);
     if (rate === undefined) unconverted++;
     const budget = Number(r.monthly_tactic_media_budget) || 0;
+    // Fees: NULL on MediaBox v1 rows (no fee data) — kept NULL, never 0.
+    const fee = (v) => (v === null || v === undefined || rate === undefined ? null : (Number(v) || 0) * rate);
+    const commissionCad = fee(r.commission);
+    const taxesCad = fee(r.taxes);
+    const hasFees = commissionCad !== null;
+    const budgetCad = rate === undefined ? null : budget * rate;
     return {
       ...r,
       _agency: agencyOf(r.CL_Agency, r.agency),
       FX_RATE_TO_CAD: rate ?? null,
-      BUDGET_CAD: rate === undefined ? null : budget * rate,
+      BUDGET_CAD: budgetCad,
+      COMMISSION_CAD: commissionCad,
+      TAXES_CAD: taxesCad,
+      OTHER_FEES_CAD: fee(r.other_fees),
+      CLIENT_COST_EXCL_TAXES_CAD: hasFees ? budgetCad + commissionCad : null,
+      CLIENT_COST_INCL_TAXES_CAD: hasFees ? budgetCad + commissionCad + (taxesCad ?? 0) : null,
     };
   });
   if (unconverted) {
@@ -147,17 +168,23 @@ async function main() {
       CMP_STATUS: text(r.cmp_status) ?? "(No status)",
     };
     const id = grainDocId(doc, GRAIN_FIELDS);
-    const cur = grain.get(id) ?? { ...doc, PLANNED_CAD: 0, PLANNED_USD: 0, TACTIC_MONTHS: 0, _agency: r._agency };
-    cur.PLANNED_CAD += r.BUDGET_CAD;
-    cur.PLANNED_USD += usd ? r.BUDGET_CAD / usd : 0;
+    const cur = grain.get(id) ?? { ...doc, ...Object.fromEntries(AMOUNT_FIELDS.map((f) => [f, 0])), TACTIC_MONTHS: 0, _agency: r._agency };
+    const add = (name, cad) => {
+      cur[`${name}_CAD`] += cad ?? 0;
+      cur[`${name}_USD`] += usd ? (cad ?? 0) / usd : 0;
+    };
+    add("PLANNED", r.BUDGET_CAD);
+    add("COMMISSION", r.COMMISSION_CAD);
+    add("TAXES", r.TAXES_CAD);
+    add("OTHER_FEES", r.OTHER_FEES_CAD);
+    add("NO_FEE_DATA", r.COMMISSION_CAD === null ? r.BUDGET_CAD : 0);
     cur.TACTIC_MONTHS += 1;
     if (doc.PLUSCO_CLIENT_ID) cur._clientId = doc.PLUSCO_CLIENT_ID;
     grain.set(id, cur);
   }
   const mixRows = [...grain.values()].map((d) => ({
     ...d,
-    PLANNED_CAD: Math.round(d.PLANNED_CAD * 100) / 100,
-    PLANNED_USD: Math.round(d.PLANNED_USD * 100) / 100,
+    ...Object.fromEntries(AMOUNT_FIELDS.map((f) => [f, Math.round(d[f] * 100) / 100])),
   }));
   const totalCad = mixRows.reduce((s, d) => s + d.PLANNED_CAD, 0);
   console.log(`${mixRows.length} dashboard row(s), ${Math.round(totalCad).toLocaleString("en-CA")} CAD planned.`);
@@ -174,7 +201,13 @@ async function main() {
     rows: mixRows,
     // Same hash as the grouping key above (the grain fields are stored on the doc).
     toDocId: (d) => grainDocId(d, GRAIN_FIELDS),
-    sampleFields: ["PLUSCO_YEAR", "MONTH", "PLUSCO_CLIENT_NAME", "PLUSCO_MEDIA_CHANNEL", "PLANNED_CAD"],
+    sampleFields: [
+      { field: "MONTH", label: "MONTH", width: 7 },
+      { field: "PLUSCO_CLIENT_NAME", label: "CLIENT", width: 30 },
+      { field: "PLUSCO_MEDIA_CHANNEL", label: "CHANNEL", width: 14 },
+      { field: "CMP_STATUS", label: "STATUS", width: 12 },
+      { field: "PLANNED_CAD", label: "PLANNED_CAD", money: true },
+    ],
     dryRun,
     force,
   });
