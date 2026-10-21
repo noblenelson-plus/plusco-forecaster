@@ -212,11 +212,20 @@ export function publisherOf(r: PlannerRow): string {
 }
 
 /**
- * MediaBox media types counted as digital — Media Investments' Programmatic /
- * SEM / Digital Direct / Social, in MediaBox's names (SEM = "Paid Search"), plus
- * MediaBox's generic "Digital".
+ * Media types counted as digital — Media Investments' Programmatic / SEM /
+ * Digital Direct / Social. The sync rolls MediaBox's types up to 8 channels
+ * (Search = Paid Search / SEM; Digital Direct includes MediaBox's generic
+ * "Digital"); the older names stay listed for rows synced before that.
  */
-const PLANNER_DIGITAL = new Set(["PROGRAMMATIC", "SOCIAL", "PAID SEARCH", "DIGITAL DIRECT", "DIGITAL", "SEM"]);
+const PLANNER_DIGITAL = new Set(["PROGRAMMATIC", "SOCIAL", "SEARCH", "DIGITAL DIRECT", "PAID SEARCH", "DIGITAL", "SEM"]);
+
+/** Media types the view leaves out entirely (media team): "Other" and no media type. */
+const HIDDEN_MEDIA_TYPES = new Set(["OTHER", NO_MEDIA_TYPE.toUpperCase()]);
+
+/** The row is "Other" / has no media type — left out of every table and total. */
+export function isHiddenMediaType(r: PlannerRow): boolean {
+  return HIDDEN_MEDIA_TYPES.has(mediaTypeOf(r).toUpperCase());
+}
 
 export function isDigitalMediaType(mediaType: string): boolean {
   return PLANNER_DIGITAL.has(mediaType.trim().toUpperCase());
