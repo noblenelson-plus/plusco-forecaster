@@ -163,6 +163,18 @@ interface ForecastGridProps {
    * editing the currently selected year's RFQ. Omitted/empty → no selector.
    */
   referenceYears?: number[];
+  /**
+   * Row checkboxes on the BL lines + a copy action in the "BL Submission" band
+   * (Media Spend → "Copy to Labs"). Omitted → no BL checkboxes.
+   */
+  blCopy?: {
+    /** Button label, e.g. "Copy to Labs". */
+    label: string;
+    /** Hint shown in the band while nothing is ticked. */
+    hint: string;
+    /** Opens the copy dialog for the ticked rowIds; `clear` unticks them. */
+    onCopy: (rowIds: string[], clear: () => void) => void;
+  };
 }
 
 /**
@@ -186,6 +198,7 @@ export default function ForecastGrid({
   grid,
   rowMeta,
   referenceYears,
+  blCopy,
 }: ForecastGridProps) {
   const blReadOnly = grid.locked;
 
@@ -211,6 +224,8 @@ export default function ForecastGrid({
     useState<ReferenceOrientation>("campaign");
   const moSelection = useReferenceSelection();
   const mbSelection = useReferenceSelection();
+  // Ticked BL lines (keys = rowIds) for the blCopy action.
+  const blSelection = useReferenceSelection();
   // Flipping the orientation regroups every row — start from a clean slate.
   const changeOrientation = (next: ReferenceOrientation) => {
     setOrientation(next);
@@ -225,6 +240,7 @@ export default function ForecastGrid({
     // Ticked rows belong to the previous client/year's reference data.
     moSelection.clear();
     mbSelection.clear();
+    blSelection.clear();
   }
   const refYear = referenceYear ?? selectedYear;
   const crossYear = refYear != null && refYear !== selectedYear;
@@ -239,6 +255,13 @@ export default function ForecastGrid({
   // submission. Any reference year may be copied — month for month (Jan → Jan),
   // e.g. last year's MIR estimates as the starting point of next year's RFQ.
   const canSelectReference = hasMediabox && !grid.locked;
+  // Ticked BL lines that still exist (a removed row, or another RFQ's rows,
+  // simply drop out).
+  const blRowIds = useMemo(
+    () => new Set(grid.data.buckets.flatMap((b) => b.rows.map((r) => r.rowId))),
+    [grid.data.buckets]
+  );
+  const blTicked = blCopy ? blSelection.selectedLeaves().filter((id) => blRowIds.has(id)) : [];
 
   // Years the selector offers — those with an RFQ, plus the current year, newest
   // first. Only meaningful on axes that carry a MediaBox/MediaOcean reference.
@@ -654,7 +677,37 @@ export default function ForecastGrid({
 
             <tbody>
               {/* ─── Section 1 — BL Submission (the editable forecast) ─── */}
-              <SectionBand label="BL Submission" colSpan={colCount} />
+              <SectionBand
+                label="BL Submission"
+                colSpan={colCount}
+                right={
+                  blCopy &&
+                  (blTicked.length > 0 ? (
+                    <span className="flex items-center gap-2 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => blCopy.onCopy(blTicked, blSelection.clear)}
+                        className="flex items-center gap-1 bg-yellow-400 px-2 py-0.5 font-semibold text-gray-900 hover:bg-yellow-300 transition-colors"
+                      >
+                        <Copy size={11} />
+                        {blCopy.label}
+                        <span className="bg-gray-900 px-1 text-white tabular-nums">
+                          {blTicked.length}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={blSelection.clear}
+                        className="text-gray-300 underline underline-offset-2 hover:text-white"
+                      >
+                        Clear
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-gray-400">{blCopy.hint}</span>
+                  ))
+                }
+              />
 
               {grid.data.buckets.length === 0 ? (
                 <tr>
@@ -688,6 +741,7 @@ export default function ForecastGrid({
                       config.allowMultipleBuckets &&
                       grid.data.buckets.length === 1
                     }
+                    selection={blCopy ? blSelection : undefined}
                   />
                 ))
               )}
@@ -1527,7 +1581,7 @@ function DataRow({
   showNotes: boolean;
   /** Expand/collapse control for rows that carry detail lines (actuals only). */
   expand?: { expanded: boolean; onToggle: () => void; count: number };
-  /** Reference-row checkbox (MediaOcean copy selection), before the label. */
+  /** Row checkbox (MediaOcean or BL-line copy selection), before the label. */
   check?: React.ReactNode;
 }) {
   const r = rowIndex.get(row.rowId)!;
@@ -1750,6 +1804,7 @@ function BucketSection({
   onToggleCollapse,
   showNotes,
   lockName,
+  selection,
 }: {
   bucket: ForecastBucket;
   config: AxisConfig;
@@ -1765,6 +1820,8 @@ function BucketSection({
   /** Lone project — its name is auto-managed ("General") and not editable, and
    *  it can't be removed. Lifted once a second project exists. */
   lockName: boolean;
+  /** Ticked BL lines (keys = rowIds) — shows the row checkboxes when set. */
+  selection?: ReferenceSelection;
 }) {
   const bucketTotals = useMemo(() => monthTotals(bucket.rows), [bucket.rows]);
   const types = availableTypes(config, bucket.rows);
@@ -1791,6 +1848,14 @@ function BucketSection({
       <tr className="bg-gray-50 border-t border-gray-200">
         <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 border-b border-gray-100">
           <div className="flex items-center gap-1">
+            {selection && (
+              <RowCheckbox
+                selection={selection}
+                keys={bucket.rows.map((r) => r.rowId)}
+                parent
+                label={bucket.name}
+              />
+            )}
             <button
               onClick={onToggleCollapse}
               className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors flex-shrink-0"
@@ -1895,6 +1960,15 @@ function BucketSection({
               meta={rowMeta?.(row.rowType)}
               onSpread={() => setSpreadRow(row)}
               showNotes={showNotes}
+              check={
+                selection && (
+                  <RowCheckbox
+                    selection={selection}
+                    keys={[row.rowId]}
+                    label={`${bucket.name} · ${row.label}`}
+                  />
+                )
+              }
             />
           ))
         ))}

@@ -42,6 +42,7 @@ import ComparisonPanel from "../../../components/forecaster/comparison-panel";
 import LabsPenetrationPanel from "../../../components/forecaster/labs-penetration-panel";
 import BlAlertBanner from "../../../components/flags/bl-alert-banner";
 import RFQTimelineBar from "../../../components/forecaster/rfq-timeline-bar";
+import CopyToLabsModal from "../../../components/forecaster/copy-to-labs-modal";
 import LabsCoverageSplitDialog, {
   type ProjectShareTarget,
 } from "../../../components/forecaster/labs-coverage-split-dialog";
@@ -74,6 +75,7 @@ import type {
 import { MONTHS, type MediaType, type MonthlyMap } from "../../../lib/types/common.types";
 import { distribute } from "../../../lib/format/distribute";
 import { computeLabsPenetration } from "../../../lib/format/labs-penetration";
+import { mediaLines, type MediaLine } from "../../../lib/format/media-to-labs";
 import { useForecastValidation } from "../../../lib/hooks/use-forecast-validation";
 import { computeBlAlerts } from "../../../lib/flags/bl-alerts";
 import { stepsForRfq } from "../../../lib/constants/confirmation-steps";
@@ -433,6 +435,21 @@ function ForecastPageContent() {
     [coverageSplit, writeCoverage]
   );
 
+  // "Copy to Labs" — ticked Media Spend lines → the Labs BL of the same
+  // submission. Offered on the Media tab while Labs is writable and the year
+  // has partners; the dialog resolves the lines from the Media working copy.
+  const [labsCopy, setLabsCopy] = useState<{ lines: MediaLine[]; clear: () => void } | null>(null);
+  const canCopyToLabs =
+    !labsGrid.locked && !labsGrid.loading && partnersForYear.length > 0;
+  const openLabsCopy = useCallback(
+    (rowIds: string[], clear: () => void) => {
+      const catalog = mediaLines(mediaGrid.data);
+      const lines = rowIds.flatMap((id) => catalog.get(id) ?? []);
+      if (lines.length > 0) setLabsCopy({ lines, clear });
+    },
+    [mediaGrid.data]
+  );
+
   // Penetration editing needs an unlocked RFQ and a project to write into.
   const canEditPenetration =
     !labsGrid.locked && labsGrid.data.buckets.length > 0;
@@ -767,6 +784,15 @@ function ForecastPageContent() {
                     grid={activeGrid}
                     rowMeta={tab === "labs" ? labsRowMeta : undefined}
                     referenceYears={referenceYears}
+                    blCopy={
+                      tab === "media" && canCopyToLabs
+                        ? {
+                            label: "Copy to Labs",
+                            hint: "Tick lines to copy them to Labs",
+                            onCopy: openLabsCopy,
+                          }
+                        : undefined
+                    }
                   />
                 )}
               </CopyRowProvider>
@@ -811,6 +837,21 @@ function ForecastPageContent() {
           tab, which is tracked per year and has no RFQ. */}
       {tab !== "product" && activeGrid.selectionReady && (
         <RFQTimelineBar periods={timelinePeriods} />
+      )}
+
+      {/* Copy to Labs — ticked Media lines → Labs partners */}
+      {labsCopy && canCopyToLabs && (
+        <CopyToLabsModal
+          lines={labsCopy.lines}
+          partners={partnersForYear}
+          labsConfig={labsConfig}
+          labsGrid={labsGrid}
+          onClose={() => setLabsCopy(null)}
+          onCopied={() => {
+            labsCopy.clear();
+            setTab("labs");
+          }}
+        />
       )}
 
       {/* Coverage split — partner present in several projects */}
