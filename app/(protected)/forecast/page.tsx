@@ -749,7 +749,7 @@ function ForecastPageContent() {
                 partnersLoaded &&
                 partnersForYear.length === 0 && <NoPartnersBanner year={selectedYear} />}
 
-              {/* Cat-2 "QA BL" alerts — live, per-month warnings for the active
+              {/* Cat-2 "QA BL" alerts — live, full-year warnings for the active
                   axis: Labs > media and MediaOcean > forecast. Shown even on a
                   locked RFQ (MediaOcean keeps arriving after the lock). */}
               {blAlerts
@@ -765,6 +765,7 @@ function ForecastPageContent() {
                     key={a.id}
                     alert={a}
                     currency={selectedClient?.CL_Currency ?? "CAD"}
+                    year={selectedYear}
                   />
                 ))}
 
