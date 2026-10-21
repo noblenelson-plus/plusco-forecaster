@@ -720,8 +720,7 @@ export default function MediaboxPlannerTab({
         <RatesNote meta={meta} currency={currency} />
         {hiddenInRange > 0 && (
           <p className="text-xs text-muted-foreground">
-            Not shown: {money(hiddenInRange)} of Planned Net with media type &quot;Other&quot; or no media type in
-            MediaBox ({describePeriod(period)}).
+            {`Not shown: ${money(hiddenInRange)} of Planned Net with media type "Other" or no media type in MediaBox (${describePeriod(period)}).`}
           </p>
         )}
       </div>
