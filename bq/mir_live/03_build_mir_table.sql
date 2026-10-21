@@ -114,61 +114,65 @@ extract_dates AS (
 cal AS (
   SELECT DISTINCT civic_month, civic_quarter, civic_year FROM `mediaocean-data.L2_Media.master_calendar`
 ),
-dim_mcpe AS (
-  SELECT
-    ME.MCPE, ME.media_code, MM.media_name, ME.client_code, MC.client_name, ME.product_code, MP.product_name,
-    ME.estimate_code, ME.estimate_name, MP.bill_formula,
-    MC.agency_code AS office_code, MC.agency_name AS office, MC.client_currency_mo, MC.client_interco_flag,
-    MC.plusco_client_name, MC.plusco_client_id, MC.client_status_2026, MC.mediabox_fo_currency,
-    MC.agency, MC.business_lead, MC.bu_region, MC.gm_pod
+-- Dimensions are LEFT JOINed: an estimate missing from master_estimate (new in MediaOcean) or a month
+-- past the calendar table keeps its dollars, labelled 'no match' (MIR_automated_PROC drops them).
+dim_est AS (
+  SELECT ME.MCPE, ME.estimate_name, MP.product_name, MP.bill_formula
   FROM `mediaocean-data.L2_Media.master_estimate` ME
-  JOIN `mediaocean-data.L2_Media.master_media` MM ON ME.media_code = MM.media_code
-  JOIN `mediaocean-data.L2_Media.master_client` MC ON ME.client_code = MC.client_code
-  JOIN `mediaocean-data.L2_Media.master_product` MP
+  LEFT JOIN `mediaocean-data.L2_Media.master_product` MP
     ON ME.product_code = MP.product_code AND ME.media_code = MP.media_code AND ME.client_code = MP.client_code
+),
+fact_keys AS (
+  SELECT
+    f.*,
+    SPLIT(COLLATE(f.MCPE, ''), '-')[SAFE_OFFSET(0)] AS media_code,
+    SPLIT(COLLATE(f.MCPE, ''), '-')[SAFE_OFFSET(1)] AS client_code,
+    SPLIT(COLLATE(f.MCPE, ''), '-')[SAFE_OFFSET(2)] AS product_code,
+    SPLIT(COLLATE(f.MCPE, ''), '-')[SAFE_OFFSET(3)] AS estimate_code
+  FROM fact f
 )
 SELECT
   '{{SOURCE}}' AS SOURCE,
   FORMAT_DATETIME('%Y-%m-%d %H:%M', CURRENT_DATETIME('America/Montreal')) AS REPORT_DATE_edt,
-  CASE WHEN d.media_code IN ('I','O','M','B') THEN FORMAT_DATETIME('%Y-%m-%d %H:%M', DATETIME(ed.print_extract_date, 'America/New_York'))
-       WHEN d.media_code IN ('T','N','R','C') THEN FORMAT_DATETIME('%Y-%m-%d %H:%M', DATETIME(ed.spot_extract_date, 'America/New_York'))
+  CASE WHEN f.media_code IN ('I','O','M','B') THEN FORMAT_DATETIME('%Y-%m-%d %H:%M', DATETIME(ed.print_extract_date, 'America/New_York'))
+       WHEN f.media_code IN ('T','N','R','C') THEN FORMAT_DATETIME('%Y-%m-%d %H:%M', DATETIME(ed.spot_extract_date, 'America/New_York'))
   END AS MO_Date_edt,
-  d.media_code AS MEDIA_CODE,
-  d.media_name AS MEDIA_NAME,
-  d.client_code AS CLIENT_CODE,
-  d.client_name AS CLIENT_NAME,
-  d.product_code AS PRODUCT_CODE,
-  d.product_name AS PRODUCT_NAME,
-  d.estimate_code AS ESTIMATE_CODE,
-  d.estimate_name AS ESTIMATE_NAME,
+  f.media_code AS MEDIA_CODE,
+  COALESCE(MM.media_name, 'no match') AS MEDIA_NAME,
+  f.client_code AS CLIENT_CODE,
+  COALESCE(MC.client_name, 'no match') AS CLIENT_NAME,
+  f.product_code AS PRODUCT_CODE,
+  COALESCE(d.product_name, 'no match') AS PRODUCT_NAME,
+  f.estimate_code AS ESTIMATE_CODE,
+  COALESCE(d.estimate_name, 'no match') AS ESTIMATE_NAME,
   f.MCPE,
   -- Key as written in the manual MIR (Network rows use a 'T-' prefix there).
-  IF(d.media_code = 'N', CONCAT('T', SUBSTR(f.MCPE, 2)), f.MCPE) AS MCPE_MIR,
+  IF(f.media_code = 'N', CONCAT('T', SUBSTR(f.MCPE, 2)), f.MCPE) AS MCPE_MIR,
   f.vendor_code AS VENDOR_CODE,
   COALESCE(v.vendor_name, 'no match') AS VENDOR_NAME,
   f.month AS MONTH,
   COALESCE(v.payrep_code, 'no match') AS PAYREP_CODE,
   COALESCE(v.payrep, 'no match') AS PAYREP,
   f.buy_type AS BUY_TYPE,
-  d.office_code AS OFFICE_CODE,
-  d.office AS OFFICE,
-  c.civic_quarter AS PLUSCO_QUARTER,
-  c.civic_year AS PLUSCO_YEAR,
+  MC.agency_code AS OFFICE_CODE,
+  MC.agency_name AS OFFICE,
+  COALESCE(c.civic_quarter, CONCAT('Q', CAST(DIV(CAST(SUBSTR(f.month, 6, 2) AS INT64) + 2, 3) AS STRING))) AS PLUSCO_QUARTER,
+  COALESCE(CAST(c.civic_year AS STRING), SUBSTR(f.month, 1, 4)) AS PLUSCO_YEAR,
   f.NET_ORDERED,
   f.NET_ORDERED_CAD,
   f.BILLABLE_NET,
   f.PAYABLE_NET,
   d.bill_formula AS BILLING_FORMULA,
-  IF(d.client_interco_flag, 'YES', 'NO') AS CLIENT_INTERCO,
-  d.plusco_client_name AS PLUSCO_CLIENT_NAME,
-  d.plusco_client_id AS PLUSCO_CLIENT_ID,
-  d.client_currency_mo AS CLIENT_CURRENCY_MO,
-  d.client_status_2026 AS CLIENT_STATUS_IN_2026,
-  d.mediabox_fo_currency AS MEDIABOX_FO_CURRENCY,
-  d.agency AS AGENCY,
-  d.business_lead AS BUSINESS_LEAD,
-  d.bu_region AS BU_REGION,
-  d.gm_pod AS GM_POD,
+  IF(MC.client_interco_flag, 'YES', 'NO') AS CLIENT_INTERCO,
+  MC.plusco_client_name AS PLUSCO_CLIENT_NAME,
+  MC.plusco_client_id AS PLUSCO_CLIENT_ID,
+  MC.client_currency_mo AS CLIENT_CURRENCY_MO,
+  MC.client_status_2026 AS CLIENT_STATUS_IN_2026,
+  MC.mediabox_fo_currency AS MEDIABOX_FO_CURRENCY,
+  MC.agency AS AGENCY,
+  MC.business_lead AS BUSINESS_LEAD,
+  MC.bu_region AS BU_REGION,
+  MC.gm_pod AS GM_POD,
   COALESCE(v.vendor_code_mir, 'no match') AS VENDOR_CODE_MIR,
   COALESCE(v.plusco_media_channel, 'no match') AS PLUSCO_MEDIA_CHANNEL,
   COALESCE(v.plusco_programmatic, 'no match') AS PLUSCO_PROGRAMMATIC,
@@ -191,11 +195,13 @@ SELECT
   COALESCE(v.spot_conv_spec_networks, 'no match') AS SPOT_CONV_SPEC_NETWORKS,
   COALESCE(v.spot_market_code, 'no match') AS SPOT_MARKET_CODE,
   COALESCE(v.spot_market_name, 'no match') AS SPOT_MARKET_NAME
-FROM fact f
-JOIN dim_mcpe d ON f.MCPE = d.MCPE
+FROM fact_keys f
+LEFT JOIN dim_est d ON d.MCPE = f.MCPE
+LEFT JOIN `mediaocean-data.L2_Media.master_media` MM ON MM.media_code = f.media_code
+LEFT JOIN `mediaocean-data.L2_Media.master_client` MC ON MC.client_code = f.client_code
 LEFT JOIN `mediaocean-data.L2_Media.master_vendor` v
-  ON v.vendor_code = f.vendor_code AND v.media_code = d.media_code
-JOIN cal c ON f.month = c.civic_month
+  ON v.vendor_code = f.vendor_code AND v.media_code = f.media_code
+LEFT JOIN cal c ON c.civic_month = f.month
 CROSS JOIN extract_dates ed
 ''';
 
