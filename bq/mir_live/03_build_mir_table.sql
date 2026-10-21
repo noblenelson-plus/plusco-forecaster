@@ -2,9 +2,9 @@
 -- same dimensions as mediaocean-data.L2_Media.MIR_automated_PROC, fixing four of its Spot issues:
 --
 --   1. Month: the whole spot goes to the calendar month of spot_date (what MediaOcean's report
---      and the manual MIR do). Exception: the week that straddles New Year belongs to the new
---      year (spots dated Dec 29–31, 2025 → 2026-01), as in the yearly MediaOcean pulls.
---      The original spread each spot over its rotation days into broadcast months (±20 % per month).
+--      and the manual MIR do). The original spread each spot over its rotation days into
+--      broadcast months (±20 % per month). Note: the manual MIR has no spots dated Dec 29–31, 2025
+--      (its yearly pulls cover broadcast years, which split at Mon Dec 29); they stay here, in 2025-12.
 --   2. Billable/payable are no longer counted once per month a spot touches.
 --   3. Station → vendor uses a TRIMmed station code against the live station views (spot_radio /
 --      spot_tv / spot_network), not the stale L2_Media.spot_vendor_buy_xref (last built Jan 2026).
@@ -48,10 +48,7 @@ spot AS (
     h.product_code,
     h.estimate_code,
     CONCAT(h.media_code, '-', h.client_code, '-', h.product_code, '-', h.estimate_code) AS MCPE,
-    -- Calendar month of spot_date, except the New Year week goes to January of the new year.
-    IF(EXTRACT(YEAR FROM DATE_ADD(DATE_TRUNC(h.spot_date, WEEK(MONDAY)), INTERVAL 6 DAY)) > EXTRACT(YEAR FROM h.spot_date),
-       FORMAT_DATE('%Y-%m', DATE_ADD(DATE_TRUNC(h.spot_date, WEEK(MONDAY)), INTERVAL 6 DAY)),
-       FORMAT_DATE('%Y-%m', h.spot_date)) AS month,
+    FORMAT_DATE('%Y-%m', h.spot_date) AS month,
     -- Some stations are already stored in vendor form (e.g. 'CKY N'); keep the station code when nothing matches.
     COALESCE(x.vendor_code, mv.vendor_code, h.station_code) AS vendor_code,
     'spot media' AS buy_type,

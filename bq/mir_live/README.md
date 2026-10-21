@@ -9,7 +9,7 @@ It reuses the logic and dimension tables of `mediaocean-data.L2_Media.MIR_automa
 
 | Issue in `MIR_ALLMEDIA` | Effect | Fix here |
 |---|---|---|
-| Spot cost spread over rotation days into **broadcast** months | Months off by up to ±20 % vs MediaOcean's report | Whole spot in the calendar month of `spot_date`; the New Year week goes to January |
+| Spot cost spread over rotation days into **broadcast** months | Months off by up to ±20 % vs MediaOcean's report | Whole spot in the calendar month of `spot_date` |
 | Billable/payable not prorated | Counted once per month a spot touches | Spots are no longer split across months |
 | Stale `spot_vendor_buy_xref` (last built Jan 2026) + untrimmed station codes, then `WHERE vendor_code IS NOT NULL` | ~$4M of 2026 Spot silently dropped | Live station lookup on TRIMmed codes; unmatched stations kept as `no match` |
 | Weekly full refresh truncates raw Spot; MediaOcean's extract window moves forward a quarter at a time | Jan–Mar 2025 Spot (~$45M) gone, more each quarter | `spot_history` keeps dates the extract no longer covers |
@@ -60,6 +60,12 @@ procedure), then `CALL MIR_Live.run_daily()` if the change should apply today.
 only in the automated MIR). Dimensions agree on 98 % of dollars (agency, client, GM pod), 91–95 %
 (business lead), 100 % (partner, deal type); channel 81 % on Prisma because the automated MIR
 reports SEM and Programmatic as one channel.
+
+**Known difference — Dec 29–31, 2025 Spot (~$1.5M, mostly TV Network).** The manual MIR has no
+spots dated Dec 29–31, 2025: its yearly Spot pulls follow MediaOcean's broadcast years (2025 ends
+Sun Dec 28, 2026 starts Mon Dec 29) and each keeps only its own calendar months, so those three
+days fall between the two. The automated MIR keeps them in 2025-12. Expect Dec 2025 Spot to be
+higher than the manual MIR by that amount.
 
 ## Not yet in `MIR`
 
