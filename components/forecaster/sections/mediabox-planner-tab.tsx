@@ -6,25 +6,24 @@
  * mediaocean-tabs.tsx) — the Media Investments page's charts over MediaBox
  * PLANNED budgets (finance_master_mapping, via useMediaboxPlannerMix) instead of
  * MediaOcean booked spend:
- *   - Total Planned Investment: total + digital share, by channel, media mix and
- *     digital mix;
- *   - By Campaign Status: how much of the plan is Draft / Approved / Live …;
- *   - Top Partners: deal vs non-deal, top 20;
- *   - Social Media: 2025 vs 2026 by partner.
- * The roll-ups are the Media Investments ones (same channel, digital and deal
- * definitions), fed reshaped planner rows.
+ *   - Total Planned Investment: total + digital share, by media type (channel),
+ *     media mix and digital mix;
+ *   - Client Cost: Planned Net + Commission (+ Taxes), by media type;
+ *   - Top Publishers: deal vs non-deal, top 20;
+ *   - Social Media: 2025 vs 2026 by publisher.
+ * Dimensions are MediaBox's own media type ("Media Type (Channel)") and
+ * publisher; every campaign status counts.
  *
  * Driven by the global client filter (scopedClientIds, matched on the
  * Forecaster client id — MediaBox clients not linked to a Forecaster client
  * only appear in the Reports raw data) and the From → To period bar. Local
- * controls: CAD / USD (amounts converted at Bank of Canada rates by the sync,
- * listed under the header) and Campaign status (all by default).
+ * control: CAD / USD (amounts converted at Bank of Canada rates by the sync,
+ * listed under the header).
  */
 
 import { useMemo, useState } from "react";
 import {
   BarChart3,
-  ClipboardList,
   Info,
   Loader2,
   Percent,
@@ -44,7 +43,6 @@ import MultiSelectDropdown, { type Option } from "../../_shared/multi-select-dro
 import {
   applyPartnerFilters,
   computeTopPartners,
-  computeTotalMediaInvestment,
   EMPTY_PARTNER_FILTERS,
   partnerFilterOptions,
   type ChannelSlice,
@@ -54,9 +52,10 @@ import {
 import { computeSocialSummary } from "../../../lib/dashboard/data/use-social-partner-mix";
 import {
   clientCostTotals,
-  plannedAmount,
+  computePlannerMediaMix,
+  mediaTypeOf,
+  NO_PUBLISHER,
   plannerMonth,
-  plannerStatuses,
   toInvestmentRows,
   toSocialRows,
   useMediaboxPlannerMix,
@@ -67,20 +66,25 @@ import {
 import { describePeriod, inPeriod, monthsWithinOneYear, type MonthPeriod } from "../../../lib/format/period";
 
 const TOP_N = 20;
-// Spend with no Plus partner mapping (the sync's label). Counted in the Deal /
-// Non-Deal totals, but not ranked as a partner.
-const NO_PARTNER = "(No partner mapped)";
-// Left out of the Social Partners table and shares entirely (media team's
-// call: unmapped spend, plus partners too small to track).
-const SOCIAL_EXCLUDED = new Set([NO_PARTNER, "X", "FOURSQUARE"].map((p) => p.toUpperCase()));
+// Spend with no publisher picked in MediaBox. Counted in the Deal / Non-Deal
+// totals, but not ranked. "(No partner mapped)": rows synced before the switch
+// to publishers.
+const isNoPublisher = (p: string) => p === NO_PUBLISHER || p === "(No partner mapped)";
+// Left out of the Social Publishers table and shares entirely (media team's
+// call: no publisher, plus publishers too small to track).
+const SOCIAL_EXCLUDED = new Set([NO_PUBLISHER, "(No partner mapped)", "X", "FOURSQUARE"].map((p) => p.toUpperCase()));
+const LABEL = "Media Type (Channel)";
 const BAR_COLOR = "#3b82f6";
 const COLOR_2025 = "#3b82f6";
 const COLOR_2026 = "#f59e0b";
 
-// Same channel colors as the Media Investments pies, so both tabs read alike.
+// Same channel colors as the Media Investments pies, so both tabs read alike
+// (MediaBox's "Paid Search" = SEM; "Digital" is MediaBox's generic type).
 const CHANNEL_COLORS: Record<string, string> = {
   PROGRAMMATIC: "#4f46e5",
   SEM: "#f59e0b",
+  "PAID SEARCH": "#f59e0b",
+  DIGITAL: "#14b8a6",
   "DIGITAL DIRECT": "#06b6d4",
   SOCIAL: "#22c55e",
   TV: "#3b82f6",
@@ -114,7 +118,7 @@ const toSegments = (slices: ChannelSlice[]): PieSegment[] =>
 const TH = "py-2 font-medium";
 const TD = "py-2 tabular-nums text-muted-foreground";
 
-// ─── Header: currency, status, rates ──────────────────────────────────────────
+// ─── Header: currency, rates ──────────────────────────────────────────────────
 
 function CurrencySwitch({ value, onChange }: { value: PlannerCurrency; onChange: (c: PlannerCurrency) => void }) {
   return (
@@ -147,7 +151,7 @@ function RatesNote({ meta, currency }: { meta: PlannerMeta | null; currency: Pla
       <Info size={14} className="mt-0.5 shrink-0" />
       <div className="space-y-1">
         <p>
-          MediaBox planned net budgets (all campaign statuses unless filtered), converted to {currency} at Bank of
+          MediaBox planned net budgets (all campaign statuses), converted to {currency} at Bank of
           Canada yearly average rates{currency === "USD" ? " (CAD amounts ÷ that year's USD rate)" : ""}
           {synced ? ` · synced ${synced}` : ""}.
         </p>
@@ -181,7 +185,7 @@ function TotalInvestmentSection({
   currency: PlannerCurrency;
   period: MonthPeriod;
 }) {
-  const totals = useMemo(() => computeTotalMediaInvestment(toInvestmentRows(rows, currency)), [rows, currency]);
+  const totals = useMemo(() => computePlannerMediaMix(rows, currency), [rows, currency]);
   const label = `Planned (${currency})`;
   return (
     <div data-scroll-section data-scroll-label="Total Planned Investment" className="space-y-6">
@@ -201,16 +205,16 @@ function TotalInvestmentSection({
       </div>
       <div className="grid gap-6 lg:grid-cols-12">
         <ChartCard
-          title="Planned Investment by Channel"
+          title={`Planned Investment by ${LABEL}`}
           icon={Table}
           className="lg:col-span-5"
           action={
             <SheetExportButton
-              title="Planned Investment by Channel"
-              sheetTitle="Planned by Channel"
+              title={`Planned Investment by ${LABEL}`}
+              sheetTitle="Planned by Media Type"
               disabled={totals.mediaMix.length === 0}
               buildMatrix={() => [
-                ["Channel", label],
+                [LABEL, label],
                 ...totals.mediaMix.map((s) => [s.channel, s.net]),
                 ["Grand total", totals.grandTotal],
               ]}
@@ -221,7 +225,7 @@ function TotalInvestmentSection({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className={`${TH} text-left`}>Channel</th>
+                  <th className={`${TH} text-left`}>{LABEL}</th>
                   <th className={`${TH} text-right`}>{label}</th>
                 </tr>
               </thead>
@@ -243,7 +247,7 @@ function TotalInvestmentSection({
         <ChartCard title="Media Mix" icon={PieChart} subtitle="Share of planned media" className="lg:col-span-4">
           <ForecasterPieChart segments={toSegments(totals.mediaMix)} valueFormat={money} />
         </ChartCard>
-        <ChartCard title="Digital Media Mix" icon={PieChart} subtitle="Digital channels" className="lg:col-span-3">
+        <ChartCard title="Digital Media Mix" icon={PieChart} subtitle="Digital media types" className="lg:col-span-3">
           <ForecasterPieChart segments={toSegments(totals.digitalMix)} valueFormat={money} />
         </ChartCard>
       </div>
@@ -269,7 +273,7 @@ function ClientCostSection({
   const byChannel = useMemo(() => {
     const groups = new Map<string, { label: string; rows: PlannerRow[] }>();
     for (const r of rows) {
-      const label = String(r.PLUSCO_MEDIA_CHANNEL ?? "").trim() || "N/A";
+      const label = mediaTypeOf(r);
       const key = label.toUpperCase();
       const g = groups.get(key) ?? { label, rows: [] };
       g.rows.push(r);
@@ -323,15 +327,15 @@ function ClientCostSection({
         />
       </div>
       <ChartCard
-        title="Client Cost by Channel"
+        title={`Client Cost by ${LABEL}`}
         icon={Table}
         action={
           <SheetExportButton
-            title="Client Cost by Channel"
-            sheetTitle="Client Cost by Channel"
+            title={`Client Cost by ${LABEL}`}
+            sheetTitle="Client Cost by Media Type"
             disabled={byChannel.length === 0}
             buildMatrix={() => [
-              ["Channel", ...COLS.map((c) => `${c} ${cur}`)],
+              [LABEL, ...COLS.map((c) => `${c} ${cur}`)],
               ...byChannel.map((c) => [c.channel, ...values(c)]),
               ["Grand total", ...values(totals)],
             ]}
@@ -342,7 +346,7 @@ function ClientCostSection({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                <th className={`${TH} text-left`}>Channel</th>
+                <th className={`${TH} text-left`}>{LABEL}</th>
                 {COLS.map((c) => (
                   <th key={c} className={`${TH} pl-4 text-right`}>
                     {c}
@@ -377,86 +381,9 @@ function ClientCostSection({
   );
 }
 
-// ─── By Campaign Status ───────────────────────────────────────────────────────
-
-function StatusSection({ rows, currency }: { rows: PlannerRow[]; currency: PlannerCurrency }) {
-  const byStatus = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of rows) m.set(r.CMP_STATUS, (m.get(r.CMP_STATUS) ?? 0) + plannedAmount(r, currency));
-    const total = [...m.values()].reduce((a, b) => a + b, 0);
-    return {
-      total,
-      rows: [...m.entries()]
-        .map(([status, amount]) => ({ status, amount, share: total ? amount / total : null }))
-        .sort((a, b) => b.amount - a.amount),
-    };
-  }, [rows, currency]);
-  const label = `Planned (${currency})`;
-  const barRows: StackRow[] = byStatus.rows.map((s) => ({ label: s.status, values: { net: s.amount } }));
-  return (
-    <div data-scroll-section data-scroll-label="By Campaign Status" className="space-y-6">
-      <div className="flex items-center gap-2">
-        <ClipboardList size={18} className="text-primary" />
-        <h2 className="text-lg font-semibold text-foreground">By Campaign Status</h2>
-      </div>
-      <div className="grid items-stretch gap-6 lg:grid-cols-2">
-        <ChartCard
-          title="Planned by Campaign Status"
-          icon={Table}
-          action={
-            <SheetExportButton
-              title="Planned by Campaign Status"
-              sheetTitle="Planned by Status"
-              disabled={byStatus.rows.length === 0}
-              buildMatrix={() => [
-                ["Campaign status", label, "Share"],
-                ...byStatus.rows.map((s) => [s.status, s.amount, s.share ?? ""]),
-                ["Grand total", byStatus.total, 1],
-              ]}
-            />
-          }
-        >
-          <div className="pt-4">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className={`${TH} text-left`}>Campaign status</th>
-                  <th className={`${TH} text-right`}>{label}</th>
-                  <th className={`${TH} text-right`}>Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byStatus.rows.map((s) => (
-                  <tr key={s.status} className="border-b border-border/60">
-                    <td className="py-2 text-left text-foreground">{s.status}</td>
-                    <td className={`${TD} text-right`}>{money(s.amount)}</td>
-                    <td className={`${TD} text-right`}>{pct(s.share)}</td>
-                  </tr>
-                ))}
-                <tr className="border-t-2 border-border font-semibold">
-                  <td className="py-2 text-left text-foreground">Grand total</td>
-                  <td className="py-2 text-right tabular-nums text-foreground">{money(byStatus.total)}</td>
-                  <td className="py-2 text-right tabular-nums text-muted-foreground">100%</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </ChartCard>
-        <ChartCard title="Planned by Status" icon={BarChart3}>
-          <div className="pt-4">
-            <HorizontalStackedBar
-              series={[{ key: "net", label, color: BAR_COLOR }]}
-              rows={barRows}
-              valueFormat={money}
-            />
-          </div>
-        </ChartCard>
-      </div>
-    </div>
-  );
-}
-
-// ─── Top Partners ─────────────────────────────────────────────────────────────
+// ─── Top Publishers ───────────────────────────────────────────────────────────
+// The Media Investments partner roll-up, with MediaBox's publisher in the
+// partner slot and its media type in the channel slot (toInvestmentRows).
 
 function TopPartnersSection({
   rows,
@@ -473,16 +400,19 @@ function TopPartnersSection({
   const [facets, setFacets] = useState<PartnerFilters>(EMPTY_PARTNER_FILTERS);
   const options = useMemo(() => {
     const o = partnerFilterOptions(toInvestmentRows(allRows, currency));
-    return { ...o, partner: o.partner.filter((p) => p !== NO_PARTNER) };
+    return { ...o, partner: o.partner.filter((p) => !isNoPublisher(p)) };
   }, [allRows, currency]);
   const top = useMemo(
     () => computeTopPartners(applyPartnerFilters(toInvestmentRows(rows, currency), facets)),
     [rows, currency, facets]
   );
-  // The ranking skips unmapped spend (still in the Deal / Non-Deal totals above).
-  const unmapped = useMemo(() => top.partners.find((p) => p.partner === NO_PARTNER)?.net ?? 0, [top.partners]);
+  // The ranking skips spend with no publisher (still in the Deal / Non-Deal totals above).
+  const unmapped = useMemo(
+    () => top.partners.filter((p) => isNoPublisher(p.partner)).reduce((s, p) => s + p.net, 0),
+    [top.partners]
+  );
   const topPartners: PartnerSlice[] = useMemo(
-    () => top.partners.filter((p) => p.partner !== NO_PARTNER).slice(0, TOP_N),
+    () => top.partners.filter((p) => !isNoPublisher(p.partner)).slice(0, TOP_N),
     [top.partners]
   );
   const label = `Planned (${currency})`;
@@ -492,15 +422,15 @@ function TopPartnersSection({
   const setFacet = (patch: Partial<PartnerFilters>) => setFacets((prev) => ({ ...prev, ...patch }));
 
   return (
-    <div data-scroll-section data-scroll-label="Top Partners" className="space-y-6">
+    <div data-scroll-section data-scroll-label="Top Publishers" className="space-y-6">
       <div className="flex items-center gap-2">
         <Users size={18} className="text-primary" />
-        <h2 className="text-lg font-semibold text-foreground">Top Partners</h2>
+        <h2 className="text-lg font-semibold text-foreground">Top Publishers</h2>
         <span className="text-xs font-medium text-muted-foreground">· {describePeriod(period)}</span>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <MultiSelectDropdown
-          label="Media Channel"
+          label={LABEL}
           options={toOptions(options.channel)}
           selectedValues={facets.channel}
           onChange={(v) => setFacet({ channel: v })}
@@ -513,7 +443,7 @@ function TopPartnersSection({
           onChange={(v) => setFacet({ deals: v })}
         />
         <MultiSelectDropdown
-          label="Media Partner"
+          label="Publisher"
           options={toOptions(options.partner)}
           selectedValues={facets.partner}
           onChange={(v) => setFacet({ partner: v })}
@@ -532,29 +462,29 @@ function TopPartnersSection({
       <div className="grid gap-6 sm:grid-cols-2">
         <StatCard
           icon={Users}
-          label="Deal Partners $"
+          label="Deal Publishers $"
           value={money(top.dealTotal)}
           sub={`${pct(top.dealPct)} of total`}
         />
         <StatCard
           icon={Users}
-          label="Non-Deal Partners $"
+          label="Non-Deal Publishers $"
           value={money(top.nonDealTotal)}
           sub={`${pct(top.nonDealPct)} of total`}
         />
       </div>
       <div className="grid items-stretch gap-6 lg:grid-cols-2">
         <ChartCard
-          title={`Top ${TOP_N} Partners`}
+          title={`Top ${TOP_N} Publishers`}
           icon={Table}
-          subtitle={unmapped ? `Excludes ${money(unmapped)} with no mapped partner` : undefined}
+          subtitle={unmapped ? `Excludes ${money(unmapped)} with no publisher in MediaBox` : undefined}
           action={
             <SheetExportButton
-              title={`Top ${TOP_N} Partners`}
-              sheetTitle="Top Planned Partners"
+              title={`Top ${TOP_N} Publishers`}
+              sheetTitle="Top Planned Publishers"
               disabled={topPartners.length === 0}
               buildMatrix={() => [
-                ["#", "Partner", "2026 Deals", label],
+                ["#", "Publisher", "2026 Deals", label],
                 ...topPartners.map((p, i) => [i + 1, p.partner, p.dealType ?? "", p.net]),
               ]}
             />
@@ -565,7 +495,7 @@ function TopPartnersSection({
               <thead>
                 <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
                   <th className={`${TH} pr-2 text-left`}>#</th>
-                  <th className={`${TH} text-left`}>Partner</th>
+                  <th className={`${TH} text-left`}>Publisher</th>
                   <th className={`${TH} text-left`}>2026 Deals</th>
                   <th className={`${TH} text-right`}>{label}</th>
                 </tr>
@@ -583,7 +513,7 @@ function TopPartnersSection({
             </table>
           </div>
         </ChartCard>
-        <ChartCard title="Planned by Partner" icon={BarChart3}>
+        <ChartCard title="Planned by Publisher" icon={BarChart3}>
           <div className="pt-4">
             <HorizontalStackedBar series={barSeries} rows={barRows} valueFormat={money} />
           </div>
@@ -600,7 +530,7 @@ function SocialSection({
   currency,
   selMonths,
 }: {
-  /** Client- and status-filtered rows, every year (Social compares 2025 vs 2026). */
+  /** Client-filtered rows, every year (Social compares 2025 vs 2026). */
   rows: PlannerRow[];
   currency: PlannerCurrency;
   selMonths: number[];
@@ -631,15 +561,15 @@ function SocialSection({
       </div>
       <div className="grid items-stretch gap-6 lg:grid-cols-2">
         <ChartCard
-          title="Social Partners"
+          title="Social Publishers"
           icon={Table}
           action={
             <SheetExportButton
-              title="Social Partners (planned)"
-              sheetTitle="Planned Social Partners"
+              title="Social Publishers (planned)"
+              sheetTitle="Planned Social Publishers"
               disabled={summary.partners.length === 0}
               buildMatrix={() => [
-                ["Partner", `Planned 2025 (${currency})`, `Planned 2026 (${currency})`, "Variance $", "Share ppt"],
+                ["Publisher", `Planned 2025 (${currency})`, `Planned 2026 (${currency})`, "Variance $", "Share ppt"],
                 ...summary.partners.map((p) => [
                   p.partner,
                   p.spend2025,
@@ -656,7 +586,7 @@ function SocialSection({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className={`${TH} text-left`}>Partner</th>
+                  <th className={`${TH} text-left`}>Publisher</th>
                   <th className={`${TH} text-right`}>Planned 2025</th>
                   <th className={`${TH} text-right`}>Planned 2026</th>
                   <th className={`${TH} text-right`}>Variance $</th>
@@ -684,7 +614,7 @@ function SocialSection({
             </table>
           </div>
         </ChartCard>
-        <ChartCard title="Social Share: 2025 vs 2026" icon={Share2} subtitle="Each partner's share of planned social">
+        <ChartCard title="Social Share: 2025 vs 2026" icon={Share2} subtitle="Each publisher's share of planned social">
           {summary.partners.length === 0 ? (
             <p className="text-xs text-muted-foreground">No planned social spend in range.</p>
           ) : (
@@ -735,21 +665,12 @@ export default function MediaboxPlannerTab({
 }) {
   const { rows, meta, loading, error } = useMediaboxPlannerMix();
   const [currency, setCurrency] = useState<PlannerCurrency>("CAD");
-  const [statuses, setStatuses] = useState<string[]>([]);
-
-  const statusOptions = useMemo(() => toOptions(plannerStatuses(rows)), [rows]);
-
-  // Client scope (global filter bar) + campaign status. Strict: an empty scope
-  // shows nothing, never everything.
+  // Client scope (global filter bar). Strict: an empty scope shows nothing,
+  // never everything.
   const scoped = useMemo(() => {
     const ids = new Set(scopedClientIds);
-    return rows.filter(
-      (r) =>
-        !!r.PLUSCO_CLIENT_ID &&
-        ids.has(r.PLUSCO_CLIENT_ID) &&
-        (statuses.length === 0 || statuses.includes(r.CMP_STATUS))
-    );
-  }, [rows, scopedClientIds, statuses]);
+    return rows.filter((r) => !!r.PLUSCO_CLIENT_ID && ids.has(r.PLUSCO_CLIENT_ID));
+  }, [rows, scopedClientIds]);
   const inRange = useMemo(
     () => scoped.filter((r) => inPeriod(period, Number(r.PLUSCO_YEAR), plannerMonth(r))),
     [scoped, period]
@@ -780,32 +701,14 @@ export default function MediaboxPlannerTab({
   return (
     <div className="space-y-10">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <MultiSelectDropdown
-            label="Campaign Status"
-            options={statusOptions}
-            selectedValues={statuses}
-            onChange={setStatuses}
-          />
-          {statuses.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setStatuses([])}
-              className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
-            >
-              All statuses
-            </button>
-          )}
-          <div className="ml-auto">
-            <CurrencySwitch value={currency} onChange={setCurrency} />
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <CurrencySwitch value={currency} onChange={setCurrency} />
         </div>
         <RatesNote meta={meta} currency={currency} />
       </div>
 
       <TotalInvestmentSection rows={inRange} currency={currency} period={period} />
       <ClientCostSection rows={inRange} currency={currency} period={period} />
-      <StatusSection rows={inRange} currency={currency} />
       <TopPartnersSection rows={inRange} allRows={scoped} currency={currency} period={period} />
       <SocialSection rows={scoped} currency={currency} selMonths={monthsWithinOneYear(period)} />
     </div>

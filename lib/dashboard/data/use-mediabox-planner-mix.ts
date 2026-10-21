@@ -8,11 +8,13 @@
  * stamp (sync time + the Bank of Canada rates used).
  *
  * Rows are already summed in the sync to year × month × agency × client ×
- * channel × partner × deal × campaign status, with the planned budget in CAD
- * (PLANNED_CAD) and USD (PLANNED_USD). The tab reuses the Media Investments
- * roll-ups (computeTotalMediaInvestment / computeTopPartners /
- * computeSocialSummary) by reshaping these rows into their row types — same
- * sums, same digital / deal definitions.
+ * MediaBox media type × publisher × deal, with every amount in CAD and USD.
+ * The view groups by MediaBox's own media type ("Media Type (Channel)") and
+ * publisher — not the Plus channel / partner mappings. It reuses the Media
+ * Investments roll-ups (computeTopPartners / computeSocialSummary) by reshaping
+ * these rows into their row types; the channel mix has its own roll-up
+ * (computePlannerMediaMix) because MediaBox names its digital types differently
+ * (Paid Search, Digital).
  */
 
 import { useEffect, useState } from "react";
@@ -20,7 +22,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useDashboardDocScope } from "../../hooks/use-agency-scope";
 import { fetchDashboardRowDocs } from "./agency-scoped-query";
-import type { MediaInvestmentRow } from "./use-mediaocean-investment-mix";
+import type { ChannelSlice, MediaInvestmentRow, TotalMediaInvestment } from "./use-mediaocean-investment-mix";
 import type { SocialPartnerRow } from "./use-social-partner-mix";
 
 const COLLECTION = "mediabox_planner_mix";
@@ -38,10 +40,14 @@ export interface PlannerRow {
   AGENCY: string;
   PLUSCO_CLIENT_ID: string | null;
   PLUSCO_CLIENT_NAME: string;
-  PLUSCO_MEDIA_CHANNEL: string;
-  PLUSCO_MEDIA_PARTNER: string;
+  /** MediaBox media type — shown as "Media Type (Channel)". */
+  MEDIA_TYPE?: string;
+  /** MediaBox publisher — the view's partner dimension. */
+  PUBLISHER?: string;
+  /** Plus mappings, on rows synced before the media type / publisher switch. */
+  PLUSCO_MEDIA_CHANNEL?: string;
+  PLUSCO_MEDIA_PARTNER?: string;
   PLUSCO_2026_DEALS: string | null;
-  CMP_STATUS: string;
   PLANNED_CAD: number;
   PLANNED_USD: number;
   /** MediaBox fees by bucket (MediaBox v2 only; 0 where the plan is from v1). */
@@ -190,13 +196,77 @@ export function plannerMonth(r: PlannerRow): number | null {
   return m >= 1 && m <= 12 ? m : null;
 }
 
+/** Label for rows with no publisher picked in MediaBox (the sync writes it). */
+export const NO_PUBLISHER = "(No publisher)";
+/** Label for rows with no media type in MediaBox. */
+export const NO_MEDIA_TYPE = "(No media type)";
+
+/** The row's MediaBox media type (older rows: the Plus channel). */
+export function mediaTypeOf(r: PlannerRow): string {
+  return String(r.MEDIA_TYPE ?? r.PLUSCO_MEDIA_CHANNEL ?? "").trim() || NO_MEDIA_TYPE;
+}
+
+/** The row's MediaBox publisher (older rows: the Plus partner). */
+export function publisherOf(r: PlannerRow): string {
+  return String(r.PUBLISHER ?? r.PLUSCO_MEDIA_PARTNER ?? "").trim() || NO_PUBLISHER;
+}
+
 /**
- * Planner rows in the Media Investments row shape, so its roll-ups apply as-is.
- * NET_ORDERED_CAD carries the planned amount in the chosen currency.
+ * MediaBox media types counted as digital — Media Investments' Programmatic /
+ * SEM / Digital Direct / Social, in MediaBox's names (SEM = "Paid Search"), plus
+ * MediaBox's generic "Digital".
+ */
+const PLANNER_DIGITAL = new Set(["PROGRAMMATIC", "SOCIAL", "PAID SEARCH", "DIGITAL DIRECT", "DIGITAL", "SEM"]);
+
+export function isDigitalMediaType(mediaType: string): boolean {
+  return PLANNER_DIGITAL.has(mediaType.trim().toUpperCase());
+}
+
+/**
+ * Planned Net by media type: total, digital share, all-types mix and digital
+ * mix (the Media Investments TotalMediaInvestment shape). Types are merged
+ * case-insensitively.
+ */
+export function computePlannerMediaMix(rows: PlannerRow[], currency: PlannerCurrency): TotalMediaInvestment {
+  const byType = new Map<string, { label: string; net: number }>();
+  for (const r of rows) {
+    const label = mediaTypeOf(r);
+    const key = label.toUpperCase();
+    const e = byType.get(key) ?? { label, net: 0 };
+    e.net += plannedAmount(r, currency);
+    byType.set(key, e);
+  }
+  let grandTotal = 0;
+  let digitalTotal = 0;
+  for (const [key, e] of byType) {
+    grandTotal += e.net;
+    if (PLANNER_DIGITAL.has(key)) digitalTotal += e.net;
+  }
+  const slice = (e: { label: string; net: number }, total: number): ChannelSlice => ({
+    channel: e.label,
+    net: e.net,
+    pct: total ? e.net / total : null,
+  });
+  const all = [...byType.values()];
+  return {
+    grandTotal,
+    digitalTotal,
+    digitalShareOfTotal: grandTotal ? digitalTotal / grandTotal : null,
+    mediaMix: all.map((e) => slice(e, grandTotal)).sort((a, b) => b.net - a.net),
+    digitalMix: all.filter((e) => isDigitalMediaType(e.label)).map((e) => slice(e, digitalTotal)).sort((a, b) => b.net - a.net),
+  };
+}
+
+/**
+ * Planner rows in the Media Investments row shape, so its partner roll-up and
+ * filters apply as-is: the channel slot carries the media type, the partner slot
+ * the publisher, NET_ORDERED_CAD the planned amount in the chosen currency.
  */
 export function toInvestmentRows(rows: PlannerRow[], currency: PlannerCurrency): MediaInvestmentRow[] {
   return rows.map((r) => ({
     ...r,
+    PLUSCO_MEDIA_CHANNEL: mediaTypeOf(r),
+    PLUSCO_MEDIA_PARTNER: publisherOf(r),
     PLUSCO_PROGRAMMATIC: null,
     BU_REGION: "",
     BUSINESS_LEAD: "",
@@ -206,13 +276,13 @@ export function toInvestmentRows(rows: PlannerRow[], currency: PlannerCurrency):
 }
 
 /**
- * Social-channel planner rows in the Social Media row shape (spend_2025 /
- * spend_2026 per month), so computeSocialSummary applies as-is.
+ * Social media-type planner rows in the Social Media row shape (spend_2025 /
+ * spend_2026 per month, partner = publisher), so computeSocialSummary applies as-is.
  */
 export function toSocialRows(rows: PlannerRow[], currency: PlannerCurrency): SocialPartnerRow[] {
   const out: SocialPartnerRow[] = [];
   for (const r of rows) {
-    if (String(r.PLUSCO_MEDIA_CHANNEL ?? "").trim().toUpperCase() !== "SOCIAL") continue;
+    if (mediaTypeOf(r).toUpperCase() !== "SOCIAL") continue;
     const year = Number(r.PLUSCO_YEAR);
     if (year !== 2025 && year !== 2026) continue;
     const amount = plannedAmount(r, currency);
@@ -223,18 +293,11 @@ export function toSocialRows(rows: PlannerRow[], currency: PlannerCurrency): Soc
       BUSINESS_LEAD: "",
       GM_POD: "",
       PLUSCO_CLIENT_NAME: r.PLUSCO_CLIENT_NAME,
-      PLUSCO_MEDIA_PARTNER: r.PLUSCO_MEDIA_PARTNER,
+      PLUSCO_MEDIA_PARTNER: publisherOf(r),
       MONTH: String(plannerMonth(r) ?? ""),
       spend_2025: year === 2025 ? amount : 0,
       spend_2026: year === 2026 ? amount : 0,
     });
   }
   return out;
-}
-
-/** Distinct, sorted campaign statuses present in the rows. */
-export function plannerStatuses(rows: PlannerRow[]): string[] {
-  return [...new Set(rows.map((r) => String(r.CMP_STATUS ?? "").trim()).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b)
-  );
 }

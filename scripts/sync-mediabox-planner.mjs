@@ -15,8 +15,8 @@
  *
  * Writes:
  *   1. Firestore `mediabox_planner_mix` — the tab's charts. Rows summed to
- *      year × month × agency × client × channel × partner × deal × campaign
- *      status; every amount in CAD and USD: PLANNED_*, COMMISSION_*, TAXES_*,
+ *      year × month × agency × client × MediaBox media type × publisher × deal
+ *      (all campaign statuses together); every amount in CAD and USD: PLANNED_*, COMMISSION_*, TAXES_*,
  *      OTHER_FEES_*, and NO_FEE_DATA_* (the part of Planned Net from MediaBox v1,
  *      which has no fee data). Tagged `_agency` (rules) and `_clientId`
  *      (MediaBox allocations).
@@ -55,21 +55,24 @@ const FIREBASE_PROJECT = "pluscoops";
 const COLLECTION = "mediabox_planner_mix";
 const REPORT_TABLE = "mediabox_planner";
 const META_DOC = "mediabox_planner";
-const NO_PARTNER = "(No partner mapped)";
+// Labels for rows MediaBox left blank (read by lib/dashboard/data/use-mediabox-planner-mix.ts).
+const NO_PUBLISHER = "(No publisher)";
+const NO_MEDIA_TYPE = "(No media type)";
 // Summed amounts on each dashboard row, in CAD and USD.
 const AMOUNT_FIELDS = ["PLANNED", "COMMISSION", "TAXES", "OTHER_FEES", "NO_FEE_DATA"].flatMap((n) => [`${n}_CAD`, `${n}_USD`]);
 
 // Doc id = hash of these, in this order. Never reorder once data is stored.
+// (2026-10-21: switched from the Plus channel / partner + campaign status to
+// MediaBox media type / publisher — every id changed once; that run needs --force.)
 const GRAIN_FIELDS = [
   "PLUSCO_YEAR",
   "MONTH",
   "AGENCY",
   "PLUSCO_CLIENT_ID",
   "PLUSCO_CLIENT_NAME",
-  "PLUSCO_MEDIA_CHANNEL",
-  "PLUSCO_MEDIA_PARTNER",
+  "MEDIA_TYPE",
+  "PUBLISHER",
   "PLUSCO_2026_DEALS",
-  "CMP_STATUS",
 ];
 
 /** Lowercase, accents stripped, trimmed — "Jungle Média" and "Jungle Media" match. */
@@ -162,10 +165,9 @@ async function main() {
       AGENCY: r._agency,
       PLUSCO_CLIENT_ID: text(r.CL_ID),
       PLUSCO_CLIENT_NAME: text(r.CL_Name) ?? text(r.client),
-      PLUSCO_MEDIA_CHANNEL: text(r.PLUSCO_MEDIA_CHANNEL) ?? "N/A",
-      PLUSCO_MEDIA_PARTNER: text(r.PLUSCO_MEDIA_PARTNER) ?? NO_PARTNER,
+      MEDIA_TYPE: text(r.media_type) ?? NO_MEDIA_TYPE,
+      PUBLISHER: text(r.publisher) ?? NO_PUBLISHER,
       PLUSCO_2026_DEALS: text(r.PLUSCO_2026_DEALS),
-      CMP_STATUS: text(r.cmp_status) ?? "(No status)",
     };
     const id = grainDocId(doc, GRAIN_FIELDS);
     const cur = grain.get(id) ?? { ...doc, ...Object.fromEntries(AMOUNT_FIELDS.map((f) => [f, 0])), TACTIC_MONTHS: 0, _agency: r._agency };
@@ -204,8 +206,8 @@ async function main() {
     sampleFields: [
       { field: "MONTH", label: "MONTH", width: 7 },
       { field: "PLUSCO_CLIENT_NAME", label: "CLIENT", width: 30 },
-      { field: "PLUSCO_MEDIA_CHANNEL", label: "CHANNEL", width: 14 },
-      { field: "CMP_STATUS", label: "STATUS", width: 12 },
+      { field: "MEDIA_TYPE", label: "MEDIA_TYPE", width: 14 },
+      { field: "PUBLISHER", label: "PUBLISHER", width: 16 },
       { field: "PLANNED_CAD", label: "PLANNED_CAD", money: true },
     ],
     dryRun,
