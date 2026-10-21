@@ -94,6 +94,20 @@ function agencyOf(clientAgency, mediaboxAgency) {
   return MEDIABOX_AGENCY_ALIASES.get(folded) ?? normalizeAgency(folded);
 }
 
+// MediaBox v1 files every digital tactic under media_type "Digital" (the detail
+// — Social, Programmatic, Display… — sits in its `channel` field). For those rows
+// use the Plus channel mapped from that detail, in MediaBox v2's media type names,
+// so v1 (mostly 2025) and v2 compare. v2 rows keep their own media type.
+const V1_DIGITAL_TYPE = new Map([["SEM", "Paid Search"], ["N/A", "Digital"]]);
+function mediaTypeOf(r) {
+  const mt = text(r.media_type);
+  if (r.data_source === "mediabox-v1" && (!mt || mt.toLowerCase() === "digital")) {
+    const plus = text(r.PLUSCO_MEDIA_CHANNEL);
+    if (plus) return V1_DIGITAL_TYPE.get(plus.toUpperCase()) ?? plus;
+  }
+  return mt ?? NO_MEDIA_TYPE;
+}
+
 const blank = (v) => v === null || v === undefined || String(v).trim() === "" || String(v).trim() === "-";
 const text = (v) => (blank(v) ? null : String(v).trim());
 
@@ -165,7 +179,7 @@ async function main() {
       AGENCY: r._agency,
       PLUSCO_CLIENT_ID: text(r.CL_ID),
       PLUSCO_CLIENT_NAME: text(r.CL_Name) ?? text(r.client),
-      MEDIA_TYPE: text(r.media_type) ?? NO_MEDIA_TYPE,
+      MEDIA_TYPE: mediaTypeOf(r),
       PUBLISHER: text(r.publisher) ?? NO_PUBLISHER,
       PLUSCO_2026_DEALS: text(r.PLUSCO_2026_DEALS),
     };
