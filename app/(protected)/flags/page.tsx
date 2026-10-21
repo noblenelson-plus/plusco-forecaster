@@ -178,7 +178,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {alerts.map((a) => (
-                    <BlAlertBanner key={a.id} alert={a} currency={currency} />
+                    <BlAlertBanner key={a.id} alert={a} currency={currency} year={selectedYear} />
                   ))}
                 </div>
               )}

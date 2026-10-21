@@ -502,7 +502,7 @@ const ALL_FLAGS_HEADER = [
   "Type",
   "Axis",
   "Subject",
-  "Month", // QA checks only (the violating month); blank on swing/under-target
+  "Month", // QA checks only ("Full year"); blank on swing/under-target
   "Current",
   "Reference",
   "Delta",
@@ -510,7 +510,7 @@ const ALL_FLAGS_HEADER = [
   "Justified", // persisted flags only ("Yes"/"No"); blank on QA checks
   "Context",
   "Note",
-  "Analyzed Months", // under-target only
+  "Analyzed Months", // under-target: the window; QA checks: the months over on their own
 ];
 
 /** Human labels for the persisted-flag rules (the "Type" column). */
@@ -568,7 +568,7 @@ function storedFlagRow(base: (string | number)[], flag: StoredFlag): ReportRow {
   ];
 }
 
-/** One row per violating month of each live QA (cat-2) alert. */
+/** One row per live QA (cat-2) alert row — full-year figures. */
 function blAlertRows(base: (string | number)[], alerts: BlAlert[]): ReportRow[] {
   const rows: ReportRow[] = [];
   for (const alert of alerts) {
@@ -581,15 +581,15 @@ function blAlertRows(base: (string | number)[], alerts: BlAlert[]): ReportRow[] 
         // The Labs-over-media alert names a media type per row; the others
         // describe the whole axis, so fall back to the alert title.
         r.label ?? alert.title,
-        MONTH_LABELS[r.month - 1],
-        r.left, // Current — the amount that is too high
-        r.right, // Reference — the forecast it exceeds
+        "Full year",
+        r.left, // Current — the yearly amount that is too high
+        r.right, // Reference — the yearly forecast it exceeds
         r.variance, // Delta — left − right
         "", // Threshold — n/a
         "", // Justified — n/a (QA checks clear on their own, never justified)
         "", // Context
         "", // Note
-        "", // Analyzed Months
+        r.months.map((m) => MONTH_LABELS[m.month - 1]).join(", "), // Months over on their own
       ]);
     }
   }
