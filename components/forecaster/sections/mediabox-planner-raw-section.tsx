@@ -23,8 +23,8 @@ const FILTERS: RawFilterDef[] = [
   { field: "CL_Business_Lead", label: "Business Lead" },
   { field: "year", label: "Year" },
   { field: "month", label: "Month" },
-  { field: "cmp_status", label: "Campaign Status" },
-  { field: "PLUSCO_MEDIA_CHANNEL", label: "Media Channel" },
+  { field: "media_type", label: "Media Type (Channel)" },
+  { field: "publisher", label: "Publisher" },
 ];
 
 const COLUMN_ORDER = [
