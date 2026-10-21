@@ -21,14 +21,7 @@
  */
 
 import { useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowRight,
-  ClipboardPaste,
-  FolderPlus,
-  Lock,
-  X,
-} from "lucide-react";
+import { ArrowRight, ClipboardPaste, FolderPlus, X } from "lucide-react";
 import type { AxisConfig } from "../../lib/types/forecaster.types";
 import type { UseForecasterGridResult } from "../../lib/hooks/use-forecaster-grid";
 import {
@@ -39,18 +32,12 @@ import {
 } from "../../lib/format/reference-copy";
 import { MONTHS } from "../../lib/types/common.types";
 import { showForecastToast } from "../../lib/format/toast";
-
-const MONTH_LABELS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-function money(v: number): string {
-  return Math.round(v).toLocaleString("en-CA");
-}
-
-const plural = (n: number, one: string, many = `${one}s`) =>
-  `${n} ${n === 1 ? one : many}`;
+import {
+  CopyMonthPicker,
+  CopyOverwritePreview,
+  money,
+  plural,
+} from "./copy-plan-sections";
 
 export default function CopyToSubmissionModal({
   sourceLabel,
@@ -115,14 +102,6 @@ export default function CopyToSubmissionModal({
     0
   );
   const campaignCount = new Set(leaves.map((l) => l.campaign)).size;
-
-  const toggleMonth = (m: number) =>
-    setMonths((prev) => {
-      const next = new Set(prev);
-      if (next.has(m)) next.delete(m);
-      else next.add(m);
-      return next;
-    });
 
   const canCopy = !!plan && plan.cellCount > 0 && !grid.locked;
   const overwriting = (plan?.overwrittenCells ?? 0) > 0;
@@ -266,69 +245,14 @@ export default function CopyToSubmissionModal({
           </section>
 
           {/* 2. Period */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                2 · Which months?
-              </h3>
-              <div className="flex items-center gap-3 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setMonths(new Set(dataMonths.filter(isMonthOpen)))}
-                  className="text-gray-600 underline underline-offset-2 hover:text-gray-900"
-                >
-                  Months with data
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMonths(new Set(MONTHS.filter(isMonthOpen)))}
-                  className="text-gray-600 underline underline-offset-2 hover:text-gray-900"
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMonths(new Set())}
-                  className="text-gray-600 underline underline-offset-2 hover:text-gray-900"
-                >
-                  None
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-6 gap-1">
-              {MONTHS.map((m) => {
-                const open = isMonthOpen(m);
-                const on = open && months.has(m);
-                const hasData = dataMonths.includes(m);
-                return (
-                  <button
-                    key={m}
-                    type="button"
-                    disabled={!open}
-                    onClick={() => toggleMonth(m)}
-                    aria-pressed={on}
-                    title={
-                      !open
-                        ? "Closed period — read only"
-                        : hasData
-                          ? undefined
-                          : "No data in the ticked rows this month (copying it clears the cells)"
-                    }
-                    className={`flex items-center justify-center gap-1 border px-1 py-1.5 text-xs font-medium transition-colors ${
-                      !open
-                        ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
-                        : on
-                          ? "border-gray-900 bg-gray-900 text-white"
-                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                    } ${hasData || !open ? "" : "italic"}`}
-                  >
-                    {!open && <Lock size={10} />}
-                    {MONTH_LABELS[m - 1]}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          <CopyMonthPicker
+            step={2}
+            months={months}
+            onChange={setMonths}
+            dataMonths={dataMonths}
+            isMonthOpen={isMonthOpen}
+            emptyHint="No data in the ticked rows this month (copying it clears the cells)"
+          />
 
           {/* Outcome + warnings */}
           {plan && (
@@ -342,50 +266,12 @@ export default function CopyToSubmissionModal({
                 not added on top. Other months, {typeNoun}s and {bucketNoun}s are left
                 as they are.
               </p>
-              {chosenMonths.length === 0 ? null : overwriting ? (
-                <div className="space-y-1.5 bg-yellow-400 px-3 py-2 text-gray-900">
-                  <div className="flex gap-2">
-                    <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-                    <strong>
-                      {plural(plan.overwrittenCells, "filled cell")} across{" "}
-                      {plural(plan.overwrittenRows, "row")} will be replaced:
-                    </strong>
-                  </div>
-                  <div className="max-h-36 overflow-y-auto bg-white">
-                    <table className="w-full text-[11px]">
-                      <thead className="sticky top-0 bg-gray-100 text-gray-500">
-                        <tr>
-                          <th className="px-2 py-1 text-left font-medium">{config.bucketLabel}</th>
-                          <th className="px-2 py-1 text-left font-medium">{config.rowTypeLabel}</th>
-                          <th className="px-2 py-1 text-left font-medium">Month</th>
-                          <th className="px-2 py-1 text-right font-medium">Now</th>
-                          <th className="px-2 py-1 text-right font-medium">After</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {plan.overwrites.map((o) => (
-                          <tr key={`${o.project}|${o.label}|${o.month}`}>
-                            <td className="max-w-[8rem] truncate px-2 py-1" title={o.project}>{o.project}</td>
-                            <td className="max-w-[8rem] truncate px-2 py-1" title={o.label}>{o.label}</td>
-                            <td className="px-2 py-1">{MONTH_LABELS[o.month - 1]}</td>
-                            <td className="px-2 py-1 text-right tabular-nums text-gray-500 line-through">
-                              {money(o.current)}
-                            </td>
-                            <td className="px-2 py-1 text-right font-semibold tabular-nums">
-                              {money(o.value)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : plan.cellCount > 0 ? (
-                <p className="bg-green-500 px-3 py-2 font-medium text-white">
-                  Nothing already in your submission will be replaced — these cells are
-                  empty today.
-                </p>
-              ) : null}
+              <CopyOverwritePreview
+                plan={plan}
+                hasMonths={chosenMonths.length > 0}
+                bucketLabel={config.bucketLabel}
+                rowTypeLabel={config.rowTypeLabel}
+              />
               {plan.unmatched.length > 0 && (
                 <p className="text-gray-600">
                   <strong className="text-gray-900">
