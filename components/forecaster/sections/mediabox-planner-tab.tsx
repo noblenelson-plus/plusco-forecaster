@@ -53,7 +53,9 @@ import { computeSocialSummary } from "../../../lib/dashboard/data/use-social-par
 import {
   clientCostTotals,
   computePlannerMediaMix,
+  isHiddenMediaType,
   mediaTypeOf,
+  plannedAmount,
   NO_PUBLISHER,
   plannerMonth,
   toInvestmentRows,
@@ -83,6 +85,7 @@ const COLOR_2026 = "#f59e0b";
 const CHANNEL_COLORS: Record<string, string> = {
   PROGRAMMATIC: "#4f46e5",
   SEM: "#f59e0b",
+  SEARCH: "#f59e0b",
   "PAID SEARCH": "#f59e0b",
   DIGITAL: "#14b8a6",
   "DIGITAL DIRECT": "#06b6d4",
@@ -667,13 +670,23 @@ export default function MediaboxPlannerTab({
   const [currency, setCurrency] = useState<PlannerCurrency>("CAD");
   // Client scope (global filter bar). Strict: an empty scope shows nothing,
   // never everything.
-  const scoped = useMemo(() => {
+  // "Other" / no media type are left out of every section and total (media team);
+  // the amount left out in the period is noted under the header.
+  const scopedAll = useMemo(() => {
     const ids = new Set(scopedClientIds);
     return rows.filter((r) => !!r.PLUSCO_CLIENT_ID && ids.has(r.PLUSCO_CLIENT_ID));
   }, [rows, scopedClientIds]);
+  const scoped = useMemo(() => scopedAll.filter((r) => !isHiddenMediaType(r)), [scopedAll]);
   const inRange = useMemo(
     () => scoped.filter((r) => inPeriod(period, Number(r.PLUSCO_YEAR), plannerMonth(r))),
     [scoped, period]
+  );
+  const hiddenInRange = useMemo(
+    () =>
+      scopedAll
+        .filter((r) => isHiddenMediaType(r) && inPeriod(period, Number(r.PLUSCO_YEAR), plannerMonth(r)))
+        .reduce((s, r) => s + plannedAmount(r, currency), 0),
+    [scopedAll, period, currency]
   );
 
   if (loading) {
@@ -705,6 +718,12 @@ export default function MediaboxPlannerTab({
           <CurrencySwitch value={currency} onChange={setCurrency} />
         </div>
         <RatesNote meta={meta} currency={currency} />
+        {hiddenInRange > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Not shown: {money(hiddenInRange)} of Planned Net with media type &quot;Other&quot; or no media type in
+            MediaBox ({describePeriod(period)}).
+          </p>
+        )}
       </div>
 
       <TotalInvestmentSection rows={inRange} currency={currency} period={period} />

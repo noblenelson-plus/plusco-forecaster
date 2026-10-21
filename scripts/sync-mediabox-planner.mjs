@@ -94,18 +94,41 @@ function agencyOf(clientAgency, mediaboxAgency) {
   return MEDIABOX_AGENCY_ALIASES.get(folded) ?? normalizeAgency(folded);
 }
 
-// MediaBox v1 files every digital tactic under media_type "Digital" (the detail
-// — Social, Programmatic, Display… — sits in its `channel` field). For those rows
-// use the Plus channel mapped from that detail, in MediaBox v2's media type names,
-// so v1 (mostly 2025) and v2 compare. v2 rows keep their own media type.
-const V1_DIGITAL_TYPE = new Map([["SEM", "Paid Search"], ["N/A", "Digital"]]);
+// The dashboard's media type ("Media Type (Channel)"), one of 8 channels —
+// Programmatic, Social, TV, Search, Digital Direct, Radio, OOH, Print — or
+// "Other" / NO_MEDIA_TYPE, which the view leaves out.
+//  - MediaBox v1 files every digital tactic under media_type "Digital" (the
+//    detail — Social, Programmatic, Display… — sits in its `channel` field): for
+//    those rows use the Plus channel mapped from that detail, so v1 (mostly 2025)
+//    and v2 compare. v2 rows keep their own media type.
+//  - Then roll up to the 8 channels: Digital → Digital Direct, Paid Search / SEM →
+//    Search (media team, 2026-10-21).
+const TYPE_ROLLUP = new Map([
+  ["DIGITAL", "Digital Direct"],
+  ["PAID SEARCH", "Search"],
+  ["SEM", "Search"],
+  ["N/A", "Digital Direct"],
+]);
 function mediaTypeOf(r) {
-  const mt = text(r.media_type);
+  let mt = text(r.media_type);
   if (r.data_source === "mediabox-v1" && (!mt || mt.toLowerCase() === "digital")) {
-    const plus = text(r.PLUSCO_MEDIA_CHANNEL);
-    if (plus) return V1_DIGITAL_TYPE.get(plus.toUpperCase()) ?? plus;
+    mt = text(r.PLUSCO_MEDIA_CHANNEL) ?? mt;
   }
-  return mt ?? NO_MEDIA_TYPE;
+  if (!mt) return NO_MEDIA_TYPE;
+  return TYPE_ROLLUP.get(mt.toUpperCase()) ?? mt;
+}
+
+// Publisher names rolled up across their MediaBox spellings (media team,
+// 2026-10-21): Facebook / Instagram placements → Meta; LinkedIn variants →
+// LinkedIn; anything Snapchat → Snapchat. ("Instacart" is not Instagram.)
+function publisherOf(r) {
+  const p = text(r.publisher);
+  if (!p) return NO_PUBLISHER;
+  const l = p.toLowerCase();
+  if (l === "meta" || l.startsWith("facebook") || l.includes("instagram")) return "Meta";
+  if (l.startsWith("linkedin")) return "LinkedIn";
+  if (l.includes("snapchat")) return "Snapchat";
+  return p;
 }
 
 const blank = (v) => v === null || v === undefined || String(v).trim() === "" || String(v).trim() === "-";
@@ -180,7 +203,7 @@ async function main() {
       PLUSCO_CLIENT_ID: text(r.CL_ID),
       PLUSCO_CLIENT_NAME: text(r.CL_Name) ?? text(r.client),
       MEDIA_TYPE: mediaTypeOf(r),
-      PUBLISHER: text(r.publisher) ?? NO_PUBLISHER,
+      PUBLISHER: publisherOf(r),
       PLUSCO_2026_DEALS: text(r.PLUSCO_2026_DEALS),
     };
     const id = grainDocId(doc, GRAIN_FIELDS);
