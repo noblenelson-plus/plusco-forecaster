@@ -10,10 +10,10 @@
  * rows, so display order never affects it. Column headers reflect the live
  * submission + Type selection.
  *
- * Product Fees only: when the revenue-types filter is exactly Product Fees, both
- * sides compare BL vs BL — Official revenue is one untyped total, so "Product
- * Fees vs all of OF" is meaningless; the product team reads this view. Every
- * other selection keeps the header's BL / OF choice.
+ * Revenue-type filter → BL vs BL: as soon as the revenue-types filter is not
+ * "All", both sides compare BL submissions — Official revenue is one untyped
+ * total, so a filtered type can't be compared to it — and a note says so. With
+ * "All" selected, the header's BL / OF choice applies (BL vs OF by default).
  *
  * Clicking a row sets the page-wide focus. There are no charts under this
  * table, so the effect here is the highlight — the selection carries to the
@@ -34,7 +34,6 @@ import ExportSheetButton from "../table/export-sheet-button";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../../lib/stores/comparison-selection.store";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
-import { REVENUE_PRODUCT_FEES_TYPE } from "../../../lib/types/forecaster.types";
 import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import type {
   ScopeForecastData,
@@ -43,9 +42,6 @@ import type {
 
 const modeLabel = (mode: RevenueMode) => (mode === "official" ? "OF" : "BL");
 
-/** True when the revenue-types filter is exactly Product Fees. */
-const isProductFeesOnly = (selected: ReadonlySet<string>) =>
-  selected.size === 1 && selected.has(REVENUE_PRODUCT_FEES_TYPE);
 
 /** Matches the client detail table's focus highlight. */
 const FOCUS_BG = "bg-yellow-50";
@@ -59,6 +55,7 @@ export default function ClientRevenueSection({
   focusedClientId,
   onFocusChange,
   selectedStreams,
+  revenueTypeFiltered,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -68,6 +65,8 @@ export default function ClientRevenueSection({
   focusedClientId: string | null;
   onFocusChange: (clientId: string | null) => void;
   selectedStreams: ReadonlySet<string>;
+  /** The revenue-types filter is not "All" — compare BL vs BL (see the header). */
+  revenueTypeFiltered: boolean;
 }) {
   const { selectedYear, selectedRFQ } = useForecastSelection();
   const { comparisonYear, comparisonRFQ } = useComparisonSelection();
@@ -75,12 +74,11 @@ export default function ClientRevenueSection({
   const { clients } = useReadableClients();
 
   const hasComparison = comparisonData.hasContext;
-  // Product Fees only → BL vs BL on both sides (see the file header).
-  const productOnly = isProductFeesOnly(selectedStreams);
-  const effPrimaryMode: RevenueMode = productOnly ? "blSubmission" : primaryMode;
-  const effSecondaryMode: RevenueMode = productOnly ? "blSubmission" : secondaryMode;
+  // A filtered revenue type → BL vs BL on both sides (see the file header).
+  const effPrimaryMode: RevenueMode = revenueTypeFiltered ? "blSubmission" : primaryMode;
+  const effSecondaryMode: RevenueMode = revenueTypeFiltered ? "blSubmission" : secondaryMode;
   const switchedToBl =
-    productOnly && (primaryMode === "official" || secondaryMode === "official");
+    revenueTypeFiltered && (primaryMode === "official" || secondaryMode === "official");
 
   const result = useMemo(
     () =>
@@ -251,7 +249,7 @@ export default function ClientRevenueSection({
 
       {switchedToBl && (
         <p className="text-xs text-muted-foreground">
-          Product Fees only: compared BL vs BL — Official revenue has no split by revenue type.
+          Official revenue has no revenue-type breakdown, so this table compares BL submissions.
         </p>
       )}
 

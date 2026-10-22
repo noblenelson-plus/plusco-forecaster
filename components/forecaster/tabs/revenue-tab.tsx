@@ -23,6 +23,7 @@
 import { useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import { withBlInputProductFees } from "../../../lib/dashboard/data/product-fees-bl-input";
+import { filterableStreams } from "../sections/revenue-types-data";
 import ClientRevenueSection from "../sections/client-revenue-section";
 import RevenueTypesSection from "../sections/revenue-types-section";
 import ProductRevenueSection from "../sections/product-revenue-section";
@@ -85,6 +86,12 @@ export default function RevenueTab({
     [rawFocusComparisonData]
   );
 
+  // Any revenue type deselected ("All" off) → the client table compares BL vs BL.
+  const revenueTypeFiltered = useMemo(
+    () => filterableStreams(streamSlices).some((s) => !selectedStreams.has(s.key)),
+    [streamSlices, selectedStreams]
+  );
+
   // The Revenue Types section (charts + totals) follows the focus; the client
   // tables never do — they stay full so you can switch between clients.
   const shown = focusedClientId ? focusData : data;
@@ -109,6 +116,7 @@ export default function RevenueTab({
         focusedClientId={focusedClientId}
         onFocusChange={onFocusChange}
         selectedStreams={selectedStreams}
+        revenueTypeFiltered={revenueTypeFiltered}
       />
 
       <div className="relative">
