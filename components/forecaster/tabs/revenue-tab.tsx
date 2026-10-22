@@ -12,11 +12,17 @@
  *    totals) reads the single-client scope when focused; the client tables keep
  *    every row and just highlight the focused one, so they stay navigable.
  *
+ * Product Fees on this page read the BL input (withBlInputProductFees), so the
+ * Client Revenue table, Revenue Types and Product Revenue agree on them; every
+ * other stream keeps the BL Submission rule.
+ *
  * Order: main revenue table, the revenue-types breakdown, then product revenue
  * last (per Adriana's layout).
  */
 
+import { useMemo } from "react";
 import { Loader2 } from "lucide-react";
+import { withBlInputProductFees } from "../../../lib/dashboard/data/product-fees-bl-input";
 import ClientRevenueSection from "../sections/client-revenue-section";
 import RevenueTypesSection from "../sections/revenue-types-section";
 import ProductRevenueSection from "../sections/product-revenue-section";
@@ -30,13 +36,13 @@ import type {
 } from "../../../lib/dashboard/data/use-scope-forecast-data";
 
 export default function RevenueTab({
-  data,
-  comparisonData,
+  data: rawData,
+  comparisonData: rawComparisonData,
   scopedClientIds,
   primaryMode,
   secondaryMode,
-  focusData,
-  focusComparisonData,
+  focusData: rawFocusData,
+  focusComparisonData: rawFocusComparisonData,
   focusedClientId,
   onFocusChange,
   streamSlices,
@@ -70,6 +76,15 @@ export default function RevenueTab({
   clientNameById: Record<string, string>;
   clientDimensions: ClientDimensions;
 }) {
+  // Product Fees from the BL input on every side (see the file header).
+  const data = useMemo(() => withBlInputProductFees(rawData), [rawData]);
+  const comparisonData = useMemo(() => withBlInputProductFees(rawComparisonData), [rawComparisonData]);
+  const focusData = useMemo(() => withBlInputProductFees(rawFocusData), [rawFocusData]);
+  const focusComparisonData = useMemo(
+    () => withBlInputProductFees(rawFocusComparisonData),
+    [rawFocusComparisonData]
+  );
+
   // The Revenue Types section (charts + totals) follows the focus; the client
   // tables never do — they stay full so you can switch between clients.
   const shown = focusedClientId ? focusData : data;
