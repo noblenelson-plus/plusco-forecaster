@@ -10,6 +10,11 @@
  * rows, so display order never affects it. Column headers reflect the live
  * submission + Type selection.
  *
+ * Product Fees only: when the revenue-types filter is exactly Product Fees, both
+ * sides compare BL vs BL — Official revenue is one untyped total, so "Product
+ * Fees vs all of OF" is meaningless; the product team reads this view. Every
+ * other selection keeps the header's BL / OF choice.
+ *
  * Clicking a row sets the page-wide focus. There are no charts under this
  * table, so the effect here is the highlight — the selection carries to the
  * Media & Labs tab, where it drives the charts.
@@ -29,6 +34,7 @@ import ExportSheetButton from "../table/export-sheet-button";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../../lib/stores/comparison-selection.store";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
+import { REVENUE_PRODUCT_FEES_TYPE } from "../../../lib/types/forecaster.types";
 import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import type {
   ScopeForecastData,
@@ -36,6 +42,10 @@ import type {
 } from "../../../lib/dashboard/data/use-scope-forecast-data";
 
 const modeLabel = (mode: RevenueMode) => (mode === "official" ? "OF" : "BL");
+
+/** True when the revenue-types filter is exactly Product Fees. */
+const isProductFeesOnly = (selected: ReadonlySet<string>) =>
+  selected.size === 1 && selected.has(REVENUE_PRODUCT_FEES_TYPE);
 
 /** Matches the client detail table's focus highlight. */
 const FOCUS_BG = "bg-yellow-50";
@@ -65,6 +75,12 @@ export default function ClientRevenueSection({
   const { clients } = useReadableClients();
 
   const hasComparison = comparisonData.hasContext;
+  // Product Fees only → BL vs BL on both sides (see the file header).
+  const productOnly = isProductFeesOnly(selectedStreams);
+  const effPrimaryMode: RevenueMode = productOnly ? "blSubmission" : primaryMode;
+  const effSecondaryMode: RevenueMode = productOnly ? "blSubmission" : secondaryMode;
+  const switchedToBl =
+    productOnly && (primaryMode === "official" || secondaryMode === "official");
 
   const result = useMemo(
     () =>
@@ -75,8 +91,8 @@ export default function ClientRevenueSection({
         usersMap,
         selectedYear ?? new Date().getFullYear(),
         scopedClientIds,
-        primaryMode,
-        secondaryMode,
+        effPrimaryMode,
+        effSecondaryMode,
         hasComparison,
         selectedStreams
       ),
@@ -87,18 +103,18 @@ export default function ClientRevenueSection({
       usersMap,
       selectedYear,
       scopedClientIds,
-      primaryMode,
-      secondaryMode,
+      effPrimaryMode,
+      effSecondaryMode,
       hasComparison,
       selectedStreams,
     ]
   );
 
   const primaryLabel = selectedRFQ
-    ? `${selectedRFQ.type}-${modeLabel(primaryMode)} · ${selectedYear}`
+    ? `${selectedRFQ.type}-${modeLabel(effPrimaryMode)} · ${selectedYear}`
     : "Primary";
   const secondaryLabel = comparisonRFQ
-    ? `${comparisonRFQ.type}-${modeLabel(secondaryMode)} · ${comparisonYear}`
+    ? `${comparisonRFQ.type}-${modeLabel(effSecondaryMode)} · ${comparisonYear}`
     : "Secondary";
 
   // The gradient scale spans the whole table, so it comes from the full row set.
@@ -232,6 +248,12 @@ export default function ClientRevenueSection({
           sheetTitle="Client Revenue"
         />
       </div>
+
+      {switchedToBl && (
+        <p className="text-xs text-muted-foreground">
+          Product Fees only: compared BL vs BL — Official revenue has no split by revenue type.
+        </p>
+      )}
 
       <ChartCard title="Client Revenue" icon={Table}>
         <div className="max-h-[560px] overflow-auto">
