@@ -10,7 +10,8 @@
  * with no partner that year is "not a Labs channel" — its lines are reported
  * and never copied. The user picks one partner per media type per copy.
  *
- * Each line is scaled by a share (100% = the full media amount) and routed:
+ * Each line is scaled by its media type's share (100% = the full media amount,
+ * set per media type) and routed:
  *   - "same":    to the Labs project with the Media line's project name
  *                (case/whitespace-insensitive), created when none matches;
  *   - "project": everything into one existing Labs project.
@@ -112,7 +113,7 @@ const round2 = (v: number) => Math.round(v * 100) / 100;
 export function planMediaToLabs({
   groups,
   partnerFor,
-  sharePct,
+  shareFor,
   months,
   destination,
   buckets,
@@ -121,8 +122,8 @@ export function planMediaToLabs({
   groups: MediaTypeGroup[];
   /** Chosen partner id per media type. */
   partnerFor: Record<string, string | undefined>;
-  /** Share of each Media amount copied, in percent (100 = all of it). */
-  sharePct: number;
+  /** Share of each Media amount copied, per media type, in percent (absent = 100). */
+  shareFor: Record<string, number | undefined>;
   /** Months to write (already limited to the ones the user may edit in Labs). */
   months: number[];
   destination: LabsDestination;
@@ -134,7 +135,6 @@ export function planMediaToLabs({
   const notLabs: string[] = [];
   let notLabsLines = 0;
   const leaves: ReferenceLeaf[] = [];
-  const factor = Math.max(0, sharePct) / 100;
 
   for (const g of groups) {
     const partner = g.partners.find((p) => p.partnerId === partnerFor[g.mediaType]);
@@ -145,6 +145,7 @@ export function planMediaToLabs({
       }
       continue;
     }
+    const factor = Math.max(0, shareFor[g.mediaType] ?? 100) / 100;
     for (const line of g.lines) {
       const scaled: MonthlyMap = {};
       for (const m of MONTHS) {

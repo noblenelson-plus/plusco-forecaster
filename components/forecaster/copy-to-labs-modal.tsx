@@ -4,15 +4,15 @@
 /**
  * "Copy to Labs" — ticked Media Spend BL lines → the Labs BL of the same
  * submission (e.g. an OOH line → Billups-OOH, campaign by campaign). Same
- * layout as "Copy to my submission", four choices:
+ * layout as "Copy to my submission", three choices:
  *
- *   1. Labs partner — one per media type ticked, among the year's partners of
- *      that media type (admin → Labs); preselected when there is only one. A
+ *   1. Labs partner + share — per media type ticked: one of the year's
+ *      partners of that media type (admin → Labs), preselected when there is
+ *      only one, and the % of its Media amounts copied (100% by default). A
  *      media type with no partner is flagged "not a Labs channel" and skipped.
  *   2. Destination — the same project as in Media Spend (matched by name, a
  *      missing Labs project is created), or one existing Labs project.
- *   3. Share — the % of each Media amount copied (100% by default).
- *   4. Period — which months to copy (none ticked at first).
+ *   3. Period — which months to copy (none ticked at first).
  *
  * Planned live (lib/format/media-to-labs); copied amounts replace the matching
  * Labs cells, and every filled cell that would change is listed first.
@@ -71,7 +71,8 @@ export default function CopyToLabsModal({
   );
   const [kind, setKind] = useState<LabsDestination["kind"]>("same");
   const [bucketId, setBucketId] = useState<string>(buckets[0]?.bucketId ?? "");
-  const [shareText, setShareText] = useState("100");
+  // Share per media type, as typed (absent = "100").
+  const [shareText, setShareText] = useState<Record<string, string>>({});
   const [months, setMonths] = useState<Set<number>>(() => new Set());
 
   // Months the user may write in Labs: closed periods are read-only for non-admins.
@@ -82,8 +83,11 @@ export default function CopyToLabsModal({
   );
   const chosenMonths = MONTHS.filter((m) => months.has(m) && isMonthOpen(m));
 
-  const share = Number(shareText.replace(",", "."));
-  const shareValid = Number.isFinite(share) && share > 0 && share <= 100;
+  const parseShare = (mediaType: string) =>
+    Number((shareText[mediaType] ?? "100").replace(",", "."));
+  const isShareValid = (v: number) => Number.isFinite(v) && v > 0 && v <= 100;
+  const shareFor = Object.fromEntries(labsGroups.map((g) => [g.mediaType, parseShare(g.mediaType)]));
+  const shareValid = labsGroups.every((g) => isShareValid(shareFor[g.mediaType]));
 
   const destination: LabsDestination | null =
     kind === "same"
@@ -99,7 +103,7 @@ export default function CopyToLabsModal({
         ? planMediaToLabs({
             groups,
             partnerFor,
-            sharePct: share,
+            shareFor,
             months: chosenMonths,
             destination,
             buckets,
@@ -108,7 +112,7 @@ export default function CopyToLabsModal({
         : null,
     // `destination`/`chosenMonths` are rebuilt each render; key on their parts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groups, partnerFor, share, shareValid, months, kind, bucketId, buckets, labsConfig.rowTypeOptions, labsGrid.closedMonths, labsGrid.canEditClosed]
+    [groups, partnerFor, shareText, months, kind, bucketId, buckets, labsConfig.rowTypeOptions, labsGrid.closedMonths, labsGrid.canEditClosed]
   );
 
   const selectedTotal = lines.reduce(
@@ -171,8 +175,13 @@ export default function CopyToLabsModal({
           {/* 1. Partner per media type */}
           <section className="space-y-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-              1 · Which Labs partner?
+              1 · Which Labs partner, and how much?
             </h3>
+            {labsGroups.length > 0 && (
+              <p className="text-xs text-gray-400">
+                The % is the share of each Media amount copied, month by month.
+              </p>
+            )}
             {labsGroups.length > 0 && (
               <ul className="border border-gray-200 divide-y divide-gray-100">
                 {labsGroups.map((g) => (
@@ -213,9 +222,29 @@ export default function CopyToLabsModal({
                         ))}
                       </select>
                     )}
+                    <label className="flex flex-shrink-0 items-center gap-1 text-xs text-gray-500">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={shareText[g.mediaType] ?? "100"}
+                        onChange={(e) =>
+                          setShareText((prev) => ({ ...prev, [g.mediaType]: e.target.value }))
+                        }
+                        aria-label={`Share of the ${g.label} amounts`}
+                        className={`w-14 px-2 py-1.5 text-right text-sm tabular-nums text-gray-900 border bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 ${
+                          isShareValid(shareFor[g.mediaType]) ? "border-gray-200" : "border-red-500"
+                        }`}
+                      />
+                      %
+                    </label>
                   </li>
                 ))}
               </ul>
+            )}
+            {!shareValid && (
+              <p className="text-xs text-red-600">
+                Enter a share above 0 and up to 100% for each media type.
+              </p>
             )}
             {notLabsGroups.length > 0 && (
               <div className="space-y-1 bg-yellow-400 px-3 py-2 text-xs text-gray-900">
@@ -329,32 +358,9 @@ export default function CopyToLabsModal({
                 )}
               </section>
 
-              {/* 3. Share */}
-              <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  3 · How much of it?
-                </h3>
-                <label className="flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={shareText}
-                    onChange={(e) => setShareText(e.target.value)}
-                    aria-label="Share of the media amount"
-                    className={`w-20 px-2 py-1.5 text-right text-sm tabular-nums border bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 ${
-                      shareValid ? "border-gray-200" : "border-red-500"
-                    }`}
-                  />
-                  <span>% of each Media amount, month by month</span>
-                </label>
-                {!shareValid && (
-                  <p className="text-xs text-red-600">Enter a share between 0 and 100%.</p>
-                )}
-              </section>
-
-              {/* 4. Period */}
+              {/* 3. Period */}
               <CopyMonthPicker
-                step={4}
+                step={3}
                 months={months}
                 onChange={setMonths}
                 dataMonths={dataMonths}
@@ -366,7 +372,7 @@ export default function CopyToLabsModal({
               {plan && (
                 <section className="space-y-2 text-xs">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                    5 · What happens to your existing Labs data?
+                    4 · What happens to your existing Labs data?
                   </h3>
                   <p className="text-gray-600">
                     Copied amounts <strong className="text-gray-900">replace</strong> what
@@ -387,7 +393,7 @@ export default function CopyToLabsModal({
                   ) : plan.cellCount === 0 ? (
                     <p className="text-gray-500">
                       {chosenMonths.length === 0
-                        ? "Pick the months to copy (step 4)."
+                        ? "Pick the months to copy (step 3)."
                         : "Nothing to copy with these choices."}
                     </p>
                   ) : (

@@ -9,7 +9,7 @@
  * Submission basis (the standard headline figure).
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Loader2, TrendingUp, DollarSign, Percent, FlaskConical, Layers, Box } from "lucide-react";
 import StrategyKpisSection from "../sections/strategy-kpis-section";
 import StatCard, { type StatVariance } from "../../dashboard/charts/stat-card";
@@ -84,6 +84,9 @@ export default function ExecSummaryTab({
   selMonths: number[];
 }) {
   const shown = focusedClientId ? focusData : data;
+  // Labs spend donut: partner families by default ("Billups-OOH" + "Billups-Print"
+  // → Billups), or every partner as entered.
+  const [labsDetailed, setLabsDetailed] = useState(false);
   const shownComparison = focusedClientId ? focusComparisonData : comparisonData;
 
   const media = shown.media;
@@ -132,10 +135,12 @@ export default function ExecSummaryTab({
 
   // Labs spend by Labs partner (Billups, …): the Labs rows are entered per
   // partner, so sum each partner across the clients in view (the focused
-  // client when one is selected).
+  // client when one is selected). Rolled up (default), partners merge by
+  // family — the name before "-" (Billups-OOH / Billups-Print → Billups).
   const labsByPartner = new Map<string, number>();
   for (const r of shown.labsDetail) {
-    labsByPartner.set(r.partnerName, (labsByPartner.get(r.partnerName) ?? 0) + r.total);
+    const label = labsDetailed ? r.partnerName : r.partnerName.split("-")[0].trim() || r.partnerName;
+    labsByPartner.set(label, (labsByPartner.get(label) ?? 0) + r.total);
   }
   const labsSegments = [...labsByPartner.entries()]
     .filter(([, v]) => v > 0)
@@ -273,7 +278,32 @@ export default function ExecSummaryTab({
           )}
         </ChartCard>
 
-        <ChartCard title="Labs spend" subtitle="Annual BL Labs spend by Labs partner" icon={FlaskConical}>
+        <ChartCard
+          title="Labs spend"
+          subtitle={labsDetailed ? "Annual BL Labs spend by Labs partner" : "Annual BL Labs spend by partner (rolled up)"}
+          icon={FlaskConical}
+          action={
+            <div className="inline-flex border border-border text-[11px] font-medium" role="group" aria-label="Labs spend detail">
+              {([
+                [false, "Rolled up"],
+                [true, "Detailed"],
+              ] as const).map(([detailed, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={labsDetailed === detailed}
+                  onClick={() => setLabsDetailed(detailed)}
+                  title={detailed ? "Every Labs partner as entered (Billups-OOH, Billups-Print…)" : "Partners merged by family (Billups, MIQ, AIM…)"}
+                  className={`px-2 py-1 transition-colors ${
+                    labsDetailed === detailed ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          }
+        >
           {labsSegments.length > 0 ? (
             <DonutChart
               segments={labsSegments}

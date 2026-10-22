@@ -118,6 +118,30 @@ function firstText(doc: Record<string, unknown>, keys: string[]): string {
   return "";
 }
 
+/**
+ * A KPI-by-client row (a `mo_kpi_by_client` doc, or a MediaBox row of the same
+ * shape — mediabox-kpi-by-client.ts) as a BillupsClientRow.
+ */
+export function billupsRowFromKpi(id: string, raw: Record<string, unknown>): BillupsClientRow {
+  return {
+    clientId: id,
+    clientName: (raw["CLIENT_NAME"] ?? id).toString(),
+    agency: (raw["AGENCY"] ?? "").toString().trim(),
+    buRegion: (raw["BU_REGION"] ?? "").toString().trim(),
+    businessLead: (raw["BUSINESS_LEAD"] ?? "").toString().trim(),
+    gmPod: (raw["GM_POD"] ?? "").toString().trim(),
+    clientStatus: firstText(raw, MIR_STATUS_KEYS),
+
+    eligibleOoh: parseEligible(raw["eligible_billups_ooh"]),
+    eligiblePrint: parseEligible(raw["eligible_billups_print"]),
+
+    billupsOoh: num(raw["billups_ooh_spend_2026"]),
+    oohTotal: num(raw["ooh_spend_2026"]),
+    billupsPrint: num(raw["billups_print_spend_2026"]),
+    printTotal: num(raw["print_spend_2026"]),
+  };
+}
+
 export interface BillupsRowsResult {
   rows: BillupsClientRow[];
   loading: boolean;
@@ -147,26 +171,9 @@ export function useBillupsMirRows(): BillupsRowsResult {
         const docs = await fetchDashboardClientDocs(MIR_COLLECTION, { scope, clientIds });
         if (cancelled) return;
 
-        const out: BillupsClientRow[] = docs.map((d) => {
-          const raw = (d.data() ?? {}) as Record<string, unknown>;
-          return {
-            clientId: d.id,
-            clientName: (raw["CLIENT_NAME"] ?? d.id).toString(),
-            agency: (raw["AGENCY"] ?? "").toString().trim(),
-            buRegion: (raw["BU_REGION"] ?? "").toString().trim(),
-            businessLead: (raw["BUSINESS_LEAD"] ?? "").toString().trim(),
-            gmPod: (raw["GM_POD"] ?? "").toString().trim(),
-            clientStatus: firstText(raw, MIR_STATUS_KEYS),
-
-            eligibleOoh: parseEligible(raw["eligible_billups_ooh"]),
-            eligiblePrint: parseEligible(raw["eligible_billups_print"]),
-
-            billupsOoh: num(raw["billups_ooh_spend_2026"]),
-            oohTotal: num(raw["ooh_spend_2026"]),
-            billupsPrint: num(raw["billups_print_spend_2026"]),
-            printTotal: num(raw["print_spend_2026"]),
-          };
-        });
+        const out: BillupsClientRow[] = docs.map((d) =>
+          billupsRowFromKpi(d.id, (d.data() ?? {}) as Record<string, unknown>)
+        );
 
         setRows(out);
       } catch (e) {
