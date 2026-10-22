@@ -91,27 +91,45 @@ const MODE_OPTIONS: { label: string; value: RevenueMode }[] = [
   { label: "OF", value: "official" },
 ];
 
-/** BL/OF segmented control for the Revenue tab's primary/secondary Type. */
+/**
+ * BL/OF segmented control for the Revenue tab's primary/secondary Type. With
+ * `officialDisabled` (a revenue-types filter is on — Official revenue has no
+ * per-type breakdown) OF is greyed out and BL shows as active; the stored choice
+ * comes back once the filter is reset to "All".
+ */
 function ModeToggle({
   value,
   onChange,
+  officialDisabled = false,
 }: {
   value: RevenueMode;
   onChange: (m: RevenueMode) => void;
+  officialDisabled?: boolean;
 }) {
+  const shown: RevenueMode = officialDisabled ? "blSubmission" : value;
   return (
     <div className="inline-flex overflow-hidden rounded-md border border-border text-[11px] font-semibold">
-      {MODE_OPTIONS.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
-          className={`px-2 py-1 transition-colors ${
-            value === o.value ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-muted"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
+      {MODE_OPTIONS.map((o) => {
+        const disabled = officialDisabled && o.value === "official";
+        return (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            disabled={disabled}
+            aria-pressed={shown === o.value}
+            title={disabled ? "N/A while a revenue type is filtered — Official revenue has no revenue-type breakdown" : undefined}
+            className={`px-2 py-1 transition-colors ${
+              disabled
+                ? "cursor-not-allowed bg-muted text-gray-300"
+                : shown === o.value
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-card text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -470,6 +488,9 @@ function DashboardContent() {
   const primaryStreamSlices = forecastData.revenueByMode.blSubmission.breakdown.byStream;
   const allStreams = useMemo(() => allStreamKeys(primaryStreamSlices), [primaryStreamSlices]);
   const activeStreams = selectedStreams ?? allStreams;
+  // Any revenue type deselected ("All" off): OF is N/A — the Revenues tab
+  // compares BL submissions (Official revenue has no per-type breakdown).
+  const revenueTypeFiltered = [...allStreams].some((k) => !activeStreams.has(k));
   const focusData = useScopeForecastData(focusScope, currencyByClient, usdToCad, dataMonths);
   const focusComparisonData = useScopeForecastData(
     focusComparisonScope,
@@ -549,10 +570,13 @@ function DashboardContent() {
           <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 bg-gray-50/60 px-6 py-2 text-xs">
             <span className="font-semibold uppercase tracking-wide text-gray-400">Type</span>
             <span className="text-gray-500">Primary</span>
-            <ModeToggle value={primaryMode} onChange={setPrimaryMode} />
+            <ModeToggle value={primaryMode} onChange={setPrimaryMode} officialDisabled={revenueTypeFiltered} />
             <span className="mx-1 font-semibold uppercase tracking-wide text-gray-400">vs</span>
             <span className="text-gray-500">Secondary</span>
-            <ModeToggle value={secondaryMode} onChange={setSecondaryMode} />
+            <ModeToggle value={secondaryMode} onChange={setSecondaryMode} officialDisabled={revenueTypeFiltered} />
+            {revenueTypeFiltered && (
+              <span className="text-gray-400">OF N/A while a revenue type is filtered</span>
+            )}
           </div>
         )}
 
