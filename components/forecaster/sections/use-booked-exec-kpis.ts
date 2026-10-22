@@ -9,9 +9,14 @@
  * Investments page's Investment KPIs section (booked only), so both show the
  * same numbers.
  *
- * MIR data only — `mo_kpi_by_client` is agency-partitioned by the security
- * rules, so each user gets their own agencies' rows. Goal lines come from the
- * admin Labs Targets tab (`partner_targets/{year}`).
+ * MIR data by default — `mo_kpi_by_client` is agency-partitioned by the
+ * security rules, so each user gets their own agencies' rows. Goal lines come
+ * from the admin Labs Targets tab (`partner_targets/{year}`).
+ *
+ * With `planner` (Media Investments → Data: MediaBox Planner), the spend side
+ * comes from MediaBox planned budgets instead (mediabox-kpi-by-client.ts builds
+ * rows of the same shape); targets, goals and eligibility stay the Mediaocean
+ * KPI rows', so only the data source differs.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -25,7 +30,10 @@ import {
 import {
   useBillupsMirRows,
   computeBillupsKpis,
+  billupsRowFromKpi,
 } from "../../../lib/dashboard/data/use-billups-by-client";
+import { labsFamilies, mediaboxKpiRows } from "../../../lib/dashboard/data/mediabox-kpi-by-client";
+import type { PlannerRow } from "../../../lib/dashboard/data/use-mediabox-planner-mix";
 import {
   subscribeToPartnerTargets,
   getPartnerTargetsForYear,
@@ -82,9 +90,12 @@ export function useBookedExecKpis(
      * turn them off. Share goals and per-client targets are unaffected.
      */
     dollarTargets?: boolean;
+    /** MediaBox Planner rows: compute the spend side from MediaBox instead of MIR. */
+    planner?: { rows: PlannerRow[]; loading: boolean; error: string | null; syncedLabel?: string | null };
   } = {}
 ) {
-  const { dollarTargets = true } = options;
+  const { dollarTargets = true, planner } = options;
+  const sourceSubtitle = planner ? "Planned (MediaBox)" : "Booked to date (MIR)";
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
   const lastSync = useLastSync();
 
@@ -100,9 +111,32 @@ export function useBookedExecKpis(
 
   // -- mo_kpi_by_client: Meta (all) + Labs booked -----------------------------
   const kpi = useMoKpiByClient();
+
+  // Configured Labs partners (Admin → LABS) — the Labs breakdown below, and the
+  // MediaBox Labs rule (publisher family of a partner of the year).
+  const [labsPartners, setLabsPartners] = useState<LabsPartner[]>([]);
+  useEffect(() => {
+    const unsubscribe = subscribeToLabsPartners(setLabsPartners);
+    return () => unsubscribe();
+  }, []);
+
+  // The KPI rows: Mediaocean's, or MediaBox spend over Mediaocean's targets.
+  const plannerRows = planner?.rows;
+  const fromPlanner = !!planner;
+  const kpiRows: KpiByClientRow[] = useMemo(
+    () =>
+      plannerRows
+        ? mediaboxKpiRows(
+            plannerRows,
+            kpi.rows,
+            labsFamilies(getLabsPartnersForYear(labsPartners, year).map((p) => p.name))
+          )
+        : kpi.rows,
+    [plannerRows, kpi.rows, labsPartners, year]
+  );
   const scopedKpiRows: KpiByClientRow[] = useMemo(
-    () => kpi.rows.filter((r) => scopeSet.has(r.PLUSCO_CLIENT_ID)),
-    [kpi.rows, scopeSet]
+    () => kpiRows.filter((r) => scopeSet.has(r.PLUSCO_CLIENT_ID)),
+    [kpiRows, scopeSet]
   );
   const inv = useMemo(() => computeInvestmentKpis(scopedKpiRows), [scopedKpiRows]);
   const bookedLabsSpend = useMemo(
@@ -111,13 +145,8 @@ export function useBookedExecKpis(
   );
 
   // -- Labs spend by partner (the Total LABS Spend breakdown) ------------------
-  // Every configured Labs partner of the year (Admin → LABS), named by family
-  // ("Billups-OOH" → "Billups"), so a partner with no booked spend shows $0.
-  const [labsPartners, setLabsPartners] = useState<LabsPartner[]>([]);
-  useEffect(() => {
-    const unsubscribe = subscribeToLabsPartners(setLabsPartners);
-    return () => unsubscribe();
-  }, []);
+  // Every configured Labs partner of the year, named by family ("Billups-OOH"
+  // → "Billups"), so a partner with no spend shows $0.
   const labsByPartner = useMemo(() => {
     const label = new Map<string, string>(); // MIR family (upper) -> display name
     for (const p of getLabsPartnersForYear(labsPartners, year)) {
@@ -211,10 +240,15 @@ export function useBookedExecKpis(
   );
 
   // -- Billups booked (MIR), same path as the Billups section -----------------
+  // (MediaBox: from the MediaBox KPI rows, which carry the same columns.)
   const mir = useBillupsMirRows();
   const mirRows = useMemo(
-    () => mir.rows.filter((r) => scopeSet.has(r.clientId)),
-    [mir.rows, scopeSet]
+    () =>
+      (fromPlanner
+        ? scopedKpiRows.map((r) => billupsRowFromKpi(r.PLUSCO_CLIENT_ID, r))
+        : mir.rows
+      ).filter((r) => scopeSet.has(r.clientId)),
+    [fromPlanner, scopedKpiRows, mir.rows, scopeSet]
   );
   const billupsBooked = useMemo(() => computeBillupsKpis(mirRows), [mirRows]);
 
@@ -224,7 +258,7 @@ export function useBookedExecKpis(
     () => [
       {
         title: "Media Labs",
-        subtitle: "Booked to date (MIR)",
+        subtitle: sourceSubtitle,
         metrics: [
           {
             icon: PieChart,
@@ -252,7 +286,7 @@ export function useBookedExecKpis(
       },
       {
         title: "Billups",
-        subtitle: "Booked to date (MIR)",
+        subtitle: sourceSubtitle,
         metrics: [
           {
             icon: PieChart,
@@ -284,7 +318,7 @@ export function useBookedExecKpis(
       },
       {
         title: "Meta",
-        subtitle: "Booked to date (MIR)",
+        subtitle: sourceSubtitle,
         metrics: [
           {
             icon: DollarSign,
@@ -333,7 +367,7 @@ export function useBookedExecKpis(
       },
       {
         title: "Digital",
-        subtitle: "Booked to date (MIR)",
+        subtitle: sourceSubtitle,
         metrics: [
           {
             icon: PieChart,
@@ -387,10 +421,13 @@ export function useBookedExecKpis(
       metaYoyPpt,
       digital,
       miqSocialTarget,
+      sourceSubtitle,
     ]
   );
 
-  const mirSourceLabel = `Booked to date (MIR) · as of ${lastSync.labelShort ?? MIR_AS_OF_LABEL}`;
+  const mirSourceLabel = planner
+    ? `Planned (MediaBox)${planner.syncedLabel ? ` · synced ${planner.syncedLabel}` : ""}`
+    : `Booked to date (MIR) · as of ${lastSync.labelShort ?? MIR_AS_OF_LABEL}`;
 
   return {
     /** The four booked (MIR) scorecard pillars. */
@@ -403,7 +440,7 @@ export function useBookedExecKpis(
     goals,
     labsShareGoal,
     mirSourceLabel,
-    loading: kpi.loading || mir.loading,
-    error: kpi.error || mir.error,
+    loading: kpi.loading || (planner ? planner.loading : mir.loading),
+    error: kpi.error || (planner ? planner.error : mir.error),
   };
 }

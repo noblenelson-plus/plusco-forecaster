@@ -162,34 +162,6 @@ export function plannedAmount(r: PlannerRow, currency: PlannerCurrency): number 
   return amountOf(r, "PLANNED", currency);
 }
 
-/** Client Cost totals over some rows (Client Cost = Planned Net + Commission (+ Taxes)). */
-export interface ClientCostTotals {
-  plannedNet: number;
-  commission: number;
-  taxes: number;
-  otherFees: number;
-  clientCostExclTaxes: number;
-  clientCostInclTaxes: number;
-  /** Planned Net from MediaBox v1 plans, which carry no fees. */
-  noFeeData: number;
-}
-
-export function clientCostTotals(rows: PlannerRow[], currency: PlannerCurrency): ClientCostTotals {
-  const t = { plannedNet: 0, commission: 0, taxes: 0, otherFees: 0, noFeeData: 0 };
-  for (const r of rows) {
-    t.plannedNet += amountOf(r, "PLANNED", currency);
-    t.commission += amountOf(r, "COMMISSION", currency);
-    t.taxes += amountOf(r, "TAXES", currency);
-    t.otherFees += amountOf(r, "OTHER_FEES", currency);
-    t.noFeeData += amountOf(r, "NO_FEE_DATA", currency);
-  }
-  return {
-    ...t,
-    clientCostExclTaxes: t.plannedNet + t.commission,
-    clientCostInclTaxes: t.plannedNet + t.commission + t.taxes,
-  };
-}
-
 /** Calendar month (1–12) of a planner row, from "YYYY-MM". */
 export function plannerMonth(r: PlannerRow): number | null {
   const m = Number(String(r.MONTH ?? "").slice(5, 7));

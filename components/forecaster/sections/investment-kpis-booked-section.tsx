@@ -21,18 +21,25 @@ import { Loader2, Calendar } from "lucide-react";
 import ExecSummaryKpiBand from "./exec-summary-kpi-band";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
 import { useBookedExecKpis } from "./use-booked-exec-kpis";
+import type { PlannerRow } from "../../../lib/dashboard/data/use-mediabox-planner-mix";
 
 export default function InvestmentKpisBookedSection({
   scopedClientIds,
   year,
   fullYearLabel = false,
+  planner,
 }: {
   scopedClientIds: string[];
   year: number;
   /** Say "full year" — on pages whose period picker this section ignores. */
   fullYearLabel?: boolean;
+  /**
+   * MediaBox Planner rows: the same section over MediaBox planned spend (same
+   * targets and goals) — the Media Investments page's MediaBox Planner view.
+   */
+  planner?: { rows: PlannerRow[]; loading: boolean; error: string | null; syncedLabel?: string | null };
 }) {
-  const booked = useBookedExecKpis(scopedClientIds, year, { dollarTargets: false });
+  const booked = useBookedExecKpis(scopedClientIds, year, { dollarTargets: false, planner });
 
   return (
     <div data-scroll-section data-scroll-label="Investment KPIs" className="space-y-6">
