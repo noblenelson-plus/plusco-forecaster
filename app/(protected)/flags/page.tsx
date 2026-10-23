@@ -118,8 +118,8 @@ export default function FlagsPage() {
   });
 
   const alerts = useMemo(
-    () => computeBlAlerts({ media, labs, partnerMediaType }),
-    [media, labs, partnerMediaType]
+    () => computeBlAlerts({ media, labs, partnerMediaType, partnerLabel }),
+    [media, labs, partnerMediaType, partnerLabel]
   );
 
   const swings = validation.flags.filter((f) => f.category === "swing");

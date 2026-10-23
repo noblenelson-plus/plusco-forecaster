@@ -578,9 +578,12 @@ function blAlertRows(base: (string | number)[], alerts: BlAlert[]): ReportRow[] 
         "QA check",
         alert.title,
         alert.axis,
-        // The Labs-over-media alert names a media type per row; the others
-        // describe the whole axis, so fall back to the alert title.
-        r.label ?? alert.title,
+        // The Labs-over-media alert names a media type per row; the MediaOcean
+        // ones name the media types / partners over their forecast for the year.
+        r.label ??
+          (r.parts && r.parts.length > 0
+            ? r.parts.map((p) => p.label).join(", ")
+            : alert.title),
         "Full year",
         r.left, // Current — the yearly amount that is too high
         r.right, // Reference — the yearly forecast it exceeds
@@ -610,6 +613,8 @@ async function buildAllFlagsRows(ref: BulkReference): Promise<ReportRow[]> {
   );
   const partnerMediaType = (id: string): MediaType | undefined =>
     mediaTypeById.get(id);
+  const nameById = new Map(partners.map((p) => [p.partnerId, p.name]));
+  const partnerLabel = (id: string) => nameById.get(id) ?? id;
 
   // The RFQ types that actually exist, grouped by year (avoids fetching
   // submissions for year/RFQ combinations that were never created).
@@ -658,7 +663,7 @@ async function buildAllFlagsRows(ref: BulkReference): Promise<ReportRow[]> {
             actuals: labsActuals,
           };
           out.push(
-            ...blAlertRows(base, computeBlAlerts({ media, labs, partnerMediaType }))
+            ...blAlertRows(base, computeBlAlerts({ media, labs, partnerMediaType, partnerLabel }))
           );
 
           return out;
