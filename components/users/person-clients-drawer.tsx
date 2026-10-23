@@ -29,7 +29,7 @@ import {
 import type { Client } from "../../lib/types/client.types";
 import type { UserProfile } from "../../lib/services/user-service";
 import { APP_ROLE_LABELS, type AppRole } from "../../lib/types/access.types";
-import { CLIENT_AGENCIES } from "../../lib/constants/client.constants";
+import { CLIENT_AGENCIES, CLIENT_REGIONS } from "../../lib/constants/client.constants";
 import { isClientHidden } from "../../lib/format/client";
 import {
   TEAM_ROLE_SHORT,
@@ -87,6 +87,7 @@ export default function PersonClientsDrawer({
   const [selected, setSelected] = useState<Set<string>>(initial);
   const [search, setSearch] = useState("");
   const [agency, setAgency] = useState("ALL");
+  const [region, setRegion] = useState("ALL");
   const [show, setShow] = useState<Show>("ALL");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -94,10 +95,21 @@ export default function PersonClientsDrawer({
 
   const onTeam = (c: Client) => selected.has(c.cl_id) || lockedRoles(c).length > 0;
 
+  // BU Regions offered: only those with clients in the chosen agency.
+  const regions = useMemo(() => {
+    const present = new Set(
+      clients
+        .filter((c) => agency === "ALL" || c.CL_Agency === agency)
+        .map((c) => c.CL_Business_Unit_Region)
+    );
+    return CLIENT_REGIONS.filter((r) => present.has(r.value));
+  }, [clients, agency]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return clients
       .filter((c) => agency === "ALL" || c.CL_Agency === agency)
+      .filter((c) => region === "ALL" || c.CL_Business_Unit_Region === region)
       .filter((c) => !q || c.CL_Name.toLowerCase().includes(q) || c.cl_id.toLowerCase().includes(q))
       .filter((c) => show === "ALL" || onTeam(c))
       // Hidden clients stay listed only while the person is on them.
@@ -106,7 +118,7 @@ export default function PersonClientsDrawer({
         (a, b) => Number(onTeam(b)) - Number(onTeam(a)) || a.CL_Name.localeCompare(b.CL_Name)
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, search, agency, show, selected]);
+  }, [clients, search, agency, region, show, selected]);
 
   const editable = filtered.filter((c) => lockedRoles(c).length === 0);
   const allEditableSelected = editable.length > 0 && editable.every((c) => selected.has(c.cl_id));
@@ -277,13 +289,38 @@ export default function PersonClientsDrawer({
             <div className="relative">
               <select
                 value={agency}
-                onChange={(e) => setAgency(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setAgency(next);
+                  // Drop a region the new agency has no clients in.
+                  if (
+                    next !== "ALL" &&
+                    !clients.some((c) => c.CL_Agency === next && c.CL_Business_Unit_Region === region)
+                  )
+                    setRegion("ALL");
+                }}
                 className="appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
               >
                 <option value="ALL">All agencies</option>
                 {CLIENT_AGENCIES.map((a) => (
                   <option key={a.value} value={a.value}>
                     {a.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            </div>
+            <div className="relative">
+              <select
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                aria-label="BU Region"
+                className="appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
+              >
+                <option value="ALL">All regions</option>
+                {regions.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
                   </option>
                 ))}
               </select>
@@ -358,6 +395,7 @@ export default function PersonClientsDrawer({
                         </span>
                         <span className="block text-[11px] text-gray-400 truncate">
                           {c.cl_id} · {c.CL_Agency}
+                          {c.CL_Business_Unit_Region ? ` · ${c.CL_Business_Unit_Region}` : ""}
                         </span>
                       </span>
                       {locked.map((r) => (
