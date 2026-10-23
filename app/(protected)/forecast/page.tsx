@@ -300,8 +300,14 @@ function ForecastPageContent() {
   // Cat-2 "QA BL" alerts — live, frontend-only (Labs > media, MediaOcean >
   // forecast). Recomputed from the working copies; shown as banners per tab.
   const blAlerts = useMemo(
-    () => computeBlAlerts({ media: mediaGrid.data, labs: labsGrid.data, partnerMediaType }),
-    [mediaGrid.data, labsGrid.data, partnerMediaType]
+    () =>
+      computeBlAlerts({
+        media: mediaGrid.data,
+        labs: labsGrid.data,
+        partnerMediaType,
+        partnerLabel,
+      }),
+    [mediaGrid.data, labsGrid.data, partnerMediaType, partnerLabel]
   );
 
   // Per-row extras for the Labs grid: media type chip + inline description.
