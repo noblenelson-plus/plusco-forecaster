@@ -5,7 +5,7 @@
  * Read-only flags panel for the dashboard. Slides in from the right as an
  * in-layout side panel (the dashboard content shrinks to make room — see the
  * margin transition on the page root; there is no dimming scrim). Lists the
- * persisted swing / under-target flags of every client in the current filter
+ * persisted QA-check / swing / under-target flags of every client in the current filter
  * scope, for the globally-selected Year + RFQ, narrowed to one axis (Media
  * Spend / Labs / Revenue — matching the active tab), grouped by client.
  *
@@ -18,7 +18,7 @@
 import { useEffect } from "react";
 import { X, Flag, AlertTriangle, Check, Loader2 } from "lucide-react";
 import { AXIS_STYLE } from "./axis-style";
-import { flagName, formatMonths } from "./flag-card";
+import { flagComparison, flagName, formatMonths } from "./flag-card";
 import type { ScopeFlagsData } from "../../lib/dashboard/data/use-scope-flags";
 import { formatMoney, formatSigned } from "../../lib/format/money";
 import { flagContextLabel, flagDrift, type StoredFlag } from "../../lib/types/forecast-flags.types";
@@ -199,7 +199,7 @@ function FlagItem({
           {" vs "}
           <span>{formatMoney(flag.reference)}</span>
           <span className={`ml-1 ${flag.justified ? "text-gray-400" : "text-gray-600"}`}>
-            {flag.category === "swing" ? "· prev RFQ" : "· forecast"}
+            {flagComparison(flag)}
           </span>
         </p>
 

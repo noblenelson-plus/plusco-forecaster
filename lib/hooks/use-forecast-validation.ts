@@ -8,8 +8,9 @@
  *
  * A validation run (runValidation):
  *   1. force-saves any unsaved forecast edits (persistDirty, page-supplied);
- *   2. computes the cat-3 swing flags (annual, vs the previous RFQ) and the
- *      cat-4 under-target flags (over the step's admin-configured month window);
+ *   2. computes the cat-2 QA-check flags (full-year totals), the cat-3 swing
+ *      flags (annual, vs the previous RFQ) and the cat-4 under-target flags
+ *      (over the step's admin-configured month window);
  *   3. reconciles them with the stored flags — new flags start unjustified,
  *      existing flags keep their justification but refresh their numbers, gone
  *      flags are dropped;
@@ -45,6 +46,7 @@ import {
   subscribeToStepWindows,
   type StepWindowMap,
 } from "../services/flag-config-service";
+import { computeQaCheckFlags } from "../flags/bl-alerts";
 import { computeSwingFlags } from "../flags/swing-rules";
 import { computeUnderTargetFlags } from "../flags/under-target-rules";
 import { reconcileFlags } from "../flags/reconcile";
@@ -76,7 +78,7 @@ function axisOf(
   };
 }
 
-/** Display order: revenue, media, labs; swings before under-target within an axis. */
+/** Display order: revenue, media, labs; then by category within an axis. */
 const AXIS_RANK: Record<AxisId, number> = { revenue: 0, media: 1, labs: 2 };
 function sortFlags(flags: StoredFlag[]): StoredFlag[] {
   return [...flags].sort(
@@ -232,9 +234,15 @@ export function useForecastValidation(
           };
         }
 
-        // 3 — Compute both flag families.
+        // 3 — Compute every flag family.
         const window = live.windows[stepId] ?? [];
         const computed = [
+          ...computeQaCheckFlags({
+            media: live.media,
+            labs: live.labs,
+            partnerMediaType: live.partnerMediaType,
+            partnerLabel: live.partnerLabel,
+          }),
           ...computeSwingFlags({
             current: { media: live.media, labs: live.labs, revenue: live.revenue },
             previous: previousAxes,

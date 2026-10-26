@@ -2,9 +2,10 @@
 "use client";
 
 /**
- * One persisted flag (cat-3 swing or cat-4 under-target) with its justification
- * editor: a required context dropdown + a comment. A flag counts as justified
- * only with BOTH. Shows the compared amounts, the analyzed months (under-target),
+ * One persisted flag (cat-2 QA check, cat-3 swing or cat-4 under-target) with
+ * its justification editor: a required context dropdown + a comment. A flag
+ * counts as justified only with BOTH. Shows the compared amounts, the analyzed
+ * months (under-target), the media types / partners behind a QA check,
  * and — when the numbers drifted since it was justified — a "justified at $X,
  * now $Y" note. Editable even on a locked RFQ (the justification is an
  * annotation, not forecast data).
@@ -37,6 +38,11 @@ const MONTH_SHORT = [
  */
 export function flagName(flag: StoredFlag): string {
   switch (flag.ruleId) {
+    case "labs-over-media":
+      return `Labs over media · ${flag.title}`;
+    case "mediaocean-over-media":
+    case "mediaocean-over-labs":
+      return "Under forecast";
     case "media-under-target":
     case "labs-under-target":
       return `Under target · ${flag.title}`;
@@ -44,6 +50,19 @@ export function flagName(flag: StoredFlag): string {
       return "Revenue swing";
     default:
       return flag.title; // media/labs swing → channel / partner
+  }
+}
+
+/** What the flag's "current vs reference" compares, shown after the amounts. */
+export function flagComparison(flag: StoredFlag): string {
+  switch (flag.ruleId) {
+    case "labs-over-media":
+      return "· Labs vs media forecast";
+    case "mediaocean-over-media":
+    case "mediaocean-over-labs":
+      return "· MediaOcean vs BL forecast";
+    default:
+      return flag.category === "swing" ? "· prev RFQ" : "· forecast";
   }
 }
 
@@ -121,9 +140,28 @@ export default function FlagCard({
           <span>{formatMoney(flag.reference)}</span>
           {currency ? <span className="ml-1 text-gray-600">{currency}</span> : null}
           <span className={`ml-1 ${flag.justified ? "text-gray-400" : "text-gray-600"}`}>
-            {flag.category === "swing" ? "· prev RFQ" : "· forecast"}
+            {flagComparison(flag)}
           </span>
         </p>
+        {flag.breakdown && flag.breakdown.length > 0 && (
+          <div className={`mt-1 border-l pl-3 text-[11px] tabular-nums ${flag.justified ? "border-gray-300 text-gray-500" : "border-gray-700 text-gray-800"}`}>
+            <p className="font-semibold uppercase tracking-wide">
+              Over forecast by {flag.axis === "labs" ? "partner" : "media type"}
+            </p>
+            <ul className="space-y-0.5">
+              {flag.breakdown.map((b) => (
+                <li key={b.label}>
+                  <span className="font-medium">{b.label}</span>
+                  {" — "}
+                  <span className="font-semibold">{formatMoney(b.current)}</span>
+                  {" vs "}
+                  {formatMoney(b.reference)}
+                  <span className="ml-1 font-semibold">({formatSigned(b.delta)})</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {flag.category === "under_target" && (
           <p className={`mt-1 text-[11px] ${flag.justified ? "text-gray-400" : "text-gray-700"}`}>
             Months analyzed: {formatMonths(flag.analyzedMonths ?? [])}

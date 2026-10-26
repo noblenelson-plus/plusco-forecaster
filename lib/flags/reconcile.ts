@@ -37,6 +37,7 @@ function base(computed: ComputedFlag): Omit<
     threshold: computed.threshold,
     ...(computed.analyzedMonths ? { analyzedMonths: computed.analyzedMonths } : {}),
     ...(computed.moTotal !== undefined ? { moTotal: computed.moTotal } : {}),
+    ...(computed.breakdown?.length ? { breakdown: computed.breakdown } : {}),
   };
 }
 

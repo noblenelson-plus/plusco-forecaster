@@ -12,8 +12,9 @@
  * use-forecaster-grid.ts and use-scope-forecast-data.ts). Revenue actuals stay
  * in the submission doc.
  *
- * The rest is identical to the live flow: compute cat-3 swing flags (vs the
- * previous RFQ) + cat-4 under-target flags (over the step's admin window),
+ * The rest is identical to the live flow: compute cat-2 QA-check flags (full
+ * year) + cat-3 swing flags (vs the previous RFQ) + cat-4 under-target flags
+ * (over the step's admin window),
  * reconcile against the stored flags, persist, then record the step outcome.
  *
  * A batch only ever REFRESHES steps that were already validated: a client whose
@@ -24,6 +25,7 @@
  */
 
 import type { RFQ } from "../types/rfq.types";
+import type { MediaType } from "../types/common.types";
 import type { ConfirmationStep } from "../constants/confirmation-steps";
 import {
   previousRFQ,
@@ -32,6 +34,7 @@ import {
   type AxisId,
 } from "../types/forecaster.types";
 import { ensureRevenueShape } from "../format/revenue-commission";
+import { computeQaCheckFlags } from "../flags/bl-alerts";
 import { computeSwingFlags } from "../flags/swing-rules";
 import { computeUnderTargetFlags } from "../flags/under-target-rules";
 import { reconcileFlags } from "../flags/reconcile";
@@ -65,6 +68,8 @@ export interface ClientStepCheckDeps {
   allRfqs: Pick<RFQ, "year" | "type">[];
   /** Resolve a Labs partnerId to a display name (falls back to the id). */
   partnerLabel: (partnerId: string) => string;
+  /** Resolve a Labs partnerId to its configured media type (QA checks). */
+  partnerMediaType: (partnerId: string) => MediaType | undefined;
   /** Admin-configured per-step month windows for the cat-4 under-target flags. */
   windows: StepWindowMap;
   /** Acting user's uid, stamped on the flags + validation record. */
@@ -148,9 +153,15 @@ export async function runClientStepCheck(
     };
   }
 
-  // Compute both flag families for the step's window.
+  // Compute every flag family for the step's window.
   const window = deps.windows[step.id] ?? [];
   const computed = [
+    ...computeQaCheckFlags({
+      media,
+      labs,
+      partnerMediaType: deps.partnerMediaType,
+      partnerLabel: deps.partnerLabel,
+    }),
     ...computeSwingFlags({
       current: { media, labs, revenue },
       previous: previousAxes,

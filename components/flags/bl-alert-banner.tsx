@@ -7,15 +7,18 @@
  * their variance. The MediaOcean alerts list, under the year and under each
  * month, the media types / partners whose actuals exceed their forecast (what
  * drives the variance). "Show months" reveals the months over on their own.
- * Used both as a top-of-grid banner in the forecast module and in section 1 of
- * the Flags page. Yellow = warning per the brand rules; these alerts are
- * informational and never persisted.
+ * Shown as a top-of-grid banner in the forecast module. Each row is also a
+ * persisted flag once a validation runs (computeQaCheckFlags): given the
+ * stored flags, every row shows where it stands — justified, to justify, or
+ * picked up at the next validation — with a link to justify on the Flags page.
+ * Yellow = warning per the brand rules.
  */
 
 import { useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import { formatMoney, formatSigned } from "../../lib/format/money";
-import type { BlAlert, BlAlertPart } from "../../lib/flags/bl-alerts";
+import { qaFlagKey, type BlAlert, type BlAlertPart, type BlAlertRow } from "../../lib/flags/bl-alerts";
+import type { StoredFlag } from "../../lib/types/forecast-flags.types";
 import { AXIS_STYLE } from "./axis-style";
 
 const MONTH_SHORT = [
@@ -27,16 +30,28 @@ export default function BlAlertBanner({
   alert,
   currency,
   year,
+  flags,
+  onOpenFlags,
 }: {
   alert: BlAlert;
   /** Client currency shown next to amounts (no FX — per-client figures). */
   currency?: string;
   /** Submission year, shown as the row heading ("Full year" when unknown). */
   year?: number | null;
+  /** The submission's stored flags — enables the per-row justification status. */
+  flags?: StoredFlag[];
+  /** Opens the Flags page (where QA-check flags are justified). */
+  onOpenFlags?: () => void;
 }) {
   const axis = AXIS_STYLE[alert.axis];
   const [showMonths, setShowMonths] = useState(false);
   const hasMonths = alert.rows.some((r) => r.months.length > 0);
+  const stored = new Map((flags ?? []).map((f) => [f.key, f]));
+  const statusOf = (r: BlAlertRow) => {
+    const f = stored.get(qaFlagKey(alert, r));
+    return !f ? "pending" : f.justified ? "justified" : "to_justify";
+  };
+  const needsAction = !!flags && alert.rows.some((r) => statusOf(r) !== "justified");
   // Left amount bold (it matches the bold lead of the explanation). The year
   // line also names both amounts and says what the variance means; the detail
   // lines below it keep the same order without repeating the names.
@@ -88,6 +103,7 @@ export default function BlAlertBanner({
             {r.label ? <span className="text-gray-700"> · {r.label}</span> : null}
             {" — "}
             {amounts(r.left, r.right, r.variance, true)}
+            {flags && <StatusChip status={statusOf(r)} />}
             {r.parts && r.parts.length > 0 && (
               <div className="mt-0.5 mb-1 border-l border-gray-700 pl-3">
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-700">
@@ -124,6 +140,31 @@ export default function BlAlertBanner({
           {showMonths ? "Hide months" : "Show months"}
         </button>
       )}
+      {needsAction && onOpenFlags && (
+        <button
+          type="button"
+          onClick={onOpenFlags}
+          className="mt-1.5 ml-6 flex items-center gap-1 text-[12px] font-semibold text-gray-900 underline underline-offset-2"
+        >
+          Justify it on the Flags page — required to validate
+          <ArrowRight size={12} />
+        </button>
+      )}
     </div>
+  );
+}
+
+const STATUS_CHIP = {
+  justified: { label: "Justified", className: "bg-green-500 text-white" },
+  to_justify: { label: "To justify", className: "bg-gray-900 text-white" },
+  pending: { label: "Justify after the next validation", className: "bg-white text-gray-900" },
+} as const;
+
+function StatusChip({ status }: { status: keyof typeof STATUS_CHIP }) {
+  const s = STATUS_CHIP[status];
+  return (
+    <span className={`ml-2 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${s.className}`}>
+      {s.label}
+    </span>
   );
 }

@@ -1,10 +1,11 @@
 // lib/flags/bl-alerts.ts
 
 /**
- * Cat 2 — "QA BL" alerts. Pure, Firebase-free, per-client, and NEVER persisted:
- * they recompute live from the selected client's working axes and render both
- * as banners in the forecast module and in section 1 of the Flags page. Amounts
- * are in the client's own currency (no FX).
+ * Cat 2 — "QA BL" alerts. Pure and Firebase-free, per-client. They recompute
+ * live from the selected client's working axes as banners on the forecast
+ * page, and computeQaCheckFlags turns them into persisted flags at validation
+ * time — one per alert row, justified like the big swings (an unjustified one
+ * fails the step). Amounts are in the client's own currency (no FX).
  *
  * Three alerts, all on FULL-YEAR totals (months offset each other — a month
  * over the forecast is fine when the year as a whole isn't):
@@ -38,6 +39,7 @@ import {
   labsBlByMediaType,
   mediaBlByType,
 } from "./axis-totals";
+import type { ComputedFlag } from "../types/forecast-flags.types";
 
 /** Float-noise floor for the Labs-over-media alert (effectively threshold $0). */
 export const BL_LABS_EPSILON = 0.5;
@@ -71,6 +73,11 @@ export interface BlAlertMonth {
 }
 
 export interface BlAlertRow {
+  /**
+   * Stable subject of the row: the media type key (Labs over media) or
+   * "annual" (the MediaOcean alerts) — part of the persisted flag key.
+   */
+  subject: string;
   /** Media type label — set only for the Labs-over-media alert. */
   label?: string;
   /** Full-year amount that is too high (Labs, or MediaOcean actuals). */
@@ -151,6 +158,7 @@ function overYear(
   left: MonthlyMap,
   right: MonthlyMap,
   slack: number,
+  subject: string,
   label?: string
 ): BlAlertRow | null {
   const l = yearTotal(left);
@@ -162,7 +170,7 @@ function overYear(
     const rm = right[m] ?? 0;
     if (lm > rm + slack) months.push({ month: m, left: lm, right: rm, variance: lm - rm });
   }
-  return { ...(label ? { label } : {}), left: l, right: r, variance: l - r, months };
+  return { subject, ...(label ? { label } : {}), left: l, right: r, variance: l - r, months };
 }
 
 /**
@@ -195,7 +203,7 @@ function mediaOceanOverRow(
   data: AxisData,
   label: (rowType: string) => string
 ): BlAlertRow | null {
-  const row = overYear(actualsMonthlyTotal(data), blMonthlyTotal(data), BL_MEDIAOCEAN_THRESHOLD);
+  const row = overYear(actualsMonthlyTotal(data), blMonthlyTotal(data), BL_MEDIAOCEAN_THRESHOLD, "annual");
   if (!row) return null;
   return {
     ...row,
@@ -232,6 +240,7 @@ export function computeBlAlerts(input: BlAlertsInput): BlAlert[] {
         labsByType[type]!,
         mediaByType[type] ?? {},
         BL_LABS_EPSILON,
+        type,
         MEDIA_TYPE_LABELS[type]
       );
       if (row) rows.push(row);
@@ -272,4 +281,48 @@ export function computeBlAlerts(input: BlAlertsInput): BlAlert[] {
 /** Total violating rows (one per alert, per media type for Labs) — drives a count badge. */
 export function blAlertsCount(alerts: BlAlert[]): number {
   return alerts.reduce((acc, a) => acc + a.rows.length, 0);
+}
+
+// ─── Persisted flags ─────────────────────────────────────────────────────────
+
+/** The stored flag key of one alert row — stable across validations. */
+export function qaFlagKey(alert: Pick<BlAlert, "id" | "axis">, row: Pick<BlAlertRow, "subject">): string {
+  return `${alert.axis}:${alert.id}:${row.subject}`;
+}
+
+/**
+ * The cat-2 QA checks as flags to persist at validation time: one per alert
+ * row (per media type for Labs over media, one per axis for the MediaOcean
+ * checks), current = the yearly amount that is too high, reference = what it
+ * exceeds, delta = the excess. The MediaOcean checks carry their per-media-type
+ * / per-partner breakdown.
+ */
+export function computeQaCheckFlags(input: BlAlertsInput): ComputedFlag[] {
+  return computeBlAlerts(input).flatMap((alert) =>
+    alert.rows.map(
+      (row): ComputedFlag => ({
+        key: qaFlagKey(alert, row),
+        category: "qa_check",
+        ruleId: alert.id,
+        axis: alert.axis,
+        subject: row.subject,
+        // Labs over media: the media type; MediaOcean checks: the alert title.
+        title: row.label ?? (alert.id === "labs-over-media" ? row.subject : alert.title),
+        current: row.left,
+        reference: row.right,
+        delta: row.variance,
+        threshold: alert.id === "labs-over-media" ? 0 : BL_MEDIAOCEAN_THRESHOLD,
+        ...(row.parts?.length
+          ? {
+              breakdown: row.parts.map((p) => ({
+                label: p.label,
+                current: p.left,
+                reference: p.right,
+                delta: p.variance,
+              })),
+            }
+          : {}),
+      })
+    )
+  );
 }

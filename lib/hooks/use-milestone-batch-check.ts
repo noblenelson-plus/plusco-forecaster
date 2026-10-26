@@ -19,6 +19,7 @@ import { useAuth } from "../auth-context";
 import type { ConfirmationStep } from "../constants/confirmation-steps";
 import type { RFQ } from "../types/rfq.types";
 import type { LabsPartner } from "../types/labs.types";
+import type { MediaType } from "../types/common.types";
 import { subscribeToRFQs } from "../services/rfq-service";
 import { subscribeToLabsPartners } from "../services/labs-partner-service";
 import { fetchStepWindows } from "../services/flag-config-service";
@@ -94,6 +95,10 @@ export function useMilestoneBatchCheck(): UseMilestoneBatchCheckResult {
     const byId = new Map(partners.map((p) => [p.partnerId, p.name]));
     return (partnerId: string) => byId.get(partnerId) ?? partnerId;
   }, [partners]);
+  const partnerMediaType = useMemo(() => {
+    const byId = new Map(partners.map((p) => [p.partnerId, p.mediaType]));
+    return (partnerId: string): MediaType | undefined => byId.get(partnerId);
+  }, [partners]);
 
   const allRfqs = useMemo(
     () => rfqs.map((r) => ({ year: r.year, type: r.type })),
@@ -106,8 +111,8 @@ export function useMilestoneBatchCheck(): UseMilestoneBatchCheckResult {
 
   // Keep the latest deps + a re-entrancy guard reachable from the async run
   // without re-creating it (so `run` keeps a stable identity).
-  const depsRef = useRef({ allRfqs, partnerLabel });
-  depsRef.current = { allRfqs, partnerLabel };
+  const depsRef = useRef({ allRfqs, partnerLabel, partnerMediaType });
+  depsRef.current = { allRfqs, partnerLabel, partnerMediaType };
   const runningRef = useRef(false);
   const uid = user?.uid;
 
@@ -137,6 +142,7 @@ export function useMilestoneBatchCheck(): UseMilestoneBatchCheckResult {
       const deps = {
         allRfqs: depsRef.current.allRfqs,
         partnerLabel: depsRef.current.partnerLabel,
+        partnerMediaType: depsRef.current.partnerMediaType,
         windows,
         ...(uid ? { userUid: uid } : {}),
       };

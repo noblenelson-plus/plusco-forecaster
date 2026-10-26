@@ -54,7 +54,7 @@ import {
   type StoredFlagMap,
   flagContextLabel,
 } from "../types/forecast-flags.types";
-import { computeBlAlerts, type BlAlert } from "../flags/bl-alerts";
+import { computeBlAlerts, qaFlagKey, type BlAlert } from "../flags/bl-alerts";
 import { fetchAxisData, fetchDataEntry } from "./data-entry-service";
 import {
   fetchAnnualActuals,
@@ -506,8 +506,8 @@ const ALL_FLAGS_HEADER = [
   "Current",
   "Reference",
   "Delta",
-  "Threshold", // persisted flags only; blank on QA checks
-  "Justified", // persisted flags only ("Yes"/"No"); blank on QA checks
+  "Threshold", // blank on QA checks not validated yet
+  "Justified", // "Yes" / "No"
   "Context",
   "Note",
   "Analyzed Months", // under-target: the window; QA checks: the months over on their own
@@ -515,6 +515,9 @@ const ALL_FLAGS_HEADER = [
 
 /** Human labels for the persisted-flag rules (the "Type" column). */
 const FLAG_RULE_LABELS: Record<FlagRuleId, string> = {
+  "labs-over-media": "Labs over media",
+  "mediaocean-over-media": "MediaOcean over media forecast",
+  "mediaocean-over-labs": "MediaOcean over labs forecast",
   "revenue-swing": "Revenue swing",
   "media-swing": "Media swing",
   "labs-swing": "Labs swing",
@@ -524,6 +527,7 @@ const FLAG_RULE_LABELS: Record<FlagRuleId, string> = {
 
 /** Human labels for the persisted-flag categories (the "Category" column). */
 const FLAG_CATEGORY_LABELS: Record<FlagCategory, string> = {
+  qa_check: "QA check",
   swing: "Big swing",
   under_target: "Under target",
 };
@@ -548,15 +552,17 @@ function flagBaseCells(
   ];
 }
 
-/** One row for a persisted swing / under-target flag. */
+/** One row for a persisted QA-check / swing / under-target flag. */
 function storedFlagRow(base: (string | number)[], flag: StoredFlag): ReportRow {
+  const qa = flag.category === "qa_check";
   return [
     ...base,
-    FLAG_CATEGORY_LABELS[flag.category],
+    FLAG_CATEGORY_LABELS[flag.category] ?? flag.category,
     FLAG_RULE_LABELS[flag.ruleId] ?? flag.ruleId,
     flag.axis,
-    flag.title,
-    "", // Month — n/a (swing is annual, under-target spans a window)
+    // A MediaOcean QA check names the media types / partners over forecast.
+    qa && flag.breakdown?.length ? flag.breakdown.map((b) => b.label).join(", ") : flag.title,
+    qa ? "Full year" : "", // Month — swing is annual, under-target spans a window
     flag.current,
     flag.reference,
     flag.delta,
@@ -568,11 +574,15 @@ function storedFlagRow(base: (string | number)[], flag: StoredFlag): ReportRow {
   ];
 }
 
-/** One row per live QA (cat-2) alert row — full-year figures. */
-function blAlertRows(base: (string | number)[], alerts: BlAlert[]): ReportRow[] {
+/**
+ * One row per live QA (cat-2) alert row not yet captured as a stored flag (no
+ * validation since it appeared) — full-year figures, not justified.
+ */
+function blAlertRows(base: (string | number)[], alerts: BlAlert[], stored: StoredFlagMap): ReportRow[] {
   const rows: ReportRow[] = [];
   for (const alert of alerts) {
     for (const r of alert.rows) {
+      if (qaFlagKey(alert, r) in stored) continue;
       rows.push([
         ...base,
         "QA check",
@@ -589,7 +599,7 @@ function blAlertRows(base: (string | number)[], alerts: BlAlert[]): ReportRow[] 
         r.right, // Reference — the yearly forecast it exceeds
         r.variance, // Delta — left − right
         "", // Threshold — n/a
-        "", // Justified — n/a (QA checks clear on their own, never justified)
+        "No", // Justified — appears at the next validation, to justify there
         "", // Context
         "", // Note
         r.months.map((m) => MONTH_LABELS[m.month - 1]).join(", "), // Months over on their own
@@ -647,13 +657,13 @@ async function buildAllFlagsRows(ref: BulkReference): Promise<ReportRow[]> {
           const base = flagBaseCells(client, year, rfq);
           const out: ReportRow[] = [];
 
-          // Persisted swing (cat 3) + under-target (cat 4) flags.
+          // Persisted QA-check (cat 2), swing (cat 3) + under-target (cat 4) flags.
           const flags = (entry.flags as StoredFlagMap | undefined) ?? {};
           for (const flag of Object.values(flags))
             out.push(storedFlagRow(base, flag));
 
-          // Live QA checks (cat 2) — recomputed from this submission's Media/Labs
-          // BL and the year's shared MediaOcean actuals (as the Flags page does).
+          // Live QA checks (cat 2) not stored yet — recomputed from this
+          // submission's Media/Labs BL and the year's shared MediaOcean actuals.
           const media: AxisData = {
             buckets: entry.axes?.media?.buckets ?? [],
             actuals: mediaActuals,
@@ -663,7 +673,7 @@ async function buildAllFlagsRows(ref: BulkReference): Promise<ReportRow[]> {
             actuals: labsActuals,
           };
           out.push(
-            ...blAlertRows(base, computeBlAlerts({ media, labs, partnerMediaType, partnerLabel }))
+            ...blAlertRows(base, computeBlAlerts({ media, labs, partnerMediaType, partnerLabel }), flags)
           );
 
           return out;

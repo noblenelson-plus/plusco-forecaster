@@ -757,7 +757,9 @@ function ForecastPageContent() {
 
               {/* Cat-2 "QA BL" alerts — live, full-year warnings for the active
                   axis: Labs > media and MediaOcean > forecast. Shown even on a
-                  locked RFQ (MediaOcean keeps arriving after the lock). */}
+                  locked RFQ (MediaOcean keeps arriving after the lock). A
+                  validation stores each as a flag to justify, like a big swing;
+                  the banner shows each row's justification status. */}
               {blAlerts
                 .filter((a) =>
                   tab === "media"
@@ -772,6 +774,8 @@ function ForecastPageContent() {
                     alert={a}
                     currency={selectedClient?.CL_Currency ?? "CAD"}
                     year={selectedYear}
+                    flags={validation.ready ? validation.flags : undefined}
+                    onOpenFlags={() => router.push("/flags")}
                   />
                 ))}
 
