@@ -41,8 +41,7 @@ import GrantEditor from "../../../../components/dashboard-access/grant-editor";
 import GrantSheetImportModal, { REPORT_TABS } from "../../../../components/dashboard-access/grant-sheet-import-modal";
 import { exportToNewSheetWithTabs } from "../../../../components/forecaster/table/table-export";
 import { buildGrantSheet } from "../../../../lib/format/grant-sheet";
-import { buildTeamSheet } from "../../../../lib/format/team-sheet";
-import { buildAccessSummary, buildAllAccess, buildGrantClients } from "../../../../lib/format/access-report";
+import { buildClientTeamList, buildDashboardAccess, buildGrantClients } from "../../../../lib/format/access-report";
 import { fetchAccessibleClients } from "../../../../lib/services/assignment-service";
 import { fetchAgencies, fetchCompanyDomains } from "../../../../lib/services/agency-service";
 import type { Client } from "../../../../lib/types/client.types";
@@ -151,11 +150,11 @@ export default function AdminDashboardAccessPage() {
   );
 
   /**
-   * The access report to a new Google Sheet: All access (one row per person
-   * × tab × source — filter by name), Summary (one row per person —
-   * what they see on each tab and why), Dashboard grants and Client access
-   * (editable; Import reads them back) and Grant clients (each grant's
-   * clients). Cell text gets a leading apostrophe so ids stay text.
+   * The access report to a new Google Sheet: Dashboard Access (one row per
+   * dashboard × person × source of access), Client teams - Client List (each
+   * client's Forecaster team and MediaBox users), Grant - Client List (each
+   * grant's clients) — read-only — and Grants (edit & import), which Import
+   * reads back. Cell text gets a leading apostrophe so ids stay text.
    */
   async function exportGrants() {
     setExporting(true);
@@ -174,13 +173,12 @@ export default function AdminDashboardAccessPage() {
         tabLabels,
       };
       const url = await exportToNewSheetWithTabs({
-        title: `Access report — ${new Date().toISOString().slice(0, 10)}`,
+        title: `Dashboard Access report — ${new Date().toISOString().slice(0, 10)}`,
         tabs: [
-          { sheetTitle: REPORT_TABS.allAccess, matrix: buildAllAccess(input) },
-          { sheetTitle: REPORT_TABS.summary, matrix: buildAccessSummary(input) },
-          { sheetTitle: REPORT_TABS.grants, matrix: buildGrantSheet(grants ?? [], names, tabLabels, clients) },
-          { sheetTitle: REPORT_TABS.clientAccess, matrix: asText(buildTeamSheet(clients)) },
+          { sheetTitle: REPORT_TABS.dashboardAccess, matrix: buildDashboardAccess(input) },
+          { sheetTitle: REPORT_TABS.clientTeams, matrix: asText(buildClientTeamList(input)) },
           { sheetTitle: REPORT_TABS.grantClients, matrix: asText(buildGrantClients(input)) },
+          { sheetTitle: REPORT_TABS.grants, matrix: buildGrantSheet(grants ?? [], names, tabLabels, clients) },
         ],
       });
       setExportedUrl(url);

@@ -4,12 +4,13 @@
  * Dashboard grants as a flat sheet — Admin → Dashboard Access export /
  * import. Pure (no Firebase): the page reads/writes Sheets and Firestore.
  *
- * One row per person per tab: Email, Name, Tab, Agencies, Regions, Clients,
- * Can edit. Agencies / Regions are "All" or a comma-separated list; Clients
- * (a specific-client grant — Agencies / Regions then left blank) lists client
- * names or IDs separated by ";" (names may contain commas). "Can edit"
- * (Yes / No) only applies to Forecaster. Sheets exported before the Clients
- * column existed still import (the column is optional). The sheet is the FULL list of grants:
+ * One row per person per dashboard: Email, Name, Dashboard Name, Agencies,
+ * Regions, Clients. Agencies / Regions are "All" or a comma-separated list;
+ * Clients (a specific-client grant — Agencies / Regions then left blank) lists
+ * client names or IDs separated by ";" (names may contain commas). Older
+ * exports still import: "Tab" is read as Dashboard Name, Clients is optional,
+ * and a "Can edit" column (Yes / No, Forecaster only) is honoured when
+ * present. Without it, each Forecaster grant keeps its current edit flag. The sheet is the FULL list of grants:
  * importing it makes every person's grants exactly their rows — someone
  * with no row loses all their grants. Defaults (client teams, email domains)
  * aren't grants and aren't in the sheet.
@@ -27,7 +28,18 @@ import type { Client } from "../types/client.types";
 import { isValidEmail, nameFromEmail, normalizeEmail } from "./email";
 import { grantScopeLabel, isClientGrant, normalizeGrantTabs } from "./access";
 
-export const GRANT_SHEET_HEADERS = ["Email", "Name", "Tab", "Agencies", "Regions", "Clients", "Can edit"] as const;
+export const GRANT_SHEET_HEADERS = ["Email", "Name", "Dashboard Name", "Agencies", "Regions", "Clients"] as const;
+
+/** The columns the import reads, each with the header texts it accepts. */
+const IMPORT_COLUMNS = {
+  Email: ["email"],
+  Dashboard: ["dashboard name", "dashboard", "tab"],
+  Agencies: ["agencies"],
+  Regions: ["regions"],
+  Clients: ["clients"],
+  "Can edit": ["can edit"],
+} as const;
+type ImportColumn = keyof typeof IMPORT_COLUMNS;
 
 /** The client fields the sheet needs (name ↔ id). */
 export type GrantSheetClient = Pick<Client, "cl_id" | "CL_Name">;
@@ -70,7 +82,6 @@ export function buildGrantSheet(
               .sort((a, b) => a.localeCompare(b))
               .join("; ")
           : "",
-        tab === "forecaster" ? (s.edit ? "Yes" : "No") : "",
       ]);
     }
   }
@@ -173,19 +184,35 @@ export function planGrantSheetImport(
   const clientName = new Map(clients.map((c) => [c.cl_id, c.CL_Name]));
   const label = (s: GrantScope) => grantScopeLabel(s, (id) => clientName.get(id));
   const header = (table[0] ?? []).map(norm);
-  const col = Object.fromEntries(GRANT_SHEET_HEADERS.map((h) => [h, header.indexOf(h.toLowerCase())])) as Record<
-    (typeof GRANT_SHEET_HEADERS)[number],
-    number
-  >;
-  const required = ["Email", "Tab", "Agencies", "Regions"] as const;
+  const col = Object.fromEntries(
+    (Object.entries(IMPORT_COLUMNS) as [ImportColumn, readonly string[]][]).map(([k, names]) => [
+      k,
+      header.findIndex((h) => names.includes(h)),
+    ])
+  ) as Record<ImportColumn, number>;
+  // The read-only Dashboard Access report has the same columns plus "Access
+  // Granted Via": importing it would turn every team / admin row into a grant.
+  if (header.includes("access granted via")) {
+    throw new GrantSheetStructureError([
+      "This is the read-only Dashboard Access report, not the grants list.",
+      "Import reads the \"Grants (edit & import)\" tab — link that tab or the whole exported workbook.",
+    ]);
+  }
+  const required: ImportColumn[] = ["Email", "Dashboard", "Agencies", "Regions"];
   const missing = required.filter((h) => col[h] < 0);
   if (missing.length) {
     throw new GrantSheetStructureError([
-      `Row 1 must hold the headers ${GRANT_SHEET_HEADERS.join(", ")} — missing: ${missing.join(", ")}.`,
+      `Row 1 must hold the headers ${GRANT_SHEET_HEADERS.join(", ")} — missing: ${missing
+        .map((h) => (h === "Dashboard" ? "Dashboard Name" : h))
+        .join(", ")}.`,
       "Start from Export so the columns match.",
     ]);
   }
-  const cell = (raw: string[], h: (typeof GRANT_SHEET_HEADERS)[number]) => (col[h] >= 0 ? raw[col[h]] ?? "" : "");
+  const cell = (raw: string[], h: ImportColumn) => (col[h] >= 0 ? raw[col[h]] ?? "" : "");
+  // Without a "Can edit" column, a Forecaster grant keeps its current flag.
+  const currentEdit = new Set(
+    current.filter((g) => g.tabs.forecaster?.edit).map((g) => normalizeEmail(g.email))
+  );
 
   const tabByText = new Map<string, DashboardTabId>();
   for (const t of DASHBOARD_TABS) {
@@ -203,7 +230,7 @@ export function planGrantSheetImport(
   table.slice(1).forEach((raw, i) => {
     const row = i + 2;
     const emailText = cell(raw, "Email");
-    const tabText = cell(raw, "Tab");
+    const tabText = cell(raw, "Dashboard");
     if (!emailText.trim() && !tabText.trim() && !cell(raw, "Agencies").trim() && !cell(raw, "Clients").trim()) return; // blank row
     rows++;
     const email = normalizeEmail(emailText);
@@ -212,8 +239,10 @@ export function planGrantSheetImport(
     if (!tab) {
       return void errors.push({ row, message: `Unknown tab "${tabText}" — use one of: ${DASHBOARD_TABS.map((t) => tabLabels[t]).join("; ")}.` });
     }
-    const editText = norm(cell(raw, "Can edit"));
-    const edit = ["yes", "y", "true", "1"].includes(editText);
+    const edit =
+      col["Can edit"] >= 0
+        ? ["yes", "y", "true", "1"].includes(norm(cell(raw, "Can edit")))
+        : tab === "forecaster" && currentEdit.has(email);
     if (edit && tab !== "forecaster") {
       warnings.push({ row, message: `"Can edit" only applies to Forecaster — ignored for ${tabLabels[tab]}.` });
     }

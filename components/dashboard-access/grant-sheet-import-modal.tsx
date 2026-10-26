@@ -3,14 +3,14 @@
 
 /**
  * Admin → Dashboard Access → Import: paste the link of an edited access
- * report (Export), review every change, then apply. Two tabs are editable:
- *   - "Dashboard grants" (planGrantSheetImport): the sheet is the full list —
- *     people without rows lose their grants;
- *   - "Client access" (planTeamSheetImport): for every client in it, its BL /
- *     DL / collaborators become exactly its rows; clients without rows are
- *     left unchanged.
- * A single-tab grants sheet (older exports) still works. Errors in either tab
- * block the import; nothing is written before "Apply".
+ * report (Export), review every change, then apply. One tab is editable:
+ * "Grants (edit & import)" (planGrantSheetImport) — the sheet is the full
+ * list, people without rows lose their grants. Client teams are bulk-edited
+ * on Forecast Access instead. Older exports still work: their "Dashboard
+ * grants" tab, their "Client access" tab (planTeamSheetImport: for every
+ * client in it, its BL / DL / collaborators become exactly its rows) and
+ * single-tab grants sheets. Errors in any tab block the import; nothing is
+ * written before "Apply".
  */
 
 import { useMemo, useState } from "react";
@@ -35,11 +35,16 @@ import { applyTeamSheetChanges } from "../../lib/services/team-access-service";
 
 /** Tab names of the access report (Export) — keep in sync with the page. */
 export const REPORT_TABS = {
-  allAccess: "All access",
-  summary: "Summary",
+  dashboardAccess: "Dashboard Access",
+  clientTeams: "Client teams - Client List",
+  grantClients: "Grant - Client List",
+  grants: "Grants (edit & import)",
+} as const;
+
+/** Editable tabs of exports made before the report was simplified. */
+const LEGACY_TABS = {
   grants: "Dashboard grants",
   clientAccess: "Client access",
-  grantClients: "Grant clients",
 } as const;
 
 interface Plans {
@@ -77,9 +82,13 @@ export default function GrantSheetImportModal({
     setProblems([]);
     try {
       // The first Google call opens the consent popup when there's no live token.
-      const wb = await readLinkedWorkbook(link.trim(), [REPORT_TABS.grants, REPORT_TABS.clientAccess]);
-      const grantsTable = wb.tabs[REPORT_TABS.grants];
-      const teamTable = wb.tabs[REPORT_TABS.clientAccess];
+      const wb = await readLinkedWorkbook(link.trim(), [
+        REPORT_TABS.grants,
+        LEGACY_TABS.grants,
+        LEGACY_TABS.clientAccess,
+      ]);
+      const grantsTable = wb.tabs[REPORT_TABS.grants] ?? wb.tabs[LEGACY_TABS.grants];
+      const teamTable = wb.tabs[LEGACY_TABS.clientAccess];
       if (!grantsTable && !teamTable) {
         // An older single-tab grants export: the linked tab is the grants list.
         setPlans({
@@ -178,20 +187,19 @@ export default function GrantSheetImportModal({
                 />
                 <ul className="text-xs text-gray-500 mt-2 space-y-1 list-disc pl-4">
                   <li>
-                    Start from <strong>Export</strong>. Two tabs are imported; the others (All access, Summary, Grant
-                    clients) are a read-only report.
+                    Start from <strong>Export</strong>. Only <strong>{REPORT_TABS.grants}</strong> is imported; the
+                    other tabs are a read-only report.
                   </li>
                   <li>
-                    <strong>{REPORT_TABS.grants}</strong> — one row per person per tab; Agencies / Regions are{" "}
+                    <strong>{REPORT_TABS.grants}</strong> — one row per person per dashboard; Agencies / Regions are{" "}
                     <strong>All</strong> (includes clients added later) or a list. To give specific clients instead,
                     fill <strong>Clients</strong> (names or IDs separated by &ldquo;;&rdquo;) and leave Agencies /
                     Regions blank — not on Media Investments or Reports. It&apos;s the full list: anyone without a row
                     loses their grants.
                   </li>
                   <li>
-                    <strong>{REPORT_TABS.clientAccess}</strong> — one row per person per client (Client ID, Role, Email).
-                    For each client in it, its Business Lead, Digital Lead and collaborators become exactly its rows; GM
-                    rows are read-only. Add a row with a Client ID to give someone that client.
+                    Client teams (Business Lead, Digital Lead, collaborators) are bulk-edited with Export / Import on{" "}
+                    <strong>Forecast Access</strong>.
                   </li>
                 </ul>
                 {problems.length > 0 && (
@@ -223,7 +231,7 @@ export default function GrantSheetImportModal({
                 )}
 
                 {g && <PlanSection title={REPORT_TABS.grants} errors={g.errors} warnings={g.warnings} />}
-                {tm && <PlanSection title={REPORT_TABS.clientAccess} errors={tm.errors} warnings={tm.warnings} />}
+                {tm && <PlanSection title={LEGACY_TABS.clientAccess} errors={tm.errors} warnings={tm.warnings} />}
 
                 {changeCount === 0 && errorCount === 0 ? (
                   <p className="flex items-center gap-2 text-sm text-gray-600">
