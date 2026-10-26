@@ -10,7 +10,8 @@
  *   - the people granted it, each with a scope: agencies × regions, read-only
  *     (Forecaster: optionally edit) — dashboard_grants/{email}, saved at once.
  * The Agencies & Domains tab edits the email domain ↔ agency mapping that the
- * defaults read. Admins always see every tab and client.
+ * defaults read (hidden, with the MediaBox allocations switch, while
+ * SHOW_FIXED_SETTINGS is false). Admins always see every tab and client.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -67,6 +68,13 @@ import {
   type GrantScope,
   type MediaboxAllocationsConfig,
 } from "../../../../lib/types/access.types";
+
+/**
+ * Shows the settings that no longer change: the MediaBox allocations switch
+ * (always on) and the Agencies & Domains tab (no new domains expected). Both
+ * keep working while hidden; set to true to edit them again.
+ */
+const SHOW_FIXED_SETTINGS = false;
 
 /** Who sees each tab without a grant. */
 function defaultAccess(tab: DashboardTabId, allocationsOn: boolean): { icon: React.ReactNode; text: string } {
@@ -320,24 +328,26 @@ export default function AdminDashboardAccessPage() {
 
       <main className="mx-auto w-full max-w-[1000px] flex-1 space-y-4 p-6 md:p-8">
         {/* Dashboards | Agencies & Domains */}
-        <div className="inline-flex items-center bg-gray-100 p-0.5 gap-0.5">
-          {([
-            ["dashboards", "Dashboards", <LayoutDashboard key="d" size={14} />],
-            ["agencies", "Agencies & Domains", <Building2 key="a" size={14} />],
-          ] as const).map(([value, label, icon]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setTab(value)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === value ? "bg-white text-gray-900" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {icon}
-              {label}
-            </button>
-          ))}
-        </div>
+        {SHOW_FIXED_SETTINGS && (
+          <div className="inline-flex items-center bg-gray-100 p-0.5 gap-0.5">
+            {([
+              ["dashboards", "Dashboards", <LayoutDashboard key="d" size={14} />],
+              ["agencies", "Agencies & Domains", <Building2 key="a" size={14} />],
+            ] as const).map(([value, label, icon]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setTab(value)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  tab === value ? "bg-white text-gray-900" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {icon}
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {tab === "agencies" ? (
           <>
@@ -379,7 +389,7 @@ export default function AdminDashboardAccessPage() {
                 {saveError ? `Couldn't save: ${saveError}` : loadError}
               </div>
             )}
-            {allocations && (
+            {SHOW_FIXED_SETTINGS && allocations && (
               <MediaboxAllocationsCard config={allocations} clients={clients} by={myEmail} nameOf={nameOf} />
             )}
             {saved === null || grants === null ? (
