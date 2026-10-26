@@ -37,12 +37,20 @@ export default function BlAlertBanner({
   const axis = AXIS_STYLE[alert.axis];
   const [showMonths, setShowMonths] = useState(false);
   const hasMonths = alert.rows.some((r) => r.months.length > 0);
-  const amounts = (left: number, right: number, variance: number) => (
+  // Left amount bold (it matches the bold lead of the explanation). The year
+  // line also names both amounts and says what the variance means; the detail
+  // lines below it keep the same order without repeating the names.
+  const amounts = (left: number, right: number, variance: number, labelled = false) => (
     <>
       <span className="font-semibold">{formatMoney(left)}</span>
+      {labelled && <span className="text-gray-700"> {alert.leftLabel}</span>}
       {" vs "}
       <span>{formatMoney(right)}</span>
-      <span className="ml-1 font-semibold">({formatSigned(variance)})</span>
+      {labelled && <span className="text-gray-700"> {alert.rightLabel}</span>}
+      <span className="ml-1 font-semibold">
+        ({formatSigned(variance)}
+        {labelled && <span className="font-normal text-gray-700"> {alert.varianceLabel}</span>})
+      </span>
       {currency ? <span className="ml-1 text-gray-600">{currency}</span> : null}
     </>
   );
@@ -69,14 +77,17 @@ export default function BlAlertBanner({
           {axis.label}
         </span>
       </div>
-      <p className="mt-0.5 pl-6 text-[12px] text-gray-700">{alert.explanation}</p>
+      <p className="mt-0.5 pl-6 text-[12px] text-gray-700">
+        <span className="font-semibold text-gray-900">{alert.explanationLead}</span>
+        {alert.explanation}
+      </p>
       <ul className="mt-1.5 space-y-0.5 pl-6 text-[13px]">
         {alert.rows.map((r, i) => (
           <li key={`${r.label ?? ""}_${i}`} className="tabular-nums">
             <span className="font-semibold">{year ?? "Full year"}</span>
             {r.label ? <span className="text-gray-700"> · {r.label}</span> : null}
             {" — "}
-            {amounts(r.left, r.right, r.variance)}
+            {amounts(r.left, r.right, r.variance, true)}
             {r.parts && r.parts.length > 0 && (
               <div className="mt-0.5 mb-1 border-l border-gray-700 pl-3">
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-700">

@@ -91,32 +91,53 @@ export interface BlAlert {
   title: string;
   /** Which axis the alert concerns — drives the colour code. */
   axis: AxisId;
-  /** One-line explanation shown under the title. */
+  /**
+   * One-line explanation shown under the title. `explanationLead` names the
+   * `left` amount and is shown in bold, like that amount, so the reader can
+   * tell which figure is which; `explanation` is the rest of the sentence.
+   */
+  explanationLead: string;
   explanation: string;
+  /** Short names of the two compared amounts (`left` vs `right`). */
+  leftLabel: string;
+  rightLabel: string;
+  /** What the variance means, shown after it (e.g. "to add to BL"). */
+  varianceLabel: string;
   rows: BlAlertRow[];
 }
 
-const ALERT_META: Record<
-  BlAlertId,
-  { title: string; axis: AxisId; explanation: string }
-> = {
+type AlertMeta = Omit<BlAlert, "id" | "rows">;
+
+const ALERT_META: Record<BlAlertId, AlertMeta> = {
   "labs-over-media": {
     title: "Labs over media",
     axis: "labs",
+    explanationLead: "A media type's Labs spend",
     explanation:
-      "A media type's Labs spend for the year is higher than the forecasted media spend for that type.",
+      " for the year is higher than the forecasted media spend for that type.",
+    leftLabel: "Labs",
+    rightLabel: "media forecast",
+    varianceLabel: "over",
   },
   "mediaocean-over-media": {
     title: "Under forecast",
     axis: "media",
+    explanationLead: "Booked MediaOcean media spend",
     explanation:
-      "Booked MediaOcean media spend for the year is higher than the BL media forecast — the forecast was set too low.",
+      " for the year is higher than the BL media forecast — the forecast was set too low.",
+    leftLabel: "MediaOcean",
+    rightLabel: "BL forecast",
+    varianceLabel: "to add to BL",
   },
   "mediaocean-over-labs": {
     title: "Under forecast",
     axis: "labs",
+    explanationLead: "Booked MediaOcean Labs spend",
     explanation:
-      "Booked MediaOcean Labs spend for the year is higher than the BL Labs forecast — the forecast was set too low.",
+      " for the year is higher than the BL Labs forecast — the forecast was set too low.",
+    leftLabel: "MediaOcean",
+    rightLabel: "BL forecast",
+    varianceLabel: "to add to BL",
   },
 };
 
