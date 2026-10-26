@@ -205,7 +205,7 @@ export interface CreatedSpreadsheet {
  */
 export type SheetSpec =
   | string
-  | { title: string; rowCount: number; columnCount: number };
+  | { title: string; rowCount: number; columnCount: number; hidden?: boolean };
 
 /** Creates a spreadsheet with the given tabs, returns id + URL + sheetIds. */
 export async function createSpreadsheet(
@@ -224,6 +224,7 @@ export async function createSpreadsheet(
                 rowCount: Math.max(1, s.rowCount),
                 columnCount: Math.max(1, s.columnCount),
               },
+              ...(s.hidden ? { hidden: true } : {}),
             },
           }
     ),

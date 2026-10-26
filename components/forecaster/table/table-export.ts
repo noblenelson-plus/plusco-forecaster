@@ -203,6 +203,8 @@ export async function exportToNewSheetWithTabs({
     dropdowns?: Record<string, string[]>;
     /** Colors, text styles, frozen panes (best effort, like dropdowns). */
     layout?: SheetLayout;
+    /** Create the tab hidden (still readable, e.g. by an import). */
+    hidden?: boolean;
   }[];
 }): Promise<string> {
   if (!isGoogleConfigured()) {
@@ -222,7 +224,7 @@ export async function exportToNewSheetWithTabs({
     title,
     tabs.map((t) => {
       const { rows, cols } = matrixSize(t.matrix);
-      return { title: t.sheetTitle, rowCount: rows, columnCount: cols };
+      return { title: t.sheetTitle, rowCount: rows, columnCount: cols, hidden: t.hidden };
     })
   );
   for (const tab of tabs) {

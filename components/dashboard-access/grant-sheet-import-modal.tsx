@@ -188,7 +188,8 @@ export default function GrantSheetImportModal({
                 <ul className="text-xs text-gray-500 mt-2 space-y-1 list-disc pl-4">
                   <li>
                     Start from <strong>Export</strong>. Only <strong>{REPORT_TABS.grants}</strong> is imported; the
-                    other tabs are a read-only report.
+                    other tabs are a read-only report. That tab is hidden in the export — show it from the sheet
+                    tabs menu (View → Hidden sheets) to edit it.
                   </li>
                   <li>
                     <strong>{REPORT_TABS.grants}</strong> — one row per person per dashboard; Agencies / Regions are{" "}

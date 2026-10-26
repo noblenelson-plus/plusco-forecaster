@@ -186,7 +186,8 @@ export default function AdminDashboardAccessPage() {
           { sheetTitle: REPORT_TABS.dashboardAccess, matrix: buildDashboardAccess(input) },
           { sheetTitle: REPORT_TABS.clientTeams, matrix: asText(buildClientTeamList(input)) },
           { sheetTitle: REPORT_TABS.grantClients, matrix: asText(buildGrantClients(input)) },
-          { sheetTitle: REPORT_TABS.grants, matrix: buildGrantSheet(grants ?? [], names, tabLabels, clients) },
+          // Only read back by Import — hidden so the report stays readable.
+          { sheetTitle: REPORT_TABS.grants, matrix: buildGrantSheet(grants ?? [], names, tabLabels, clients), hidden: true },
         ],
       });
       setExportedUrl(url);
