@@ -1,8 +1,8 @@
 // lib/types/forecast-flags.types.ts
 
 /**
- * Forecast "flags" — the persisted big-swing (cat 3) and under-target (cat 4)
- * warnings raised for a submission. Unlike the legacy live flags (lib/flags/
+ * Forecast "flags" — the persisted QA-check (cat 2), big-swing (cat 3) and
+ * under-target (cat 4) warnings raised for a submission. Unlike the legacy live flags (lib/flags/
  * flag-rules.ts, being retired), these are NOT recomputed on every edit: they
  * are created / updated / deleted only when a Business Lead runs a validation
  * (see use-forecast-validation.ts), and stored on the RFQ's data_entries doc.
@@ -11,8 +11,9 @@
  * and a non-empty note. When a validation re-computes an existing flag it keeps
  * the justification and records a drift snapshot ("justified when it was $X").
  *
- * The transient QA-BL banners (cat 2) are frontend-only and never persisted —
- * they live in lib/flags/bl-alerts.ts, not here.
+ * The cat-2 QA checks (lib/flags/bl-alerts.ts) are both: live banners on the
+ * forecast page, and — through computeQaCheckFlags — persisted flags that must
+ * be justified like the others.
  */
 
 import type { AxisId } from "./forecaster.types";
@@ -20,10 +21,14 @@ import type { RFQType } from "./rfq.types";
 
 // ─── Rules ───────────────────────────────────────────────────────────────────
 
-export type FlagCategory = "swing" | "under_target";
+export type FlagCategory = "qa_check" | "swing" | "under_target";
 
 /** Every persisted-flag rule the engine can raise. */
 export type FlagRuleId =
+  // Cat 2 — QA checks on full-year totals (lib/flags/bl-alerts.ts).
+  | "labs-over-media"
+  | "mediaocean-over-media"
+  | "mediaocean-over-labs"
   // Cat 3 — big swings vs the previous RFQ (annual totals).
   | "revenue-swing"
   | "media-swing"
@@ -80,6 +85,19 @@ export interface ComputedFlag {
   analyzedMonths?: number[];
   /** under_target only — MediaOcean actuals total over the window at compute time. */
   moTotal?: number;
+  /**
+   * qa_check (MediaOcean over forecast) only — the media types / partners whose
+   * actuals exceed their forecast for the year, largest first.
+   */
+  breakdown?: FlagBreakdownLine[];
+}
+
+/** One line of a QA-check flag's breakdown (same sign convention as the flag). */
+export interface FlagBreakdownLine {
+  label: string;
+  current: number;
+  reference: number;
+  delta: number;
 }
 
 // ─── Stored flag (computed + justification) ──────────────────────────────────

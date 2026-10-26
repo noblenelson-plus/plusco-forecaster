@@ -5,12 +5,12 @@
  * Flags page — the single home for the forecast flag/alert system, scoped to the
  * globally selected Client + Year + RFQ (same selectors as the forecast page).
  *
- *   §1  QA checks (cat 2)   — live, frontend-only banners (Labs > media,
- *                             MediaOcean > forecast). Never persisted.
+ *   §1  QA checks (cat 2)   — persisted Labs > media and MediaOcean > forecast
+ *                             flags (full year); justify each.
  *   §2  Big swings (cat 3)  — persisted flags vs the previous RFQ; justify each.
  *   §3  Under target (cat 4)— persisted MediaOcean-under-forecast flags; justify.
  *
- * Flags (§2/§3) are created/updated by running a validation from the forecast
+ * Flags are created/updated by running a validation from the forecast
  * page's "BL Forecast Validation" control — this page manages and justifies
  * them, it does not itself re-run the analysis.
  */
@@ -19,7 +19,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, DollarSign, FlaskConical, TrendingUp } from "lucide-react";
 import PageHeader from "../../../components/_shared/page-header";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
-import BlAlertBanner from "../../../components/flags/bl-alert-banner";
 import FlagCard from "../../../components/flags/flag-card";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { fetchAxisData } from "../../../lib/services/data-entry-service";
@@ -27,7 +26,7 @@ import { fetchAnnualActuals } from "../../../lib/services/annual-actuals-service
 import { subscribeToLabsPartners } from "../../../lib/services/labs-partner-service";
 import { subscribeToRFQs } from "../../../lib/services/rfq-service";
 import { useForecastValidation } from "../../../lib/hooks/use-forecast-validation";
-import { computeBlAlerts } from "../../../lib/flags/bl-alerts";
+import { computeBlAlerts, qaFlagKey } from "../../../lib/flags/bl-alerts";
 import { emptyAxisData, type AxisData } from "../../../lib/types/forecaster.types";
 import type { MediaType } from "../../../lib/types/common.types";
 import type { LabsPartner } from "../../../lib/types/labs.types";
@@ -122,6 +121,11 @@ export default function FlagsPage() {
     [media, labs, partnerMediaType, partnerLabel]
   );
 
+  // Live QA issues no validation has captured yet — a hint to re-validate.
+  const storedKeys = new Set(validation.flags.map((f) => f.key));
+  const pendingQa = alerts.flatMap((a) => a.rows.filter((r) => !storedKeys.has(qaFlagKey(a, r)))).length;
+
+  const qaChecks = validation.flags.filter((f) => f.category === "qa_check");
   const swings = validation.flags.filter((f) => f.category === "swing");
   const underTarget = validation.flags.filter((f) => f.category === "under_target");
   const steps = selectedRFQ ? stepsForRfq(selectedRFQ.type) : [];
@@ -164,21 +168,25 @@ export default function FlagsPage() {
               </span>
             </div>
 
-            {/* §1 — QA checks (cat 2, live). */}
+            {/* §1 — QA checks (cat 2, persisted). */}
             <Section
               icon={AlertTriangle}
               title="QA checks"
-              subtitle="Data-consistency issues in this submission (e.g. Labs above media spend, or MediaOcean above the BL forecast). Fix the underlying figures on the forecast page and they clear on their own — nothing to justify, nothing saved."
-              count={alerts.length}
+              subtitle="Full-year data-consistency issues: Labs above the media forecast, or MediaOcean above the BL forecast. Resolve each by fixing the figures on the forecast page and re-validating, or by justifying it with a context and comment."
+              count={qaChecks.length}
             >
-              {loadingAxes ? (
-                <SkeletonNote>Loading…</SkeletonNote>
-              ) : alerts.length === 0 ? (
-                <AllClear label="No QA issues for this submission." />
+              {!loadingAxes && pendingQa > 0 && (
+                <p className="mb-3 bg-yellow-400 px-3 py-2 text-xs font-medium text-gray-900">
+                  {pendingQa} QA issue{pendingQa !== 1 ? "s" : ""} found since the last validation — run a
+                  validation from the forecast page to add {pendingQa !== 1 ? "them" : "it"} here.
+                </p>
+              )}
+              {qaChecks.length === 0 ? (
+                <AllClear label="No QA-check flags. Run a validation to check." />
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
-                  {alerts.map((a) => (
-                    <BlAlertBanner key={a.id} alert={a} currency={currency} year={selectedYear} />
+                  {qaChecks.map((f) => (
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={validation.justify} />
                   ))}
                 </div>
               )}
@@ -268,14 +276,6 @@ function AllClear({ label }: { label: string }) {
     <div className="flex items-center gap-2 border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500">
       <CheckCircle2 size={16} className="flex-shrink-0 text-green-500" />
       {label}
-    </div>
-  );
-}
-
-function SkeletonNote({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="border border-gray-200 bg-white px-4 py-3 text-sm text-gray-400">
-      {children}
     </div>
   );
 }
