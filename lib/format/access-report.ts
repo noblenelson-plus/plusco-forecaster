@@ -2,15 +2,17 @@
 
 /**
  * The access report — Admin → Dashboard Access → Export. Pure (no Firebase):
- * for every person, what they can see and why, resolved with the same logic
- * as the app and the rules (lib/format/access.ts). Two read-only tabs:
- *   - Summary: one row per person — status, last sign-in, email agency, top
- *     client role, team clients, then one column per dashboard tab ("Agency:
- *     Cossette Media — 88 clients", "Own clients — 12", "Grant: … — 61").
- *   - Grant clients: the exact clients each grant gives (person × tab ×
- *     client), e.g. Sandra's list.
- * The editable tabs of the same workbook come from buildGrantSheet
- * (grant-sheet.ts) and buildTeamSheet (team-sheet.ts).
+ * who can see each dashboard and why, resolved with the same logic as the app
+ * and the rules (lib/format/access.ts). Three read-only tabs:
+ *   - Dashboard Access: one row per dashboard × person × source of access
+ *     (Admin, Client Team - Forecaster, Client Team - Forecaster & MB, Grant),
+ *     with the agencies, regions and number of clients it opens.
+ *   - Client teams - Client List: every client's Forecaster team seats (GM,
+ *     Business Lead, Digital Lead, Collaborator) and its MediaBox users.
+ *   - Grant - Client List: the exact clients each grant gives (person ×
+ *     dashboard × client).
+ * The editable grants tab of the same workbook comes from buildGrantSheet
+ * (grant-sheet.ts). Hidden and test clients are left out, as on the dashboard.
  */
 
 import {
@@ -25,18 +27,12 @@ import {
 import type { Client } from "../types/client.types";
 import {
   allocationCoversClient,
-  canOpenTab,
   domainScope,
-  editGrant,
   grantCoversClient,
-  grantScopeLabel,
   hiddenPagesFor,
-  isAllocatedTo,
-  myAgencies,
-  tabCoversClient,
   type AccessContext,
 } from "./access";
-import { isOnClientTeam, teamMemberships, TEAM_ROLES, TEAM_ROLE_LABELS } from "./client-team";
+import { isOnClientTeam, teamSeats, TEAM_ROLES, TEAM_ROLE_LABELS } from "./client-team";
 import { isClientHidden, isTestClient } from "./client";
 import { nameFromEmail, normalizeEmail } from "./email";
 
@@ -53,155 +49,85 @@ export interface AccessReportInput {
   tabLabels: Record<DashboardTabId, string>;
 }
 
-/** The tab follows MediaBox allocations for this (non-admin) person — any domain. */
-function followsAllocations(ctx: AccessContext, tab: DashboardTabId): boolean {
-  return !!ctx.mediaboxAllocations && ALLOCATION_TABS.includes(tab);
-}
+/** "Access Granted Via" values, in the order rows are listed per dashboard. */
+export const ACCESS_SOURCES = {
+  admin: "Admin",
+  team: "Client Team - Forecaster",
+  teamAndMediabox: "Client Team - Forecaster & MB",
+  global: "Email domain - all agencies",
+  domain: "Email domain - own agency",
+  grant: "Grant (Person added)",
+} as const;
 
-const day = (u: UserRecord | undefined) => u?.lastLoginAt?.toDate?.().toISOString().slice(0, 10) ?? "";
+const SOURCE_ORDER: string[] = Object.values(ACCESS_SOURCES);
 
-/** Summary tab: one row per person (users + anyone granted without a row). */
-export function buildAccessSummary(input: AccessReportInput): string[][] {
-  const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, mediaboxAllocations, tabLabels } = input;
-  const clientNames = new Map(clients.map((c) => [c.cl_id, c.CL_Name]));
-  const clientName = (id: string) => clientNames.get(id);
-  // What the dashboard shows: hidden and test clients are left out.
-  const shown = clients.filter((c) => !isClientHidden(c) && !isTestClient(c.CL_Name));
-  const memberships = teamMemberships(clients);
-  const userBy = new Map(users.map((u) => [u.email, u]));
-  const grantBy = new Map(grants.map((g) => [normalizeEmail(g.email), g.tabs]));
-  const emails = [...new Set([...userBy.keys(), ...grantBy.keys()])];
-  const nameOf = (e: string) => userBy.get(e)?.displayName || nameFromEmail(e);
-
-  const header = [
-    "Email",
-    "Name",
-    "App role",
-    "Status",
-    "Last sign-in",
-    "Agency (from email)",
-    "Client role",
-    "Team clients",
-    ...DASHBOARD_TABS.map((t) => tabLabels[t]),
-    "Can edit beyond team",
-  ];
-  const rows = emails
-    .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
-    .map((email) => {
-      const u = userBy.get(email);
-      const isAdmin = u?.role === "ADMIN";
-      const disabled = !!u?.disabled;
-      const ctx: AccessContext = {
-        email,
-        isAdmin,
-        disabled,
-        agencyDomains,
-        companyDomains,
-        grants: grantBy.get(email) ?? {},
-        dashboardAccess,
-        mediaboxAllocations,
-      };
-      const allocatedCount = mediaboxAllocations ? shown.filter((c) => isAllocatedTo(email, c)).length : 0;
-      const mine = memberships.get(email) ?? new Map();
-      const held = new Set([...mine.values()].flat());
-      const topRole = TEAM_ROLES.find((r) => held.has(r));
-      const teamCount = mine.size;
-      const agencies = myAgencies(email, agencyDomains, companyDomains);
-      const hidden = hiddenPagesFor(ctx);
-
-      const tabCell = (tab: DashboardTabId): string => {
-        if (disabled) return "Revoked";
-        if (isAdmin) return hidden.has(tab) ? "Hidden tab" : `Admin — all ${shown.length} clients`;
-        if (!canOpenTab(ctx, tab, teamCount, allocatedCount)) return "—";
-        const parts: string[] = [];
-        if (tab === "forecaster" && teamCount) parts.push("Own clients");
-        if (followsAllocations(ctx, tab)) parts.push("MediaBox allocations");
-        else if (AGENCY_DEFAULT_TABS.includes(tab)) {
-          const d = domainScope(ctx);
-          parts.push(d.all ? "All agencies" : `Agency: ${d.agencies.join(", ")}`);
-        }
-        const g = ctx.grants[tab];
-        if (g) parts.push(`Grant: ${grantScopeLabel(g, clientName)}`);
-        const n = shown.filter((c) => tabCoversClient(ctx, tab, c)).length;
-        const text = `${parts.join(" + ")} — ${n} client${n !== 1 ? "s" : ""}`;
-        return hidden.has(tab) ? `${text} (tab hidden)` : text;
-      };
-
-      const status = disabled ? "Revoked" : !u ? "No user yet" : u.lastLoginAt ? "Active" : "Never signed in";
-      const edit = editGrant(ctx);
-      return [
-        email,
-        nameOf(email),
-        isAdmin ? "Admin" : "User",
-        status,
-        day(u),
-        agencies.all ? "All agencies" : agencies.agencies.join(", ") || "— (not a company domain)",
-        isAdmin ? "Admin" : topRole ? TEAM_ROLE_LABELS[topRole] : "—",
-        String(teamCount),
-        ...DASHBOARD_TABS.map(tabCell),
-        isAdmin ? "Everything" : edit ? `${grantScopeLabel(edit, clientName)} — ${shown.filter((c) => grantCoversClient(edit, c) && !isOnClientTeam(email, c)).length} more clients` : "",
-      ];
-    });
-  return [header, ...rows];
-}
-
-/** Grant clients tab: person × tab × client for every grant (hidden/test clients left out). */
-export function buildGrantClients(input: AccessReportInput): string[][] {
-  const { users, clients, grants, tabLabels } = input;
-  const shown = clients
+/** What the dashboard shows: hidden and test clients are left out. */
+const shownClients = (clients: Client[]) =>
+  clients
     .filter((c) => !isClientHidden(c) && !isTestClient(c.CL_Name))
     .sort((a, b) => a.CL_Name.localeCompare(b.CL_Name));
+
+const uniq = (values: string[]) => [...new Set(values.filter(Boolean))].sort().join(", ");
+
+function namer(users: UserRecord[]) {
   const names = new Map(users.map((u) => [u.email, u.displayName]));
-  const nameOf = (e: string) => names.get(e) || nameFromEmail(e);
-  const rows: string[][] = [];
-  for (const g of [...grants].sort((a, b) => nameOf(a.email).localeCompare(nameOf(b.email)))) {
-    for (const tab of DASHBOARD_TABS) {
-      const scope = g.tabs[tab];
-      if (!scope) continue;
-      for (const c of shown) {
-        if (!grantCoversClient(scope, c)) continue;
-        rows.push([g.email, nameOf(g.email), tabLabels[tab], c.cl_id, c.CL_Name, c.CL_Agency, c.CL_Business_Unit_Region, scope.edit ? "Yes" : "No"]);
-      }
-    }
-  }
-  return [["Email", "Name", "Tab", "Client ID", "Client Name", "Agency", "Region", "Can edit"], ...rows];
+  return (email: string) => names.get(email) || nameFromEmail(email);
 }
 
 /**
- * All access tab: one row per person × dashboard tab × source of access —
- * Email, Name, Access level, Tab, Agencies, Regions, Clients, Can edit — so
- * filtering on a name shows everything that person can see and why. Access
- * level: Admin, Global (company-wide email: every agency), Domain (their
- * agency's email), Client team (their own clients), Grant (added on
- * Dashboard Access). Hidden tabs are left out (nobody sees them); revoked people and people with no access get one row saying so.
+ * Dashboard Access tab: one row per dashboard × person × source — Dashboard
+ * Name, Agencies, Regions, # Clients, Access Granted Via, Name, Email — sorted
+ * by dashboard, then source, then name, so filtering on a dashboard lists
+ * everyone who sees it and filtering on a name lists everything they see.
+ * People who haven't signed in yet are included (their access applies on
+ * first sign-in). Tabs hidden for everyone and revoked people are left out; a
+ * source that opens no client gets no row.
  */
-export function buildAllAccess(input: AccessReportInput): string[][] {
+export function buildDashboardAccess(input: AccessReportInput): string[][] {
   const { users, clients, grants, agencyDomains, companyDomains, dashboardAccess, mediaboxAllocations, tabLabels } = input;
-  const shown = clients.filter((c) => !isClientHidden(c) && !isTestClient(c.CL_Name));
+  const shown = shownClients(clients);
   const userBy = new Map(users.map((u) => [u.email, u]));
   const grantBy = new Map(grants.map((g) => [normalizeEmail(g.email), g.tabs]));
-  const nameOf = (e: string) => userBy.get(e)?.displayName || nameFromEmail(e);
-  const uniq = (values: string[]) => [...new Set(values)].sort().join(", ");
-  const rows: string[][] = [];
+  const nameOf = namer(users);
+  const hidden = hiddenPagesFor({ dashboardAccess });
+  // Everyone with a user row or a grant, plus client-team members and MediaBox
+  // users who haven't signed in yet (they see these dashboards on first
+  // sign-in) — only on company domains, the only ones that can sign in.
+  const signInDomains = new Set([...Object.values(agencyDomains).flat(), ...companyDomains].map((d) => d.toLowerCase()));
+  const seated = shown.flatMap((c) => [...(c.CL_Team_Emails ?? []), ...(mediaboxAllocations ? c.CL_MediaBox_Emails ?? [] : [])]);
+  const emails = [
+    ...new Set([
+      ...userBy.keys(),
+      ...grantBy.keys(),
+      ...seated.map(normalizeEmail).filter((e) => signInDomains.has(e.split("@")[1] ?? "")),
+    ]),
+  ].filter((e) => e && !userBy.get(e)?.disabled);
 
-  for (const email of [...new Set([...userBy.keys(), ...grantBy.keys()])].sort((a, b) => nameOf(a).localeCompare(nameOf(b)))) {
-    const u = userBy.get(email);
-    const name = nameOf(email);
-    const row = (level: string, tab: string, agencies: string, regions: string, count: number | string, edit: string) =>
-      rows.push([email, name, level, tab, agencies, regions, String(count), edit]);
+  const rows: { tab: number; source: string; name: string; cells: string[] }[] = [];
+  const add = (tab: DashboardTabId, source: string, email: string, covered: Client[], agencies?: string, regions?: string) => {
+    if (covered.length === 0) return;
+    rows.push({
+      tab: DASHBOARD_TABS.indexOf(tab),
+      source,
+      name: nameOf(email),
+      cells: [
+        tabLabels[tab],
+        agencies ?? uniq(covered.map((c) => c.CL_Agency)),
+        regions ?? uniq(covered.map((c) => c.CL_Business_Unit_Region)),
+        String(covered.length),
+        source,
+        nameOf(email),
+        email,
+      ],
+    });
+  };
 
-    if (u?.disabled) {
-      row("Revoked", "—", "—", "—", 0, "No");
+  for (const email of emails) {
+    const tabs = DASHBOARD_TABS.filter((t) => !hidden.has(t));
+    if (userBy.get(email)?.role === "ADMIN") {
+      for (const tab of tabs) add(tab, ACCESS_SOURCES.admin, email, shown, "All agencies", "All regions");
       continue;
     }
-    if (u?.role === "ADMIN") {
-      const hiddenForAll = hiddenPagesFor({ dashboardAccess });
-      for (const tab of DASHBOARD_TABS) {
-        if (!hiddenForAll.has(tab)) row("Admin", tabLabels[tab], "All agencies", "All regions", shown.length, "Yes");
-      }
-      continue;
-    }
-
     const ctx: AccessContext = {
       email,
       isAdmin: false,
@@ -212,41 +138,81 @@ export function buildAllAccess(input: AccessReportInput): string[][] {
       dashboardAccess,
       mediaboxAllocations,
     };
-    const hidden = hiddenPagesFor(ctx);
     const team = shown.filter((c) => isOnClientTeam(email, c));
-    const allocated = mediaboxAllocations ? shown.filter((c) => allocationCoversClient(ctx, c)) : [];
-    const start = rows.length;
-
-    for (const tab of DASHBOARD_TABS) {
-      if (hidden.has(tab)) continue;
-      const label = tabLabels[tab];
-      if (tab === "forecaster" && team.length) {
-        row("Client team", label, uniq(team.map((c) => c.CL_Agency)), uniq(team.map((c) => c.CL_Business_Unit_Region)), team.length, "Yes");
-      }
-      if (followsAllocations(ctx, tab)) {
-        if (allocated.length) {
-          row("MediaBox", label, uniq(allocated.map((c) => c.CL_Agency)), uniq(allocated.map((c) => c.CL_Business_Unit_Region)), allocated.length, "No");
-        }
+    for (const tab of tabs) {
+      if (tab === "forecaster") add(tab, ACCESS_SOURCES.team, email, team);
+      if (mediaboxAllocations && ALLOCATION_TABS.includes(tab)) {
+        add(tab, ACCESS_SOURCES.teamAndMediabox, email, shown.filter((c) => allocationCoversClient(ctx, c)));
       } else if (AGENCY_DEFAULT_TABS.includes(tab)) {
         const d = domainScope(ctx);
-        if (d.all) row("Global", label, "All agencies", "All regions", shown.length, "No");
-        else if (d.agencies.length) {
-          row("Domain", label, d.agencies.join(", "), "All regions", shown.filter((c) => d.agencies.includes(c.CL_Agency)).length, "No");
-        }
+        if (d.all) add(tab, ACCESS_SOURCES.global, email, shown, "All agencies", "All regions");
+        else add(tab, ACCESS_SOURCES.domain, email, shown.filter((c) => d.agencies.includes(c.CL_Agency)));
       }
       const g = ctx.grants[tab];
       if (g) {
-        row(
-          "Grant",
-          label,
-          g.allAgencies ? "All agencies" : g.agencies.join(", "),
-          g.allRegions ? "All regions" : g.regions.join(", "),
-          shown.filter((c) => grantCoversClient(g, c)).length,
-          tab === "forecaster" && g.edit ? "Yes" : "No"
+        const covered = shown.filter((c) => grantCoversClient(g, c));
+        const rule = !g.clients?.length;
+        add(
+          tab,
+          ACCESS_SOURCES.grant,
+          email,
+          covered,
+          rule && g.allAgencies ? "All agencies" : undefined,
+          rule && g.allRegions ? "All regions" : undefined
         );
       }
     }
-    if (rows.length === start) row("No access", "—", "—", "—", 0, "No");
   }
-  return [["Email", "Name", "Access level", "Tab", "Agencies", "Regions", "Clients", "Can edit"], ...rows];
+
+  rows.sort(
+    (a, b) =>
+      a.tab - b.tab ||
+      SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source) ||
+      a.name.localeCompare(b.name)
+  );
+  return [["Dashboard Name", "Agencies", "Regions", "# Clients", "Access Granted Via", "Name", "Email"], ...rows.map((r) => r.cells)];
+}
+
+/**
+ * Client teams - Client List tab: per client (by name), its Forecaster team
+ * seats (GM, Business Lead, Digital Lead, Collaborator) then the people
+ * allocated to it in MediaBox (Role "User"). The Forecaster team opens the
+ * Forecaster dashboard; team + MediaBox users open the dashboards that follow
+ * MediaBox allocations. A person on both is listed under each.
+ */
+export function buildClientTeamList(input: Pick<AccessReportInput, "users" | "clients">): string[][] {
+  const nameOf = namer(input.users);
+  const order = new Map(TEAM_ROLES.map((r, i) => [r, i]));
+  const rows: string[][] = [];
+  for (const c of shownClients(input.clients)) {
+    const base = [c.cl_id, c.CL_Name, c.CL_Agency, c.CL_Business_Unit_Region];
+    const seats = teamSeats(c).sort((a, b) => order.get(a.role)! - order.get(b.role)! || a.email.localeCompare(b.email));
+    for (const s of seats) {
+      rows.push([ACCESS_SOURCES.team, ...base, TEAM_ROLE_LABELS[s.role], s.email, nameOf(s.email)]);
+    }
+    const mediabox = [...new Set((c.CL_MediaBox_Emails ?? []).map(normalizeEmail).filter(Boolean))].sort();
+    for (const email of mediabox) {
+      rows.push(["Client Team - MediaBox", ...base, "User", email, nameOf(email)]);
+    }
+  }
+  return [["Access Granted Via", "Client ID", "Client Name", "Agency", "Region", "Role", "Email", "Name"], ...rows];
+}
+
+/** Grant - Client List tab: person × dashboard × client for every grant. */
+export function buildGrantClients(input: Pick<AccessReportInput, "users" | "clients" | "grants" | "tabLabels">): string[][] {
+  const { grants, tabLabels } = input;
+  const shown = shownClients(input.clients);
+  const nameOf = namer(input.users);
+  const rows: string[][] = [];
+  for (const g of [...grants].sort((a, b) => nameOf(a.email).localeCompare(nameOf(b.email)))) {
+    for (const tab of DASHBOARD_TABS) {
+      const scope = g.tabs[tab];
+      if (!scope) continue;
+      for (const c of shown) {
+        if (!grantCoversClient(scope, c)) continue;
+        rows.push([g.email, nameOf(g.email), tabLabels[tab], c.cl_id, c.CL_Name, c.CL_Agency, c.CL_Business_Unit_Region]);
+      }
+    }
+  }
+  return [["Email", "Name", "Dashboard Name", "Client ID", "Client Name", "Agency", "Region"], ...rows];
 }
