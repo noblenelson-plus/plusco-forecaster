@@ -78,7 +78,7 @@ export default function ExecutiveSummarySection({
 }) {
   // Booked (MIR) scorecards + the scoped mo_kpi_by_client rows (shared hook).
   const booked = useBookedExecKpis(scopedClientIds, year);
-  const { scopedKpiRows, inv, metaTrend, goals, labsShareGoal, mirSourceLabel } = booked;
+  const { scopedKpiRows, inv, metaTrend, goals, labsShareGoal, mirSourceLabel, mirAsOf } = booked;
 
   const [partners, setPartners] = useState<LabsPartner[]>([]);
   useEffect(() => {
@@ -343,6 +343,7 @@ export default function ExecutiveSummarySection({
         labsShareGoal={labsShareGoal}
         billupsShareGoal={goals.billupsShare}
         sourceLabel={mirOnlyLabel}
+        mirAsOf={mirAsOf}
       />
 
       {/* By client */}
