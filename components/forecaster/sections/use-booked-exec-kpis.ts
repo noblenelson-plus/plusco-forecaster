@@ -425,9 +425,10 @@ export function useBookedExecKpis(
     ]
   );
 
+  const mirAsOf = lastSync.labelShort ?? MIR_AS_OF_LABEL;
   const mirSourceLabel = planner
     ? `Planned (MediaBox)${planner.syncedLabel ? ` · synced ${planner.syncedLabel}` : ""}`
-    : `Booked to date (MIR) · as of ${lastSync.labelShort ?? MIR_AS_OF_LABEL}`;
+    : `Booked to date (MIR) · as of ${mirAsOf}`;
 
   return {
     /** The four booked (MIR) scorecard pillars. */
@@ -440,6 +441,8 @@ export function useBookedExecKpis(
     goals,
     labsShareGoal,
     mirSourceLabel,
+    /** The MIR "as of" date alone (e.g. "Sep 28, 2026"). */
+    mirAsOf,
     loading: kpi.loading || (planner ? planner.loading : mir.loading),
     error: kpi.error || (planner ? planner.error : mir.error),
   };

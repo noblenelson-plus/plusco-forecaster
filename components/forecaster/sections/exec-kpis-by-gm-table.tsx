@@ -41,6 +41,12 @@ function parseEligible(v: unknown): boolean {
 
 type Kind = "money" | "pct" | "delta";
 
+/**
+ * The RFQ the Labs targets come from — pinned in BigQuery
+ * (labs_pacing_unified, see docs/bigquery.md); update with it.
+ */
+const LABS_TARGET_RFQ = "RFQ3";
+
 /** Grouped Labs partners for the by-partner sub-section (Billups = OOH+Print,
  *  MIQ = Prog+Social, AIM separate). key → the BQ column suffix. */
 const LABS_PARTNERS: { key: string; name: string; color: string }[] = [
@@ -325,12 +331,15 @@ export default function ExecKpisByGmTable({
   billupsShareGoal = null,
   bands,
   sourceLabel = "Booked to date (MIR)",
+  mirAsOf,
 }: {
   rows: KpiByClientRow[];
   labsShareGoal?: number | null;
   billupsShareGoal?: number | null;
   bands?: RagBands;
   sourceLabel?: string;
+  /** MIR "as of" date shown in the Labs-by-partner note (e.g. "Sep 28, 2026"). */
+  mirAsOf?: string;
 }) {
     const { metricRows, gms, exportColumns, groupOrder, allMetrics, totalAgg, gmAgg } = useMemo(() => {
     // Group rows by GM.
@@ -359,7 +368,7 @@ export default function ExecKpisByGmTable({
       },
       {
         group: "Labs",
-        label: "Labs RFQ Target (RFQ3)",
+        label: `Labs RFQ Target (${LABS_TARGET_RFQ})`,
         kind: "money",
         value: (a) => a.labsTarget,
       },
@@ -728,6 +737,10 @@ export default function ExecKpisByGmTable({
                             className="sticky left-0 z-10 border-b border-border bg-muted/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
                           >
                             Labs — by partner
+                            <span className="ml-2 font-normal normal-case tracking-normal">
+                              · Forecast target ({LABS_TARGET_RFQ}) vs MediaOcean booked (MIR
+                              {mirAsOf ? ` as of ${mirAsOf}` : ""})
+                            </span>
                           </td>
                         </tr>
                         {LABS_PARTNERS.filter((p) => !hidden.has(p.name)).map((p) => (
