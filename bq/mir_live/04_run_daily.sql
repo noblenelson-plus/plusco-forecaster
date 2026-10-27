@@ -64,7 +64,24 @@ BEGIN
   VALUES (CURRENT_TIMESTAMP(), 'snapshot', CONCAT('MIR_Live_snapshots.MIR_', today));
 END;
 
+-- 5. rebuild MIR_Live.MIR_NATIVE (the MIR in PCC_Dashboard_NATIVE's layout, 06_build_native.sql). It reads
+--    the MO Client Key and Vendor Database 2.0 Google Sheets, so the schedule's owner needs Drive access;
+--    a failure is logged and e-mailed, and MIR itself is already up to date by then.
 CREATE OR REPLACE PROCEDURE `plusco-media-invest-solutions.MIR_Live.run_daily`()
 BEGIN
   CALL `plusco-media-invest-solutions.MIR_Live.run_build`(FALSE);
+
+  BEGIN
+    CALL `plusco-media-invest-solutions.MIR_Live.build_native`(
+      'plusco-media-invest-solutions.MIR_Live.MIR',
+      'plusco-media-invest-solutions.MIR_Live.MIR_NATIVE',
+      CONCAT('MIR LIVE ', FORMAT_DATE('%Y-%m-%d', CURRENT_DATE('America/Montreal'))));
+    INSERT INTO `plusco-media-invest-solutions.MIR_Live.run_log` (run_at, step, detail, rows_out, net_ordered_cad)
+    SELECT CURRENT_TIMESTAMP(), 'build_native', 'ok', COUNT(*), CAST(SUM(NET_ORDERED_CAD) AS NUMERIC)
+    FROM `plusco-media-invest-solutions.MIR_Live.MIR_NATIVE`;
+  EXCEPTION WHEN ERROR THEN
+    INSERT INTO `plusco-media-invest-solutions.MIR_Live.run_log` (run_at, step, detail)
+    VALUES (CURRENT_TIMESTAMP(), 'build_native', CONCAT('FAILED: ', @@error.message));
+    RAISE USING MESSAGE = CONCAT('MIR_Live.MIR_NATIVE not rebuilt (MIR is): ', @@error.message);
+  END;
 END;
