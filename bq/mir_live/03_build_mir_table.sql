@@ -12,6 +12,7 @@
 --   4. Unmatched stations are kept (vendor = station code, attributes 'no match'), never dropped.
 -- Spot is read from a spot-history table (see 02_refresh_spot_history.sql), so months that fall
 -- out of MediaOcean's extract window stay in the MIR.
+-- Prisma: programmatic package headers are dropped (their child placements carry the same dollars).
 --
 -- Args: spot_history_table — e.g. 'plusco-media-invest-solutions.MIR_Live.spot_history'
 --       target_table       — e.g. 'plusco-media-invest-solutions.MIR_Live.MIR'
@@ -81,6 +82,11 @@ prisma AS (
   FROM `mediaocean-data.mo_raw_prisma.placements` AP
   JOIN `mediaocean-data.mo_raw_prisma.placements_monthly` APM
     ON AP.placement_id = APM.placement_id AND AP.estimate_code = APM.estimate_code
+  -- A programmatic package header repeats the total of its child placements (same vendor), so
+  -- counting both doubled the spend ($2.0M in 2025). Keep the children, drop the header.
+  WHERE AP.placement_id NOT IN (
+    SELECT programmatic_header_placement_id FROM `mediaocean-data.mo_raw_prisma.placements`
+    WHERE programmatic_header_placement_id IS NOT NULL)
 ),
 fact_detail AS (
   SELECT MCPE, client_code, month, vendor_code, buy_type, ordered_net, post_aff_net AS billable_net, post_aff_net AS payable_net FROM spot
