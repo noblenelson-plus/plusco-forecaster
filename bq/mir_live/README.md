@@ -21,11 +21,12 @@ It reuses the logic and dimension tables of `mediaocean-data.L2_Media.MIR_automa
 |---|---|
 | `MIR_Live.MIR_staging` | Each run builds here first; copied to `MIR` only if the checks pass |
 | `MIR_Live.MIR` | The MIR: MCPE × month × vendor × buy type, sheet column names (+ `MCPE_MIR`, the key as the manual MIR writes it — Network as `T-…`) |
+| `MIR_Live.MIR_NATIVE` | **The real-time MIR report**: `MIR` in `PCC_Dashboard_NATIVE`'s exact layout (same 72 columns, order, types) with the manual MIR's lookups and rules — see below |
 | `MIR_Live.spot_history` | Spot per MCPE × station × spot date. Seeded from the 2026-10-01 raw snapshot; never truncated |
 | `MIR_Live_snapshots.MIR_YYYYMMDD` | Daily snapshot of `MIR`, 90-day expiry — QA a manual MIR against the same day |
 | `MIR_Live.run_log` | One row per step per run (raw window, spot count, rows, total CAD) |
 | `MIR_Live.qa_summary` / `qa_monthly` / `qa_lines` / `qa_dimensions` / `qa_coverage` | Output of the last `qa_compare` call |
-| Procedures `run_daily`, `run_build`, `refresh_spot_history`, `build_mir_table`, `qa_compare` | Files `02`–`05` |
+| Procedures `run_daily`, `run_build`, `refresh_spot_history`, `build_mir_table`, `qa_compare`, `build_native` | Files `02`–`06` |
 
 Scheduled query **MIR_Live daily build** (owner Noble, failure e-mails on) runs
 `CALL MIR_Live.run_daily()` every day at 22:00 UTC (18:00 Montreal). Raw Prisma usually lands
@@ -78,6 +79,33 @@ Sun Dec 28, 2026 starts Mon Dec 29) and each keeps only its own calendar months,
 days fall between the two. The automated MIR keeps them in 2025-12. Expect Dec 2025 Spot to be
 higher than the manual MIR by that amount.
 
+## `MIR_NATIVE` — the MIR report in NATIVE's layout
+
+`run_daily` rebuilds it after `MIR` (`06_build_native.sql`). Each column comes from the same place
+as in the manual sheet:
+
+| Columns | Source |
+|---|---|
+| Client (`CLIENT_INTERCO` … `CLIENT_CURRENCY_MO`) | `Finance_mediabox.MO_Client_Key` by client code; intercompany clients by client + product code |
+| Client attributes (status, agency, BL, region, GM pod, FO currency) | Forecaster clients (`pluscoops.forecaster_1.clients`, 2026 status from `clients_status`) |
+| Vendor (`PLUSCO_*`, deals, spot market, `present_in_Database_2_0`) | `Finance_mediabox.MIR_VENDOR_DATABASE` (Vendor Database 2.0) by `VENDOR_CODE_MIR` |
+| `PLUSCO_MEDIA_CHANNEL` / `PROGRAMMATIC` / `LOCAL_MEDIA`, `Prog_and_SEM` | Vendor DB, then the sheet's rules: Programmatic & SEM split (search buy type, or SEM / MOTS / SEARCH / SM-not-ISM/ASM/OSM in product or estimate → SEM, Foreign; else Programmatic, Hybrid); MIQ + Social buy type → Social, Foreign |
+| `Labs_Partners`, `PBB`, `NET_ORDERED_CAD` | Sheet rules (MIQ-SOCIAL/PROG, BILLUPS-PRINT/OOH, …; PBB when SREP; USD × 1.3978) |
+| `PO`, `SREP` | Estimate user field 1 (`print_estimate` / `spot_estimate`); Spot buyline special rep + `spot_rep` |
+| `BILLED_NET`, `PAID_NET` (billable / payable = ordered − billed / paid) | `print_buy_summary` (Prisma); spot billed / paid summaries (radio by station, spot TV by call letters, network TV per MCPE × month) — spread pro rata where several lines share them |
+| `Mediabox_2_0_*` | `Finance_mediabox.finance_Mediabox_combined` by `tac_billing_id` = MCPE |
+| `media_spend_target_distributed`, `IS_LABS_PARTNER`, `mb_2_0_*` | `PCC_Dashboard_NATIVE`'s own query (v3), unchanged |
+
+It reads two Google Sheets, so the scheduled query's owner needs Drive access (a failure is logged
+in `run_log` as `build_native` and e-mailed; `MIR` is already rebuilt by then).
+
+**Checked against the Oct 27 manual MIR** (same lines, $-weighted): client, BL, GM pod, agency,
+currency, channel, partner, deals, Labs, local and every vendor attribute agree on 99–100 %;
+billed / paid within ~1–3 % (network TV in total). Known differences: client status follows the
+Forecaster's per-year status (the sheet's export showed `ACTIVE` for some 2026 `NEW_CLIENT`s);
+MediaBox matches more MCPEs (live finance data); estimate / client text uses MediaOcean's names
+(the export sometimes appends the product); `PCT_*` are written `100.00`.
+
 ## Not yet in `MIR`
 
 **Network split of conventional TV (~$133M of Spot with no channel/partner).** Conventional network
@@ -91,7 +119,7 @@ file enabled in MediaOcean's Spot extract.
 **Intercompany clients (~$32M with no PlusCo client id).** Agency interco client codes (`1IB`
 Cossette Toronto interco, `1ID`, `1SA`, `1IA`, …) are mapped to the end client in the manual MIR
 with the MO Client Key (`Finance_mediabox.MO_Client_Key`); `master_client` maps them at client
-level only.
+level only. **Solved in `MIR_NATIVE`**, which uses the MO Client Key.
 
 
 Columns the manual MIR adds from its own tabs: `PO`, `SREP`, `PBB`, billed/paid

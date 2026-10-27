@@ -147,7 +147,8 @@ prisma_estimate AS (
 lines0 AS (
   SELECT
     m.*,
-    IF(m.MEDIA_CODE IN ('N', 'R', 'T'), m.VENDOR_CODE_MIR, LTRIM(m.VENDOR_CODE, '0')) AS vcode,
+    -- Spot: the station as the MIR writes it (CHEK-TV); network group stations without one (FRACN, ENGCN) keep their code.
+    IF(m.MEDIA_CODE IN ('N', 'R', 'T'), COALESCE(NULLIF(m.VENDOR_CODE_MIR, 'no match'), m.VENDOR_CODE), LTRIM(m.VENDOR_CODE, '0')) AS vcode,
     UPPER(IF(m.MEDIA_CODE IN ('N', 'R', 'T'), NULL, m.BUY_TYPE)) AS buytype,
     COALESCE(cs.name, m.CLIENT_NAME) AS client_short,
     REPLACE(CONCAT(m.PRODUCT_CODE, ' ', m.PRODUCT_NAME), '_', ' ') AS product_txt,
