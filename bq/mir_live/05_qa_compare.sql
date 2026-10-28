@@ -1,8 +1,9 @@
--- MIR_Live.qa_compare — reconciles a manual MIR against an automated MIR and writes four tables:
+-- MIR_Live.qa_compare — reconciles a manual MIR against an automated MIR and writes five tables:
 --   MIR_Live.qa_summary     year × media totals, % of $ on lines within 1 %, PASS/CHECK
 --   MIR_Live.qa_monthly     month × media totals, PASS when within 0.5 %
 --   MIR_Live.qa_lines       every MCPE × month off by ≥ $1,000 and ≥ 1 % (or only on one side)
 --   MIR_Live.qa_dimensions  % of $ where agency / client / BL / GM pod / channel / partner / deal agree
+--   MIR_Live.qa_coverage    per MIR and system: $ with no channel (unmatched vendor) or no PlusCo client id
 --
 -- Args: manual_table — the manual MIR with the sheet's column names, e.g.
 --         'plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE'
@@ -120,4 +121,17 @@ GROUP BY 1, 2, 3, 4''', '{{AUTO}}', auto_table);
     ROUND(SAFE_DIVIDE(SUM(IF(IFNULL(NULLIF(NULLIF(NULLIF(TRIM(x), ''), 'no match'), '#N/A'), '') = IFNULL(NULLIF(NULLIF(NULLIF(TRIM(y), ''), 'no match'), '#N/A'), ''), w, 0)), SUM(w)) * 100, 2) AS pct_dollars_agree,
     ROUND(SUM(w), 2) AS dollars_compared
   FROM n GROUP BY 1, 2;
+
+  -- qa_dimensions only sees lines whose vendor codes match on both sides, so also report, for each
+  -- MIR, the dollars that carry no channel (unmatched vendor) or no PlusCo client id.
+  CREATE OR REPLACE TABLE `plusco-media-invest-solutions.MIR_Live.qa_coverage` AS
+  WITH s AS (
+    SELECT 'manual' AS mir, * FROM m UNION ALL SELECT 'automated', * FROM a
+  )
+  SELECT
+    mir, IF(media IN ('N','R','T'), 'Spot', 'Prisma') AS system,
+    ROUND(SUM(ABS(cad)), 2) AS dollars,
+    ROUND(SUM(IF(IFNULL(NULLIF(NULLIF(NULLIF(TRIM(channel), ''), 'no match'), '#N/A'), '') = '', ABS(cad), 0)), 2) AS dollars_no_channel,
+    ROUND(SUM(IF(IFNULL(NULLIF(NULLIF(NULLIF(NULLIF(TRIM(client_id), ''), 'no match'), '#N/A'), '-'), '') = '', ABS(cad), 0)), 2) AS dollars_no_client_id
+  FROM s GROUP BY 1, 2;
 END;
