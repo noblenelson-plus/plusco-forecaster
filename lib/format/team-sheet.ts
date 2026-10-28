@@ -4,8 +4,10 @@
  * Client teams as a flat sheet — Admin → Forecast Access export / import. Pure
  * (no Firebase): the service layer reads/writes Sheets and Firestore.
  *
- * One row per person per client: Client ID, Client Name, Role, Email. Role is
- * GM, Business Lead, Digital Lead or Collaborator. Import treats the sheet as
+ * One row per person per client: Client ID, Client Name, Agency-BU Region,
+ * Role, Email. Role is GM, Business Lead, Digital Lead or Collaborator.
+ * Agency-BU Region is informational (for filtering the sheet) and ignored on
+ * import. Import treats the sheet as
  * the full list FOR EACH CLIENT IT MENTIONS: that client's BL / DL /
  * collaborators become exactly the sheet's rows (missing rows remove people).
  * Clients with no row at all are left untouched, so a filtered or partial
@@ -14,6 +16,7 @@
  */
 
 import type { Client } from "../types/client.types";
+import { agencyRegionLabel } from "./client";
 import { isValidEmail, nameFromEmail, normalizeEmail, normalizeEmailList } from "./email";
 import {
   computeTeamEmails,
@@ -24,7 +27,11 @@ import {
 } from "./client-team";
 import type { UserRecord } from "../types/access.types";
 
+/** Columns the import reads (found by header name, so extra columns are ignored). */
 export const TEAM_SHEET_HEADERS = ["Client ID", "Client Name", "Role", "Email"] as const;
+
+/** Export layout: the import columns plus Agency-BU Region next to the client name. */
+const TEAM_SHEET_EXPORT_HEADERS = ["Client ID", "Client Name", "Agency-BU Region", "Role", "Email"];
 
 /** Role labels as written in the sheet (the dropdown values). */
 export const TEAM_SHEET_ROLES: string[] = (["GM", "BL", "DL", "COLLABORATOR"] as TeamRole[]).map(
@@ -44,7 +51,14 @@ const ROLE_BY_LABEL = new Map<string, TeamRole>([
 
 type TeamClient = Pick<
   Client,
-  "cl_id" | "CL_Name" | "CL_Business_Lead" | "CL_Digital_Lead" | "GM_Pod" | "CL_Collaborators"
+  | "cl_id"
+  | "CL_Name"
+  | "CL_Agency"
+  | "CL_Business_Unit_Region"
+  | "CL_Business_Lead"
+  | "CL_Digital_Lead"
+  | "GM_Pod"
+  | "CL_Collaborators"
 >;
 
 // ─── Export ───────────────────────────────────────────────────────────────────
@@ -58,12 +72,15 @@ export function buildTeamSheet(clients: TeamClient[], sortBy: "client" | "email"
   const rows: { row: string[]; role: TeamRole }[] = [];
   for (const c of [...clients].sort((a, b) => a.CL_Name.localeCompare(b.CL_Name))) {
     const seats = teamSeats(c).sort((a, b) => order[a.role] - order[b.role] || a.email.localeCompare(b.email));
-    for (const s of seats) rows.push({ row: [c.cl_id, c.CL_Name, TEAM_ROLE_LABELS[s.role], s.email], role: s.role });
+    const region = agencyRegionLabel(c);
+    for (const s of seats) {
+      rows.push({ row: [c.cl_id, c.CL_Name, region, TEAM_ROLE_LABELS[s.role], s.email], role: s.role });
+    }
   }
   if (sortBy === "email") {
-    rows.sort((a, b) => a.row[3].localeCompare(b.row[3]) || a.row[1].localeCompare(b.row[1]) || order[a.role] - order[b.role]);
+    rows.sort((a, b) => a.row[4].localeCompare(b.row[4]) || a.row[1].localeCompare(b.row[1]) || order[a.role] - order[b.role]);
   }
-  return [[...TEAM_SHEET_HEADERS], ...rows.map((r) => r.row)];
+  return [TEAM_SHEET_EXPORT_HEADERS, ...rows.map((r) => r.row)];
 }
 
 /**

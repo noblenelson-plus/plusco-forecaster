@@ -69,6 +69,11 @@ export function isClientHidden(client: Pick<Client, "CL_Hidden">): boolean {
   return client.CL_Hidden === true;
 }
 
+/** "Cossette Media - QC/East": the client's agency and BU Region as one label. */
+export function agencyRegionLabel(client: Pick<Client, "CL_Agency" | "CL_Business_Unit_Region">): string {
+  return `${client.CL_Agency || "No agency"} - ${client.CL_Business_Unit_Region || "No region"}`;
+}
+
 /** Clients are eligible for a partner by default — only a stored `false` opts out. */
 export function isEligibleForPartner(
   client: Pick<Client, "Labs_Eligibility">,
