@@ -51,49 +51,102 @@ a AS (SELECT PLUSCO_YEAR y, IFNULL(NULLIF(PLUSCO_CLIENT_NAME,''),'(not mapped)')
 SELECT y, k, mo, IFNULL(m.cad,0) man, IFNULL(a.cad,0) aut FROM m FULL JOIN a USING (y,k,mo)`);
 
 // Campaign-level differences, to explain large variances in cell notes.
+const PULL_DAY = "2026-10-27"; // the day the manual MIR was pulled
 const lines = await bq(`
 WITH m AS (SELECT PLUSCO_YEAR y, IFNULL(NULLIF(PLUSCO_CLIENT_NAME,''),'(not mapped)') k, CAST(SUBSTR(MONTH,6,2) AS INT64) mo, MCPE, ANY_VALUE(ESTIMATE) est,
-  SUM(NET_ORDERED_CAD) cad FROM ${MAN} GROUP BY 1,2,3,4),
+  ANY_VALUE(MEDIA_CODE) mc, SUM(NET_ORDERED_CAD) cad, SUM(NET_ORDERED) nat FROM ${MAN} GROUP BY 1,2,3,4),
 a AS (SELECT PLUSCO_YEAR y, IFNULL(NULLIF(PLUSCO_CLIENT_NAME,''),'(not mapped)') k, CAST(SUBSTR(MONTH,6,2) AS INT64) mo, MCPE, ANY_VALUE(ESTIMATE) est,
-  SUM(NET_ORDERED_CAD) cad, SUM(IF(MONTH='2025-12' AND MEDIA_CODE IN ('N','R','T'), NET_ORDERED_CAD, 0)) dec_spot
-  FROM ${AUT} WHERE PLUSCO_YEAR IN ('2025','2026') GROUP BY 1,2,3,4)
-SELECT y, k, mo, MCPE, COALESCE(m.est, a.est) est, IFNULL(m.cad,0) man, IFNULL(a.cad,0) aut, IFNULL(a.dec_spot,0) dec_spot
+  ANY_VALUE(MEDIA_CODE) mc, SUM(NET_ORDERED_CAD) cad, SUM(NET_ORDERED) nat
+  FROM ${AUT} WHERE PLUSCO_YEAR IN ('2025','2026') GROUP BY 1,2,3,4),
+-- Spots on the days between the yearly broadcast pulls (Dec 29-31, 2025 and Dec 28-31, 2026).
+edge AS (
+  SELECT CONCAT(IF(media_code = 'N', 'T', media_code), '-', client_code, '-', product_code, '-', estimate_code) MCPE,
+    CAST(EXTRACT(YEAR FROM spot_date) AS STRING) y, EXTRACT(MONTH FROM spot_date) mo, SUM(ordered_net) edge
+  FROM \`plusco-media-invest-solutions.MIR_Live.spot_history\`
+  WHERE spot_date BETWEEN '2025-12-29' AND '2025-12-31' OR spot_date BETWEEN '2026-12-28' AND '2026-12-31'
+  GROUP BY 1, 2, 3),
+-- Campaigns edited in MediaOcean on the day of the manual pull.
+edited AS (
+  SELECT DISTINCT CONCAT(media_code, '-', advertiser_code, '-', product_code, '-', estimate_code) MCPE
+  FROM \`mediaocean-data.mo_raw_prisma.placements\` WHERE CAST(placement_modification_date AS STRING) LIKE '${PULL_DAY}%'),
+edited_spot AS (
+  SELECT DISTINCT IF(media_code = 'N', 'T', media_code) mc, client_code, estimate_code
+  FROM \`mediaocean-data.mo_raw_spot.spot_buyline\` WHERE CAST(last_activity_date AS STRING) LIKE '${PULL_DAY}%'),
+-- Campaigns present in MediaOcean's daily copy at all.
+in_raw AS (
+  SELECT DISTINCT CONCAT(IF(media_code = 'N', 'T', media_code), '-', client_code, '-', product_code, '-', estimate_code) MCPE
+  FROM \`plusco-media-invest-solutions.MIR_Live.spot_history\`
+  UNION DISTINCT
+  SELECT DISTINCT CONCAT(media_code, '-', advertiser_code, '-', product_code, '-', estimate_code) FROM \`mediaocean-data.mo_raw_prisma.placements\`)
+SELECT y, k, mo, MCPE, COALESCE(m.est, a.est) est, COALESCE(m.mc, a.mc) mc, IFNULL(m.cad,0) man, IFNULL(a.cad,0) aut,
+  IFNULL(a.nat,0) - IFNULL(m.nat,0) nat_diff, IFNULL(e.edge, 0) edge,
+  COLLATE(MCPE, '') IN (SELECT COLLATE(MCPE, '') FROM edited) OR EXISTS (SELECT 1 FROM edited_spot s WHERE s.mc = SUBSTR(MCPE, 1, 1)
+    AND s.client_code = SPLIT(MCPE, '-')[SAFE_OFFSET(1)] AND s.estimate_code = SPLIT(MCPE, '-')[SAFE_OFFSET(3)]) edited,
+  COLLATE(MCPE, '') IN (SELECT COLLATE(MCPE, '') FROM in_raw) in_raw
 FROM m FULL JOIN a USING (y,k,mo,MCPE)
+LEFT JOIN edge e USING (MCPE, y, mo)
 WHERE ABS(IFNULL(a.cad,0)-IFNULL(m.cad,0)) >= 1`);
 const usd = v => (v < 0 ? "-$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
 // Campaign's difference over the whole year, to spot amounts that only moved between months.
 const yearDiff = {};
 for (const r of lines) yearDiff[`${r.y}|${r.k}|${r.MCPE}`] = (yearDiff[`${r.y}|${r.k}|${r.MCPE}`] || 0) + num(r.aut) - num(r.man);
+const isTrue = v => v === true || v === "true";
+const SPOT = new Set(["N", "R", "T"]);
+// Each campaign gets one cause, checked in this order:
+//   edge    spots dated on the days between the yearly broadcast pulls (the manual MIR leaves them out)
+//   shift   same yearly total, spread over the months differently
+//   edited  campaign edited in MediaOcean on the day of the pull (after the manual pull, before the nightly build)
+//   missing in the manual MIR but not in MediaOcean's daily copy at all
+//   rounding spot campaign off by less than 0.5 % (per-spot rounding of the client's net)
+//   check   anything else
+function cause(c, isMonth) {
+  const d = c.aut - c.man, dn = c.natDiff;
+  if (c.edge !== 0 && Math.abs(c.edge) >= 0.5 * Math.abs(dn) && Math.sign(c.edge) === Math.sign(dn)) return "edge";
+  if (isMonth && Math.abs(yearDiff[`${c.y}|${c.k}|${c.MCPE}`] || 0) < 0.05 * Math.abs(d)) return "shift";
+  if (c.edited) return "edited";
+  if (c.aut === 0 && !c.inRaw) return "missing";
+  if (SPOT.has(c.mc) && c.man !== 0 && Math.abs(d) < 0.005 * Math.abs(c.man)) return "rounding";
+  return "check";
+}
+const CAUSE_TEXT = {
+  edge: "spots dated Dec 29-31, 2025 or Dec 28-31, 2026",
+  shift: "same yearly total, split differently between months",
+  edited: "edited in MediaOcean on the day of the manual pull",
+  missing: "not in MediaOcean's daily data feed",
+  rounding: "small spot difference (under 0.5%)",
+  check: "to check",
+};
+const WHY_TEXT = {
+  edge: "Dec 29-31, 2025 / Dec 28-31, 2026: the manual MIR's yearly Spot pulls follow broadcast years, so spots on those days fall between two pulls. The automated MIR keeps them in December (calendar month).",
+  shift: "Month split: the campaign total is the same; MediaOcean's report and the automated MIR spread it over the months differently.",
+  edited: "Edited on the pull day: the manual MIR was pulled in the morning, the automated MIR reads MediaOcean's data that evening.",
+  missing: "Not in the data feed: the buy is in MediaOcean but not in the daily copy the automated MIR reads (raised with Yves).",
+  rounding: "Small spot differences (under 0.5% of the campaign): cause not confirmed yet, most likely rounding of the client net per spot.",
+  check: "To check: no known reason yet.",
+};
 function explain(rowsForCell, total, isMonth) {
   // One entry per campaign (a full-year cell has one line per month).
   const byMcpe = {};
   for (const r of rowsForCell) {
-    const c = (byMcpe[r.MCPE] ||= { MCPE: r.MCPE, est: r.est, y: r.y, k: r.k, man: 0, aut: 0, dec: 0, decOnly: 0 });
-    c.man += num(r.man); c.aut += num(r.aut); c.dec += num(r.dec_spot);
-    if (r.y === "2025" && +r.mo === 12 && num(r.man) === 0) c.decOnly += num(r.dec_spot);
+    const c = (byMcpe[r.MCPE] ||= { MCPE: r.MCPE, est: r.est, mc: r.mc, y: r.y, k: r.k, man: 0, aut: 0, natDiff: 0, edge: 0, edited: false, inRaw: false });
+    c.man += num(r.man); c.aut += num(r.aut); c.natDiff += num(r.nat_diff); c.edge += num(r.edge);
+    c.edited ||= isTrue(r.edited); c.inRaw ||= isTrue(r.in_raw);
   }
   const all = Object.values(byMcpe).sort((a, b) => Math.abs(b.aut - b.man) - Math.abs(a.aut - a.man));
-  const top = all.slice(0, 4).filter(c => Math.abs(c.aut - c.man) >= 100);
+  const sums = {};
+  for (const c of all) { c.cause = cause(c, isMonth); sums[c.cause] = (sums[c.cause] || 0) + c.aut - c.man; }
   const out = [`Variance ${usd(total)}.`];
-  const reasons = new Set();
-  for (const c of top) {
+  const order = Object.keys(sums).sort((a, b) => Math.abs(sums[b]) - Math.abs(sums[a])).filter(k => Math.abs(sums[k]) >= 100);
+  if (order.length) out.push("By cause: " + order.map(k => `${CAUSE_TEXT[k]} ${usd(sums[k])}`).join("; ") + ".");
+  out.push("Largest campaigns:");
+  for (const c of all.slice(0, 4).filter(c => Math.abs(c.aut - c.man) >= 100)) {
     const d = c.aut - c.man;
-    let why = c.man === 0 ? `only in the automated MIR (${usd(c.aut)})`
+    const amounts = c.man === 0 ? `only in the automated MIR (${usd(c.aut)})`
       : c.aut === 0 ? `only in the manual MIR (${usd(c.man)})`
       : `manual ${usd(c.man)}, automated ${usd(c.aut)} (${d > 0 ? "+" : ""}${usd(d)})`;
-    if (Math.abs(c.decOnly) >= 0.5 * Math.abs(d) && c.decOnly !== 0) { why += ". Spots dated Dec 29-31, 2025"; reasons.add("dec"); }
-    else if (isMonth && Math.abs(yearDiff[`${c.y}|${c.k}|${c.MCPE}`] || 0) < 0.05 * Math.abs(d)) { why += ". Same yearly total, split differently between months"; reasons.add("shift"); }
-    else if (c.man === 0 || c.aut === 0) reasons.add("onlyone");
-    else reasons.add("amount");
-    out.push(`- ${c.MCPE} ${c.est || ""}: ${why}`);
+    out.push(`- ${c.MCPE} ${c.est || ""}: ${amounts}. ${CAUSE_TEXT[c.cause][0].toUpperCase() + CAUSE_TEXT[c.cause].slice(1)}`);
   }
-  const shown = top.reduce((s, c) => s + c.aut - c.man, 0);
-  const rest = all.length - top.length;
-  if (Math.abs(total - shown) >= 1000) out.push(`- ${rest} other campaign${rest === 1 ? "" : "s"} with small differences: ${usd(total - shown)} in total`);
-  if (!top.length) out.push(`Spread over ${all.length} campaigns, each off by less than $100 (rounding, or small edits during Oct 27).`);
-  if (reasons.has("dec")) out.push("Why: the manual MIR's yearly pulls follow broadcast years, so spots dated Dec 29-31, 2025 fall between the 2025 and 2026 pulls. The automated MIR keeps them in Dec 2025.");
-  if (reasons.has("shift")) out.push("Why: the campaign total matches; MediaOcean's report and the automated MIR spread it over the months differently.");
-  if (reasons.has("onlyone") || reasons.has("amount")) out.push("To check: campaigns added or edited in MediaOcean on Oct 27, between the manual pull and the automated build.");
+  for (const k of order) out.push(WHY_TEXT[k]);
   return out.join("\n");
 }
 const linesBy = {};
@@ -235,5 +288,11 @@ await sheets(":batchUpdate", "POST", { requests: fmt });
 const noteReqs = notes.map(n => ({ updateCells: { range: { sheetId: byTitle[TABS[n.tab]], startRowIndex: n.row, endRowIndex: n.row + 1, startColumnIndex: n.col, endColumnIndex: n.col + 1 }, rows: [{ values: [{ note: n.text }] }], fields: "note" } }));
 for (let i = 0; i < noteReqs.length; i += 400) await sheets(":batchUpdate", "POST", { requests: noteReqs.slice(i, i + 400) });
 console.log("notes:", notes.length);
-for (const t of [1, 2, 3]) for (const n of notes.filter(n => n.tab === t).slice(0, 3)) console.log("--- tab " + t + " row " + n.row + " col " + n.col + "\n" + n.text);
+// Year-level summary of causes (every campaign x month).
+for (const y of ["2025", "2026"]) {
+  const tot = {};
+  for (const r of lines.filter(r => r.y === y)) { const c = { MCPE: r.MCPE, mc: r.mc, y: r.y, k: r.k, man: num(r.man), aut: num(r.aut), natDiff: num(r.nat_diff), edge: num(r.edge), edited: isTrue(r.edited), inRaw: isTrue(r.in_raw) }; const k = cause(c, true); (tot[k] ||= { n: 0, net: 0, abs: 0 }); tot[k].n++; tot[k].net += c.aut - c.man; tot[k].abs += Math.abs(c.aut - c.man); }
+  console.log("SUMMARY " + y + " " + JSON.stringify(Object.fromEntries(Object.entries(tot).map(([k, v]) => [k, { cells: v.n, net: Math.round(v.net), abs: Math.round(v.abs) }]))));
+}
+for (const t of [] ) for (const n of notes.filter(n => n.tab === t).slice(0, 3)) console.log("--- tab " + t + " row " + n.row + " col " + n.col + "\n" + n.text);
 console.log(Object.entries(values).map(([t, v]) => `${t}: ${v.length} rows`).join("\n"));
