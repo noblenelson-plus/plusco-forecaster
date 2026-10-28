@@ -225,6 +225,8 @@ lines0 AS (
       WHEN m.VENDOR_CODE_MIR != 'no match' THEN m.VENDOR_CODE_MIR
       WHEN m.VENDOR_CODE IN ('FRACN', 'ENGCN', 'TORHN', 'MTLFN') THEN m.VENDOR_CODE
       -- Three-letter codes keep their padding space, as in the vendor database (CKO F -> CKO -FM, MLB N -> MLB).
+      -- Some TV codes have no band letter (NHLT = NHL TV, not NHL + T): use the vendor database's code when it has one.
+      WHEN vt.VENDOR_CODE_MIR IS NOT NULL THEN TRIM(vt.VENDOR_CODE_MIR)
       WHEN m.MEDIA_CODE = 'T' AND REGEXP_CONTAINS(m.VENDOR_CODE, r'^[A-Z0-9]{3,4} ?T$') THEN REGEXP_REPLACE(m.VENDOR_CODE, r'T$', '-TV')
       WHEN m.MEDIA_CODE = 'R' AND REGEXP_CONTAINS(m.VENDOR_CODE, r'^[A-Z0-9]{3,4} ?F$') THEN REGEXP_REPLACE(m.VENDOR_CODE, r'F$', '-FM')
       WHEN m.MEDIA_CODE = 'R' AND REGEXP_CONTAINS(m.VENDOR_CODE, r'^[A-Z0-9]{3,4} ?A$') THEN REGEXP_REPLACE(m.VENDOR_CODE, r'A$', '-AM')
@@ -251,6 +253,8 @@ lines0 AS (
     COALESCE(pb.paid_net, sb.paid_net, 0) AS paid_total
   FROM mir m
   LEFT JOIN client_short cs ON cs.client_code = m.CLIENT_CODE
+  LEFT JOIN vdb vt ON m.MEDIA_CODE = 'T' AND m.VENDOR_CODE_MIR = 'no match'
+    AND TRIM(vt.VENDOR_CODE_MIR) = CONCAT(RPAD(TRIM(m.VENDOR_CODE), 4, ' '), '-TV')
   LEFT JOIN prisma_estimate pe ON m.MEDIA_CODE NOT IN ('N', 'R', 'T') AND pe.MCPE = m.MCPE
   LEFT JOIN mo_client k ON k.client_code = m.CLIENT_CODE
   LEFT JOIN mo_key ki ON ki.client_code = m.CLIENT_CODE AND ki.product_code = m.PRODUCT_CODE AND k.client_interco = 'INTERCO'

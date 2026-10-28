@@ -77,7 +77,8 @@ BEGIN
     WHERE (present_in_Database_2_0 IS NULL
         OR IFNULL(PLUSCO_MEDIA_PARTNER, '') IN ('', '#N/A'))
       -- Network TV group stations: one known-gap line below.
-      AND NOT (MEDIA_CODE = 'N' AND present_in_Database_2_0 IS NULL AND VENDOR IN ('no match'))
+      -- Network TV not in the vendor database = group / affiliate lines not split by network: the known-gap line.
+      AND NOT (MEDIA_CODE = 'N' AND present_in_Database_2_0 IS NULL)
       AND NOT VENDOR_CODE IN ('FRACN', 'ENGCN', 'TORHN', 'MTLFN', 'VANV')
     GROUP BY 1, 2, 3
   ),
@@ -90,7 +91,6 @@ BEGIN
       "Needs MediaOcean's Spot order file (spot_order) in the extract" AS suggestion
     FROM n
     WHERE MEDIA_CODE = 'N' AND present_in_Database_2_0 IS NULL
-      AND (VENDOR = 'no match' OR VENDOR_CODE IN ('FRACN', 'ENGCN', 'TORHN', 'MTLFN', 'VANV'))
   )
   SELECT c.* EXCEPT (client_code),
     CASE
