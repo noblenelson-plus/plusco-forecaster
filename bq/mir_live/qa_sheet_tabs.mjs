@@ -117,12 +117,12 @@ const CAUSE_TEXT = {
   check: "to check",
 };
 const WHY_TEXT = {
-  edge: "Dec 29-31, 2025 / Dec 28-31, 2026: the manual MIR's yearly Spot pulls follow broadcast years, so spots on those days fall between two pulls. The automated MIR keeps them in December (calendar month).",
-  shift: "Month split: the campaign total is the same; MediaOcean's report and the automated MIR spread it over the months differently.",
-  edited: "Edited on the pull day: the manual MIR was pulled in the morning, the automated MIR reads MediaOcean's data that evening.",
-  missing: "Not in the data feed: the buy is in MediaOcean but not in the daily copy the automated MIR reads (raised with Yves).",
-  rounding: "Small spot differences (under 0.5% of the campaign): cause not confirmed yet, most likely rounding of the client net per spot.",
-  check: "To check: no known reason yet.",
+  edge: "Dec 29-31, 2025 / Dec 28-31, 2026: the manual MIR's yearly Spot pulls follow broadcast years, so spots on those days fall between two pulls. The automated MIR keeps them in December (calendar month). NO ACTION NEEDED: the automated MIR is correct.",
+  shift: "Month split: the campaign total is the same; MediaOcean's report and the automated MIR spread it over the months differently. NO ACTION NEEDED for totals.",
+  edited: "Edited on the pull day: the manual MIR was pulled in the morning, the automated MIR reads MediaOcean's data that evening. FIXES ITSELF: both sides will have these edits at the next comparison.",
+  missing: "Not in the data feed: the buy is in MediaOcean but not in the daily copy the automated MIR reads. WAITING ON YVES (asked MediaOcean about the extract).",
+  rounding: "Small spot differences (under 0.5% of the campaign): cause not confirmed yet, most likely rounding of the client net per spot. NO ACTION NEEDED: too small to matter.",
+  check: "To check: often order-level charges such as sponsorships, which are not on the spot lines. WAITING ON YVES (order file).",
 };
 function explain(rowsForCell, total, isMonth) {
   // One entry per campaign (a full-year cell has one line per month).
@@ -196,9 +196,9 @@ const status = d => (Math.abs(d) < 1000 ? "Match" : Math.abs(d) < 10000 ? "Under
 // --- by channel ---
 {
   const id = byTitle[TABS[0]];
-  const note = (y, k) => k === "(no channel)" ? "Network TV the automated MIR has not split by network yet (mostly BRP US on the USA N group station)"
-    : k === "N/A" ? "Horizon TV Network (BRP US): the manual MIR tags it N/A; part of it is still unsplit in the automated MIR (see no channel)"
-    : (y === "2025" && (k === "TV" || k === "Radio")) ? "Includes spots dated Dec 29-31, 2025, which the manual MIR leaves out" : "";
+  const note = (y, k) => k === "(no channel)" ? "Network TV the automated MIR has not split by network yet (mostly BRP US on the USA N group station). Waiting on Yves (order file)"
+    : k === "N/A" ? "Horizon TV Network (BRP US): the manual MIR tags it N/A; part of it is still unsplit in the automated MIR (see no channel). Waiting on Yves (order file)"
+    : (y === "2025" && (k === "TV" || k === "Radio")) ? "Includes spots dated Dec 29-31, 2025, which the manual MIR leaves out. No action needed" : "";
   const rows = [["Manual MIR (pulled Oct 27) vs automated MIR (same day), by channel"], [LEGEND], [], ["Year", "Channel", "Manual MIR", "Automated MIR", "Variance", "Variance %", "Status", "Why"]];
   let lastY = null;
   for (const r of channel) {
@@ -227,7 +227,7 @@ const status = d => (Math.abs(d) < 1000 ? "Match" : Math.abs(d) < 10000 ? "Under
     if (lastY && r.y !== lastY) rows.push([]);
     lastY = r.y;
     const d = num(r.aut) - num(r.man), dec = num(r.dec_diff);
-    const why = r.y === "2025" && Math.abs(d) >= 1000 && Math.abs(dec) >= 0.5 * Math.abs(d) ? `Mostly spots dated Dec 29-31, 2025 (${dec >= 0 ? "+" : "-"}$${Math.abs(dec).toLocaleString("en-US")})` : "";
+    const why = r.y === "2025" && Math.abs(d) >= 1000 && Math.abs(dec) >= 0.5 * Math.abs(d) ? `Mostly spots dated Dec 29-31, 2025 (${dec >= 0 ? "+" : "-"}${Math.abs(dec).toLocaleString("en-US")}). No action needed` : "";
     rows.push([r.y, r.k, r.ag || "", num(r.man), num(r.aut), d, num(r.man) ? d / Math.abs(num(r.man)) : "", status(d), why]);
     if (Math.abs(d) >= 10000) notes.push({ tab: 1, row: rows.length - 1, col: 5, text: explain([...(linesByYear[r.y + "|" + r.k] || [])], d) });
   }
