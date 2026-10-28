@@ -87,6 +87,13 @@ prisma AS (
   WHERE AP.placement_id NOT IN (
     SELECT programmatic_header_placement_id FROM `mediaocean-data.mo_raw_prisma.placements`
     WHERE programmatic_header_placement_id IS NOT NULL)
+    -- Only estimates already sent to buying (present in the print/Net system). The manual MIR comes from
+    -- Report Writer, which reads that side: Prisma plans never sent ($1.2M on Oct 27, e.g. Toyota
+    -- "PICK POWER") are not in it.
+    AND EXISTS (
+      SELECT 1 FROM `mediaocean-data.mo_raw_print.print_buy` PB
+      WHERE PB.media_code = AP.media_code AND PB.client_code = AP.advertiser_code
+        AND PB.product_code = AP.product_code AND FORMAT('%03d', PB.estimate) = AP.estimate_code)
 ),
 fact_detail AS (
   SELECT MCPE, client_code, month, vendor_code, buy_type, ordered_net, post_aff_net AS billable_net, post_aff_net AS payable_net FROM spot
