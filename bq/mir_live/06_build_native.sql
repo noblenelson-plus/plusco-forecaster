@@ -25,7 +25,7 @@ OPTIONS (description = 'Automated MIR in the PCC_Dashboard_NATIVE layout (bq/mir
 AS
 WITH
 -- MediaOcean strings carry a case-insensitive collation; drop it so regex and output behave like NATIVE.
-mir AS (
+mir0 AS (
   SELECT
     COLLATE(MEDIA_CODE, '') AS MEDIA_CODE, COLLATE(MEDIA_NAME, '') AS MEDIA_NAME,
     COLLATE(CLIENT_CODE, '') AS CLIENT_CODE, COLLATE(CLIENT_NAME, '') AS CLIENT_NAME,
@@ -39,6 +39,76 @@ mir AS (
     COLLATE(BILLING_FORMULA, '') AS BILLING_FORMULA,
     NET_ORDERED
   FROM `{{MIR}}`
+),
+-- Conventional network TV booked on group stations (FRACN, ENGCN, …) is split into its networks with the
+-- order -> network list learned from the manual MIR (08_network_split.sql), or the program -> network list for
+-- newer orders. Each network gets its share of the group line; what stays unknown keeps the group code.
+net_orders AS (
+  SELECT
+    CONCAT('N-', SB.client_code, '-', SBS.product_code, '-', SB.estimate_code) AS MCPE,
+    FORMAT_DATE('%Y-%m', SBS.spot_date) AS month,
+    COLLATE(TRIM(SB.station_code), '') AS station,
+    COLLATE(SB.order_id, '') AS order_id,
+    -- MIN, not ANY_VALUE: this step is evaluated more than once per build and must give the same answer each time.
+    MIN(REGEXP_REPLACE(UPPER(COLLATE(SB.program_name, '')), r'^=\s*', '')) AS program,
+    SUM(SBS.ordered_client_cost) AS net
+  FROM `mediaocean-data.mo_raw_spot.spot_buyline` SB
+  JOIN `mediaocean-data.mo_raw_spot.spot_buylinespot` SBS ON SB.buy_id = SBS.buy_id
+  WHERE SB.media_code = 'N' AND NOT REGEXP_CONTAINS(COLLATE(SB.station_code, ''), r'/')
+    AND NOT EXISTS (SELECT 1 FROM `mediaocean-data.mo_raw_spot.spot_deleted_buyline` D WHERE D.buyline_key = SB.buyline_key)
+  GROUP BY 1, 2, 3, 4
+),
+net_share AS (
+  SELECT MCPE, month, station, network,
+    SAFE_DIVIDE(net, SUM(net) OVER (PARTITION BY MCPE, month, station)) AS share
+  FROM (
+    SELECT o.MCPE, o.month, o.station, COALESCE(t.network, p.network) AS network, SUM(o.net) AS net
+    FROM net_orders o
+    LEFT JOIN `plusco-media-invest-solutions.MIR_Live.order_network` t ON t.order_id = o.order_id
+    LEFT JOIN `plusco-media-invest-solutions.MIR_Live.program_network` p ON p.station = o.station AND p.program = o.program
+    GROUP BY 1, 2, 3, 4
+  )
+),
+split_keys AS (
+  SELECT MCPE, month, station FROM net_share GROUP BY 1, 2, 3
+  HAVING COUNTIF(network IS NOT NULL) > 0 AND COUNTIF(share IS NULL) = 0
+),
+-- Campaign months whose orders have left MediaOcean's extract (no order ids, e.g. Jan–Mar 2025): the group
+-- stations' total is split with the manual MIR's own network shares.
+fallback_keys AS (
+  SELECT g.MCPE, g.month
+  FROM (SELECT DISTINCT MCPE, MONTH AS month FROM mir0 WHERE MEDIA_CODE = 'N' AND VENDOR_CODE_MIR = 'no match') g
+  WHERE EXISTS (SELECT 1 FROM `plusco-media-invest-solutions.MIR_Live.manual_network_share` ms WHERE ms.MCPE = g.MCPE AND ms.month = g.month)
+    AND NOT EXISTS (SELECT 1 FROM net_orders o WHERE o.MCPE = g.MCPE AND o.month = g.month)
+),
+fallback_rows AS (
+  SELECT g.r.* REPLACE (
+    ms.network AS VENDOR_CODE, ms.network AS VENDOR_CODE_MIR, ms.network AS VENDOR_NAME,
+    CAST(g.total * CAST(ms.share AS NUMERIC) AS NUMERIC) AS NET_ORDERED)
+  FROM (
+    SELECT m.MCPE, m.MONTH, ARRAY_AGG(m ORDER BY m.NET_ORDERED DESC, m.VENDOR_CODE LIMIT 1)[OFFSET(0)] AS r, SUM(m.NET_ORDERED) AS total
+    FROM mir0 m JOIN fallback_keys k ON k.MCPE = m.MCPE AND k.month = m.MONTH
+    WHERE m.MEDIA_CODE = 'N' AND m.VENDOR_CODE_MIR = 'no match'
+    GROUP BY 1, 2
+  ) g
+  JOIN `plusco-media-invest-solutions.MIR_Live.manual_network_share` ms ON ms.MCPE = g.MCPE AND ms.month = g.MONTH
+),
+mir AS (
+  SELECT * FROM mir0 m
+  WHERE NOT EXISTS (SELECT 1 FROM split_keys k WHERE m.MEDIA_CODE = 'N' AND k.MCPE = m.MCPE AND k.month = m.MONTH AND k.station = m.VENDOR_CODE)
+    AND NOT (m.MEDIA_CODE = 'N' AND m.VENDOR_CODE_MIR = 'no match'
+      AND EXISTS (SELECT 1 FROM fallback_keys k WHERE k.MCPE = m.MCPE AND k.month = m.MONTH))
+  UNION ALL
+  SELECT * FROM fallback_rows
+  UNION ALL
+  SELECT m.* REPLACE (
+    IFNULL(s.network, m.VENDOR_CODE) AS VENDOR_CODE,
+    IFNULL(s.network, m.VENDOR_CODE_MIR) AS VENDOR_CODE_MIR,
+    IFNULL(s.network, m.VENDOR_NAME) AS VENDOR_NAME,
+    CAST(m.NET_ORDERED * CAST(s.share AS NUMERIC) AS NUMERIC) AS NET_ORDERED)
+  FROM mir0 m
+  JOIN split_keys k ON m.MEDIA_CODE = 'N' AND k.MCPE = m.MCPE AND k.month = m.MONTH AND k.station = m.VENDOR_CODE
+  JOIN net_share s ON s.MCPE = k.MCPE AND s.month = k.month AND s.station = k.station
 ),
 -- PO = the estimate's user field 1 (Prisma estimates live in the print system).
 po AS (

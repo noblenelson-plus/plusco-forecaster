@@ -60,8 +60,8 @@ spot AS (
     ON x.media_code = h.media_code AND x.station_code = h.station_code
   LEFT JOIN `mediaocean-data.L2_Media.master_vendor` mv
     ON mv.media_code = h.media_code AND mv.vendor_code = h.station_code
-  -- Exclude Horizon
-  WHERE SUBSTR(h.client_code, 2, 1) != 'H'
+  -- Exclude Horizon: its client codes are a digit then H (1HA, 1HM, 2HF…). OLG Horse Racing (OHR) is not Horizon.
+  WHERE NOT REGEXP_CONTAINS(COLLATE(h.client_code, ''), r'^[0-9]H')
 ),
 -- Prisma: same logic as MIR_automated_PROC (MIR 1b).
 prisma AS (

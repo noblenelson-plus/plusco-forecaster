@@ -72,6 +72,9 @@ BEGIN
   CALL `plusco-media-invest-solutions.MIR_Live.run_build`(FALSE);
 
   BEGIN
+    -- Network of each network-TV order, learned from the manual MIR (08_network_split.sql).
+    CALL `plusco-media-invest-solutions.MIR_Live.learn_order_networks`(
+      'plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE');
     CALL `plusco-media-invest-solutions.MIR_Live.build_native`(
       'plusco-media-invest-solutions.MIR_Live.MIR',
       'plusco-media-invest-solutions.MIR_Live.MIR_NATIVE',

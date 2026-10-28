@@ -27,7 +27,7 @@ It reuses the logic and dimension tables of `mediaocean-data.L2_Media.MIR_automa
 | `MIR_Live_snapshots.MIR_YYYYMMDD` | Daily snapshot of `MIR`, 90-day expiry — QA a manual MIR against the same day |
 | `MIR_Live.run_log` | One row per step per run (raw window, spot count, rows, total CAD) |
 | `MIR_Live.qa_summary` / `qa_monthly` / `qa_lines` / `qa_dimensions` / `qa_coverage` | Output of the last `qa_compare` call |
-| Procedures `run_daily`, `run_build`, `refresh_spot_history`, `build_mir_table`, `qa_compare`, `build_native`, `refresh_exceptions` | Files `02`–`07` |
+| Procedures `run_daily`, `run_build`, `refresh_spot_history`, `build_mir_table`, `qa_compare`, `build_native`, `refresh_exceptions`, `learn_order_networks` | Files `02`–`08` |
 
 Scheduled query **MIR_Live daily build** (owner Noble, failure e-mails on) runs
 `CALL MIR_Live.run_daily()` every day at 22:00 UTC (18:00 Montreal). Raw Prisma usually lands
@@ -114,8 +114,15 @@ TV is booked in MediaOcean against group "stations" per language (`FRACN` French
 English, plus `TORHN`, `MTLFN`). The manual MIR splits them by network (TVA, SRC, Noovo,
 Télé-Québec, CTV, Global…) from MediaOcean's orders; each order is one network (`spot_buyline.order_id`,
 e.g. the TVA and SRC lines of `N-4CP-TL-004`). `mo_raw_spot.spot_order` (order → `station_code`) is
-in the extract definition but arrives empty (staging and raw both 0 rows), so the split needs that
-file enabled in MediaOcean's Spot extract.
+in the extract definition but arrives empty (staging and raw both 0 rows).
+**Solved in `MIR_NATIVE` without it** (`08_network_split.sql`): order → network is learned from the manual MIR
+(exact amount matches, then program names, then the one network left in a campaign month) and kept in
+`order_network` / `program_network`; `manual_network_share` keeps the manual split per campaign month for months
+whose orders have left MediaOcean's extract (Jan–Mar 2025). Oct 27: ~$117M unsplit → $5.7M. Once the manual pull
+stops, new campaigns are covered only through known program names, so the order file is still worth enabling.
+
+**Horizon** clients (codes a digit then H: `1HA`, `1HM`, `2HF`…) are excluded everywhere. The earlier rule (second
+letter H) also dropped OLG Horse Racing (`OHR`, $255k of radio); fixed 2026-10-28.
 
 **Intercompany clients (~$32M with no PlusCo client id).** Agency interco client codes (`1IB`
 Cossette Toronto interco, `1ID`, `1SA`, `1IA`, …) are mapped to the end client in the manual MIR
