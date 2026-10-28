@@ -95,10 +95,29 @@ prisma AS (
       WHERE PB.media_code = AP.media_code AND PB.client_code = AP.advertiser_code
         AND PB.product_code = AP.product_code AND FORMAT('%03d', PB.estimate) = AP.estimate_code)
 ),
+-- Pre-bills (media B) that Prisma holds without any monthly amounts exist only on the buying side; take them
+-- from print_buy (as Report Writer does). Oct 27: PlayOJO B-2ED-PB-040/041, $233,020, equal to the manual MIR.
+prebill_buyside AS (
+  SELECT
+    CONCAT(PB.media_code, '-', PB.client_code, '-', PB.product_code, '-', FORMAT('%03d', PB.estimate)) AS MCPE,
+    PB.client_code,
+    FORMAT_DATE('%Y-%m', PB.insertion_date) AS month,
+    PB.pub_number AS vendor_code,
+    'Fee' AS buy_type,
+    PB.planned_cost AS ordered_net,
+    PB.planned_cost AS billable_net,
+    PB.planned_cost AS payable_net
+  FROM `mediaocean-data.mo_raw_print.print_buy` PB
+  WHERE PB.media_code = 'B' AND IFNULL(PB.is_deleted, 'N') != 'Y'
+    AND CONCAT(PB.media_code, '-', PB.client_code, '-', PB.product_code, '-', FORMAT('%03d', PB.estimate))
+      NOT IN (SELECT MCPE FROM prisma)
+),
 fact_detail AS (
   SELECT MCPE, client_code, month, vendor_code, buy_type, ordered_net, post_aff_net AS billable_net, post_aff_net AS payable_net FROM spot
   UNION ALL
   SELECT MCPE, client_code, month, vendor_code, buy_type, ordered_net, billable_net, payable_net FROM prisma
+  UNION ALL
+  SELECT MCPE, client_code, month, vendor_code, buy_type, ordered_net, billable_net, payable_net FROM prebill_buyside
 ),
 fact AS (
   SELECT
