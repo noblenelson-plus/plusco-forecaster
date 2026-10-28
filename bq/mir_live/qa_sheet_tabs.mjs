@@ -94,16 +94,17 @@ const isTrue = v => v === true || v === "true";
 const SPOT = new Set(["N", "R", "T"]);
 // Each campaign gets one cause, checked in this order:
 //   edge    spots dated on the days between the yearly broadcast pulls (the manual MIR leaves them out)
+//   edited  campaign edited in MediaOcean on the day of the pull (MediaOcean's daily copy is taken overnight,
+//           so the automated MIR of that day does not have the edit yet)
 //   shift   same yearly total, spread over the months differently
-//   edited  campaign edited in MediaOcean on the day of the pull (after the manual pull, before the nightly build)
 //   missing in the manual MIR but not in MediaOcean's daily copy at all
 //   rounding spot campaign off by less than 0.5 % (per-spot rounding of the client's net)
 //   check   anything else
 function cause(c, isMonth) {
   const d = c.aut - c.man, dn = c.natDiff;
   if (c.edge !== 0 && Math.abs(c.edge) >= 0.5 * Math.abs(dn) && Math.sign(c.edge) === Math.sign(dn)) return "edge";
-  if (isMonth && Math.abs(yearDiff[`${c.y}|${c.k}|${c.MCPE}`] || 0) < 0.05 * Math.abs(d)) return "shift";
   if (c.edited) return "edited";
+  if (isMonth && Math.abs(yearDiff[`${c.y}|${c.k}|${c.MCPE}`] || 0) < 0.05 * Math.abs(d)) return "shift";
   if (c.aut === 0 && !c.inRaw) return "missing";
   if (SPOT.has(c.mc) && c.man !== 0 && Math.abs(d) < 0.005 * Math.abs(c.man)) return "rounding";
   return "check";
@@ -119,7 +120,7 @@ const CAUSE_TEXT = {
 const WHY_TEXT = {
   edge: "Dec 29-31, 2025 / Dec 28-31, 2026: the manual MIR's yearly Spot pulls follow broadcast years, so spots on those days fall between two pulls. The automated MIR keeps them in December (calendar month). NO ACTION NEEDED: the automated MIR is correct.",
   shift: "Month split: the campaign total is the same; MediaOcean's report and the automated MIR spread it over the months differently. NO ACTION NEEDED for totals.",
-  edited: "Edited on the pull day: the manual MIR was pulled in the morning, the automated MIR reads MediaOcean's data that evening. FIXES ITSELF: both sides will have these edits at the next comparison.",
+  edited: "Edited on the pull day: MediaOcean's daily copy is taken overnight, so the automated MIR of Oct 27 does not have edits made that day, while the manual pull may. FIXES ITSELF: both sides will have these edits at the next comparison.",
   missing: "Not in the data feed: the buy is in MediaOcean but not in the daily copy the automated MIR reads. WAITING ON YVES (asked MediaOcean about the extract).",
   rounding: "Small spot differences (under 0.5% of the campaign): cause not confirmed yet, most likely rounding of the client net per spot. NO ACTION NEEDED: too small to matter.",
   check: "To check: often order-level charges such as sponsorships, which are not on the spot lines. WAITING ON YVES (order file).",
