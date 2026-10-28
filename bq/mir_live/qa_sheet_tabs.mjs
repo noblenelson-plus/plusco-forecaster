@@ -126,12 +126,11 @@ for (const s of rules.sheets) if (TABS.some(t => byTitle[t] === s.properties.she
   for (let i = (s.conditionalFormats || []).length - 1; i >= 0; i--) delRules.push({ deleteConditionalFormatRule: { sheetId: s.properties.sheetId, index: i } });
 if (delRules.length) await sheets(":batchUpdate", "POST", { requests: delRules });
 
-const LEGEND = "Variance = Automated minus Manual.   Green: match (under $1)   Light yellow: under $1,000   Orange: under $10,000   Red: $10,000 or more";
+const LEGEND = "Variance = Automated minus Manual.   Green: under $1,000   Orange: under $10,000   Red: $10,000 or more";
 const values = {};
 const fmt = [];
 const bands = (id, ranges) => [
-  ["=AND(ISNUMBER(INDIRECT(\"RC\",FALSE)),ABS(INDIRECT(\"RC\",FALSE))<1)", { red: 0.71, green: 0.88, blue: 0.62 }],
-  ["=AND(ISNUMBER(INDIRECT(\"RC\",FALSE)),ABS(INDIRECT(\"RC\",FALSE))<1000)", { red: 1, green: 0.95, blue: 0.6 }],
+  ["=AND(ISNUMBER(INDIRECT(\"RC\",FALSE)),ABS(INDIRECT(\"RC\",FALSE))<1000)", { red: 0.71, green: 0.88, blue: 0.62 }],
   ["=AND(ISNUMBER(INDIRECT(\"RC\",FALSE)),ABS(INDIRECT(\"RC\",FALSE))<10000)", { red: 0.98, green: 0.74, blue: 0.45 }],
   ["=AND(ISNUMBER(INDIRECT(\"RC\",FALSE)),ABS(INDIRECT(\"RC\",FALSE))>=10000)", { red: 0.95, green: 0.5, blue: 0.47 }],
 ].map(([f, c], i) => ({ addConditionalFormatRule: { index: i, rule: { ranges, booleanRule: { condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: f }] }, format: { backgroundColorStyle: { rgbColor: c } } } } } }));
@@ -139,7 +138,7 @@ const money = (id, r0, r1, c0, c1) => ({ repeatCell: { range: { sheetId: id, sta
 const bold = (id, r0, r1, c0, c1, extra = {}) => ({ repeatCell: { range: { sheetId: id, startRowIndex: r0, endRowIndex: r1, startColumnIndex: c0, endColumnIndex: c1 }, cell: { userEnteredFormat: { textFormat: { bold: true }, ...extra } }, fields: "userEnteredFormat.textFormat.bold" + (extra.backgroundColorStyle ? ",userEnteredFormat.backgroundColorStyle" : "") + (extra.horizontalAlignment ? ",userEnteredFormat.horizontalAlignment" : "") } });
 const grey = { backgroundColorStyle: { rgbColor: { red: 0.93, green: 0.93, blue: 0.93 } } };
 const width = (id, c0, c1, px) => ({ updateDimensionProperties: { range: { sheetId: id, dimension: "COLUMNS", startIndex: c0, endIndex: c1 }, properties: { pixelSize: px }, fields: "pixelSize" } });
-const status = d => (Math.abs(d) < 1 ? "Match" : Math.abs(d) < 1000 ? "Under $1k" : Math.abs(d) < 10000 ? "Under $10k" : "$10k or more");
+const status = d => (Math.abs(d) < 1000 ? "Match" : Math.abs(d) < 10000 ? "Under $10k" : "$10k or more");
 
 // --- by channel ---
 {
