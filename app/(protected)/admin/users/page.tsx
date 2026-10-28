@@ -25,7 +25,7 @@ import { APP_ROLE_LABELS, type AppRole } from "../../../../lib/types/access.type
 import type { Client } from "../../../../lib/types/client.types";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import { isValidEmail, nameFromEmail, normalizeEmail } from "../../../../lib/format/email";
-import { isClientHidden } from "../../../../lib/format/client";
+import { agencyRegionLabel, isClientHidden } from "../../../../lib/format/client";
 import {
   teamMemberships,
   teamSeats,
@@ -57,6 +57,7 @@ import {
   Upload,
   FileSpreadsheet,
   ExternalLink,
+  ChevronDown,
 } from "lucide-react";
 
 const ROLES: AppRole[] = ["USER", "ADMIN"];
@@ -115,6 +116,8 @@ export default function AdminUsersPage() {
   const [view, setView] = useState<View>("people");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("ALL");
+  /** Agency-BU Region label (agencyRegionLabel) or "ALL". */
+  const [agencyRegion, setAgencyRegion] = useState("ALL");
   const [updating, setUpdating] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [openPerson, setOpenPerson] = useState<string | null>(null);
@@ -251,21 +254,43 @@ export default function AdminUsersPage() {
       .sort((a, b) => (a.displayName ?? nameFromEmail(a.email)).localeCompare(b.displayName ?? nameFromEmail(b.email)));
   }, [users, clients]);
 
+  // Agency-BU Region options: the combinations present among the clients.
+  const agencyRegions = useMemo(() => [...new Set(clients.map(agencyRegionLabel))].sort(), [clients]);
+
+  // Client ids in the chosen Agency-BU Region; null = every region.
+  const regionIds = useMemo(
+    () =>
+      agencyRegion === "ALL"
+        ? null
+        : new Set(clients.filter((c) => agencyRegionLabel(c) === agencyRegion).map((c) => c.cl_id)),
+    [clients, agencyRegion]
+  );
+  const inRegion = (p: PersonRow) => !regionIds || [...p.clients.keys()].some((id) => regionIds.has(id));
+
   // The table lists admins and people with ≥1 client; the rest only show up
   // when searched for.
   const allocated = useMemo(() => people.filter((p) => p.primary !== null), [people]);
 
   // One role per person (their top role), so the cards and filters add up.
-  const filterCounts = useMemo(() => {
-    const c = { ALL: allocated.length, ADMIN: 0, GM: 0, BL: 0, DL: 0, COLLABORATOR: 0 } as Record<Filter, number>;
-    for (const p of allocated) if (p.primary) c[p.primary] += 1;
+  // The role filter counts follow the Agency-BU Region; the scorecards don't.
+  const countRoles = (rows: PersonRow[]) => {
+    const c = { ALL: rows.length, ADMIN: 0, GM: 0, BL: 0, DL: 0, COLLABORATOR: 0 } as Record<Filter, number>;
+    for (const p of rows) if (p.primary) c[p.primary] += 1;
     return c;
-  }, [allocated]);
-  const stats = { total: allocated.length, ...filterCounts };
+  };
+  const stats = useMemo(() => ({ total: allocated.length, ...countRoles(allocated) }), [allocated]);
+  const filterCounts = useMemo(
+    () => countRoles(allocated.filter(inRegion)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allocated, regionIds]
+  );
 
+  // With a region chosen, people are listed only for their clients there
+  // (admins with no team client drop out).
   const filteredPeople = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (q ? people : allocated)
+      .filter(inRegion)
       .filter((p) => filter === "ALL" || p.primary === filter)
       .filter(
         (p) =>
@@ -273,19 +298,22 @@ export default function AdminUsersPage() {
           p.email.includes(q) ||
           (p.displayName ?? nameFromEmail(p.email)).toLowerCase().includes(q)
       );
-  }, [people, allocated, filter, search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people, allocated, filter, search, regionIds]);
   const hiddenCount = people.length - allocated.length;
 
   const filteredClients = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return clients.filter(
-      (c) =>
-        !q ||
-        c.CL_Name.toLowerCase().includes(q) ||
-        c.cl_id.toLowerCase().includes(q) ||
-        (c.CL_Team_Emails ?? []).some((e) => e.includes(q))
-    );
-  }, [clients, search]);
+    return clients
+      .filter((c) => !regionIds || regionIds.has(c.cl_id))
+      .filter(
+        (c) =>
+          !q ||
+          c.CL_Name.toLowerCase().includes(q) ||
+          c.cl_id.toLowerCase().includes(q) ||
+          (c.CL_Team_Emails ?? []).some((e) => e.includes(q))
+      );
+  }, [clients, search, regionIds]);
 
   const person = openPerson ? people.find((p) => p.email === openPerson) ?? null : null;
   const client = openClient ? clients.find((c) => c.cl_id === openClient) ?? null : null;
@@ -423,10 +451,28 @@ export default function AdminUsersPage() {
                     }))}
                   />
                 )}
+                <div className="relative">
+                  <select
+                    value={agencyRegion}
+                    onChange={(e) => setAgencyRegion(e.target.value)}
+                    aria-label="Agency-BU Region"
+                    className="appearance-none pl-3 pr-8 py-1.5 text-xs font-medium border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
+                  >
+                    <option value="ALL">All agency-BU regions</option>
+                    {agencyRegions.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                </div>
                 <span className="ml-auto text-sm text-gray-400 hidden sm:block">
                   {view === "people"
                     ? `${filteredPeople.length} ${filteredPeople.length === 1 ? "person" : "people"}${
-                        !search.trim() && hiddenCount ? ` · ${hiddenCount} with no client hidden — search to find them` : ""
+                        !search.trim() && !regionIds && hiddenCount
+                          ? ` · ${hiddenCount} with no client hidden — search to find them`
+                          : ""
                       }`
                     : `${filteredClients.length} client${filteredClients.length !== 1 ? "s" : ""}`}
                 </span>
@@ -440,6 +486,7 @@ export default function AdminUsersPage() {
               ) : view === "people" ? (
                 <PeopleTable
                   rows={filteredPeople}
+                  regionIds={regionIds}
                   selfEmail={profile?.email ?? ""}
                   onOpen={(email) => setOpenPerson(email)}
                 />
@@ -497,10 +544,13 @@ export default function AdminUsersPage() {
 
 function PeopleTable({
   rows,
+  regionIds,
   selfEmail,
   onOpen,
 }: {
   rows: PersonRow[];
+  /** Agency-BU Region filter: the count shows only these clients. */
+  regionIds: ReadonlySet<string> | null;
   selfEmail: string;
   onOpen: (email: string) => void;
 }) {
@@ -524,7 +574,7 @@ function PeopleTable({
         </thead>
         <tbody className="divide-y divide-gray-100">
           {rows.map((p) => {
-            const count = p.clients.size;
+            const count = regionIds ? [...p.clients.keys()].filter((id) => regionIds.has(id)).length : p.clients.size;
             const revoked = !!p.user?.disabled;
             return (
               <tr key={p.email} className={`h-14 ${revoked ? "bg-gray-50" : "hover:bg-gray-50"}`}>
