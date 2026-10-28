@@ -79,6 +79,8 @@ BEGIN
     INSERT INTO `plusco-media-invest-solutions.MIR_Live.run_log` (run_at, step, detail, rows_out, net_ordered_cad)
     SELECT CURRENT_TIMESTAMP(), 'build_native', 'ok', COUNT(*), CAST(SUM(NET_ORDERED_CAD) AS NUMERIC)
     FROM `plusco-media-invest-solutions.MIR_Live.MIR_NATIVE`;
+    -- 6. clients and vendors to confirm, for the morning e-mail (07_exceptions.sql).
+    CALL `plusco-media-invest-solutions.MIR_Live.refresh_exceptions`();
   EXCEPTION WHEN ERROR THEN
     INSERT INTO `plusco-media-invest-solutions.MIR_Live.run_log` (run_at, step, detail)
     VALUES (CURRENT_TIMESTAMP(), 'build_native', CONCAT('FAILED: ', @@error.message));

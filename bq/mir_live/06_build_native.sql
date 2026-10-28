@@ -147,8 +147,20 @@ prisma_estimate AS (
 lines0 AS (
   SELECT
     m.*,
-    -- Spot: the station as the MIR writes it (CHEK-TV); network group stations without one (FRACN, ENGCN) keep their code.
-    IF(m.MEDIA_CODE IN ('N', 'R', 'T'), COALESCE(NULLIF(m.VENDOR_CODE_MIR, 'no match'), m.VENDOR_CODE), LTRIM(m.VENDOR_CODE, '0')) AS vcode,
+    -- Spot: the station as the MIR writes it (CHEK-TV). When MediaOcean's station master has none, build it the
+    -- same way: TV CPTFT -> CPTF-TV, radio CINDF -> CIND-FM / CJOBA -> CJOB-AM, network SPNPN -> SPNP.
+    -- Network group stations (FRACN, ENGCN, TORHN, MTLFN) keep their code.
+    CASE
+      WHEN m.MEDIA_CODE NOT IN ('N', 'R', 'T') THEN LTRIM(m.VENDOR_CODE, '0')
+      WHEN m.VENDOR_CODE_MIR != 'no match' THEN m.VENDOR_CODE_MIR
+      WHEN m.VENDOR_CODE IN ('FRACN', 'ENGCN', 'TORHN', 'MTLFN') THEN m.VENDOR_CODE
+      -- Three-letter codes keep their padding space, as in the vendor database (CKO F -> CKO -FM, MLB N -> MLB).
+      WHEN m.MEDIA_CODE = 'T' AND REGEXP_CONTAINS(m.VENDOR_CODE, r'^[A-Z0-9]{3,4} ?T$') THEN REGEXP_REPLACE(m.VENDOR_CODE, r'T$', '-TV')
+      WHEN m.MEDIA_CODE = 'R' AND REGEXP_CONTAINS(m.VENDOR_CODE, r'^[A-Z0-9]{3,4} ?F$') THEN REGEXP_REPLACE(m.VENDOR_CODE, r'F$', '-FM')
+      WHEN m.MEDIA_CODE = 'R' AND REGEXP_CONTAINS(m.VENDOR_CODE, r'^[A-Z0-9]{3,4} ?A$') THEN REGEXP_REPLACE(m.VENDOR_CODE, r'A$', '-AM')
+      WHEN m.MEDIA_CODE = 'N' AND REGEXP_CONTAINS(m.VENDOR_CODE, r'^[A-Z0-9]{3,4} ?N$') THEN REGEXP_REPLACE(m.VENDOR_CODE, r' ?N$', '')
+      ELSE m.VENDOR_CODE
+    END AS vcode,
     UPPER(IF(m.MEDIA_CODE IN ('N', 'R', 'T'), NULL, m.BUY_TYPE)) AS buytype,
     COALESCE(cs.name, m.CLIENT_NAME) AS client_short,
     REPLACE(CONCAT(m.PRODUCT_CODE, ' ', m.PRODUCT_NAME), '_', ' ') AS product_txt,
