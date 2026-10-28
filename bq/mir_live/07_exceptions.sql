@@ -19,7 +19,7 @@ CREATE OR REPLACE PROCEDURE `plusco-media-invest-solutions.MIR_Live.refresh_exce
 BEGIN
   DECLARE today DATE DEFAULT CURRENT_DATE('America/Montreal');
 
-  CREATE TEMP TABLE cur AS
+  CREATE TEMP TABLE exc_cur AS
   WITH
   n AS (SELECT * FROM `plusco-media-invest-solutions.MIR_Live.MIR_NATIVE`),
   mediabox AS (
@@ -106,10 +106,10 @@ BEGIN
   UNION ALL SELECT * FROM network_gap WHERE lines > 0;
 
   -- Keep only items with dollars (the known gap always shows).
-  DELETE FROM cur WHERE ABS(cad_2025) + ABS(cad_2026) + ABS(cad_2027) < 1 AND code != 'NETWORK GROUPS';
+  DELETE FROM exc_cur WHERE ABS(cad_2025) + ABS(cad_2026) + ABS(cad_2027) < 1 AND code != 'NETWORK GROUPS';
 
   MERGE `plusco-media-invest-solutions.MIR_Live.exceptions_history` h
-  USING cur c ON h.kind = c.kind AND h.issue = c.issue AND h.code = c.code AND h.resolved_on IS NULL
+  USING exc_cur c ON h.kind = c.kind AND h.issue = c.issue AND h.code = c.code AND h.resolved_on IS NULL
   WHEN MATCHED THEN UPDATE SET last_seen = today, name = c.name
   WHEN NOT MATCHED BY TARGET THEN INSERT (kind, issue, code, name, first_seen, last_seen, resolved_on)
     VALUES (c.kind, c.issue, c.code, c.name, today, today, NULL)
@@ -117,7 +117,7 @@ BEGIN
 
   CREATE OR REPLACE TABLE `plusco-media-invest-solutions.MIR_Live.exceptions` AS
   SELECT c.*, h.first_seen, h.first_seen = today AS is_new, today AS as_of
-  FROM cur c
+  FROM exc_cur c
   JOIN `plusco-media-invest-solutions.MIR_Live.exceptions_history` h
     ON h.kind = c.kind AND h.issue = c.issue AND h.code = c.code AND h.resolved_on IS NULL;
 END;
