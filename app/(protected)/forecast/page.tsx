@@ -152,13 +152,20 @@ function ForecastPageContent() {
   // so the client's commissionsConfig is subscribed here in real time — a rate
   // change reflects immediately in the displayed (and synced) commission.
   const [clientConfig, setClientConfig] = useState<CommissionsConfig | null>(null);
+  // Same subscription: whether the client has no GAIA number, so the Revenue
+  // grid can explain why its GAIA actuals are empty (null while loading).
+  const [missingGaiaNumber, setMissingGaiaNumber] = useState<boolean | null>(null);
   useEffect(() => {
     if (!selectedClient) {
       setClientConfig(null);
+      setMissingGaiaNumber(null);
       return;
     }
     const unsubscribe = subscribeToClient(selectedClient.cl_id, (client) => {
       setClientConfig(client?.commissionsConfig ?? {});
+      setMissingGaiaNumber(
+        client ? !(client.CL_GAIA_Number ?? []).some((n) => n.trim()) : null
+      );
     });
     return () => unsubscribe();
   }, [selectedClient?.cl_id]);
@@ -788,6 +795,7 @@ function ForecastPageContent() {
                     commission={commission}
                     noRates={revenueNoRates}
                     hideGaia={selectedRFQ?.type === "RFQ0"}
+                    missingGaiaNumber={missingGaiaNumber === true}
                   />
                 ) : (
                   <ForecastGrid
