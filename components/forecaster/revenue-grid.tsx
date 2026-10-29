@@ -159,6 +159,11 @@ interface RevenueGridProps {
    * new planning year before any GAIA actuals exist.
    */
   hideGaia?: boolean;
+  /**
+   * The client has no GAIA number, so its GAIA actuals can't be matched and
+   * loaded — flagged on the Actuals band so the gap isn't read as zero revenue.
+   */
+  missingGaiaNumber?: boolean;
 }
 
 /**
@@ -177,7 +182,13 @@ interface OrderedRow {
   hasDetails?: boolean;
 }
 
-export default function RevenueGrid({ grid, commission, noRates, hideGaia }: RevenueGridProps) {
+export default function RevenueGrid({
+  grid,
+  commission,
+  noRates,
+  hideGaia,
+  missingGaiaNumber,
+}: RevenueGridProps) {
   const config = REVENUE_AXIS_CONFIG;
   const blReadOnly = grid.locked;
 
@@ -652,6 +663,16 @@ export default function RevenueGrid({ grid, commission, noRates, hideGaia }: Rev
                       Actuals ({config.actualsLabel})
                     </span>
                     {!grid.canEditActuals && <Lock size={10} className="text-gray-400" />}
+                    {/* No GAIA number → GAIA actuals can't be matched to the
+                        client, so empty months here mean "not loaded", not 0. */}
+                    {missingGaiaNumber && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-yellow-400 text-gray-900 text-xs font-medium normal-case">
+                        <AlertTriangle size={12} />
+                        {grid.canEditActuals
+                          ? "No GAIA number on this client, so its GAIA actuals can't be loaded. Add it in Clients → Edit client → GAIA number(s)."
+                          : "No GAIA number on this client, so its GAIA actuals can't be loaded. Send the client's GAIA number to the Forecaster admins."}
+                      </span>
+                    )}
                   </div>
                 </td>
               </tr>
