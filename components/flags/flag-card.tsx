@@ -5,13 +5,15 @@
  * One persisted flag (cat-2 QA check, cat-3 swing or cat-4 under-target) with
  * its justification editor: a required context dropdown + a comment. A flag
  * counts as justified only with BOTH. Shows the compared amounts, the analyzed
- * months (under-target), the media types / partners behind a QA check,
+ * months (under-target), the partners behind a Labs-over-media check,
  * and — when the numbers drifted since it was justified — a "justified at $X,
  * now $Y" note. Editable even on a locked RFQ (the justification is an
  * annotation, not forecast data).
  *
- * Yellow = still to justify (warning); green = justified. No red — an unresolved
- * flag is an attention state, not an error, per the brand rules.
+ * A flag whose rule can't be justified (Labs over media) has no editor: it
+ * says to correct the forecast, with the red "Over 100%" chip of the Labs
+ * share panel (only the chip is red). Yellow = still to justify / correct;
+ * white = justified.
  */
 
 import { useState } from "react";
@@ -20,6 +22,7 @@ import { formatMoney, formatSigned } from "../../lib/format/money";
 import {
   FLAG_CONTEXTS,
   flagDrift,
+  isJustifiableRule,
   type FlagContext,
   type StoredFlag,
 } from "../../lib/types/forecast-flags.types";
@@ -39,10 +42,11 @@ const MONTH_SHORT = [
 export function flagName(flag: StoredFlag): string {
   switch (flag.ruleId) {
     case "labs-over-media":
-      return `Labs over media · ${flag.title}`;
+      return `QA error: Labs over media spend · ${flag.title}`;
     case "mediaocean-over-media":
     case "mediaocean-over-labs":
-      return "Under forecast";
+      // Flags stored before the per-media-type / per-partner split: "annual".
+      return flag.subject === "annual" ? "QA: Under-forecast" : `QA: Under-forecast · ${flag.title}`;
     case "media-under-target":
     case "labs-under-target":
       return `Under target · ${flag.title}`;
@@ -57,7 +61,7 @@ export function flagName(flag: StoredFlag): string {
 export function flagComparison(flag: StoredFlag): string {
   switch (flag.ruleId) {
     case "labs-over-media":
-      return "· Labs vs media forecast";
+      return "· Labs partners vs media forecast";
     case "mediaocean-over-media":
     case "mediaocean-over-labs":
       return "· MediaOcean vs BL forecast";
@@ -93,6 +97,9 @@ export default function FlagCard({
   const [note, setNote] = useState(flag.note ?? "");
   const [saving, setSaving] = useState(false);
 
+  // Labs over media can't be justified — it only goes away once corrected.
+  const correctable = !isJustifiableRule(flag.ruleId);
+  const justified = flag.justified && !correctable;
   const drift = flagDrift(flag);
   const dirty = context !== (flag.context ?? "") || note !== (flag.note ?? "");
   const wouldJustify = !!context && !!note.trim();
@@ -109,14 +116,14 @@ export default function FlagCard({
   return (
     <div
       className={`border border-l-4 ${AXIS_STYLE[flag.axis].stripe} ${
-        flag.justified ? "border-gray-200 bg-white" : "border-yellow-400 bg-yellow-400"
+        justified ? "border-gray-200 bg-white" : "border-yellow-400 bg-yellow-400"
       }`}
     >
       {/* Summary */}
-      <div className={`px-4 py-3 ${flag.justified ? "text-gray-800" : "text-gray-900"}`}>
+      <div className={`px-4 py-3 ${justified ? "text-gray-800" : "text-gray-900"}`}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 font-semibold">
-            {flag.justified ? (
+            {justified ? (
               <Check size={15} className="flex-shrink-0 text-green-600" />
             ) : (
               <AlertTriangle size={15} className="flex-shrink-0 text-gray-800" />
@@ -139,12 +146,27 @@ export default function FlagCard({
           {" vs "}
           <span>{formatMoney(flag.reference)}</span>
           {currency ? <span className="ml-1 text-gray-600">{currency}</span> : null}
-          <span className={`ml-1 ${flag.justified ? "text-gray-400" : "text-gray-600"}`}>
+          <span className={`ml-1 ${justified ? "text-gray-400" : "text-gray-600"}`}>
             {flagComparison(flag)}
           </span>
+          {flag.ruleId === "labs-over-media" && <OverChip current={flag.current} reference={flag.reference} />}
         </p>
-        {flag.breakdown && flag.breakdown.length > 0 && (
-          <div className={`mt-1 border-l pl-3 text-[11px] tabular-nums ${flag.justified ? "border-gray-300 text-gray-500" : "border-gray-700 text-gray-800"}`}>
+        {flag.ruleId === "labs-over-media" && (flag.breakdown?.length ?? 0) > 1 && (
+          <div className="mt-1 border-l border-gray-700 pl-3 text-[11px] tabular-nums text-gray-800">
+            <p className="font-semibold uppercase tracking-wide">Labs partners</p>
+            <ul className="space-y-0.5">
+              {flag.breakdown!.map((b) => (
+                <li key={b.label}>
+                  <span className="font-medium">{b.label}</span>
+                  {" — "}
+                  {formatMoney(b.current)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {flag.ruleId !== "labs-over-media" && flag.breakdown && flag.breakdown.length > 0 && (
+          <div className={`mt-1 border-l pl-3 text-[11px] tabular-nums ${justified ? "border-gray-300 text-gray-500" : "border-gray-700 text-gray-800"}`}>
             <p className="font-semibold uppercase tracking-wide">
               Over forecast by {flag.axis === "labs" ? "partner" : "media type"}
             </p>
@@ -163,11 +185,11 @@ export default function FlagCard({
           </div>
         )}
         {flag.category === "under_target" && (
-          <p className={`mt-1 text-[11px] ${flag.justified ? "text-gray-400" : "text-gray-700"}`}>
+          <p className={`mt-1 text-[11px] ${justified ? "text-gray-400" : "text-gray-700"}`}>
             Months analyzed: {formatMonths(flag.analyzedMonths ?? [])}
           </p>
         )}
-        {drift.changed && (
+        {drift.changed && !correctable && (
           <p className="mt-1 text-[11px] font-medium text-gray-700">
             Justified when it was {formatSigned(drift.fromDelta)} — now{" "}
             {formatSigned(drift.toDelta)}. Review the justification.
@@ -175,7 +197,14 @@ export default function FlagCard({
         )}
       </div>
 
-      {/* Justification editor */}
+      {correctable ? (
+        <div className="border-t border-black/10 bg-white px-4 py-3 text-[12px] text-gray-700">
+          <span className="font-semibold text-gray-900">Can&apos;t be justified.</span> Correct the
+          Labs or Media forecast on the forecast page so the Labs partners don&apos;t exceed the
+          media type&apos;s forecast, then re-validate.
+        </div>
+      ) : (
+      /* Justification editor */
       <div className="border-t border-black/10 bg-white px-4 py-3">
         <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
           Context
@@ -221,6 +250,20 @@ export default function FlagCard({
           </button>
         </div>
       </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * Labs ÷ media coverage of a Labs-over-media flag, in the red "Over 100%" chip
+ * of the Labs share panel. No reference = no media forecast for that type.
+ */
+function OverChip({ current, reference }: { current: number; reference: number }) {
+  return (
+    <span className="ml-2 inline-flex items-center gap-1 bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+      <AlertTriangle size={10} />
+      {reference > 0.5 ? `Over 100% · ${Math.round((current / reference) * 100)}%` : "No media forecast"}
+    </span>
   );
 }

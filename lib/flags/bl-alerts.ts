@@ -4,22 +4,22 @@
  * Cat 2 — "QA BL" alerts. Pure and Firebase-free, per-client. They recompute
  * live from the selected client's working axes as banners on the forecast
  * page, and computeQaCheckFlags turns them into persisted flags at validation
- * time — one per alert row, justified like the big swings (an unjustified one
- * fails the step). Amounts are in the client's own currency (no FX).
+ * time — one per alert row. Amounts are in the client's own currency (no FX).
  *
  * Three alerts, all on FULL-YEAR totals (months offset each other — a month
  * over the forecast is fine when the year as a whole isn't):
- *   1. Labs over media  — a media type's yearly Labs spend exceeds its yearly
- *                         media-spend forecast                  (ε $0.5).
- *   2. MediaOcean over media forecast — yearly media actuals exceed the yearly
- *                         BL forecast                           (≥ $1,000).
- *   3. MediaOcean over labs forecast  — same for Labs           (≥ $1,000).
+ *   1. Labs over media spend — the Labs partners of a media type forecast more
+ *                         for the year than that media type's media forecast
+ *                         (ε $0.5). An ERROR to correct: it can't be justified,
+ *                         so it blocks validation until the forecast is fixed.
+ *   2. Under-forecast (media) — a media type's yearly MediaOcean actuals exceed
+ *                         its yearly BL forecast               (≥ $1,000).
+ *   3. Under-forecast (Labs)  — same per Labs partner          (≥ $1,000).
+ *                         The under-forecast checks are justifiable, like the
+ *                         big swings.
  *
  * Each flagged row also lists the months that are over on their own (same
- * threshold), shown behind "Show months" to help locate what to fix. The two
- * MediaOcean alerts compare whole-axis totals, so their year and month lines
- * also carry `parts`: the media types (Media) or partners (Labs) whose actuals
- * exceed their forecast, largest first — the lines driving the variance.
+ * threshold), shown behind "Show months" to help locate what to fix.
  */
 
 import {
@@ -33,18 +33,13 @@ import {
   type AxisData,
   type AxisId,
 } from "../types/forecaster.types";
-import {
-  actualsMonthlyTotal,
-  blMonthlyTotal,
-  labsBlByMediaType,
-  mediaBlByType,
-} from "./axis-totals";
+import { labsBlByMediaType, mediaBlByType } from "./axis-totals";
 import type { ComputedFlag } from "../types/forecast-flags.types";
 
 /** Float-noise floor for the Labs-over-media alert (effectively threshold $0). */
 export const BL_LABS_EPSILON = 0.5;
 
-/** Dollar threshold for the two MediaOcean-over-forecast alerts. */
+/** Dollar threshold (per media type / partner) for the two under-forecast alerts. */
 export const BL_MEDIAOCEAN_THRESHOLD = 1_000;
 
 export type BlAlertId =
@@ -52,13 +47,10 @@ export type BlAlertId =
   | "mediaocean-over-media"
   | "mediaocean-over-labs";
 
-/** One media type / partner whose actuals exceed its forecast. */
-export interface BlAlertPart {
+/** One Labs partner's yearly forecast inside a Labs-over-media row. */
+export interface BlAlertPartner {
   label: string;
-  left: number;
-  right: number;
-  /** left − right (> 0). */
-  variance: number;
+  amount: number;
 }
 
 /** One month that is over on its own — detail of a flagged yearly row. */
@@ -68,28 +60,34 @@ export interface BlAlertMonth {
   right: number;
   /** left − right (> 0). */
   variance: number;
-  /** MediaOcean alerts only: the subjects over in that month, largest first. */
-  parts?: BlAlertPart[];
 }
 
 export interface BlAlertRow {
   /**
-   * Stable subject of the row: the media type key (Labs over media) or
-   * "annual" (the MediaOcean alerts) — part of the persisted flag key.
+   * Stable subject of the row — the media type key (Labs over media,
+   * under-forecast media) or the partnerId (under-forecast Labs). Part of the
+   * persisted flag key.
    */
   subject: string;
-  /** Media type label — set only for the Labs-over-media alert. */
+  /** Display name of the subject (media type, or "Partner (Media type)"). */
   label?: string;
+  /**
+   * Labs over media only — what the `left` amount is: the partner's name when
+   * one partner drives the row, else "Total {type} Labs partners".
+   */
+  leftName?: string;
   /** Full-year amount that is too high (Labs, or MediaOcean actuals). */
   left: number;
   /** Full-year reference it exceeds (the forecast). */
   right: number;
   /** left − right (always > 0 for a listed row). */
   variance: number;
+  /** Labs over media only — left ÷ right (absent when there is no media forecast). */
+  ratio?: number;
+  /** Labs over media only — the media type's Labs partners, largest first. */
+  partners?: BlAlertPartner[];
   /** Months over on their own, in calendar order (may be empty). */
   months: BlAlertMonth[];
-  /** MediaOcean alerts only: the subjects over for the year, largest first. */
-  parts?: BlAlertPart[];
 }
 
 export interface BlAlert {
@@ -98,6 +96,11 @@ export interface BlAlert {
   title: string;
   /** Which axis the alert concerns — drives the colour code. */
   axis: AxisId;
+  /**
+   * Whether a row can be justified on the Flags page. A non-justifiable alert
+   * is an error the BL must correct; it blocks validation until fixed.
+   */
+  justifiable: boolean;
   /**
    * One-line explanation shown under the title. `explanationLead` names the
    * `left` amount and is shown in bold, like that amount, so the reader can
@@ -117,31 +120,34 @@ type AlertMeta = Omit<BlAlert, "id" | "rows">;
 
 const ALERT_META: Record<BlAlertId, AlertMeta> = {
   "labs-over-media": {
-    title: "Labs over media",
+    title: "QA ERROR: LABS OVER MEDIA SPEND",
     axis: "labs",
-    explanationLead: "A media type's Labs spend",
+    justifiable: false,
+    explanationLead: "Labs partner forecast",
     explanation:
-      " for the year is higher than the forecasted media spend for that type.",
+      " exceeds the corresponding media type forecast. Correct the Labs or Media forecast — this can't be justified.",
     leftLabel: "Labs",
     rightLabel: "media forecast",
     varianceLabel: "over",
   },
   "mediaocean-over-media": {
-    title: "Under forecast",
+    title: "QA: UNDER-FORECAST",
     axis: "media",
-    explanationLead: "Booked MediaOcean media spend",
+    justifiable: true,
+    explanationLead: "Booked MediaOcean spend",
     explanation:
-      " for the year is higher than the BL media forecast — the forecast was set too low.",
+      " for the year is higher than the BL forecast for these media types: correct your forecast and revalidate, or justify on the Flags page.",
     leftLabel: "MediaOcean",
     rightLabel: "BL forecast",
     varianceLabel: "to add to BL",
   },
   "mediaocean-over-labs": {
-    title: "Under forecast",
+    title: "QA: UNDER-FORECAST",
     axis: "labs",
-    explanationLead: "Booked MediaOcean Labs spend",
+    justifiable: true,
+    explanationLead: "Booked MediaOcean spend",
     explanation:
-      " for the year is higher than the BL Labs forecast — the forecast was set too low.",
+      " for the year is higher than the BL forecast for these Labs partners: correct your forecast and revalidate, or justify on the Flags page.",
     leftLabel: "MediaOcean",
     rightLabel: "BL forecast",
     varianceLabel: "to add to BL",
@@ -174,42 +180,23 @@ function overYear(
 }
 
 /**
- * Subjects (rowTypes) whose actuals exceed their BL forecast over `months`,
- * largest variance first. Subjects over by less than the float-noise floor are
- * left out; actuals-only subjects (no forecast line) are included.
+ * Under-forecast rows for one axis: one per subject (rowType — media type or
+ * partnerId) whose yearly MediaOcean actuals exceed its yearly BL forecast by
+ * the threshold, largest variance first. Actuals-only subjects (no forecast
+ * line) are included.
  */
-function overParts(
+function underForecastRows(
   data: AxisData,
-  months: readonly number[],
   label: (rowType: string) => string
-): BlAlertPart[] {
+): BlAlertRow[] {
   const forecast = aggregateByType(data, "BL_INPUT");
   const actuals = aggregateByType(data, "ADMIN_INPUT");
-  const parts: BlAlertPart[] = [];
+  const rows: BlAlertRow[] = [];
   for (const [type, map] of Object.entries(actuals)) {
-    const left = months.reduce((acc, m) => acc + (map[m] ?? 0), 0);
-    const right = months.reduce((acc, m) => acc + (forecast[type]?.[m] ?? 0), 0);
-    if (left > right + BL_LABS_EPSILON)
-      parts.push({ label: label(type), left, right, variance: left - right });
+    const row = overYear(map, forecast[type] ?? {}, BL_MEDIAOCEAN_THRESHOLD, type, label(type));
+    if (row) rows.push(row);
   }
-  return parts.sort((a, b) => b.variance - a.variance);
-}
-
-/**
- * Yearly MediaOcean-over-forecast row for one axis, with its year and each
- * month broken down by subject (null when the year isn't over).
- */
-function mediaOceanOverRow(
-  data: AxisData,
-  label: (rowType: string) => string
-): BlAlertRow | null {
-  const row = overYear(actualsMonthlyTotal(data), blMonthlyTotal(data), BL_MEDIAOCEAN_THRESHOLD, "annual");
-  if (!row) return null;
-  return {
-    ...row,
-    parts: overParts(data, MONTHS, label),
-    months: row.months.map((m) => ({ ...m, parts: overParts(data, [m.month], label) })),
-  };
+  return rows.sort((a, b) => b.variance - a.variance);
 }
 
 export interface BlAlertsInput {
@@ -230,20 +217,39 @@ export function computeBlAlerts(input: BlAlertsInput): BlAlert[] {
   const partnerLabel = input.partnerLabel ?? ((id: string) => id);
   const alerts: BlAlert[] = [];
 
-  // 1 — Labs over media, per media type, on the year.
+  // 1 — Labs over media spend, per media type, on the year.
   if (media && labs) {
     const labsByType = labsBlByMediaType(labs, partnerMediaType);
     const mediaByType = mediaBlByType(media);
+    // Each partner's yearly Labs forecast, grouped by its media type.
+    const partnersByType = new Map<MediaType, BlAlertPartner[]>();
+    for (const [partnerId, map] of Object.entries(aggregateByType(labs, "BL_INPUT"))) {
+      const type = partnerMediaType(partnerId);
+      const amount = yearTotal(map);
+      if (!type || !(amount > BL_LABS_EPSILON)) continue;
+      const list = partnersByType.get(type) ?? [];
+      list.push({ label: partnerLabel(partnerId), amount });
+      partnersByType.set(type, list);
+    }
     const rows: BlAlertRow[] = [];
     for (const type of Object.keys(labsByType) as MediaType[]) {
+      const typeLabel = MEDIA_TYPE_LABELS[type] ?? type;
       const row = overYear(
         labsByType[type]!,
         mediaByType[type] ?? {},
         BL_LABS_EPSILON,
         type,
-        MEDIA_TYPE_LABELS[type]
+        typeLabel
       );
-      if (row) rows.push(row);
+      if (!row) continue;
+      const partners = (partnersByType.get(type) ?? []).sort((a, b) => b.amount - a.amount);
+      rows.push({
+        ...row,
+        leftName:
+          partners.length === 1 ? partners[0].label : `Total ${typeLabel} Labs partners`,
+        ...(row.right > BL_LABS_EPSILON ? { ratio: row.left / row.right } : {}),
+        partners,
+      });
     }
     if (rows.length > 0) {
       rows.sort((a, b) => (a.label ?? "").localeCompare(b.label ?? ""));
@@ -251,34 +257,31 @@ export function computeBlAlerts(input: BlAlertsInput): BlAlert[] {
     }
   }
 
-  // 2 — MediaOcean media actuals over the BL media forecast, on the year.
+  // 2 — Under-forecast: MediaOcean over the BL media forecast, per media type.
   if (media) {
-    const row = mediaOceanOverRow(
-      media,
-      (type) => MEDIA_TYPE_LABELS[type as MediaType] ?? type
-    );
-    if (row) {
-      alerts.push({ id: "mediaocean-over-media", ...ALERT_META["mediaocean-over-media"], rows: [row] });
+    const rows = underForecastRows(media, (type) => MEDIA_TYPE_LABELS[type as MediaType] ?? type);
+    if (rows.length > 0) {
+      alerts.push({ id: "mediaocean-over-media", ...ALERT_META["mediaocean-over-media"], rows });
     }
   }
 
-  // 3 — MediaOcean labs actuals over the BL labs forecast, on the year.
+  // 3 — Under-forecast: MediaOcean over the BL Labs forecast, per partner.
   if (labs) {
     // Partner name + its media type, so each line also names the channel.
-    const row = mediaOceanOverRow(labs, (partnerId) => {
+    const rows = underForecastRows(labs, (partnerId) => {
       const type = partnerMediaType(partnerId);
       const name = partnerLabel(partnerId);
       return type ? `${name} (${MEDIA_TYPE_LABELS[type] ?? type})` : name;
     });
-    if (row) {
-      alerts.push({ id: "mediaocean-over-labs", ...ALERT_META["mediaocean-over-labs"], rows: [row] });
+    if (rows.length > 0) {
+      alerts.push({ id: "mediaocean-over-labs", ...ALERT_META["mediaocean-over-labs"], rows });
     }
   }
 
   return alerts;
 }
 
-/** Total violating rows (one per alert, per media type for Labs) — drives a count badge. */
+/** Total violating rows (one per media type / partner) — drives a count badge. */
 export function blAlertsCount(alerts: BlAlert[]): number {
   return alerts.reduce((acc, a) => acc + a.rows.length, 0);
 }
@@ -292,10 +295,11 @@ export function qaFlagKey(alert: Pick<BlAlert, "id" | "axis">, row: Pick<BlAlert
 
 /**
  * The cat-2 QA checks as flags to persist at validation time: one per alert
- * row (per media type for Labs over media, one per axis for the MediaOcean
- * checks), current = the yearly amount that is too high, reference = what it
- * exceeds, delta = the excess. The MediaOcean checks carry their per-media-type
- * / per-partner breakdown.
+ * row (per media type for Labs over media and media under-forecast, per
+ * partner for Labs under-forecast), current = the yearly amount that is too
+ * high, reference = what it exceeds, delta = the excess. Labs over media
+ * carries its partners as the breakdown (current = the partner's yearly Labs
+ * forecast; reference / delta unused, 0 / current).
  */
 export function computeQaCheckFlags(input: BlAlertsInput): ComputedFlag[] {
   return computeBlAlerts(input).flatMap((alert) =>
@@ -306,19 +310,18 @@ export function computeQaCheckFlags(input: BlAlertsInput): ComputedFlag[] {
         ruleId: alert.id,
         axis: alert.axis,
         subject: row.subject,
-        // Labs over media: the media type; MediaOcean checks: the alert title.
-        title: row.label ?? (alert.id === "labs-over-media" ? row.subject : alert.title),
+        title: row.label ?? row.subject,
         current: row.left,
         reference: row.right,
         delta: row.variance,
         threshold: alert.id === "labs-over-media" ? 0 : BL_MEDIAOCEAN_THRESHOLD,
-        ...(row.parts?.length
+        ...(row.partners?.length
           ? {
-              breakdown: row.parts.map((p) => ({
+              breakdown: row.partners.map((p) => ({
                 label: p.label,
-                current: p.left,
-                reference: p.right,
-                delta: p.variance,
+                current: p.amount,
+                reference: 0,
+                delta: p.amount,
               })),
             }
           : {}),

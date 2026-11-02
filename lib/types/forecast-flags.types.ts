@@ -12,8 +12,10 @@
  * the justification and records a drift snapshot ("justified when it was $X").
  *
  * The cat-2 QA checks (lib/flags/bl-alerts.ts) are both: live banners on the
- * forecast page, and — through computeQaCheckFlags — persisted flags that must
- * be justified like the others.
+ * forecast page, and — through computeQaCheckFlags — persisted flags. The
+ * under-forecast checks are justified like the others; Labs over media can't
+ * be justified (isJustifiableRule): it stays unjustified, and so fails the
+ * step, until the forecast is corrected.
  */
 
 import type { AxisId } from "./forecaster.types";
@@ -36,6 +38,17 @@ export type FlagRuleId =
   // Cat 4 — MediaOcean under the current RFQ forecast over a month window.
   | "media-under-target"
   | "labs-under-target";
+
+/**
+ * Rules that can't be justified — errors the Business Lead must correct. Their
+ * flags never count as justified, so they block validation while they exist.
+ */
+const NON_JUSTIFIABLE_RULES: ReadonlySet<FlagRuleId> = new Set<FlagRuleId>(["labs-over-media"]);
+
+/** Whether a flag of this rule can be justified (false = must be corrected). */
+export function isJustifiableRule(ruleId: FlagRuleId): boolean {
+  return !NON_JUSTIFIABLE_RULES.has(ruleId);
+}
 
 // ─── Justification context ─────────────────────────────────────────────────
 
@@ -86,8 +99,10 @@ export interface ComputedFlag {
   /** under_target only — MediaOcean actuals total over the window at compute time. */
   moTotal?: number;
   /**
-   * qa_check (MediaOcean over forecast) only — the media types / partners whose
-   * actuals exceed their forecast for the year, largest first.
+   * qa_check only. Labs over media: the media type's Labs partners, largest
+   * first (current = the partner's yearly Labs forecast). Flags stored before
+   * under-forecast went per media type / partner (subject "annual") list here
+   * the media types / partners over their forecast.
    */
   breakdown?: FlagBreakdownLine[];
 }
