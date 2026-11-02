@@ -80,7 +80,19 @@ MIRs have a vendor, tags agree on 98 % of dollars (agency, client, GM pod), 91�
 spots dated Dec 29–31, 2025: its yearly Spot pulls follow MediaOcean's broadcast years (2025 ends
 Sun Dec 28, 2026 starts Mon Dec 29) and each keeps only its own calendar months, so those three
 days fall between the two. The automated MIR keeps them in 2025-12. Expect Dec 2025 Spot to be
-higher than the manual MIR by that amount.
+higher than the manual MIR by that amount. Same for Dec 28–31, 2026 (~$0.66M of spots on 2026-11-02):
+the 2027 broadcast year starts Mon Dec 28, 2026, so the manual 2026 MIR drops those days.
+
+**Known difference — BRP USA Network (`1UD-TND-012`, $1.58M of 2026).** The manual MIR shows this network
+buy under vendor `HOR` (Horizon, channel N/A in the Vendor Database), so it is left out of TV; MediaOcean has
+it on USA Network (`USANN`, paid to Bell Media), which the automated MIR tags TV. To confirm with the BRP team.
+
+**Pink strip QA (2026-11-02, `mbf_import` on the Oct 27 manual MIR vs the automated MIR of the same evening).**
+Prisma: 4,464 of 4,651 campaigns within 1 % ($396.9M); the rest are buys entered or edited on pull day and
+pre-bills. Spot: 1,051 of 1,142 within 1 % ($151.5M); the rest were MediaOcean's broken Spot data of Oct 27–29
+and the OLG Horse Racing rule (both match the manual since), plus Dec 28–31. Network TV on market codes no
+order split resolved (TORHN, VANV, HALI…, ~$2.4M) had no channel and fell out of TV: `build_native` now tags an
+unknown Spot station TV (N, T) or Radio (R).
 
 ## `MIR_NATIVE` — the MIR report in NATIVE's layout
 
