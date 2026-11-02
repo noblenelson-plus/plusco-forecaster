@@ -32,11 +32,21 @@ function sendNow() {
 }
 
 function send_(force) {
+  // With the auto-fill (mir_auto_fill.gs, 7 AM), the suggestion says what was written and whether it is a doubt.
   const rows = query_(`
-    SELECT kind, issue, code, name, agency, media, cad_2025, cad_2026, cad_2027, lines,
-           sample_estimate, suggestion, CAST(first_seen AS STRING) AS first_seen, is_new, CAST(as_of AS STRING) AS as_of
-    FROM \`${PROJECT_ID}.MIR_Live.exceptions\`
-    ORDER BY kind, issue, ABS(cad_2025) + ABS(cad_2026) + ABS(cad_2027) DESC`);
+    SELECT e.kind, e.issue, e.code, e.name, e.agency, e.media, e.cad_2025, e.cad_2026, e.cad_2027, e.lines,
+           e.sample_estimate,
+           CASE
+             WHEN f.code IS NULL THEN e.suggestion
+             WHEN f.kind = 'vendor' THEN CONCAT(IF(f.sure, 'Auto-filled: ', 'Auto-filled, to confirm (yellow): '),
+               JSON_VALUE(f.row_json, '$.PLUSCO_MEDIA_CHANNEL'), ' / ', JSON_VALUE(f.row_json, '$.PLUSCO_MEDIA_PARTNER'))
+             ELSE CONCAT(IF(f.sure, 'Auto-filled: ', 'Auto-filled, to confirm (yellow): '),
+               IFNULL(JSON_VALUE(f.row_json, '$.forecaster_client_name'), 'client left blank'))
+           END AS suggestion,
+           CAST(e.first_seen AS STRING) AS first_seen, e.is_new, CAST(e.as_of AS STRING) AS as_of
+    FROM \`${PROJECT_ID}.MIR_Live.exceptions\` e
+    LEFT JOIN \`${PROJECT_ID}.MIR_Live.fill_suggestions\` f ON f.kind = e.kind AND f.code = e.code
+    ORDER BY e.kind, e.issue, ABS(e.cad_2025) + ABS(e.cad_2026) + ABS(e.cad_2027) DESC`);
   const isMonday = new Date().getDay() === 1;
   const fresh = rows.filter(r => r.is_new === 'true' && r.code !== 'NETWORK GROUPS');
   if (!force && !isMonday && fresh.length === 0) return;
