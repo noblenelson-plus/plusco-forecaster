@@ -307,6 +307,11 @@ ruled AS (
       WHEN t.v_partner = 'MIQ' AND t.buytype = 'SOCIAL' THEN 'Social'
       WHEN t.is_prog_sem AND t.is_sem THEN 'SEM'
       WHEN t.is_prog_sem THEN 'Programmatic'
+      -- A Spot station missing from the Vendor Database is still TV or radio: network TV booked on market codes
+      -- (TORHN, VANV, HALI…) that no order split resolved would otherwise drop out of the forecast page's TV
+      -- (~$2.4M of 2026 on the Oct 27 QA). Partner and the other vendor columns stay empty.
+      WHEN t.v_found IS NULL AND t.MEDIA_CODE IN ('N', 'T') THEN 'TV'
+      WHEN t.v_found IS NULL AND t.MEDIA_CODE = 'R' THEN 'Radio'
       ELSE t.v_channel
     END AS channel,
     CASE
