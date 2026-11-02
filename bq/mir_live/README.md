@@ -24,11 +24,12 @@ It reuses the logic and dimension tables of `mediaocean-data.L2_Media.MIR_automa
 | `MIR_Live.MIR_NATIVE` | **The real-time MIR report**: `MIR` in `PCC_Dashboard_NATIVE`'s exact layout (same 72 columns, order, types) with the manual MIR's lookups and rules — see below |
 | `MIR_Live.exceptions` / `exceptions_history` | Clients and vendors `MIR_NATIVE` couldn't tag (not in the MO Client Key / Vendor Database 2.0, no partner…), with $ and a suggestion; history keeps first seen / resolved. Feeds the morning e-mail `apps_script/mir_exceptions_email.gs` (Noble + Adriana: new items daily, full list Mondays) |
 | `MIR_Live.fill_suggestions` | A proposed MO Client Key / Vendor Database 2.0 row for each open exception (`09_auto_fill.sql`: closest existing rows — same name, same paying rep, sister product, MediaBox billing), `sure` or a doubt with a note. `apps_script/mir_auto_fill.gs` writes them into the sheets at 7 AM (doubts highlighted yellow with a "DOUBT" note) and e-mails each owner their yellow rows on Mondays |
+| `MIR_Live.mbf_import(mir, axis, source_label)` | The forecast page's MediaOcean reference rows (Media channels or Labs partners × estimate × month) in Bulk Edit's import layout, from any MIR in NATIVE's layout (`10_mbf_import.sql`). Replaces the manual MIR's MBF pivots and MBF_Import tabs; on the manual Oct 27 MIR it reproduces those tabs to the dollar |
 | `MIR_Live.spot_history` | Spot per MCPE × station × spot date. Seeded from the 2026-10-01 raw snapshot; never truncated |
 | `MIR_Live_snapshots.MIR_YYYYMMDD` | Daily snapshot of `MIR`, 90-day expiry — QA a manual MIR against the same day |
 | `MIR_Live.run_log` | One row per step per run (raw window, spot count, rows, total CAD) |
 | `MIR_Live.qa_summary` / `qa_monthly` / `qa_lines` / `qa_dimensions` / `qa_coverage` | Output of the last `qa_compare` call |
-| Procedures `run_daily`, `run_build`, `refresh_spot_history`, `build_mir_table`, `qa_compare`, `build_native`, `refresh_exceptions`, `learn_order_networks`, `refresh_fill_suggestions` (+ table functions `vendor_fill`, `client_fill`) | Files `02`–`09` |
+| Procedures `run_daily`, `run_build`, `refresh_spot_history`, `build_mir_table`, `qa_compare`, `build_native`, `refresh_exceptions`, `learn_order_networks`, `refresh_fill_suggestions` (+ table functions `vendor_fill`, `client_fill`, `mbf_import`) | Files `02`–`10` |
 
 Scheduled query **MIR_Live daily build** (owner Noble, failure e-mails on) runs
 `CALL MIR_Live.run_daily()` every day at 22:00 UTC (18:00 Montreal). Raw Prisma usually lands
