@@ -172,7 +172,7 @@ export default function FlagsPage() {
             <Section
               icon={AlertTriangle}
               title="QA checks"
-              subtitle="Full-year data-consistency issues: Labs above the media forecast, or MediaOcean above the BL forecast. Resolve each by fixing the figures on the forecast page and re-validating, or by justifying it with a context and comment."
+              subtitle="Full-year data-consistency issues. Under-forecast (MediaOcean above the BL forecast for a media type or Labs partner): correct the forecast and re-validate, or justify it with a context and comment. Labs over media spend is an error: it can't be justified — correct the Labs or Media forecast and re-validate."
               count={qaChecks.length}
             >
               {!loadingAxes && pendingQa > 0 && (

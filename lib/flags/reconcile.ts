@@ -7,6 +7,8 @@
  *   • key already stored → keep the justification (context + note + drift
  *                          snapshot) but refresh the numbers;
  *   • stored key missing from the computed set → drop it (no longer applies).
+ * A flag whose rule can't be justified (isJustifiableRule) is always stored
+ * unjustified, dropping any justification it carried.
  *
  * Pure and Firebase-free. The output carries NO `undefined` values (Firestore
  * rejects them), so it can be written as-is.
@@ -14,6 +16,7 @@
 
 import {
   isFlagJustified,
+  isJustifiableRule,
   type ComputedFlag,
   type StoredFlag,
   type StoredFlagMap,
@@ -61,7 +64,7 @@ export function reconcileFlags(
 
   for (const c of computed) {
     const prev = existing[c.key];
-    if (prev) {
+    if (prev && isJustifiableRule(c.ruleId)) {
       // Keep the justification, refresh the numbers. `justified` follows the
       // preserved context + note (unchanged here), so it stays as it was.
       const justified = isFlagJustified(prev);
@@ -78,6 +81,10 @@ export function reconcileFlags(
         createdAt: prev.createdAt,
         updatedAt: now,
       };
+      updated += 1;
+    } else if (prev) {
+      // Must be corrected — keep its age, never a justification.
+      next[c.key] = { ...base(c), justified: false, createdAt: prev.createdAt, updatedAt: now };
       updated += 1;
     } else {
       next[c.key] = { ...base(c), justified: false, createdAt: now, updatedAt: now };
@@ -103,7 +110,7 @@ export function justifyStoredFlag(
   now: string,
   userUid?: string
 ): StoredFlag {
-  const justified = isFlagJustified({ context, note });
+  const justified = isJustifiableRule(flag.ruleId) && isFlagJustified({ context, note });
   const next: StoredFlag = {
     ...flag,
     updatedAt: now,

@@ -53,6 +53,7 @@ import {
   type StoredFlag,
   type StoredFlagMap,
   flagContextLabel,
+  isJustifiableRule,
 } from "../types/forecast-flags.types";
 import { computeBlAlerts, qaFlagKey, type BlAlert } from "../flags/bl-alerts";
 import { fetchAxisData, fetchDataEntry } from "./data-entry-service";
@@ -515,9 +516,9 @@ const ALL_FLAGS_HEADER = [
 
 /** Human labels for the persisted-flag rules (the "Type" column). */
 const FLAG_RULE_LABELS: Record<FlagRuleId, string> = {
-  "labs-over-media": "Labs over media",
-  "mediaocean-over-media": "MediaOcean over media forecast",
-  "mediaocean-over-labs": "MediaOcean over labs forecast",
+  "labs-over-media": "QA error: Labs over media spend",
+  "mediaocean-over-media": "QA: Under-forecast (media)",
+  "mediaocean-over-labs": "QA: Under-forecast (Labs)",
   "revenue-swing": "Revenue swing",
   "media-swing": "Media swing",
   "labs-swing": "Labs swing",
@@ -560,14 +561,17 @@ function storedFlagRow(base: (string | number)[], flag: StoredFlag): ReportRow {
     FLAG_CATEGORY_LABELS[flag.category] ?? flag.category,
     FLAG_RULE_LABELS[flag.ruleId] ?? flag.ruleId,
     flag.axis,
-    // A MediaOcean QA check names the media types / partners over forecast.
-    qa && flag.breakdown?.length ? flag.breakdown.map((b) => b.label).join(", ") : flag.title,
+    // An under-forecast flag stored before the per-media-type / per-partner
+    // split ("annual") names the media types / partners over forecast.
+    qa && flag.subject === "annual" && flag.breakdown?.length
+      ? flag.breakdown.map((b) => b.label).join(", ")
+      : flag.title,
     qa ? "Full year" : "", // Month — swing is annual, under-target spans a window
     flag.current,
     flag.reference,
     flag.delta,
     flag.threshold,
-    flag.justified ? "Yes" : "No",
+    !isJustifiableRule(flag.ruleId) ? "No — must be corrected" : flag.justified ? "Yes" : "No",
     flag.context ? flagContextLabel(flag.context) : "",
     flag.note ?? "",
     (flag.analyzedMonths ?? []).map((m) => MONTH_LABELS[m - 1]).join(", "),
@@ -586,20 +590,18 @@ function blAlertRows(base: (string | number)[], alerts: BlAlert[], stored: Store
       rows.push([
         ...base,
         "QA check",
-        alert.title,
+        FLAG_RULE_LABELS[alert.id],
         alert.axis,
-        // The Labs-over-media alert names a media type per row; the MediaOcean
-        // ones name the media types / partners over their forecast for the year.
-        r.label ??
-          (r.parts && r.parts.length > 0
-            ? r.parts.map((p) => p.label).join(", ")
-            : alert.title),
+        // Each row is one media type (Labs over media, media under-forecast)
+        // or one partner (Labs under-forecast).
+        r.label ?? r.subject,
         "Full year",
         r.left, // Current — the yearly amount that is too high
         r.right, // Reference — the yearly forecast it exceeds
         r.variance, // Delta — left − right
         "", // Threshold — n/a
-        "No", // Justified — appears at the next validation, to justify there
+        // Justified — appears at the next validation, to justify (or correct) there.
+        alert.justifiable ? "No" : "No — must be corrected",
         "", // Context
         "", // Note
         r.months.map((m) => MONTH_LABELS[m.month - 1]).join(", "), // Months over on their own
