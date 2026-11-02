@@ -76,6 +76,18 @@ export interface RawTablePageProps {
   onlyListedColumns?: boolean;
   /** Fields rendered right-aligned / $-formatted. */
   moneyFields: Set<string>;
+  /**
+   * Header shown (preview + export) instead of the snapshot column name, e.g.
+   * { BUDGET_CAD: "monthly_tactic_media_budget_CAD" }. Filters still use the
+   * snapshot names.
+   */
+  columnLabels?: Record<string, string>;
+  /**
+   * Rows to leave out entirely — preview, export, row count and the filter
+   * dropdowns — per field, by value (compared as trimmed text), e.g.
+   * { year: ["2025"] }.
+   */
+  excludeValues?: Record<string, string[]>;
   /** File-name stem for exports. */
   exportTitle: string;
 }
@@ -87,6 +99,10 @@ function money(v: unknown): string {
 }
 function text(v: unknown): string {
   return v === null || v === undefined ? "" : String(v);
+}
+/** A cell as trimmed text — how filters and exclusions compare values. */
+function textValue(v: unknown): string {
+  return text(v).trim();
 }
 
 /**
@@ -120,10 +136,11 @@ async function buildRawMatrix(
   table: ColumnarTable,
   rowIndices: number[],
   fields: string[],
+  headers: string[],
   onProgress: (pct: number) => void
 ): Promise<CellValue[][]> {
   const cols = fields.map((f) => ({ dict: table.dicts[f], idx: table.idx[f] }));
-  const matrix: CellValue[][] = [fields];
+  const matrix: CellValue[][] = [headers];
   for (let start = 0; start < rowIndices.length; start += BUILD_BATCH_ROWS) {
     const end = Math.min(start + BUILD_BATCH_ROWS, rowIndices.length);
     for (let i = start; i < end; i++) {
@@ -151,6 +168,8 @@ export default function RawTablePage({
   onlyListedColumns = false,
   moneyFields,
   exportTitle,
+  columnLabels,
+  excludeValues,
 }: RawTablePageProps) {
   // `clientIds`: while MediaBox allocations apply, the person's clients — the
   // other agencies' files then come filtered to them (report-file route).
@@ -202,17 +221,57 @@ export default function RawTablePage({
   // Person columns (Business Lead) may hold emails: show names instead.
   const usersMap = useUsersMap();
 
-  // Dropdown values per filter field, from the loaded rows only.
+  // Rows left out entirely (`excludeValues`), as a per-row flag — null when
+  // nothing is excluded.
+  const excludedRows = useMemo(() => {
+    if (!table || !excludeValues) return null;
+    const active = Object.entries(excludeValues).filter(([, vals]) => vals.length > 0);
+    if (active.length === 0) return null;
+    const out = new Uint8Array(table.rowCount);
+    for (const [column, values] of active) {
+      const dict = table.dicts[column];
+      if (!dict) continue;
+      const wanted = new Set(values);
+      const hit = dict.map((v) => wanted.has(textValue(v)));
+      const idx = table.idx[column];
+      for (let r = 0; r < table.rowCount; r++) if (hit[idx[r]]) out[r] = 1;
+    }
+    return out;
+  }, [table, excludeValues]);
+
+  // Dropdown values per filter field, from the loaded rows only (minus the
+  // excluded ones).
   const options = useMemo(() => {
     const out: Record<string, string[]> = {};
-    if (table) for (const f of filters) out[f.field] = distinctValues(table, f.field);
+    if (!table) return out;
+    for (const f of filters) {
+      if (!excludedRows) {
+        out[f.field] = distinctValues(table, f.field);
+        continue;
+      }
+      const dict = table.dicts[f.field];
+      const idx = table.idx[f.field];
+      if (!dict || !idx) {
+        out[f.field] = [];
+        continue;
+      }
+      const used = new Uint8Array(dict.length);
+      for (let r = 0; r < table.rowCount; r++) if (!excludedRows[r]) used[idx[r]] = 1;
+      const set = new Set<string>();
+      dict.forEach((v, k) => {
+        const s = textValue(v);
+        if (used[k] && s !== "") set.add(s);
+      });
+      out[f.field] = [...set].sort((a, b) => a.localeCompare(b));
+    }
     return out;
-  }, [table, filters]);
+  }, [table, filters, excludedRows]);
 
-  const matched = useMemo(
-    () => (table ? filterRowIndices(table, selected) : []),
-    [table, selected]
-  );
+  const matched = useMemo(() => {
+    if (!table) return [];
+    const all = filterRowIndices(table, selected);
+    return excludedRows ? all.filter((r) => !excludedRows[r]) : all;
+  }, [table, selected, excludedRows]);
 
   const rows = useMemo<RawRow[]>(
     () => (table ? matched.slice(0, PREVIEW_LIMIT).map((r) => rowAt(table, r)) : []),
@@ -258,7 +317,8 @@ export default function RawTablePage({
       // it delays the popup and risks the popup blocker).
       if (!isConnected()) await connect();
       setExportStage("Preparing…");
-      const matrix = await buildRawMatrix(table, matched, exportFields, (pct) =>
+      const headers = exportFields.map((f) => columnLabels?.[f] ?? f);
+      const matrix = await buildRawMatrix(table, matched, exportFields, headers, (pct) =>
         setExportStage(`Preparing ${pct}%…`)
       );
       const url = await exportToNewSheet({
@@ -395,7 +455,7 @@ export default function RawTablePage({
                       (moneyFields.has(f) ? "text-right" : "text-left")
                     }
                   >
-                    {f}
+                    {columnLabels?.[f] ?? f}
                   </th>
                 ))}
               </tr>

@@ -36,7 +36,7 @@ export const FORECASTER_TABS: {
   { id: "forecaster", label: "Forecaster", icon: LayoutDashboard },
   { id: "labs-pacing", label: "Labs Pacing", icon: Activity },
   { id: "exec-kpis", label: "Exec KPI Dashboard", icon: Gauge },
-  { id: "mediaocean", label: "Media Investments Report (Mediaocean)", icon: Waves },
+  { id: "mediaocean", label: "Media Investments Report", icon: Waves },
   { id: "mediabox", label: "MediaBox Adoption", icon: Box },
   { id: "reports", label: "Reports (Raw Data Download)", icon: FileText },
 ];

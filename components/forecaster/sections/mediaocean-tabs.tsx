@@ -2,7 +2,7 @@
 "use client";
 
 /**
- * Media Investments Report (Mediaocean) — sub-tab container. Two sub-pages:
+ * Media Investments Report — sub-tab container. Two sub-pages:
  *   KPIs Media and Labs · Media Investments
  *
  * "KPIs Media and Labs" is the same Investment Strategy KPIs page shown under
