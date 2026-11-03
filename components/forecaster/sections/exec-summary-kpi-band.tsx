@@ -28,6 +28,8 @@ export interface ExecMetric {
   sub?: ReactNode;
   /** Right-of-bar caption, e.g. "Goal $2.6M". */
   goalLabel?: string;
+  /** Words after the % under the bar (default "of target"), e.g. "of annual goal". */
+  targetLabel?: string;
   /** Optional YoY pill; `favorable` colors it green (true) or red (false). */
   yoy?: { label: string; favorable: boolean } | null;
   /** Optional per-part split listed under the value (e.g. Labs spend by partner). */
@@ -85,7 +87,7 @@ function KpiTile({ metric }: { metric: ExecMetric }) {
           <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
             <span className="font-semibold text-foreground">
               {metric.pctOfTarget != null && Number.isFinite(metric.pctOfTarget)
-                ? `${(metric.pctOfTarget * 100).toFixed(0)}% of target`
+                ? `${(metric.pctOfTarget * 100).toFixed(0)}% ${metric.targetLabel ?? "of target"}`
                 : "—"}
             </span>
             {metric.goalLabel && <span>{metric.goalLabel}</span>}

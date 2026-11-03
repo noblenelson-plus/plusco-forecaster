@@ -350,6 +350,7 @@ export default function ExecKpisByClientTable({
   bands,
   sourceLabel = "Booked to date (MIR)",
   scenarioById,
+  annualTargets = false,
 }: {
   rows: KpiByClientRow[];
   labsShareGoal?: number | null;
@@ -358,14 +359,19 @@ export default function ExecKpisByClientTable({
   sourceLabel?: string;
   /** client id → MIQ Scenario text from the Forecaster eligibility toggles. */
   scenarioById?: ReadonlyMap<string, string>;
+  /** A month period is shown: label the (annual) Meta Target as such. */
+  annualTargets?: boolean;
 }) {
   const goals: Goals = useMemo(
     () => ({ labsShareGoal, billupsShareGoal, bands }),
     [labsShareGoal, billupsShareGoal, bands]
   );
   const columns = useMemo(
-    () => buildColumns((r) => textOf(scenarioById?.get(r.PLUSCO_CLIENT_ID))),
-    [scenarioById]
+    () =>
+      buildColumns((r) => textOf(scenarioById?.get(r.PLUSCO_CLIENT_ID))).map((c) =>
+        annualTargets && c.id === "meta_target" ? { ...c, label: "Meta Target (annual)" } : c
+      ),
+    [scenarioById, annualTargets]
   );
   const [group, setGroup] = useState<GroupTab>("All");
   const visibleColumns = useMemo(

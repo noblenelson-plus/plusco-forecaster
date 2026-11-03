@@ -51,6 +51,9 @@ export default function ExecKpisTabs({
   currencyByClient,
   usdToCad,
   hidden = NO_HIDDEN,
+  sub: controlledSub,
+  onSubChange,
+  summaryMonths,
 }: {
   forecastData: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -63,8 +66,21 @@ export default function ExecKpisTabs({
   usdToCad?: number;
   /** Sub-tab page ids an admin hid (Admin → Dashboard Access). */
   hidden?: ReadonlySet<string>;
+  /**
+   * The selected sub-tab, when the page owns it (the top bar shows the Months
+   * filter on Media & Labs KPIs only). Uncontrolled when omitted.
+   */
+  sub?: ExecSubTab;
+  onSubChange?: (sub: ExecSubTab) => void;
+  /** Media & Labs KPIs: the top-bar Months filter (1–12; empty = full year). */
+  summaryMonths?: readonly number[];
 }) {
-  const [sub, setSub] = useState<ExecSubTab>("summary");
+  const [ownSub, setOwnSub] = useState<ExecSubTab>("summary");
+  const sub = controlledSub ?? ownSub;
+  const setSub = (s: ExecSubTab) => {
+    setOwnSub(s);
+    onSubChange?.(s);
+  };
   const subtabs = visibleSubtabs("exec-kpis", EXEC_KPIS_SUBTABS, hidden);
   // If an admin hid the chosen sub-tab, show the first visible one instead.
   const active = subtabs.some((t) => t.id === sub) ? sub : (subtabs[0]?.id ?? sub);
@@ -83,6 +99,7 @@ export default function ExecKpisTabs({
           scopedClientIds={scopedClientIds}
           year={year}
           rfqLabel={rfqLabel}
+          months={summaryMonths}
         />
       )}
 

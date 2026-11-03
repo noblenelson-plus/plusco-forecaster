@@ -1,4 +1,13 @@
 -- filepath: bq/KPI_BY_CLIENT_2025_vs_2026.sql
+-- CHANGE (monthly breakdown, 2026-11-03): adds monthly_kpis — a JSON string,
+--   one entry per year × month (2025 + 2026) with the client's spend columns
+--   computed with EXACTLY the annual rules above them (same CASEs, minus the
+--   year test; Billups OOH / Print are NOT eligibility-gated here — the app
+--   gates them like the annual columns), the month's Labs spend by configured
+--   partner (lp), and — 2026 only — the month's Labs target / booked per
+--   partner from labs_pacing_wide (lt / lb). Summed over all months each field
+--   equals its annual column. Additive: no existing column changes. The app's
+--   Exec KPI → Media & Labs KPIs Months filter reads it.
 -- CHANGE (Labs = configured partners only, 2026-10-02): labs_2026 / labs_2025 now
 --   count LABS / LABS - BRP rows ONLY for partners configured in the Forecaster's
 --   Labs partner list (pluscoops.forecaster_1.labs_partners, year 2026; partner
@@ -171,6 +180,139 @@ labs_by_partner AS (
       AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
     GROUP BY 1, 2
   )
+  GROUP BY 1
+),
+-- ── Monthly breakdown (monthly_kpis) ────────────────────────────────────────
+monthly_spend AS (
+  -- Same rules as client_spend, per year × month (no year test in the CASEs).
+  SELECT
+    PLUSCO_CLIENT_ID,
+    SAFE_CAST(PLUSCO_YEAR AS INT64)                         AS y,
+    SAFE_CAST(SPLIT(MONTH, '-')[SAFE_OFFSET(1)] AS INT64)   AS m,
+    SUM(NET_ORDERED_CAD)                                    AS total,
+    SUM(CASE
+      WHEN UPPER(PLUSCO_DEALS_Type) IN ('LABS', 'LABS - BRP')
+        AND UPPER(PLUSCO_MEDIA_PARTNER) != 'MAGNITE'
+        AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
+      THEN NET_ORDERED_CAD ELSE 0 END)                      AS labs,
+    SUM(CASE
+      WHEN UPPER(PLUSCO_MEDIA_CHANNEL) IN ('DIGITAL DIRECT', 'PROGRAMMATIC', 'SEM')
+        OR UPPER(PLUSCO_MEDIA_CHANNEL) = 'SOCIAL'
+        OR (UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ' AND UPPER(BUYTYPE) = 'SOCIAL')
+      THEN NET_ORDERED_CAD ELSE 0 END)                      AS digital,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'DIGITAL DIRECT' THEN NET_ORDERED_CAD ELSE 0 END) AS dd,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'DIGITAL DIRECT' AND COALESCE(PLUSCO_2026_DEALS, '#N/A') != '#N/A' THEN NET_ORDERED_CAD ELSE 0 END) AS dd_deal,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'DIGITAL DIRECT' AND COALESCE(PLUSCO_2026_DEALS, '#N/A')  = '#N/A' THEN NET_ORDERED_CAD ELSE 0 END) AS dd_nondeal,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC' THEN NET_ORDERED_CAD ELSE 0 END) AS prog,
+    SUM(CASE
+      WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC'
+        AND (
+          UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM', 'AIM-PROG', 'STACKADAPT')
+          OR (UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ' AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
+        )
+      THEN NET_ORDERED_CAD ELSE 0 END)                      AS prog_labs,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC' AND COALESCE(PLUSCO_2026_DEALS, '#N/A') != '#N/A' THEN NET_ORDERED_CAD ELSE 0 END) AS prog_deal,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC' AND COALESCE(PLUSCO_2026_DEALS, '#N/A')  = '#N/A' THEN NET_ORDERED_CAD ELSE 0 END) AS prog_nondeal,
+    SUM(CASE
+      WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'SOCIAL' OR (UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ' AND UPPER(BUYTYPE) = 'SOCIAL')
+      THEN NET_ORDERED_CAD ELSE 0 END)                      AS social,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'META' AND UPPER(PLUSCO_MEDIA_CHANNEL) = 'SOCIAL' THEN NET_ORDERED_CAD ELSE 0 END) AS meta,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ' AND UPPER(BUYTYPE) = 'SOCIAL' THEN NET_ORDERED_CAD ELSE 0 END) AS miq_social,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'OOH' THEN NET_ORDERED_CAD ELSE 0 END) AS ooh,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'OOH' AND UPPER(PLUSCO_MEDIA_PARTNER) = 'BILLUPS' THEN NET_ORDERED_CAD ELSE 0 END) AS billups_ooh,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PRINT' THEN NET_ORDERED_CAD ELSE 0 END) AS print,
+    SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PRINT' AND UPPER(PLUSCO_MEDIA_PARTNER) = 'BILLUPS' THEN NET_ORDERED_CAD ELSE 0 END) AS billups_print
+  FROM `plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE`
+  WHERE UPPER(PLUSCO_MEDIA_CHANNEL) != 'N/A'
+    AND PLUSCO_YEAR IN ('2025', '2026')
+  GROUP BY 1, 2, 3
+),
+monthly_labs_by_partner AS (
+  -- Same filters as labs_by_partner, per year × month.
+  SELECT
+    PLUSCO_CLIENT_ID, y, m,
+    ARRAY_AGG(STRUCT(partner AS p, ROUND(amount, 2) AS v) ORDER BY amount DESC) AS lp
+  FROM (
+    SELECT
+      PLUSCO_CLIENT_ID,
+      SAFE_CAST(PLUSCO_YEAR AS INT64)                       AS y,
+      SAFE_CAST(SPLIT(MONTH, '-')[SAFE_OFFSET(1)] AS INT64) AS m,
+      UPPER(PLUSCO_MEDIA_PARTNER)                           AS partner,
+      SUM(NET_ORDERED_CAD)                                  AS amount
+    FROM `plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE`
+    WHERE PLUSCO_YEAR IN ('2025', '2026')
+      AND UPPER(PLUSCO_MEDIA_CHANNEL) != 'N/A'
+      AND UPPER(PLUSCO_DEALS_Type) IN ('LABS', 'LABS - BRP')
+      AND UPPER(PLUSCO_MEDIA_PARTNER) != 'MAGNITE'
+      AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
+    GROUP BY 1, 2, 3, 4
+  )
+  GROUP BY 1, 2, 3
+),
+monthly_labs_pacing AS (
+  -- Same sums as labs_partner_annual, per month (labs_pacing_wide is 2026).
+  SELECT
+    client_id,
+    2026 AS y,
+    month_num AS m,
+    STRUCT(
+      SUM(COALESCE(forecast_billups_ooh,0) + COALESCE(forecast_billups_print,0)) AS billups,
+      SUM(COALESCE(forecast_miq_prog,0)    + COALESCE(forecast_miq_social,0))    AS miq,
+      SUM(COALESCE(forecast_amazon,0))     AS amazon,
+      SUM(COALESCE(forecast_yahoo,0))      AS yahoo,
+      SUM(COALESCE(forecast_quantcast,0))  AS quantcast,
+      SUM(COALESCE(forecast_reddit,0))     AS reddit,
+      SUM(COALESCE(forecast_aim,0))        AS aim,
+      SUM(COALESCE(forecast_stackadapt,0)) AS stackadapt
+    ) AS lt,
+    STRUCT(
+      SUM(COALESCE(booked_billups_ooh,0) + COALESCE(booked_billups_print,0)) AS billups,
+      SUM(COALESCE(booked_miq_prog,0)    + COALESCE(booked_miq_social,0))    AS miq,
+      SUM(COALESCE(booked_amazon,0))     AS amazon,
+      SUM(COALESCE(booked_yahoo,0))      AS yahoo,
+      SUM(COALESCE(booked_quantcast,0))  AS quantcast,
+      SUM(COALESCE(booked_reddit,0))     AS reddit,
+      SUM(COALESCE(booked_aim,0))        AS aim,
+      SUM(COALESCE(booked_stackadapt,0)) AS stackadapt
+    ) AS lb
+  FROM `plusco-media-invest-solutions.PCC_Media_Investment.labs_pacing_wide`
+  WHERE month_num IS NOT NULL
+  GROUP BY 1, 2, 3
+),
+monthly_kpis AS (
+  SELECT
+    COALESCE(s.PLUSCO_CLIENT_ID, p.client_id) AS client_id,
+    TO_JSON_STRING(ARRAY_AGG(STRUCT(
+      COALESCE(s.y, p.y) AS y,
+      COALESCE(s.m, p.m) AS m,
+      ROUND(COALESCE(s.total, 0), 2)         AS total,
+      ROUND(COALESCE(s.labs, 0), 2)          AS labs,
+      ROUND(COALESCE(s.digital, 0), 2)       AS digital,
+      ROUND(COALESCE(s.dd, 0), 2)            AS dd,
+      ROUND(COALESCE(s.dd_deal, 0), 2)       AS dd_deal,
+      ROUND(COALESCE(s.dd_nondeal, 0), 2)    AS dd_nondeal,
+      ROUND(COALESCE(s.prog, 0), 2)          AS prog,
+      ROUND(COALESCE(s.prog_labs, 0), 2)     AS prog_labs,
+      ROUND(COALESCE(s.prog_deal, 0), 2)     AS prog_deal,
+      ROUND(COALESCE(s.prog_nondeal, 0), 2)  AS prog_nondeal,
+      ROUND(COALESCE(s.social, 0), 2)        AS social,
+      ROUND(COALESCE(s.meta, 0), 2)          AS meta,
+      ROUND(COALESCE(s.miq_social, 0), 2)    AS miq_social,
+      ROUND(COALESCE(s.ooh, 0), 2)           AS ooh,
+      ROUND(COALESCE(s.billups_ooh, 0), 2)   AS billups_ooh,
+      ROUND(COALESCE(s.print, 0), 2)         AS print,
+      ROUND(COALESCE(s.billups_print, 0), 2) AS billups_print,
+      lbp.lp AS lp,
+      p.lt   AS lt,
+      p.lb   AS lb
+    ) ORDER BY COALESCE(s.y, p.y), COALESCE(s.m, p.m))) AS monthly_kpis
+  FROM monthly_spend s
+  FULL OUTER JOIN monthly_labs_pacing p
+    ON s.PLUSCO_CLIENT_ID = p.client_id AND s.y = p.y AND s.m = p.m
+  LEFT JOIN monthly_labs_by_partner lbp
+    ON lbp.PLUSCO_CLIENT_ID = COALESCE(s.PLUSCO_CLIENT_ID, p.client_id)
+    AND lbp.y = COALESCE(s.y, p.y) AND lbp.m = COALESCE(s.m, p.m)
+  WHERE COALESCE(s.m, p.m) BETWEEN 1 AND 12
   GROUP BY 1
 ),
 billups_eligibility AS (
@@ -520,7 +662,8 @@ SELECT
     ELSE NULL
   END                                                      AS billups_print_share_of_print_2026,
   COALESCE(be.eligible_billups_ooh, 'Yes')                AS eligible_billups_ooh,
-  COALESCE(be.eligible_billups_print, 'Yes')              AS eligible_billups_print
+  COALESCE(be.eligible_billups_print, 'Yes')              AS eligible_billups_print,
+  mk.monthly_kpis                                          AS monthly_kpis
 FROM client_spend c
 FULL OUTER JOIN forecast_metrics f ON c.PLUSCO_CLIENT_ID = f.FO_Client
 LEFT JOIN miq_social_forecast m ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = m.FO_Client
@@ -530,4 +673,5 @@ LEFT JOIN target_v2_annual tv2 ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = tv
 LEFT JOIN target_annual ta ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = ta.client_id
 LEFT JOIN labs_partner_annual lp ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = lp.client_id
 LEFT JOIN labs_by_partner lbp ON c.PLUSCO_CLIENT_ID = lbp.PLUSCO_CLIENT_ID
+LEFT JOIN monthly_kpis mk ON COALESCE(c.PLUSCO_CLIENT_ID, f.FO_Client) = mk.client_id
 ORDER BY AGENCY, CLIENT_NAME;

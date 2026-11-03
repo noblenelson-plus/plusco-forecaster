@@ -332,6 +332,7 @@ export default function ExecKpisByGmTable({
   bands,
   sourceLabel = "Booked to date (MIR)",
   mirAsOf,
+  annualTargets = false,
 }: {
   rows: KpiByClientRow[];
   labsShareGoal?: number | null;
@@ -340,6 +341,8 @@ export default function ExecKpisByGmTable({
   sourceLabel?: string;
   /** MIR "as of" date shown in the Labs-by-partner note (e.g. "Sep 28, 2026"). */
   mirAsOf?: string;
+  /** A month period is shown: label the (annual) Meta Target as such. */
+  annualTargets?: boolean;
 }) {
     const { metricRows, gms, exportColumns, groupOrder, allMetrics, totalAgg, gmAgg } = useMemo(() => {
     // Group rows by GM.
@@ -414,7 +417,7 @@ export default function ExecKpisByGmTable({
       // ── Meta ──────────────────────────────────────────────────────────────
       {
         group: "Meta",
-        label: "Meta Target",
+        label: annualTargets ? "Meta Target (annual)" : "Meta Target",
         kind: "money",
         value: (a) => a.metaTarget,
       },
@@ -584,7 +587,7 @@ export default function ExecKpisByGmTable({
       ...baseMetrics.slice(afterLabs),
     ];
     return { metricRows, gms, exportColumns, groupOrder, allMetrics, totalAgg, gmAgg };
-  }, [rows, labsShareGoal, billupsShareGoal, bands]);
+  }, [rows, labsShareGoal, billupsShareGoal, bands, annualTargets]);
 
     // Persisted show/hide selection for metric rows.
   const [hidden, setHidden] = useState<Set<string>>(new Set());
