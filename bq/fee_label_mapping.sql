@@ -13,5 +13,10 @@ SELECT * FROM UNNEST([
   ('Government taxes',               'Taxes', '123Dentist'),
   ('Taxes Ontario',                  'Taxes', ''),
   ('Taxe UL',                        'Taxes', 'Université Laval only - to confirm'),
-  ('Taxe TSN',                       'Taxes', 'CPA only - to confirm')
+  ('Taxe TSN',                       'Taxes', 'CPA only - to confirm'),
+  -- Listed explicitly to record Adriana's decision (2026-11-02): agency fees are an
+  -- other fee (counted in Planned Net), not commission. Same result as unlisted.
+  ('Honoraires',                     'Other fees', 'Agency fees = other fee, not commission (Adriana 2026-11-02)'),
+  ('Honorary fees',                  'Other fees', 'Agency fees = other fee, not commission (Adriana 2026-11-02); RONA'),
+  ('Agency fees',                    'Other fees', 'Agency fees = other fee, not commission (Adriana 2026-11-02)')
 ]);
