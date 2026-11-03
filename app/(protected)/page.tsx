@@ -51,11 +51,14 @@ import MediaOceanTabs, {
 import LabsPacingPage from "../../components/forecaster/sections/labs-pacing-page";
 import SubTabBar from "../../components/forecaster/sub-tab-bar";
 import {
+  EXEC_KPIS_SUBTABS,
   FORECASTER_SUBTABS,
   isTabVisible,
   visibleSubtabs,
+  type ExecSubTab,
   type ForecasterSubTab,
 } from "../../components/forecaster/dashboard-pages.config";
+import { defaultMirMonths } from "../../lib/dashboard/data/kpi-months";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
@@ -431,7 +434,25 @@ function DashboardContent() {
   // only (one shared selection), so the shared forecast data ignores it
   // elsewhere (no hidden filter on Exec KPI etc.).
   const showsMonths = topTab === "forecaster" || topTab === "mediabox";
-  const dataMonths = showsMonths ? selMonths : ALL_MONTHS;
+
+  // Exec KPI → Media & Labs KPIs has its own Months filter in the top bar
+  // (MIR rows + the forecast data follow it). Default: January through two
+  // months back, like Labs Pacing; back to that default when the Year changes.
+  const [execSub, setExecSub] = useState<ExecSubTab>("summary");
+  const execSubtabs = visibleSubtabs("exec-kpis", EXEC_KPIS_SUBTABS, hiddenPages);
+  const execActiveSub = execSubtabs.some((t) => t.id === execSub)
+    ? execSub
+    : (execSubtabs[0]?.id ?? execSub);
+  const showsExecMonths = topTab === "exec-kpis" && execActiveSub === "summary";
+  const [execMonthsPick, setExecMonthsPick] = useState<{ year: number | null; months: number[] } | null>(null);
+  const execMonths = useMemo(
+    () =>
+      execMonthsPick && execMonthsPick.year === selectedYear
+        ? execMonthsPick.months
+        : defaultMirMonths(selectedYear),
+    [execMonthsPick, selectedYear]
+  );
+  const dataMonths = showsMonths ? selMonths : showsExecMonths ? execMonths : ALL_MONTHS;
   const [mirPeriod, setMirPeriod] = useState<MonthPeriod>(() =>
     calendarYearPeriod(new Date().getFullYear())
   );
@@ -604,6 +625,21 @@ function DashboardContent() {
                       onChange={(vals) => setSelMonths(vals.map(Number))}
                     />
                   )}
+                  {/* Exec KPI → Media & Labs KPIs: its own Months filter
+                      (default January through two months back). */}
+                  {showsExecMonths && (
+                    <MultiSelectDropdown
+                      label="Months"
+                      options={MONTH_OPTIONS}
+                      selectedValues={execMonths.map(String)}
+                      onChange={(vals) =>
+                        setExecMonthsPick({
+                          year: selectedYear,
+                          months: vals.map(Number).sort((a, b) => a - b),
+                        })
+                      }
+                    />
+                  )}
                   <CurrencyToggle
                     viewCurrency={viewCurrency}
                     onChange={setViewCurrency}
@@ -751,6 +787,9 @@ function DashboardContent() {
             currencyByClient={currencyByClient}
             usdToCad={usdToCad}
             hidden={hiddenPages}
+            sub={execActiveSub}
+            onSubChange={setExecSub}
+            summaryMonths={execMonths}
           />
         ) : error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">

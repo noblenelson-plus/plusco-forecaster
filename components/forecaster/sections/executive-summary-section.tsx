@@ -53,8 +53,13 @@ import MetaShareTrendStrip from "./meta-share-trend-strip";
 import BillupsEligibilityCard from "./billups-eligibility-card";
 import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
+import { isFullYear } from "../../../lib/dashboard/data/kpi-months";
+import { describeMonthPeriod } from "../../../lib/format/period";
 
 const ELIGIBILITY_YEAR = 2026;
+
+/** "The whole year" — a stable empty months list. */
+const NO_MONTHS: readonly number[] = [];
 
 // --- Section ------------------------------------------------------------------
 
@@ -66,6 +71,7 @@ export default function ExecutiveSummarySection({
   scopedClientIds,
   year,
   rfqLabel,
+  months = NO_MONTHS,
 }: {
   forecastData: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -75,9 +81,17 @@ export default function ExecutiveSummarySection({
   year: number;
   /** The selected RFQ round (e.g. "RFQ3") the Forecaster view reads. */
   rfqLabel?: string;
+  /**
+   * The months (1–12) the page reports — the top-bar Months filter. The MIR
+   * rows are rebuilt over them; the forecast data arrives already limited to
+   * them. Empty or all 12 = the full year.
+   */
+  months?: readonly number[];
 }) {
   // Booked (MIR) scorecards + the scoped mo_kpi_by_client rows (shared hook).
-  const booked = useBookedExecKpis(scopedClientIds, year);
+  const booked = useBookedExecKpis(scopedClientIds, year, { months });
+  const fcPartial = !isFullYear(months);
+  const period = describeMonthPeriod(months, year);
   const { scopedKpiRows, inv, metaTrend, goals, labsShareGoal, mirSourceLabel, mirAsOf } = booked;
 
   const [partners, setPartners] = useState<LabsPartner[]>([]);
@@ -179,8 +193,11 @@ export default function ExecutiveSummarySection({
             label: "Total Labs Forecast",
             value: money(fcLabsTotal),
             pctOfTarget: ratioTo(fcLabsTotal, goals.labsSpend),
+            targetLabel: fcPartial ? "of annual goal" : undefined,
             goalLabel:
-              goals.labsSpend != null ? `Goal ${moneyCompact(goals.labsSpend)}` : undefined,
+              goals.labsSpend != null
+                ? `${fcPartial ? "Annual goal" : "Goal"} ${moneyCompact(goals.labsSpend)}`
+                : undefined,
             sub:
               fcLabsDelta != null
                 ? `${fcLabsDelta >= 0 ? "+" : ""}${moneyCompact(fcLabsDelta)} vs comparison`
@@ -223,6 +240,8 @@ export default function ExecutiveSummarySection({
               inv.meta.miqSocialSpend2026,
               inv.meta.miqSocialForecast2026
             ),
+            // Booked follows the months; the RFQ3 forecast is the year's.
+            targetLabel: booked.monthsApplied ? "of annual forecast" : undefined,
             goalLabel: `Booked (MIR) ${moneyCompact(inv.meta.miqSocialSpend2026)}`,
             // From the monthly BigQuery sync, which is fixed to RFQ3 — it
             // doesn't follow the selected RFQ, so say which round it is.
@@ -240,19 +259,24 @@ export default function ExecutiveSummarySection({
     fcLabsDelta,
     goals,
     labsShareGoal,
+    fcPartial,
+    booked.monthsApplied,
   ]);
   const pillars = source === "mir" ? booked.pillars : forecasterPillars;
 
   // -- Period / "as of" label (source-aware) ----------------------------------
+  // The MIR figures cover the chosen months once the monthly breakdown is
+  // synced; until then they stay full-year (and say so).
+  const mirPeriod = booked.monthsUnavailable ? `Full year ${year}` : period;
   const periodLabel =
     source === "mir"
-      ? `${year} · ${mirSourceLabel}`
-      : `${year} · ${rfqLabel ?? "No RFQ selected"} submission · Forecaster (live)`;
+      ? `${mirPeriod} · ${mirSourceLabel}`
+      : `${period} · ${rfqLabel ?? "No RFQ selected"} submission · Forecaster (live)`;
   // The snapshots and tables below the band are always MIR.
   const mirOnlyLabel =
     source === "forecaster"
-      ? `${mirSourceLabel} · not affected by the source toggle`
-      : mirSourceLabel;
+      ? `${mirPeriod} · ${mirSourceLabel} · not affected by the source toggle`
+      : `${mirPeriod} · ${mirSourceLabel}`;
 
   // -- Loading / error --------------------------------------------------------
   const busy = booked.loading || forecastData.loading;
@@ -319,9 +343,16 @@ export default function ExecutiveSummarySection({
       <ExecSummaryKpiBand pillars={pillars} />
 
       <p className="text-[11px] font-medium text-muted-foreground">
-        Everything below: {mirSourceLabel}. The source toggle only switches the
+        Everything below: {mirPeriod} · {mirSourceLabel}. The source toggle only switches the
         scorecards above.
+        {booked.monthsApplied && " Dollar targets (Meta Target) are annual."}
       </p>
+      {booked.monthsUnavailable && (
+        <p className="bg-yellow-400 px-3 py-2 text-xs font-medium text-gray-900">
+          The MIR figures are full-year: the monthly breakdown hasn&apos;t been synced yet, so the
+          Months filter doesn&apos;t apply to them.
+        </p>
+      )}
 
       {/* Client-status snapshots, below the scorecards: Billups eligibility
           (under the Billups pillar's story) beside the Meta Share Trend. */}
@@ -344,6 +375,7 @@ export default function ExecutiveSummarySection({
         billupsShareGoal={goals.billupsShare}
         sourceLabel={mirOnlyLabel}
         mirAsOf={mirAsOf}
+        annualTargets={booked.monthsApplied}
       />
 
       {/* By client */}
@@ -353,6 +385,7 @@ export default function ExecutiveSummarySection({
         labsShareGoal={labsShareGoal}
         billupsShareGoal={goals.billupsShare}
         sourceLabel={mirOnlyLabel}
+        annualTargets={booked.monthsApplied}
       />
     </div>
   );

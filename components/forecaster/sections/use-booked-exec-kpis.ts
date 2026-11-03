@@ -52,6 +52,14 @@ import type { LabsPartner } from "../../../lib/types/labs.types";
 import { useReadableClients } from "../../../lib/hooks/use-readable-clients";
 import { isEligibleForPartner } from "../../../lib/format/client";
 import { useLastSync } from "../../../lib/dashboard/data/use-last-sync";
+import {
+  hasMonthlyKpis,
+  isFullYear,
+  kpiRowsForMonths,
+} from "../../../lib/dashboard/data/kpi-months";
+
+/** "The whole year" — a stable empty months list. */
+const NO_MONTHS: readonly number[] = [];
 
 // --- Formatting -------------------------------------------------------------
 
@@ -92,9 +100,18 @@ export function useBookedExecKpis(
     dollarTargets?: boolean;
     /** MediaBox Planner rows: compute the spend side from MediaBox instead of MIR. */
     planner?: { rows: PlannerRow[]; loading: boolean; error: string | null; syncedLabel?: string | null };
+    /**
+     * MIR only: the months (1–12) to report — spend, shares and the Labs
+     * target / booked over those months of the year (and the same months of
+     * the previous year for YoY). Empty or all 12 = the full year. Dollar goals
+     * stay annual and are labelled so.
+     */
+    months?: readonly number[];
   } = {}
 ) {
-  const { dollarTargets = true, planner } = options;
+  const { dollarTargets = true, planner, months = NO_MONTHS } = options;
+  // A partial period: only then are the MIR rows rebuilt from monthly_kpis.
+  const partial = !planner && !isFullYear(months);
   const sourceSubtitle = planner ? "Planned (MediaBox)" : "Booked to date (MIR)";
   const scopeSet = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
   const lastSync = useLastSync();
@@ -131,13 +148,25 @@ export function useBookedExecKpis(
             kpi.rows,
             labsFamilies(getLabsPartnersForYear(labsPartners, year).map((p) => p.name))
           )
-        : kpi.rows,
-    [plannerRows, kpi.rows, labsPartners, year]
+        : partial
+          ? kpiRowsForMonths(kpi.rows, months)
+          : kpi.rows,
+    [plannerRows, kpi.rows, labsPartners, year, partial, months]
   );
   const scopedKpiRows: KpiByClientRow[] = useMemo(
     () => kpiRows.filter((r) => scopeSet.has(r.PLUSCO_CLIENT_ID)),
     [kpiRows, scopeSet]
   );
+  // A partial period needs the monthly breakdown; until the KPI table has been
+  // re-synced with it, the rows (and so the page) stay full-year.
+  const monthsApplied = useMemo(
+    () => partial && scopedKpiRows.some(hasMonthlyKpis),
+    [partial, scopedKpiRows]
+  );
+  // Dollar goals are annual: over a partial period, say so.
+  const ofTarget = monthsApplied ? "of annual goal" : undefined;
+  const goalWord = monthsApplied ? "Annual goal" : "Goal";
+  const targetWord = monthsApplied ? "Annual target" : "Target";
   const inv = useMemo(() => computeInvestmentKpis(scopedKpiRows), [scopedKpiRows]);
   const bookedLabsSpend = useMemo(
     () => scopedKpiRows.reduce((acc, r) => acc + num(r.labs_spend_2026), 0),
@@ -240,15 +269,17 @@ export function useBookedExecKpis(
   );
 
   // -- Billups booked (MIR), same path as the Billups section -----------------
-  // (MediaBox: from the MediaBox KPI rows, which carry the same columns.)
+  // (MediaBox, or a MIR month period: from the KPI rows, which carry the same
+  // columns over the chosen months.)
   const mir = useBillupsMirRows();
+  const fromKpiRows = fromPlanner || monthsApplied;
   const mirRows = useMemo(
     () =>
-      (fromPlanner
+      (fromKpiRows
         ? scopedKpiRows.map((r) => billupsRowFromKpi(r.PLUSCO_CLIENT_ID, r))
         : mir.rows
       ).filter((r) => scopeSet.has(r.clientId)),
-    [fromPlanner, scopedKpiRows, mir.rows, scopeSet]
+    [fromKpiRows, scopedKpiRows, mir.rows, scopeSet]
   );
   const billupsBooked = useMemo(() => computeBillupsKpis(mirRows), [mirRows]);
 
@@ -274,9 +305,10 @@ export function useBookedExecKpis(
             ...(dollarTargets
               ? {
                   pctOfTarget: ratioTo(bookedLabsSpend, goals.labsSpend),
+                  targetLabel: ofTarget,
                   goalLabel:
                     goals.labsSpend != null
-                      ? `Goal ${moneyCompact(goals.labsSpend)}`
+                      ? `${goalWord} ${moneyCompact(goals.labsSpend)}`
                       : undefined,
                 }
               : {}),
@@ -325,10 +357,11 @@ export function useBookedExecKpis(
             label: "Meta Spend 2026",
             value: money(inv.meta.metaSpend2026),
             pctOfTarget: ratioTo(inv.meta.metaSpend2026, inv.meta.targetMetaSpend2026),
+            targetLabel: ofTarget,
             status: ragStatus(inv.meta.metaSpend2026, inv.meta.targetMetaSpend2026, {
               lowerIsBetter: true,
             }),
-            goalLabel: `Target ${moneyCompact(inv.meta.targetMetaSpend2026)}`,
+            goalLabel: `${targetWord} ${moneyCompact(inv.meta.targetMetaSpend2026)}`,
           },
           {
             icon: PieChart,
@@ -356,9 +389,10 @@ export function useBookedExecKpis(
             ...(dollarTargets
               ? {
                   pctOfTarget: ratioTo(inv.meta.miqSocialSpend2026, miqSocialTarget),
+                  targetLabel: ofTarget,
                   goalLabel:
                     miqSocialTarget != null
-                      ? `Target ${moneyCompact(miqSocialTarget)}`
+                      ? `${targetWord} ${moneyCompact(miqSocialTarget)}`
                       : undefined,
                 }
               : {}),
@@ -422,6 +456,9 @@ export function useBookedExecKpis(
       digital,
       miqSocialTarget,
       sourceSubtitle,
+      ofTarget,
+      goalWord,
+      targetWord,
     ]
   );
 
@@ -443,6 +480,10 @@ export function useBookedExecKpis(
     mirSourceLabel,
     /** The MIR "as of" date alone (e.g. "Sep 28, 2026"). */
     mirAsOf,
+    /** True when a partial month period is applied (rows rebuilt from monthly_kpis). */
+    monthsApplied,
+    /** A partial period was asked for but the rows have no monthly breakdown yet. */
+    monthsUnavailable: partial && !monthsApplied && scopedKpiRows.length > 0,
     loading: kpi.loading || (planner ? planner.loading : mir.loading),
     error: kpi.error || (planner ? planner.error : mir.error),
   };
