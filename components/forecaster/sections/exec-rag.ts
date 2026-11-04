@@ -11,9 +11,11 @@
  *   >= amber  -> close, watch           (amber)
  *   <  amber  -> off goal               (red)
  *
- * Defaults are 100% / 90%, but every function takes an optional `bands` override
- * so the thresholds can be retuned in one place (or per metric) without touching
- * any component. Metrics where a LOWER number is better (e.g. Meta share vs a
+ * Defaults are 90% / 75% (DEFAULT_BANDS), but every function takes an optional
+ * `bands` override so the thresholds can be retuned in one place (or per page)
+ * without touching any component. Exec KPI → Media & Labs KPIs uses
+ * `execKpiBands`: Labs Pacing's thresholds for a month period, green-only for
+ * the full year. Metrics where a LOWER number is better (e.g. Meta share vs a
  * divestment target) pass `lowerIsBetter` and the ratio is inverted so the same
  * bands still read "green = doing well".
  */
@@ -25,12 +27,42 @@ export interface RagBands {
   green: number;
   /** Ratio at or above which the metric is amber; below it is red. */
   amber: number;
+  /**
+   * Green-only: below `green` is "neutral" (no colour) instead of amber / red.
+   * Used for the full-year view, where an unfinished year isn't a miss.
+   */
+  greenOnly?: boolean;
 }
 
-/** Plusco default bands: 100% green, 90-99% amber, <90% red. */
 // Lenient by design: near-target reads green, not red. green >=90% of goal,
-// amber >=75%, red below. (Loosened per Adriana 2026-09.)
+// amber >=75%, red below. (Loosened per Adriana 2026-09.) Still used by the
+// Media Investments KPI pages; Media & Labs KPIs uses execKpiBands below.
 export const DEFAULT_BANDS: RagBands = { green: 0.9, amber: 0.75 };
+
+/**
+ * Labs Pacing's thresholds (`pacingHeat` in labs-pacing-data.ts): green at or
+ * above 100% of goal, yellow 80–99%, red below 80%.
+ */
+export const PACING_BANDS: RagBands = { green: 1, amber: 0.8 };
+
+/** Full-year view: green once the goal is hit, no colour otherwise. */
+export const FULL_YEAR_BANDS: RagBands = { green: 1, amber: 1, greenOnly: true };
+
+/**
+ * Exec KPI → Media & Labs KPIs (Adriana, 2026-11): a month period (YTD) is
+ * coloured like Labs Pacing; the full year only shows green once the goal is hit.
+ */
+export function execKpiBands(fullYear: boolean): RagBands {
+  return fullYear ? FULL_YEAR_BANDS : PACING_BANDS;
+}
+
+/** Status of a ratio (1 == 100% of goal) against `bands`. */
+function bandFor(ratio: number, bands: RagBands): RagStatus {
+  if (ratio >= bands.green) return "green";
+  if (bands.greenOnly) return "neutral";
+  if (ratio >= bands.amber) return "amber";
+  return "red";
+}
 
 export interface RagOptions {
   /** Invert for "lower is better" metrics (compares target/actual instead). */
@@ -52,9 +84,7 @@ export function ragStatus(
   const bands = opts.bands ?? DEFAULT_BANDS;
   const ratio = opts.lowerIsBetter ? target / actual : actual / target;
   if (!Number.isFinite(ratio)) return ratio > 0 ? "green" : "neutral";
-  if (ratio >= bands.green) return "green";
-  if (ratio >= bands.amber) return "amber";
-  return "red";
+  return bandFor(ratio, bands);
 }
 
 /**
@@ -66,10 +96,7 @@ export function ragFromPctOfTarget(
   opts: Omit<RagOptions, "lowerIsBetter"> = {}
 ): RagStatus {
   if (pctOfTarget == null || !Number.isFinite(pctOfTarget)) return "neutral";
-  const bands = opts.bands ?? DEFAULT_BANDS;
-  if (pctOfTarget >= bands.green) return "green";
-  if (pctOfTarget >= bands.amber) return "amber";
-  return "red";
+  return bandFor(pctOfTarget, opts.bands ?? DEFAULT_BANDS);
 }
 
 /** Progress-bar width (0%..100%, clamped) from a % of target. */
