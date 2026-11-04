@@ -22,7 +22,7 @@ import ChartCard from "../../dashboard/charts/chart-card";
 import ExportSheetButton from "../table/export-sheet-button";
 import type { TableColumn } from "../table/table-column.types";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
-import { ragStatus, ragCell, type RagStatus, type RagBands } from "./exec-rag";
+import { ragStatus, ragCell, ragFromPctOfTarget, type RagStatus, type RagBands } from "./exec-rag";
 
 // --- Helpers ------------------------------------------------------------------
 
@@ -68,12 +68,27 @@ function compactMoney(v: number): string {
   return `$${Math.round(v)}`;
 }
 
+/** Partner-cell tones per status: muted text, slightly brighter hairline bar. */
+const PARTNER_TEXT: Record<RagStatus, string> = {
+  green: "#0F6E56",
+  amber: "#854F0B",
+  red: "#A32D2D",
+  neutral: "var(--foreground)",
+};
+const PARTNER_BAR: Record<RagStatus, string> = {
+  green: "#1D9E75",
+  amber: "#BA7517",
+  red: "#E24B4A",
+  neutral: "#B4B2A9",
+};
+
 /**
  * One by-partner cell: a pacing bar + % booked, then a plain-language line
- * "of <target> · <gap> behind/ahead". RAG colour follows % booked. Returns a
- * <td>, so it drops straight into a partner row alongside the sticky label.
+ * "of <target> · <gap> behind/ahead". RAG colour follows % booked, on the same
+ * `bands` as the rest of the table. Returns a <td>, so it drops straight into a
+ * partner row alongside the sticky label.
  */
-function PartnerCell({ target, booked }: { target: number; booked: number }) {
+function PartnerCell({ target, booked, bands }: { target: number; booked: number; bands?: RagBands }) {
   if (target <= 0 && booked <= 0) {
     return <td className="px-3 py-1.5 text-right text-muted-foreground">—</td>;
   }
@@ -81,14 +96,14 @@ function PartnerCell({ target, booked }: { target: number; booked: number }) {
   const gap = booked - target; // negative = behind target
   const behind = gap < 0;
   const fill = pct === null ? 0 : Math.min(100, Math.max(0, pct));
+  const status = ragFromPctOfTarget(pct === null ? null : pct / 100, { bands });
   // Text-only RAG — no cell fill. Muted on-brand tone for the %/gap text, a
   // slightly brighter tone for the hairline bar, so the row stays as quiet as
   // the rest of the table (the number carries the signal, not a block of colour).
-  const pctCol =
-    pct === null ? "var(--muted-foreground)" : pct >= 100 ? "#0F6E56" : pct >= 90 ? "#854F0B" : "#A32D2D";
-  const barCol =
-    pct === null ? "#B4B2A9" : pct >= 100 ? "#1D9E75" : pct >= 90 ? "#BA7517" : "#E24B4A";
-  const gapCol = behind ? "#A32D2D" : "#0F6E56";
+  const pctCol = pct === null ? "var(--muted-foreground)" : PARTNER_TEXT[status];
+  const barCol = pct === null ? "#B4B2A9" : PARTNER_BAR[status];
+  // Behind reads red only when the cell itself can be red (not in green-only mode).
+  const gapCol = !behind ? "#0F6E56" : bands?.greenOnly ? "var(--muted-foreground)" : "#A32D2D";
   return (
     <td className="whitespace-nowrap px-3 py-1.5 text-right align-middle">
       <div className="flex items-center justify-end gap-1.5">
@@ -768,6 +783,7 @@ export default function ExecKpisByGmTable({
                             <PartnerCell
                               target={totalAgg.labsPartners[p.key].target}
                               booked={totalAgg.labsPartners[p.key].booked}
+                              bands={bands}
                             />
                             {gms.map((gm) => {
                               const ag = gmAgg.get(gm)!;
@@ -776,6 +792,7 @@ export default function ExecKpisByGmTable({
                                   key={gm}
                                   target={ag.labsPartners[p.key].target}
                                   booked={ag.labsPartners[p.key].booked}
+                                  bands={bands}
                                 />
                               );
                             })}
