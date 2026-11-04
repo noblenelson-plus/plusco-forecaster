@@ -58,7 +58,6 @@ import {
   type ExecSubTab,
   type ForecasterSubTab,
 } from "../../components/forecaster/dashboard-pages.config";
-import { defaultMirMonths } from "../../lib/dashboard/data/kpi-months";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
 import { useScopeProductTracking } from "../../lib/dashboard/data/use-scope-product-tracking";
@@ -150,6 +149,8 @@ function ModeToggle({
 
 /** "Every month" — a stable empty months list for tabs without the filter. */
 const ALL_MONTHS: number[] = [];
+/** Jan–Dec ticked: the Exec KPI Months filter's default (full year). */
+const EXEC_DEFAULT_MONTHS: number[] = Array.from({ length: 12 }, (_, i) => i + 1);
 
 /**
  * The dashboard, plus the admin-only "View as" preview: `?viewAs=<email>`
@@ -436,8 +437,8 @@ function DashboardContent() {
   const showsMonths = topTab === "forecaster" || topTab === "mediabox";
 
   // Exec KPI → Media & Labs KPIs has its own Months filter in the top bar
-  // (MIR rows + the forecast data follow it). Default: January through two
-  // months back, like Labs Pacing; back to that default when the Year changes.
+  // (MIR rows + the forecast data follow it). Default: the full year (Julie,
+  // 2026-11-04); back to that default when the Year changes.
   const [execSub, setExecSub] = useState<ExecSubTab>("summary");
   const execSubtabs = visibleSubtabs("exec-kpis", EXEC_KPIS_SUBTABS, hiddenPages);
   const execActiveSub = execSubtabs.some((t) => t.id === execSub)
@@ -449,7 +450,7 @@ function DashboardContent() {
     () =>
       execMonthsPick && execMonthsPick.year === selectedYear
         ? execMonthsPick.months
-        : defaultMirMonths(selectedYear),
+        : EXEC_DEFAULT_MONTHS,
     [execMonthsPick, selectedYear]
   );
   const dataMonths = showsMonths ? selMonths : showsExecMonths ? execMonths : ALL_MONTHS;
@@ -626,7 +627,7 @@ function DashboardContent() {
                     />
                   )}
                   {/* Exec KPI → Media & Labs KPIs: its own Months filter
-                      (default January through two months back). */}
+                      (default: the full year). */}
                   {showsExecMonths && (
                     <MultiSelectDropdown
                       label="Months"
