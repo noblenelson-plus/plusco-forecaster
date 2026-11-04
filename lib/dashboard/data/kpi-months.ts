@@ -207,13 +207,3 @@ export function kpiRowsForMonths(rows: KpiByClientRow[], months: readonly number
     return entries ? rowForMonths(row, entries, picked) : row;
   });
 }
-
-/**
- * January through two months back for the current year (e.g. November →
- * Jan–Sep, like Labs Pacing — MIR lands about a month late); all 12 months for
- * any other year.
- */
-export function defaultMirMonths(year: number | null, now = new Date()): number[] {
-  const through = year === now.getFullYear() ? Math.max(1, now.getMonth() - 1) : 12;
-  return Array.from({ length: through }, (_, i) => i + 1);
-}
