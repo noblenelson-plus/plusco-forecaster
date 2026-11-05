@@ -83,8 +83,8 @@ function PartnerCell({ target, booked, bands }: { target: number; booked: number
   const behind = gap < 0;
   const fill = pct === null ? 0 : Math.min(100, Math.max(0, pct));
   const status: RagStatus = ragFromPctOfTarget(pct === null ? null : pct / 100, { bands });
-  // Same tinted fill + text as the metric cells above (green / yellow / red),
-  // so a partner at 86% reads yellow like a GM's % Target at 86%.
+  // Same coloured text as the metric cells above (green / yellow / red, no
+  // fill), so a partner at 86% reads yellow like a GM's % Target at 86%.
   // Full year (green-only): "behind" is neutral grey, not red.
   const gapCol = !behind ? "#0F6E56" : bands?.greenOnly ? "var(--muted-foreground)" : "#A32D2D";
   return (

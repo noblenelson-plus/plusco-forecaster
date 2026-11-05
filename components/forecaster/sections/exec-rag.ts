@@ -144,11 +144,12 @@ const BAR: Record<RagStatus, string> = {
   neutral: "bg-muted-foreground/40",
 };
 
-// Subtle tinted background + readable text for table cells / chips.
+// Table cells: coloured text only, no cell fill (Noble, 2026-11-05). The -600
+// shades read as green / gold-yellow / red; -700 yellow looked brown.
 const CELL: Record<RagStatus, string> = {
-  green: "bg-emerald-500/10 text-emerald-700",
-  amber: "bg-amber-500/10 text-amber-700",
-  red: "bg-red-500/10 text-red-700",
+  green: "font-semibold text-emerald-600",
+  amber: "font-semibold text-amber-600",
+  red: "font-semibold text-red-600",
   neutral: "text-foreground",
 };
 
