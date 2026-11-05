@@ -243,7 +243,7 @@ WHERE EXTRACT(YEAR FROM f.month) IN (2025, 2026, 2027);
 --     Key_2026_Deals (Finance_mediabox.key_2026_deals, maintained by the media team):
 --     matched on the MediaBox publisher name listed in its Mediabox_Publisher column
 --     (" | "-separated, accents / case ignored), else on the partner name.
---     A publisher not in the key has no deal (NULL, no more '#N/A').
+--     A publisher not in the key is a non-deal: '#N/A' (deals and deal type), as before.
 --   - PLUSCO_MEDIA_PARTNER = the key's partner, else the MediaBox publisher.
 --   - MediaBox v1 rows (mostly 2025) keep their channel / partner from a frozen copy
 --     of the old sheet (Finance_mediabox.master_mapping_partners_frozen).
@@ -477,8 +477,9 @@ SELECT
   END AS Plusco_media_partner_split,
   b.resolved_channel AS PLUSCO_MEDIA_CHANNEL,
   -- Deals: AN vendor sheet, tab Key_2026_Deals, matched on the MediaBox publisher name.
-  b.key_deals      AS PLUSCO_2026_DEALS,
-  b.key_deals_type AS PLUSCO_DEALS_Type,
+  -- Non-deal rows stay '#N/A' (reports filter on it to separate deals from non-deals).
+  COALESCE(b.key_deals,      '#N/A') AS PLUSCO_2026_DEALS,
+  COALESCE(b.key_deals_type, '#N/A') AS PLUSCO_DEALS_Type,
   CASE
     WHEN STRPOS(UPPER(IFNULL(b.publisher_features, '')), 'LMI_HYBRID')    > 0 THEN 'HYBRID'
     WHEN STRPOS(UPPER(IFNULL(b.publisher_features, '')), 'LMI_FOREIGN')   > 0 THEN 'FOREIGN'
