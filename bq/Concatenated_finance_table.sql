@@ -234,13 +234,21 @@ WHERE EXTRACT(YEAR FROM f.month) IN (2025, 2026, 2027);
 
 
 -- ============================================================
--- STEP 3 of 4: finance_master_mapping (v11)
+-- STEP 3 of 4: finance_master_mapping (v12, 2026-11-05)
 -- plusco-media-invest-solutions.PCC_Media_Investment.finance_master_mapping
 --
--- v11 vs v10: two additions to resolve_channel():
---   1. MIQ + media_type Social  -> PLUSCO_MEDIA_CHANNEL = 'Social' (hard override, wins first)
---   2. media_type Digital       -> 'Digital Direct' in the media_type fallback ladder
--- resolve_channel() now takes resolved_partner as a 4th arg. Everything else identical to v10.
+-- v12 vs v11: the MAPPING_Publishers sheet (Finance_mediabox.master_mapping_partners)
+-- is retired — nobody maintained it.
+--   - PLUSCO_2026_DEALS / PLUSCO_DEALS_Type come from the AN vendor sheet, tab
+--     Key_2026_Deals (Finance_mediabox.key_2026_deals, maintained by the media team):
+--     matched on the MediaBox publisher name listed in its Mediabox_Publisher column
+--     (" | "-separated, accents / case ignored), else on the partner name.
+--     A publisher not in the key has no deal (NULL, no more '#N/A').
+--   - PLUSCO_MEDIA_PARTNER = the key's partner, else the MediaBox publisher.
+--   - MediaBox v1 rows (mostly 2025) keep their channel / partner from a frozen copy
+--     of the old sheet (Finance_mediabox.master_mapping_partners_frozen).
+--   - PLUSCO_LOCAL_MEDIA: publisher features, then (v1) the frozen copy, then Vendor DB 2.0.
+-- resolve_channel() is unchanged (v11: MIQ + Social override, mapped channel, media_type fallback).
 -- ============================================================
 
 CREATE TEMP FUNCTION norm_key(x STRING) AS (
@@ -278,31 +286,47 @@ CREATE TEMP FUNCTION resolve_channel(
 
 CREATE OR REPLACE TABLE `plusco-media-invest-solutions.PCC_Media_Investment.finance_master_mapping` AS
 
-WITH map_norm AS (
-  SELECT
-    norm_key(publisher_key) AS norm_key,
-    Publisher_List,
-    shortcode_id,
-    PLUSCO_MEDIA_PARTNER,
-    PLUSCO_MEDIA_CHANNEL,
-    PLUSCO_2026_DEALS,
-    PLUSCO_DEALS_Type,
-    PLUSCO_LOCAL_MEDIA
-  FROM `plusco-media-invest-solutions.Finance_mediabox.master_mapping_partners`
-  WHERE publisher_key IS NOT NULL
+WITH deals_key AS (
+  SELECT PLUSCO_MEDIA_PARTNER, PLUSCO_DEALS, PLUSCO_DEALS_Type, Mediabox_Publisher
+  FROM `plusco-media-invest-solutions.Finance_mediabox.key_2026_deals`
 ),
 
-mapping_dedup AS (
+-- One row per MediaBox publisher name listed in the deals key (column F, " | "-separated).
+key_by_pub AS (
   SELECT
-    norm_key,
+    norm_partner(pub)                         AS pub_norm,
+    ANY_VALUE(TRIM(k.PLUSCO_MEDIA_PARTNER))   AS key_partner,
+    ANY_VALUE(NULLIF(TRIM(k.PLUSCO_DEALS), '')) AS key_deals,
+    ANY_VALUE(NULLIF(TRIM(k.PLUSCO_DEALS_Type), '')) AS key_deals_type
+  FROM deals_key AS k, UNNEST(SPLIT(IFNULL(k.Mediabox_Publisher, ''), '|')) AS pub
+  WHERE TRIM(pub) != '' AND TRIM(IFNULL(k.PLUSCO_MEDIA_PARTNER, '')) != ''
+  GROUP BY 1
+),
+
+-- Same key by partner name: catches rows whose partner comes from the frozen v1 mapping
+-- (MediaBox v1 spells publishers differently) or whose publisher is the partner name itself.
+key_by_partner AS (
+  SELECT
+    norm_partner(PLUSCO_MEDIA_PARTNER)             AS partner_norm,
+    ANY_VALUE(NULLIF(TRIM(PLUSCO_DEALS), ''))      AS key_deals,
+    ANY_VALUE(NULLIF(TRIM(PLUSCO_DEALS_Type), '')) AS key_deals_type
+  FROM deals_key
+  WHERE TRIM(IFNULL(PLUSCO_MEDIA_PARTNER, '')) != ''
+  GROUP BY 1
+),
+
+-- Frozen copy of the retired MAPPING_Publishers sheet, used for MediaBox v1 rows only
+-- (v1 files every digital tactic under "Digital"; this gives their Plus channel).
+v1_map AS (
+  SELECT
+    norm_key(publisher_key) AS norm_key,
     PLUSCO_MEDIA_PARTNER,
     PLUSCO_MEDIA_CHANNEL,
-    PLUSCO_2026_DEALS,
-    PLUSCO_DEALS_Type,
     PLUSCO_LOCAL_MEDIA
-  FROM map_norm
+  FROM `plusco-media-invest-solutions.Finance_mediabox.master_mapping_partners_frozen`
+  WHERE publisher_key IS NOT NULL
   QUALIFY ROW_NUMBER() OVER (
-    PARTITION BY norm_key
+    PARTITION BY norm_key(publisher_key)
     ORDER BY
       UPPER(TRIM(IFNULL(PLUSCO_MEDIA_PARTNER, ''))) IN ('', '#N/A'),
       CASE
@@ -311,36 +335,23 @@ mapping_dedup AS (
         ELSE 2
       END,
       shortcode_id,
-      TO_JSON_STRING(STRUCT(
-        PLUSCO_MEDIA_CHANNEL, PLUSCO_2026_DEALS, PLUSCO_DEALS_Type, PLUSCO_LOCAL_MEDIA
-      ))
+      TO_JSON_STRING(STRUCT(PLUSCO_MEDIA_CHANNEL, PLUSCO_LOCAL_MEDIA))
   ) = 1
 ),
 
+-- Vendor DB 2.0: now only feeds PLUSCO_LOCAL_MEDIA.
 vendor_dedup_composite AS (
   SELECT
     norm_partner(PLUSCO_MEDIA_PARTNER) AS v_partner_norm,
     UPPER(TRIM(PLUSCO_MEDIA_CHANNEL))  AS v_channel,
-    PLUSCO_DEALS_2026,
-    PLUSCO_DEALS_Type,
     PLUSCO_LOCAL_MEDIA
   FROM `plusco-media-invest-solutions.Finance_mediabox.MIR_VENDOR_DATABASE`
   WHERE TRIM(IFNULL(PLUSCO_MEDIA_PARTNER, '')) NOT IN ('', '#N/A')
   QUALIFY ROW_NUMBER() OVER (
-    PARTITION BY
-      norm_partner(PLUSCO_MEDIA_PARTNER),
-      UPPER(TRIM(PLUSCO_MEDIA_CHANNEL))
+    PARTITION BY norm_partner(PLUSCO_MEDIA_PARTNER), UPPER(TRIM(PLUSCO_MEDIA_CHANNEL))
     ORDER BY
-      CASE UPPER(TRIM(PLUSCO_DEALS_2026))
-        WHEN 'PARTNER DEAL'                THEN 0
-        WHEN 'TRADITIONAL & MULTIPLATFORM' THEN 1
-        ELSE 2
-      END,
       CASE UPPER(TRIM(PLUSCO_LOCAL_MEDIA))
-        WHEN 'HYBRID'  THEN 0
-        WHEN 'LOCAL'   THEN 1
-        WHEN 'FOREIGN' THEN 2
-        ELSE 3
+        WHEN 'HYBRID' THEN 0 WHEN 'LOCAL' THEN 1 WHEN 'FOREIGN' THEN 2 ELSE 3
       END
   ) = 1
 ),
@@ -348,24 +359,14 @@ vendor_dedup_composite AS (
 vendor_dedup_partner AS (
   SELECT
     norm_partner(PLUSCO_MEDIA_PARTNER) AS v_partner_norm,
-    PLUSCO_DEALS_2026,
-    PLUSCO_DEALS_Type,
     PLUSCO_LOCAL_MEDIA
   FROM `plusco-media-invest-solutions.Finance_mediabox.MIR_VENDOR_DATABASE`
   WHERE TRIM(IFNULL(PLUSCO_MEDIA_PARTNER, '')) NOT IN ('', '#N/A')
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY norm_partner(PLUSCO_MEDIA_PARTNER)
     ORDER BY
-      CASE UPPER(TRIM(PLUSCO_DEALS_2026))
-        WHEN 'PARTNER DEAL'                THEN 0
-        WHEN 'TRADITIONAL & MULTIPLATFORM' THEN 1
-        ELSE 2
-      END,
       CASE UPPER(TRIM(PLUSCO_LOCAL_MEDIA))
-        WHEN 'HYBRID'  THEN 0
-        WHEN 'LOCAL'   THEN 1
-        WHEN 'FOREIGN' THEN 2
-        ELSE 3
+        WHEN 'HYBRID' THEN 0 WHEN 'LOCAL' THEN 1 WHEN 'FOREIGN' THEN 2 ELSE 3
       END
   ) = 1
 ),
@@ -373,21 +374,26 @@ vendor_dedup_partner AS (
 base AS (
   SELECT
     f.*,
-    m.PLUSCO_MEDIA_CHANNEL                        AS mapped_channel,
-    m.PLUSCO_2026_DEALS                           AS mapped_deals,
-    m.PLUSCO_DEALS_Type                           AS mapped_deals_type,
-    m.PLUSCO_LOCAL_MEDIA                          AS mapped_local,
-    COALESCE(m.PLUSCO_MEDIA_PARTNER, f.publisher) AS resolved_partner
+    m.PLUSCO_MEDIA_CHANNEL AS mapped_channel,
+    m.PLUSCO_LOCAL_MEDIA   AS mapped_local,
+    COALESCE(k.key_partner, m.PLUSCO_MEDIA_PARTNER, f.publisher) AS resolved_partner,
+    IF(k.pub_norm IS NOT NULL, k.key_deals,      kp.key_deals)      AS key_deals,
+    IF(k.pub_norm IS NOT NULL, k.key_deals_type, kp.key_deals_type) AS key_deals_type
   FROM `plusco-media-invest-solutions.Finance_mediabox.finance_Mediabox_combined` AS f
-  LEFT JOIN mapping_dedup AS m
-    ON norm_key(f.publisher_key) = m.norm_key
+  LEFT JOIN v1_map AS m
+    ON f.data_source = 'mediabox-v1'
+   AND norm_key(f.publisher_key) = m.norm_key
+  LEFT JOIN key_by_pub AS k
+    ON norm_partner(f.publisher) = k.pub_norm
+  LEFT JOIN key_by_partner AS kp
+    ON norm_partner(COALESCE(m.PLUSCO_MEDIA_PARTNER, f.publisher)) = kp.partner_norm
   WHERE EXTRACT(YEAR FROM f.month) IN (2025, 2026, 2027)
 ),
 
 base_with_channel AS (
   SELECT
     b.*,
-    UPPER(TRIM(resolve_channel(b.publisher, b.mapped_channel, b.media_type, b.resolved_partner))) AS resolved_channel_upper
+    resolve_channel(b.publisher, b.mapped_channel, b.media_type, b.resolved_partner) AS resolved_channel
   FROM base AS b
 )
 
@@ -457,10 +463,10 @@ SELECT
   b.resolved_partner AS PLUSCO_MEDIA_PARTNER,
   CASE
     WHEN UPPER(TRIM(b.resolved_partner)) = 'BILLUPS'
-         AND UPPER(TRIM(b.mapped_channel)) IN ('OOH', 'DIGITAL DIRECT')
+         AND UPPER(TRIM(b.resolved_channel)) IN ('OOH', 'DIGITAL DIRECT')
       THEN 'Billups-OOH'
     WHEN UPPER(TRIM(b.resolved_partner)) = 'BILLUPS'
-         AND UPPER(TRIM(b.mapped_channel)) = 'PRINT'
+         AND UPPER(TRIM(b.resolved_channel)) = 'PRINT'
       THEN 'Billups-Print'
     WHEN UPPER(TRIM(b.resolved_partner)) = 'MIQ'
          AND UPPER(TRIM(b.inventory)) IN ('META', 'PINTEREST', 'LINKEDIN', 'REDDIT', 'SNAPCHAT', 'TIKTOK')
@@ -469,20 +475,10 @@ SELECT
       THEN 'MIQ-Prog'
     ELSE b.resolved_partner
   END AS Plusco_media_partner_split,
-  -- v11 channel logic (MIQ+Social override, mapped-if-real, media_type fallback w/ renames)
-  resolve_channel(b.publisher, b.mapped_channel, b.media_type, b.resolved_partner) AS PLUSCO_MEDIA_CHANNEL,
-  COALESCE(
-    NULLIF(TRIM(IFNULL(b.mapped_deals, '')), ''),
-    NULLIF(TRIM(IFNULL(v1.PLUSCO_DEALS_2026, '')), ''),
-    NULLIF(TRIM(IFNULL(v2.PLUSCO_DEALS_2026, '')), ''),
-    NULLIF(TRIM(IFNULL(v3.PLUSCO_DEALS_2026, '')), '')
-  ) AS PLUSCO_2026_DEALS,
-  COALESCE(
-    NULLIF(TRIM(IFNULL(b.mapped_deals_type, '')), ''),
-    NULLIF(TRIM(IFNULL(v1.PLUSCO_DEALS_Type, '')), ''),
-    NULLIF(TRIM(IFNULL(v2.PLUSCO_DEALS_Type, '')), ''),
-    NULLIF(TRIM(IFNULL(v3.PLUSCO_DEALS_Type, '')), '')
-  ) AS PLUSCO_DEALS_Type,
+  b.resolved_channel AS PLUSCO_MEDIA_CHANNEL,
+  -- Deals: AN vendor sheet, tab Key_2026_Deals, matched on the MediaBox publisher name.
+  b.key_deals      AS PLUSCO_2026_DEALS,
+  b.key_deals_type AS PLUSCO_DEALS_Type,
   CASE
     WHEN STRPOS(UPPER(IFNULL(b.publisher_features, '')), 'LMI_HYBRID')    > 0 THEN 'HYBRID'
     WHEN STRPOS(UPPER(IFNULL(b.publisher_features, '')), 'LMI_FOREIGN')   > 0 THEN 'FOREIGN'
@@ -498,7 +494,6 @@ SELECT
       THEN v3.PLUSCO_LOCAL_MEDIA
     ELSE NULL
   END AS PLUSCO_LOCAL_MEDIA,
-  -- MediaBox v2 fees (v5; NULL for MediaBox v1)
   b.commission,
   b.taxes,
   b.other_fees,
@@ -508,13 +503,13 @@ SELECT
 FROM base_with_channel AS b
 LEFT JOIN vendor_dedup_composite AS v1
   ON  norm_partner(b.resolved_partner) = v1.v_partner_norm
-  AND b.resolved_channel_upper          = v1.v_channel
+  AND UPPER(TRIM(b.resolved_channel))  = v1.v_channel
 LEFT JOIN vendor_dedup_composite AS v2
   ON  v1.v_partner_norm IS NULL
   AND norm_partner(strip_last_word(b.resolved_partner)) = v2.v_partner_norm
-  AND b.resolved_channel_upper = v2.v_channel
+  AND UPPER(TRIM(b.resolved_channel)) = v2.v_channel
 LEFT JOIN vendor_dedup_partner AS v3
-  ON  b.resolved_channel_upper IS NULL
+  ON  b.resolved_channel IS NULL
   AND v1.v_partner_norm IS NULL
   AND norm_partner(b.resolved_partner) = v3.v_partner_norm;
 
