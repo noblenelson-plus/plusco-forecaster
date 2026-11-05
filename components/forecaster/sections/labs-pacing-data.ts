@@ -12,6 +12,7 @@
 
 import { formatMoney } from "../../../lib/format/money";
 import type { CSSProperties } from "react";
+import { ACHIEVED_PCT, pctNoRoundUp } from "./exec-rag";
 import type { TableColumn } from "../table/table-column.types";
 import type { BarItem } from "../../dashboard/charts/bar-list";
 import type { LabsPacingCell, LabsPacingDetailCell } from "../../../lib/dashboard/data/use-scope-labs-pacing";
@@ -28,7 +29,7 @@ export const pacingMoney = (value: number): string => {
 };
 
 export const pacingPercent = (value: number | null): string =>
-  value === null ? "—" : `${Math.round(value)}%`;
+  value === null ? "—" : `${pctNoRoundUp(value)}%`;
 
 const pct = (booked: number, target: number): number | null =>
   target > 0 ? (booked / target) * 100 : null;
@@ -366,11 +367,13 @@ export function computeGmPodMatrix(
   };
 }
 
-/** Heat colour for a % of target booked cell (red < 80, amber < 100, green ≥ 100). */
+/**
+ * Heat colour for a % of target booked cell: green at 90% or more (Target
+ * Achieved, same line as the flag below and the Exec KPI cells), red below.
+ */
 export function pacingHeat(value: number | null): CSSProperties {
   if (value === null) return {};
-  if (value >= 100) return { backgroundColor: "#dcfce7", color: "#14532d" };
-  if (value >= 80) return { backgroundColor: "#fef9c3", color: "#713f12" };
+  if (value >= ACHIEVED_PCT) return { backgroundColor: "#dcfce7", color: "#14532d" };
   return { backgroundColor: "#fee2e2", color: "#7f1d1d" };
 }
 // ─── BY CLIENT detail table (with flag) ──────────────────────────────────────
@@ -391,7 +394,7 @@ export function flagFor(percentBooked: number | null, variance: number): PacingF
     return variance > 0 ? "Target Over-Achieved" : "Target Achieved";
   }
   if (percentBooked > 100) return "Target Over-Achieved";
-  if (percentBooked >= 90) return "Target Achieved";
+  if (percentBooked >= ACHIEVED_PCT) return "Target Achieved";
   if (variance < 0 && Math.abs(variance) > MATERIAL_MISS) return "Under Target";
   return "Target Achieved";
 }
@@ -472,11 +475,10 @@ export function computeClientPacing(
   return { rows, totals };
 }
 
-/** Flag text colour. */
+/** Flag text colour: red when Under Target, green when Achieved or Over-Achieved. */
 export function flagStyle(flag: PacingFlag): CSSProperties {
   if (flag === "Under Target") return { color: "#b91c1c", fontWeight: 500 };
-  if (flag === "Target Over-Achieved") return { color: "#15803d", fontWeight: 500 };
-  return { color: "#374151" };
+  return { color: "#15803d", fontWeight: 500 };
 }
 
 export function buildClientPacingColumns({

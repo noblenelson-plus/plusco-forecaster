@@ -22,7 +22,7 @@ import ChartCard from "../../dashboard/charts/chart-card";
 import ExportSheetButton from "../table/export-sheet-button";
 import type { TableColumn } from "../table/table-column.types";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
-import { ragStatus, ragCell, ragFromPctOfTarget, type RagStatus, type RagBands } from "./exec-rag";
+import { ragStatus, ragCell, ragFromPctOfTarget, pctNoRoundUp, type RagStatus, type RagBands } from "./exec-rag";
 
 // --- Helpers ------------------------------------------------------------------
 
@@ -111,7 +111,7 @@ function PartnerCell({ target, booked, bands }: { target: number; booked: number
           <span className="block h-full rounded-full" style={{ width: `${fill}%`, background: barCol }} />
         </span>
         <span className="text-sm font-medium tabular-nums" style={{ color: pctCol }}>
-          {pct === null ? "—" : `${Math.round(pct)}%`}
+          {pct === null ? "—" : `${pctNoRoundUp(pct)}%`}
         </span>
       </div>
       <div className="mt-0.5 text-xs leading-tight text-gray-600">
@@ -257,7 +257,8 @@ interface MetricRow {
 function fmt(kind: Kind, v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "—";
   if (kind === "money") return `$${Math.round(v).toLocaleString("en-CA")}`;
-  return `${(v * 100).toFixed(0)}%`; // pct + delta (sign is carried naturally)
+  if (kind === "pct") return `${pctNoRoundUp(v * 100)}%`;
+  return `${(v * 100).toFixed(0)}%`; // delta (sign is carried naturally)
 }
 
 /** Inline YoY delta as percentage points, e.g. "+2pt" / "-11pt". */

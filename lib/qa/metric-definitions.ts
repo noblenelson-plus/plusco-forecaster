@@ -682,7 +682,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
       {
         name: "Flag (By Client)",
         where: LABS_PACING + " → Labs Pacing → By Client",
-        formula: "Over-Achieved if % > 100; Achieved if % ≥ 90, or below 90% with a miss ≤ $50K; else Under Target",
+        formula: "Over-Achieved if % > 100; Achieved if % ≥ 90, or below 90% with a miss ≤ $50K; else Under Target. Text green for Achieved / Over-Achieved, red for Under Target",
         details: "One row per client × partner.",
         source: "labs-pacing-data.ts (flagFor)",
         basis: "Mixed",
@@ -692,7 +692,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
         name: "By GM Pod — % of Target Booked / Summary",
         where: DEAL_PACING + " → Labs Pacing → By GM Pod",
         formula: "Per pod (and partner × pod): Booked ÷ Target × 100; toggles show Booked $, Target $, Gap $",
-        details: "Pod = the client's GM Pod in the Forecaster ('—' if blank). Heat: ≥ 100% green, ≥ 80% amber, below red.",
+        details: "Pod = the client's GM Pod in the Forecaster ('—' if blank). Heat: ≥ 90% green (target achieved), below red.",
         source: "labs-pacing-data.ts (computeGmPodMatrix); labs-pod-matrix.tsx",
         basis: "Mixed",
       },
@@ -716,7 +716,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
     id: "kpi-tables",
     title: "KPIs by Client / by GM tables",
     description:
-      "Two booked (MIR) tables over the scoped KPI_BY_CLIENT rows. Every share — per client, per GM column and in the totals — is sum(numerator) ÷ sum(denominator); totals are computed from summed dollars, never averaged. Cell colours: green ≥ 90% of goal, amber ≥ 75%, red below (Meta share is lower-is-better).",
+      "Two booked (MIR) tables over the scoped KPI_BY_CLIENT rows. Every share — per client, per GM column and in the totals — is sum(numerator) ÷ sum(denominator); totals are computed from summed dollars, never averaged. Cell colours: green ≥ 90% of goal, red below; with all 12 months selected, green ≥ 90% and no colour otherwise (Meta share is lower-is-better).",
     metrics: [
       {
         name: "PlusCo Total / GM columns",

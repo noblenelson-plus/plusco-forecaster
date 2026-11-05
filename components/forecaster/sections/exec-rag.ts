@@ -11,13 +11,14 @@
  *   >= amber  -> close, watch           (amber)
  *   <  amber  -> off goal               (red)
  *
- * Defaults are 90% / 75% (DEFAULT_BANDS), but every function takes an optional
- * `bands` override so the thresholds can be retuned in one place (or per page)
- * without touching any component. Exec KPI → Media & Labs KPIs uses
- * `execKpiBands`: Labs Pacing's thresholds for a month period, green-only for
- * the full year. Metrics where a LOWER number is better (e.g. Meta share vs a
- * divestment target) pass `lowerIsBetter` and the ratio is inverted so the same
- * bands still read "green = doing well".
+ * One rule everywhere (Adriana / Noble, 2026-11-05), the Looker Labs Pacing
+ * "Target Achieved" line: green at 90% of goal or more, red below, no amber
+ * band (DEFAULT_BANDS). Exec KPI → Media & Labs KPIs uses `execKpiBands`, which
+ * is the same rule for a month period and green-only for the full year. The
+ * Labs Pacing flag and GM Pod heatmap use ACHIEVED_PCT too. Metrics where a
+ * LOWER number is better (e.g. Meta share vs a divestment target) pass
+ * `lowerIsBetter` and the ratio is inverted so the same bands still read
+ * "green = doing well".
  */
 
 export type RagStatus = "green" | "amber" | "red" | "neutral";
@@ -34,26 +35,35 @@ export interface RagBands {
   greenOnly?: boolean;
 }
 
-// Lenient by design: near-target reads green, not red. green >=90% of goal,
-// amber >=75%, red below. (Loosened per Adriana 2026-09.) Still used by the
-// Media Investments KPI pages; Media & Labs KPIs uses execKpiBands below.
-export const DEFAULT_BANDS: RagBands = { green: 0.9, amber: 0.75 };
-
 /**
- * Labs Pacing's thresholds (`pacingHeat` in labs-pacing-data.ts): green at or
- * above 100% of goal, yellow 80–99%, red below 80%.
+ * "Target achieved": 90% of goal (Looker Labs Pacing flag). The single
+ * threshold for every pacing / goal colour in the dashboard.
  */
-export const PACING_BANDS: RagBands = { green: 1, amber: 0.8 };
+export const ACHIEVED_RATIO = 0.9;
+/** ACHIEVED_RATIO as a percentage (for % values on a 0–100 scale). */
+export const ACHIEVED_PCT = ACHIEVED_RATIO * 100;
 
-/** Full-year view: green once the goal is hit, no colour otherwise. */
-export const FULL_YEAR_BANDS: RagBands = { green: 1, amber: 1, greenOnly: true };
+/** Green at 90% of goal or more, red below. No amber band. */
+export const DEFAULT_BANDS: RagBands = { green: ACHIEVED_RATIO, amber: ACHIEVED_RATIO };
+
+/** Full-year view: green at 90% of goal or more, no colour otherwise. */
+export const FULL_YEAR_BANDS: RagBands = { green: ACHIEVED_RATIO, amber: ACHIEVED_RATIO, greenOnly: true };
 
 /**
- * Exec KPI → Media & Labs KPIs (Adriana, 2026-11): a month period (YTD) is
- * coloured like Labs Pacing; the full year only shows green once the goal is hit.
+ * Exec KPI → Media & Labs KPIs: a month period (YTD) uses the default rule; the
+ * full year only shows green (an unfinished year isn't a miss).
  */
 export function execKpiBands(fullYear: boolean): RagBands {
-  return fullYear ? FULL_YEAR_BANDS : PACING_BANDS;
+  return fullYear ? FULL_YEAR_BANDS : DEFAULT_BANDS;
+}
+
+/**
+ * A % shown next to a colour: rounded, except never rounded UP across the 90%
+ * or 100% line (99.95% booked reads "99%", not "100%" while still behind).
+ */
+export function pctNoRoundUp(pct: number): number {
+  const r = Math.round(pct);
+  return (pct < ACHIEVED_PCT && r >= ACHIEVED_PCT) || (pct < 100 && r >= 100) ? Math.floor(pct) : r;
 }
 
 /** Status of a ratio (1 == 100% of goal) against `bands`. */
