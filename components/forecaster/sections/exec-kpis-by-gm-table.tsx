@@ -102,8 +102,7 @@ function PartnerCell({ target, booked, bands }: { target: number; booked: number
   // the rest of the table (the number carries the signal, not a block of colour).
   const pctCol = pct === null ? "var(--muted-foreground)" : PARTNER_TEXT[status];
   const barCol = pct === null ? "#B4B2A9" : PARTNER_BAR[status];
-  // Behind reads red only when the cell itself can be red (not in green-only mode).
-  const gapCol = !behind ? "#0F6E56" : bands?.greenOnly ? "var(--muted-foreground)" : "#A32D2D";
+  const gapCol = behind ? "#A32D2D" : "#0F6E56";
   return (
     <td className="whitespace-nowrap px-3 py-1.5 text-right align-middle">
       <div className="flex items-center justify-end gap-1.5">

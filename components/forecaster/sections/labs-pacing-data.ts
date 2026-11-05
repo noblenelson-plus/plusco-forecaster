@@ -12,7 +12,7 @@
 
 import { formatMoney } from "../../../lib/format/money";
 import type { CSSProperties } from "react";
-import { ACHIEVED_PCT, pctNoRoundUp } from "./exec-rag";
+import { ACHIEVED_PCT, WATCH_PCT, pctNoRoundUp } from "./exec-rag";
 import type { TableColumn } from "../table/table-column.types";
 import type { BarItem } from "../../dashboard/charts/bar-list";
 import type { LabsPacingCell, LabsPacingDetailCell } from "../../../lib/dashboard/data/use-scope-labs-pacing";
@@ -368,12 +368,13 @@ export function computeGmPodMatrix(
 }
 
 /**
- * Heat colour for a % of target booked cell: green at 90% or more (Target
- * Achieved, same line as the flag below and the Exec KPI cells), red below.
+ * Heat colour for a % of target booked cell, same lines as the Exec KPI cells:
+ * green at 90% or more (Target Achieved), yellow 70–89%, red below 70%.
  */
 export function pacingHeat(value: number | null): CSSProperties {
   if (value === null) return {};
   if (value >= ACHIEVED_PCT) return { backgroundColor: "#dcfce7", color: "#14532d" };
+  if (value >= WATCH_PCT) return { backgroundColor: "#fef9c3", color: "#713f12" };
   return { backgroundColor: "#fee2e2", color: "#7f1d1d" };
 }
 // ─── BY CLIENT detail table (with flag) ──────────────────────────────────────
@@ -475,10 +476,14 @@ export function computeClientPacing(
   return { rows, totals };
 }
 
-/** Flag text colour: red when Under Target, green when Achieved or Over-Achieved. */
-export function flagStyle(flag: PacingFlag): CSSProperties {
-  if (flag === "Under Target") return { color: "#b91c1c", fontWeight: 500 };
-  return { color: "#15803d", fontWeight: 500 };
+/**
+ * Flag text colour: green when Achieved or Over-Achieved; Under Target is
+ * yellow at 70–89% booked and red below 70% (same lines as everywhere else).
+ */
+export function flagStyle(flag: PacingFlag, percentBooked: number | null): CSSProperties {
+  if (flag !== "Under Target") return { color: "#15803d", fontWeight: 500 };
+  if (percentBooked !== null && percentBooked >= WATCH_PCT) return { color: "#a16207", fontWeight: 500 };
+  return { color: "#b91c1c", fontWeight: 500 };
 }
 
 export function buildClientPacingColumns({
@@ -563,7 +568,7 @@ export function buildClientPacingColumns({
       align: "left",
       raw: (r) => r.flag,
       display: (r) => (r.booked === 0 ? "—" : r.flag),
-      cellStyle: (r) => (r.booked === 0 ? undefined : flagStyle(r.flag)),
+      cellStyle: (r) => (r.booked === 0 ? undefined : flagStyle(r.flag, r.percentBooked)),
       total: (t) => t.flag,
       totalRaw: (t) => t.flag,
     },
