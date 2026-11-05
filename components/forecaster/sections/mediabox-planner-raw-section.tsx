@@ -12,7 +12,9 @@
  *
  * Only the columns listed below are shown / exported (Adriana's review of the
  * download, 2026-11-02: internal ids, MediaBox-side duplicates of the client
- * attributes and the FX rate were removed). BUDGET_CAD is exported as
+ * attributes and the FX rate were removed; 2026-11-05: publisher_features,
+ * Plusco_media_partner_split and PLUSCO_LOCAL_MEDIA removed too, once the deal
+ * columns came from the AN vendor sheet). BUDGET_CAD is exported as
  * monthly_tactic_media_budget_CAD (it is that column converted to CAD). 2025
  * rows are hidden — the snapshot still carries them.
  */
@@ -69,7 +71,6 @@ const COLUMN_ORDER = [
   "programmatic_buying_method",
   "channel",
   "placement_location",
-  "publisher_features",
   "language",
   "format",
   "CL_Agency",
@@ -78,9 +79,7 @@ const COLUMN_ORDER = [
   "CL_Business_Lead",
   "CL_Digital_Lead",
   "GM_Pod",
-  "Plusco_media_partner_split",
   "PLUSCO_DEALS_Type",
-  "PLUSCO_LOCAL_MEDIA",
 ];
 
 const COLUMN_LABELS: Record<string, string> = {
