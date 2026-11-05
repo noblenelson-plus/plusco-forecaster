@@ -182,11 +182,11 @@ export default function LabsPodMatrix({
                       {row.partnerName}
                     </td>
                     {pods.map((pod) => (
-                      <td key={pod} className="px-3 py-2 text-right tabular-nums" style={pacingHeat(row.byPod[pod])}>
+                      <td key={pod} className={`px-3 py-2 text-right tabular-nums ${pacingHeat(row.byPod[pod])}`}>
                         {cellText(row.byPod[pod], row.byPodDollars[pod])}
                       </td>
                     ))}
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums" style={pacingHeat(row.total)}>
+                    <td className={`px-3 py-2 text-right font-semibold tabular-nums ${pacingHeat(row.total)}`}>
                       {row.total === null
                         ? "—"
                         : mode === "pct"
@@ -200,13 +200,13 @@ export default function LabsPodMatrix({
                 <tr className="border-t-2 border-border bg-muted font-semibold text-foreground">
                   <td className="sticky left-0 z-10 bg-muted px-3 py-2 text-left">Grand total</td>
                   {pods.map((pod) => (
-                    <td key={pod} className="px-3 py-2 text-right tabular-nums" style={pacingHeat(colTotals[pod] ?? null)}>
+                    <td key={pod} className={`px-3 py-2 text-right tabular-nums ${pacingHeat(colTotals[pod] ?? null)}`}>
                       {mode === "pct"
                         ? pct(colTotals[pod] ?? null)
                         : compact(dollarFor(podTotals[pod] ?? { target: 0, booked: 0 }, mode))}
                     </td>
                   ))}
-                  <td className="px-3 py-2 text-right tabular-nums" style={pacingHeat(grandTotal)}>
+                  <td className={`px-3 py-2 text-right tabular-nums ${pacingHeat(grandTotal)}`}>
                     {mode === "pct" ? pct(grandTotal) : compact(dollarFor(grand, mode))}
                   </td>
                 </tr>
@@ -253,7 +253,7 @@ export default function LabsPodMatrix({
                     <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{money(r.target)}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{money(r.booked)}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{money(r.booked - r.target)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums" style={pacingHeat(r.pctBooked)}>{pct(r.pctBooked)}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${pacingHeat(r.pctBooked)}`}>{pct(r.pctBooked)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -263,7 +263,7 @@ export default function LabsPodMatrix({
                   <td className="px-3 py-2 text-right tabular-nums">{money(grand.target)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(grand.booked)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(grand.booked - grand.target)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums" style={pacingHeat(grandTotal)}>{pct(grandTotal)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${pacingHeat(grandTotal)}`}>{pct(grandTotal)}</td>
                 </tr>
               </tfoot>
             </table>
