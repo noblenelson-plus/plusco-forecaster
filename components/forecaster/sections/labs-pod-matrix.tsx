@@ -18,12 +18,12 @@ import { BarChart3, Table2 } from "lucide-react";
 import ChartCard from "../../dashboard/charts/chart-card";
 import SheetExportButton from "../../dashboard/sheet-export-button";
 import type { CellValue } from "../table/table-export";
-import { pacingHeat, type GmPodMatrix } from "./labs-pacing-data";
+import { pacingHeat, pacingPercent, type GmPodMatrix } from "./labs-pacing-data";
 import { formatMoney } from "../../../lib/format/money";
 
 type CellMode = "pct" | "booked" | "target" | "gap";
 
-const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v)}%`);
+const pct = pacingPercent;
 
 /** Full dollars for the summary table; "—" for 0. */
 const money = (v: number) => {

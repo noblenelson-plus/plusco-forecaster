@@ -269,8 +269,9 @@ export default function ExecutiveSummarySection({
   // The MIR figures cover the chosen months once the monthly breakdown is
   // synced; until then they stay full-year (and say so).
   const mirPeriod = booked.monthsUnavailable ? `Full year ${year}` : period;
-  // Table colours: a month period (YTD) uses Labs Pacing's thresholds; the full
-  // year (all 12 months, or figures not yet split by month) is green-only.
+  // Table colours: green at 90% of goal everywhere; a month period (YTD) shows
+  // red below that, the full year (all 12 months, or figures not yet split by
+  // month) is green-only.
   const ytdColours = booked.monthsApplied;
   const bands = execKpiBands(!ytdColours);
   const periodLabel =
@@ -352,8 +353,8 @@ export default function ExecutiveSummarySection({
         scorecards above.
         {booked.monthsApplied && " Dollar targets (Meta Target) are annual."}{" "}
         {ytdColours
-          ? "Colours vs goal, as on Labs Pacing: green 100%+, yellow 80–99%, red below 80%."
-          : "Full year: green once the goal is hit, no colour until then."}
+          ? "Colours vs goal, as on Labs Pacing: green at 90%+ (target achieved), red below 90%."
+          : "Full year: green at 90%+ of goal (target achieved), no colour until then."}
       </p>
       {booked.monthsUnavailable && (
         <p className="bg-yellow-400 px-3 py-2 text-xs font-medium text-gray-900">
