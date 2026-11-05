@@ -53,6 +53,7 @@ import MetaShareTrendStrip from "./meta-share-trend-strip";
 import BillupsEligibilityCard from "./billups-eligibility-card";
 import ExecKpisByGmTable from "./exec-kpis-by-gm-table";
 import ExecKpisByClientTable from "./exec-kpis-by-client-table";
+import { execKpiBands } from "./exec-rag";
 import { isFullYear } from "../../../lib/dashboard/data/kpi-months";
 import { describeMonthPeriod } from "../../../lib/format/period";
 
@@ -268,6 +269,10 @@ export default function ExecutiveSummarySection({
   // The MIR figures cover the chosen months once the monthly breakdown is
   // synced; until then they stay full-year (and say so).
   const mirPeriod = booked.monthsUnavailable ? `Full year ${year}` : period;
+  // Table colours (Adriana): the full year (all 12 months, or figures not yet
+  // split by month) only shows green; fewer months show green / yellow / red.
+  const fullYearColours = !booked.monthsApplied;
+  const bands = execKpiBands(fullYearColours);
   const periodLabel =
     source === "mir"
       ? `${mirPeriod} · ${mirSourceLabel}`
@@ -346,7 +351,9 @@ export default function ExecutiveSummarySection({
         Everything below: {mirPeriod} · {mirSourceLabel}. The source toggle only switches the
         scorecards above.
         {booked.monthsApplied && " Dollar targets (Meta Target) are annual."}{" "}
-        Colours vs goal, as on Labs Pacing: green 90%+ (target achieved), yellow 70–89%, red below 70%.
+        {fullYearColours
+          ? "Full year: green once 90%+ of goal is reached (target achieved), no colour until then."
+          : "Colours vs goal, as on Labs Pacing: green 90%+ (target achieved), yellow 70–89%, red below 70%."}
       </p>
       {booked.monthsUnavailable && (
         <p className="bg-yellow-400 px-3 py-2 text-xs font-medium text-gray-900">
@@ -377,6 +384,7 @@ export default function ExecutiveSummarySection({
         sourceLabel={mirOnlyLabel}
         mirAsOf={mirAsOf}
         annualTargets={booked.monthsApplied}
+        bands={bands}
       />
 
       {/* By client */}
@@ -387,6 +395,7 @@ export default function ExecutiveSummarySection({
         billupsShareGoal={goals.billupsShare}
         sourceLabel={mirOnlyLabel}
         annualTargets={booked.monthsApplied}
+        bands={bands}
       />
     </div>
   );

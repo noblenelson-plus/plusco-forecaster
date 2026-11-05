@@ -11,10 +11,12 @@
  *   >= amber  -> close, watch           (amber)
  *   <  amber  -> off goal               (red)
  *
- * One rule everywhere, full year and month periods alike (Noble, 2026-11-05):
- * green at 90% of goal or more (the Looker Labs Pacing "Target Achieved" line),
- * yellow 70–89%, red below 70% (DEFAULT_BANDS). The Labs Pacing flag colours
- * and GM Pod heatmap use the same ACHIEVED_PCT / WATCH_PCT. Metrics where a
+ * One rule everywhere (Noble, 2026-11-05): green at 90% of goal or more (the
+ * Looker Labs Pacing "Target Achieved" line), yellow 70–89%, red below 70%
+ * (DEFAULT_BANDS). The Labs Pacing flag colours and GM Pod heatmap use the same
+ * lines. One exception (Adriana): the Exec KPI → Media & Labs KPIs tables in
+ * the full-year view only colour green (FULL_YEAR_BANDS, via execKpiBands) —
+ * an unfinished year isn't a miss. Metrics where a
  * LOWER number is better (e.g. Meta share vs a divestment target) pass
  * `lowerIsBetter` and the ratio is inverted so the same bands still read
  * "green = doing well".
@@ -27,6 +29,8 @@ export interface RagBands {
   green: number;
   /** Ratio at or above which the metric is amber; below it is red. */
   amber: number;
+  /** Green-only: below `green` is "neutral" (no colour) instead of amber / red. */
+  greenOnly?: boolean;
 }
 
 /**
@@ -43,6 +47,17 @@ export const WATCH_PCT = WATCH_RATIO * 100;
 /** Green at 90% of goal or more, yellow 70–89%, red below 70%. */
 export const DEFAULT_BANDS: RagBands = { green: ACHIEVED_RATIO, amber: WATCH_RATIO };
 
+/** Full-year view of the Media & Labs KPIs tables: green at 90%+, no colour otherwise. */
+export const FULL_YEAR_BANDS: RagBands = { ...DEFAULT_BANDS, greenOnly: true };
+
+/**
+ * Exec KPI → Media & Labs KPIs tables (Adriana): the full year only shows green;
+ * fewer months use the default green / yellow / red.
+ */
+export function execKpiBands(fullYear: boolean): RagBands {
+  return fullYear ? FULL_YEAR_BANDS : DEFAULT_BANDS;
+}
+
 /**
  * A % shown next to a colour: rounded, except never rounded UP across a colour
  * line (70%, 90%) or 100% (99.95% booked reads "99%", not "100%" while behind).
@@ -56,6 +71,7 @@ export function pctNoRoundUp(pct: number): number {
 /** Status of a ratio (1 == 100% of goal) against `bands`. */
 function bandFor(ratio: number, bands: RagBands): RagStatus {
   if (ratio >= bands.green) return "green";
+  if (bands.greenOnly) return "neutral";
   if (ratio >= bands.amber) return "amber";
   return "red";
 }
