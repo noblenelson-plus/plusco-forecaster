@@ -85,7 +85,8 @@ function PartnerCell({ target, booked, bands }: { target: number; booked: number
   const status: RagStatus = ragFromPctOfTarget(pct === null ? null : pct / 100, { bands });
   // Same tinted fill + text as the metric cells above (green / yellow / red),
   // so a partner at 86% reads yellow like a GM's % Target at 86%.
-  const gapCol = behind ? "#A32D2D" : "#0F6E56";
+  // Full year (green-only): "behind" is neutral grey, not red.
+  const gapCol = !behind ? "#0F6E56" : bands?.greenOnly ? "var(--muted-foreground)" : "#A32D2D";
   return (
     <td className={`whitespace-nowrap px-3 py-1.5 text-right align-middle ${status !== "neutral" ? ragCell(status) : ""}`}>
       <div className="flex items-center justify-end gap-1.5">
