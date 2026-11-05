@@ -22,7 +22,7 @@ import ChartCard from "../../dashboard/charts/chart-card";
 import ExportSheetButton from "../table/export-sheet-button";
 import type { TableColumn } from "../table/table-column.types";
 import type { KpiByClientRow } from "../../../lib/dashboard/data/use-mo-kpi-by-client";
-import { ragStatus, ragCell, ragFromPctOfTarget, pctNoRoundUp, type RagStatus, type RagBands } from "./exec-rag";
+import { ragStatus, ragCell, ragBar, ragFromPctOfTarget, pctNoRoundUp, type RagStatus, type RagBands } from "./exec-rag";
 
 // --- Helpers ------------------------------------------------------------------
 
@@ -68,20 +68,6 @@ function compactMoney(v: number): string {
   return `$${Math.round(v)}`;
 }
 
-/** Partner-cell tones per status: muted text, slightly brighter hairline bar. */
-const PARTNER_TEXT: Record<RagStatus, string> = {
-  green: "#0F6E56",
-  amber: "#854F0B",
-  red: "#A32D2D",
-  neutral: "var(--foreground)",
-};
-const PARTNER_BAR: Record<RagStatus, string> = {
-  green: "#1D9E75",
-  amber: "#BA7517",
-  red: "#E24B4A",
-  neutral: "#B4B2A9",
-};
-
 /**
  * One by-partner cell: a pacing bar + % booked, then a plain-language line
  * "of <target> · <gap> behind/ahead". RAG colour follows % booked, on the same
@@ -96,20 +82,17 @@ function PartnerCell({ target, booked, bands }: { target: number; booked: number
   const gap = booked - target; // negative = behind target
   const behind = gap < 0;
   const fill = pct === null ? 0 : Math.min(100, Math.max(0, pct));
-  const status = ragFromPctOfTarget(pct === null ? null : pct / 100, { bands });
-  // Text-only RAG — no cell fill. Muted on-brand tone for the %/gap text, a
-  // slightly brighter tone for the hairline bar, so the row stays as quiet as
-  // the rest of the table (the number carries the signal, not a block of colour).
-  const pctCol = pct === null ? "var(--muted-foreground)" : PARTNER_TEXT[status];
-  const barCol = pct === null ? "#B4B2A9" : PARTNER_BAR[status];
+  const status: RagStatus = ragFromPctOfTarget(pct === null ? null : pct / 100, { bands });
+  // Same tinted fill + text as the metric cells above (green / yellow / red),
+  // so a partner at 86% reads yellow like a GM's % Target at 86%.
   const gapCol = behind ? "#A32D2D" : "#0F6E56";
   return (
-    <td className="whitespace-nowrap px-3 py-1.5 text-right align-middle">
+    <td className={`whitespace-nowrap px-3 py-1.5 text-right align-middle ${status !== "neutral" ? ragCell(status) : ""}`}>
       <div className="flex items-center justify-end gap-1.5">
         <span className="h-1 w-8 overflow-hidden rounded-full bg-muted">
-          <span className="block h-full rounded-full" style={{ width: `${fill}%`, background: barCol }} />
+          <span className={`block h-full rounded-full ${ragBar(status)}`} style={{ width: `${fill}%` }} />
         </span>
-        <span className="text-sm font-medium tabular-nums" style={{ color: pctCol }}>
+        <span className={`text-sm font-medium tabular-nums ${pct === null ? "text-muted-foreground" : ""}`}>
           {pct === null ? "—" : `${pctNoRoundUp(pct)}%`}
         </span>
       </div>

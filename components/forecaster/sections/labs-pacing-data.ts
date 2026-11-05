@@ -12,7 +12,7 @@
 
 import { formatMoney } from "../../../lib/format/money";
 import type { CSSProperties } from "react";
-import { ACHIEVED_PCT, WATCH_PCT, pctNoRoundUp } from "./exec-rag";
+import { ACHIEVED_PCT, WATCH_PCT, pctNoRoundUp, ragCell, ragFromPctOfTarget, type RagStatus } from "./exec-rag";
 import type { TableColumn } from "../table/table-column.types";
 import type { BarItem } from "../../dashboard/charts/bar-list";
 import type { LabsPacingCell, LabsPacingDetailCell } from "../../../lib/dashboard/data/use-scope-labs-pacing";
@@ -368,14 +368,13 @@ export function computeGmPodMatrix(
 }
 
 /**
- * Heat colour for a % of target booked cell, same lines as the Exec KPI cells:
- * green at 90% or more (Target Achieved), yellow 70–89%, red below 70%.
+ * Heat classes for a % of target booked cell (0–100 scale): the exact same
+ * rule and fills as the Exec KPI cells (ragCell) — green at 90% or more
+ * (Target Achieved), yellow 70–89%, red below 70%.
  */
-export function pacingHeat(value: number | null): CSSProperties {
-  if (value === null) return {};
-  if (value >= ACHIEVED_PCT) return { backgroundColor: "#dcfce7", color: "#14532d" };
-  if (value >= WATCH_PCT) return { backgroundColor: "#fef9c3", color: "#713f12" };
-  return { backgroundColor: "#fee2e2", color: "#7f1d1d" };
+export function pacingHeat(value: number | null): string {
+  const status = ragFromPctOfTarget(value === null ? null : value / 100);
+  return status === "neutral" ? "" : ragCell(status);
 }
 // ─── BY CLIENT detail table (with flag) ──────────────────────────────────────
 
@@ -481,10 +480,22 @@ export function computeClientPacing(
  * yellow at 70–89% booked and red below 70% (same lines as everywhere else).
  */
 export function flagStyle(flag: PacingFlag, percentBooked: number | null): CSSProperties {
-  if (flag !== "Under Target") return { color: "#15803d", fontWeight: 500 };
-  if (percentBooked !== null && percentBooked >= WATCH_PCT) return { color: "#a16207", fontWeight: 500 };
-  return { color: "#b91c1c", fontWeight: 500 };
+  const status: RagStatus =
+    flag !== "Under Target" ? "green" : percentBooked !== null && percentBooked >= WATCH_PCT ? "amber" : "red";
+  return { ...FLAG_TONE[status], fontWeight: 500 };
 }
+
+/** Same tinted fill + text as ragCell (the column API takes inline styles). */
+const tone = (c: string): CSSProperties => ({
+  backgroundColor: `color-mix(in oklab, var(--color-${c}-500) 10%, transparent)`,
+  color: `var(--color-${c}-700)`,
+});
+const FLAG_TONE: Record<RagStatus, CSSProperties> = {
+  green: tone("emerald"),
+  amber: tone("amber"),
+  red: tone("red"),
+  neutral: {},
+};
 
 export function buildClientPacingColumns({
   targetLabel,
