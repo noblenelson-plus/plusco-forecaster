@@ -368,8 +368,8 @@ export function computeGmPodMatrix(
 }
 
 /**
- * Heat classes for a % of target booked cell (0–100 scale): the exact same
- * rule and fills as the Exec KPI cells (ragCell) — green at 90% or more
+ * Colour classes for a % of target booked cell (0–100 scale): the exact same
+ * rule and coloured text as the Exec KPI cells (ragCell) — green at 90% or more
  * (Target Achieved), yellow 70–89%, red below 70%.
  */
 export function pacingHeat(value: number | null): string {
@@ -486,23 +486,19 @@ export function flagStyle(flag: PacingFlag, percentBooked: number | null): CSSPr
 }
 
 /**
- * Same tinted fill + text as ragCell (the column API takes inline styles).
- * Built from the brand variables (--plus-*), which exist at runtime, with the
- * same mixes as the Tailwind theme in globals.css: fill = the -500 shade at
- * 10%, text = the -700 shade. (Tailwind's own --color-* theme variables are
- * NOT emitted at runtime, so they can't be referenced from inline styles.)
+ * Same coloured text as ragCell (text only, no fill; the column API takes
+ * inline styles). Built from the brand variables (--plus-*), which exist at
+ * runtime, with the -600 mixes of the Tailwind theme in globals.css.
+ * (Tailwind's own --color-* theme variables are NOT emitted at runtime, so
+ * they can't be referenced from inline styles.)
  */
-const tone = (base: string, darkPct: number, basePct = 100): CSSProperties => {
-  const shade500 = basePct === 100 ? base : `color-mix(in oklab, ${base} ${basePct}%, black)`;
-  return {
-    backgroundColor: `color-mix(in oklab, ${shade500} 10%, transparent)`,
-    color: `color-mix(in oklab, ${base} ${darkPct}%, black)`,
-  };
-};
+const tone = (base: string, pct: number): CSSProperties => ({
+  color: `color-mix(in oklab, ${base} ${pct}%, black)`,
+});
 const FLAG_TONE: Record<RagStatus, CSSProperties> = {
-  green: tone("var(--plus-green)", 70), // green-500 = plus-green, green-700 = 70% + black
-  amber: tone("var(--plus-yellow)", 60, 92), // yellow-500 = 92% + black, yellow-700 = 60% + black
-  red: tone("var(--plus-red)", 70), // red-500 = plus-red, red-700 = 70% + black
+  green: tone("var(--plus-green)", 87), // green-600
+  amber: tone("var(--plus-yellow)", 78), // yellow-600
+  red: tone("var(--plus-red)", 88), // red-600
   neutral: {},
 };
 
