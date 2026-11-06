@@ -124,8 +124,12 @@ const GROUPS: ChapterGroup[] = [
               Changes save on their own a moment after you stop typing — the
               toolbar shows <em>Unsaved — autosaving…</em>, then{" "}
               <em>Saving…</em>, then <em>Saved</em>. Press <SaveChip /> to force
-              an immediate write, or <Chip icon={RotateCcw}>Discard</Chip> to
-              restore the last saved state.
+              an immediate write. Made a mistake? On Media Spend and Labs,{" "}
+              <strong>Undo</strong> (Ctrl+Z) steps back, even after autosave,
+              and <Chip icon={RotateCcw}>Revert all</Chip> returns everything to
+              how it was when you opened the submission. On Revenue,{" "}
+              <Chip icon={RotateCcw}>Discard</Chip> restores the last saved
+              state.
             </Callout>
           </>
         ),
@@ -281,9 +285,10 @@ const GROUPS: ChapterGroup[] = [
             <Callout tone="info" icon={Trash2} title="Row actions live in the ⋯ menu">
               Hover a row and open its <strong>⋯</strong> menu for{" "}
               <em>Distribute…</em>, <em>Add note</em>, and <em>Remove</em>.
-              Removing a row or project becomes permanent once autosave runs —
-              press <Chip icon={RotateCcw}>Discard</Chip> right away to restore
-              the last saved state.
+              Removed a row or project by mistake? On Media Spend and Labs, press{" "}
+              <strong>Undo</strong> (Ctrl+Z) to bring it back, even after
+              autosave. On Revenue, press <Chip icon={RotateCcw}>Discard</Chip>{" "}
+              right away, before autosave runs.
             </Callout>
             {onJump && (
               <PrimaryAction onClick={() => onJump("media")}>
@@ -391,9 +396,9 @@ const GROUPS: ChapterGroup[] = [
       },
       {
         id: "save",
-        label: "Autosave, save & discard",
+        label: "Autosave, undo & revert",
         icon: Save,
-        keywords: "save autosave discard unsaved changes counter dirty lock locked read only cannot save revert undo status saving saved",
+        keywords: "save autosave discard unsaved changes counter dirty lock locked read only cannot save revert revert all undo redo status saving saved",
         body: () => (
           <>
             <Lead>
@@ -412,9 +417,17 @@ const GROUPS: ChapterGroup[] = [
                 pending changes). Useful right before sharing or locking.
               </Step>
               <Step n={3}>
-                <Chip icon={RotateCcw}>Discard</Chip> restores the last saved
-                state — it only rolls back what hasn&apos;t autosaved yet, so
-                use it quickly after a mistake.
+                On Media Spend and Labs, <strong>Undo</strong> /{" "}
+                <strong>Redo</strong> (Ctrl+Z / Ctrl+Shift+Z) step back and
+                forth through your edits, even after they&apos;ve autosaved.
+              </Step>
+              <Step n={4}>
+                On Media Spend and Labs,{" "}
+                <Chip icon={RotateCcw}>Revert all</Chip> returns the whole
+                submission to how it was when you opened it: click it, then{" "}
+                <em>Confirm revert?</em>. Undo brings your changes back. On
+                Revenue, <Chip icon={RotateCcw}>Discard</Chip> restores the last
+                saved state, so use it before autosave runs.
               </Step>
             </Steps>
             <Callout tone="warn" icon={AlertTriangle} title="Everything read-only?">
@@ -790,9 +803,10 @@ const GROUPS: ChapterGroup[] = [
               cell to retry or press <SaveChip />.
             </Faq>
             <Faq q="I deleted a row by mistake.">
-              Press <strong>Discard</strong> right away — it restores the last
-              saved state. If autosave already ran, re-add the row (its type
-              picker keeps the same options).
+              On Media Spend and Labs, press <strong>Undo</strong> (Ctrl+Z): it
+              brings the row back, even after autosave. On Revenue, press{" "}
+              <strong>Discard</strong> right away; if autosave already ran,
+              re-add the row.
             </Faq>
             <Faq q="The Revenue Commission row is all zeros.">
               No commission rates for this client &amp; year. Set them on the{" "}
@@ -852,7 +866,7 @@ const TOPICS: Topic[] = [
   { label: "BL Submission vs Reference Data", chapterId: "grid", keywords: "sections black row total" },
   { label: "MediaOcean & MediaBox", chapterId: "grid", keywords: "booked admin actuals reference synced campaigns" },
   { label: "Autosave status (Saving… / Saved)", chapterId: "save", keywords: "indicator pending flush" },
-  { label: "Save or discard changes", chapterId: "save", keywords: "unsaved revert force" },
+  { label: "Undo or revert changes", chapterId: "save", keywords: "unsaved revert revert all discard undo force" },
   { label: "Row notes & the Notes column", chapterId: "notes", keywords: "comment annotate cell" },
   { label: "Submission note (shared)", chapterId: "notes", keywords: "card team comment locked" },
   { label: "Milestones", chapterId: "notes", keywords: "readiness complete confirm tick flags justify monthly milestone rfq prelim preliminary validation bl forecast" },
