@@ -24,7 +24,8 @@
 //   - ADDITIVE: a target step that is already `status:"validated"` is left as-is
 //     (its timestamp/author are preserved). Steps beyond the cutoff are never
 //     touched. Nothing is ever un-validated.
-//   - A target step that is absent or `status:"failed"` is set to
+//   - A target step that is absent, `status:"failed"` or `status:"pending"`
+//     (validated with flags still open — shown as "Not validated") is set to
 //     `status:"validated"`. NOTE: this does NOT run the flag analysis (it does not
 //     compute/justify cat-3/cat-4 flags). It only stamps the milestone validated,
 //     which is what a manual "mark validated" is. The submission may still read

@@ -5,10 +5,12 @@
  * "BL Forecast Validation" control — the top-bar dropdown that replaces the old
  * tick-a-box list. Each milestone step of the selected RFQ has a Validate button
  * that force-saves and (re)runs the flag analysis for that step's window. A step
- * turns green when every flag is justified, yellow when it failed (flags left to
- * justify). Once validated, a step is auto-rechecked on every save, so it never
- * needs a manual re-validate to stay current. Justifying happens on the Flags
- * page — this control links there.
+ * turns green only when every flag is justified. Validating with flags still
+ * pending shows a "Not validated — N flags pending" message and leaves the step
+ * not validated (it only turns yellow if it had been green and a later check
+ * found new flags — see nextStepStatus). Once validated, a step is
+ * auto-rechecked on every save. Justifying happens on the Flags page — this
+ * control links there, and the Flags page can revalidate.
  *
  * Presentational: the parent owns the validation hook and passes its state in.
  */
@@ -174,8 +176,10 @@ export default function ValidationControl({
                 </span>
               ) : (
                 <span className="text-gray-700">
+                  <span className="font-semibold text-gray-900">Not validated.</span>{" "}
                   {lastResult.unjustified} flag
-                  {lastResult.unjustified > 1 ? "s" : ""} to justify.{" "}
+                  {lastResult.unjustified > 1 ? "s are" : " is"} still pending — justify (or
+                  correct) {lastResult.unjustified > 1 ? "them" : "it"}, then revalidate.{" "}
                   <button
                     type="button"
                     onClick={onOpenFlags}

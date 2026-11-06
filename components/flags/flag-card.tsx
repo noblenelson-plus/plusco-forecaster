@@ -10,13 +10,24 @@
  * now $Y" note. Editable even on a locked RFQ (the justification is an
  * annotation, not forecast data).
  *
+ * Autosave: every change saves itself ~1.5 s after the last keystroke (and
+ * right away on blur, tab hide or leaving the page), so moving on to the next
+ * flag never loses what was typed. Partial input (a comment without a context,
+ * or the reverse) is saved as a draft but does NOT count as justified — the card
+ * then shows a red "Pick a context" / "Add a comment" warning. The Save button
+ * stays for an explicit save. Saving a justification never validates anything —
+ * revalidating stays a deliberate action (Flags page / forecast page).
+ *
+ * The card root carries `data-pending-flag` while unresolved, so the Flags page
+ * can scroll to the first one after a failed revalidation.
+ *
  * A flag whose rule can't be justified (Labs over media) has no editor: it
  * says to correct the forecast, with the red "Over 100%" chip of the Labs
  * share panel (only the chip is red). Yellow = still to justify / correct;
  * white = justified.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { formatMoney, formatSigned } from "../../lib/format/money";
 import {
@@ -27,6 +38,9 @@ import {
   type StoredFlag,
 } from "../../lib/types/forecast-flags.types";
 import { AXIS_STYLE } from "./axis-style";
+
+/** Idle time after the last keystroke before a complete justification autosaves. */
+const AUTOSAVE_DELAY_MS = 1500;
 
 const MONTH_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -96,6 +110,10 @@ export default function FlagCard({
   const [context, setContext] = useState<FlagContext | "">(flag.context ?? "");
   const [note, setNote] = useState(flag.note ?? "");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  // Guards against a second write while one is in flight (the autosave timer,
+  // a blur and the unmount flush can all fire close together).
+  const savingRef = useRef(false);
 
   // Labs over media can't be justified — it only goes away once corrected.
   const correctable = !isJustifiableRule(flag.ruleId);
@@ -105,16 +123,97 @@ export default function FlagCard({
   const wouldJustify = !!context && !!note.trim();
 
   const save = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
+    setSaveError(false);
     try {
       await onJustify(flag.key, { context: context || undefined, note });
+    } catch (err) {
+      console.error("Saving the flag justification failed:", err);
+      setSaveError(true);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
+  // Autosave any change — a partial one is kept as a draft (not justified).
+  // Off for flags that can't be justified (no editor).
+  const autosaveReady = !correctable && dirty;
+  // Half-filled: the BL started but the flag still doesn't count as justified.
+  const missingContext = !context && !!note.trim();
+  const missingNote = !!context && !note.trim();
+  // Latest save + readiness, read by the timer / unmount flush (no stale closures).
+  const saveRef = useRef(save);
+  const readyRef = useRef(autosaveReady);
+  useEffect(() => {
+    saveRef.current = save;
+    readyRef.current = autosaveReady;
+  });
+
+  // True debounce: re-armed on every keystroke, so a comment is saved once the
+  // user pauses — never half-typed mid-sentence.
+  useEffect(() => {
+    if (!autosaveReady) return;
+    const t = setTimeout(() => {
+      if (readyRef.current) void saveRef.current();
+    }, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [autosaveReady, context, note]);
+
+  // Leaving the page (route change) or the tab going away: save what's ready.
+  useEffect(() => {
+    const flush = () => {
+      if (readyRef.current) void saveRef.current();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
+
+  const saveOnBlur = () => {
+    if (autosaveReady) void save();
+  };
+
+  // Brief "Saved" confirmation after a successful write.
+  const [justSaved, setJustSaved] = useState(false);
+  const wasSaving = useRef(false);
+  useEffect(() => {
+    if (saving) {
+      wasSaving.current = true;
+      return;
+    }
+    if (!wasSaving.current || saveError) return;
+    wasSaving.current = false;
+    const show = setTimeout(() => setJustSaved(true), 0);
+    const hide = setTimeout(() => setJustSaved(false), 2500);
+    return () => {
+      clearTimeout(show);
+      clearTimeout(hide);
+    };
+  }, [saving, saveError]);
+
+  const status: "error" | "saving" | "pending" | "saved" | "idle" = saveError
+    ? "error"
+    : saving
+      ? "saving"
+      : autosaveReady
+        ? "pending"
+        : justSaved
+          ? "saved"
+          : "idle";
+
   return (
     <div
+      data-pending-flag={justified ? undefined : ""}
       className={`border border-l-4 ${AXIS_STYLE[flag.axis].stripe} ${
         justified ? "border-gray-200 bg-white" : "border-yellow-400 bg-yellow-400"
       }`}
@@ -212,7 +311,10 @@ export default function FlagCard({
         <select
           value={context}
           onChange={(e) => setContext(e.target.value as FlagContext | "")}
-          className="mt-1 w-full border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-900 focus:outline-none"
+          onBlur={saveOnBlur}
+          className={`mt-1 w-full border bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-900 focus:outline-none ${
+            missingContext ? "border-2 border-red-500" : "border-gray-200"
+          }`}
         >
           <option value="">Select a context…</option>
           {FLAG_CONTEXTS.map((c) => (
@@ -228,16 +330,39 @@ export default function FlagCard({
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
+          onBlur={saveOnBlur}
           rows={2}
           placeholder="Explain this variance…"
-          className="mt-1 w-full resize-y border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none"
+          className={`mt-1 w-full resize-y border bg-white px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none ${
+            missingNote ? "border-2 border-red-500" : "border-gray-200"
+          }`}
         />
+
+        {(missingContext || missingNote) && (
+          <p className="mt-2 bg-red-500 px-2.5 py-1.5 text-[12px] font-medium text-white">
+            {missingContext
+              ? "Pick a context — this flag isn't justified until you do."
+              : "Add a comment — this flag isn't justified until you do."}
+          </p>
+        )}
 
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-[11px] text-gray-400">
-            {wouldJustify
-              ? "Context + comment set — counts as justified."
-              : "A context and a comment are both required."}
+            {status === "error" ? (
+              <span className="font-medium text-red-600">Couldn&apos;t save — try Save justification.</span>
+            ) : status === "saving" || status === "pending" ? (
+              "Saving…"
+            ) : status === "saved" ? (
+              wouldJustify ? (
+                <span className="font-medium text-green-700">Saved — counts as justified.</span>
+              ) : (
+                "Saved as a draft — not justified yet."
+              )
+            ) : wouldJustify ? (
+              "Context + comment set — counts as justified."
+            ) : (
+              "A context and a comment are both required. Changes save automatically."
+            )}
           </span>
           <button
             type="button"

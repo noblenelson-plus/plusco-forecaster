@@ -1,20 +1,25 @@
 // lib/flags/status.ts
 
 /**
- * Pure derivation of a milestone step's UI status from its stored validation
- * record. Shared by the live forecast control (use-forecast-validation) and the
- * cross-client Milestones recap so both classify a step identically.
+ * Pure milestone-status logic, shared by the live forecast control
+ * (use-forecast-validation), the Flags page, the headless/batch check
+ * (milestone-check-service) and the cross-client Milestones recap, so every
+ * path classifies and records a step identically.
  *
- * The status is simply the stored outcome: a step with no validation record has
- * never been checked ("not_validated"); otherwise it is exactly what the last
- * check recorded ("validated" / "failed"). There is no staleness to compute —
- * a validated step is auto-rechecked whenever its data changes, so the stored
- * record is kept current (see use-forecast-validation / milestone-check-service).
+ * Display (`deriveStepStatus`): no record or a "pending" record → "not_validated";
+ * "failed" → "failed" (yellow); "validated" → "validated" (green).
+ *
+ * Recording (`nextStepStatus`): a passing check always records "validated". A
+ * failing check records "failed" only when the step had already passed
+ * (validated / failed) — i.e. new flags surfaced after a data change. A step
+ * that never passed stays "pending" (shown as not validated): validating with
+ * flags left unjustified never turns a milestone yellow.
  */
 
 import type {
   RfqValidationStatus,
   StepValidation,
+  StepValidationStatus,
 } from "../types/forecast-flags.types";
 
 export interface StepStatusInput {
@@ -24,6 +29,16 @@ export interface StepStatusInput {
 
 export function deriveStepStatus(input: StepStatusInput): RfqValidationStatus {
   const v = input.validation;
-  if (!v) return "not_validated";
+  if (!v || v.status === "pending") return "not_validated";
   return v.status === "failed" ? "failed" : "validated";
+}
+
+/** The status to record after a check, given the step's previous record. */
+export function nextStepStatus(
+  previous: StepValidation | undefined,
+  passed: boolean
+): StepValidationStatus {
+  if (passed) return "validated";
+  const hadPassed = previous?.status === "validated" || previous?.status === "failed";
+  return hadPassed ? "failed" : "pending";
 }

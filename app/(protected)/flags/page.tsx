@@ -10,13 +10,29 @@
  *   §2  Big swings (cat 3)  — persisted flags vs the previous RFQ; justify each.
  *   §3  Under target (cat 4)— persisted MediaOcean-under-forecast flags; justify.
  *
- * Flags are created/updated by running a validation from the forecast
- * page's "BL Forecast Validation" control — this page manages and justifies
- * them, it does not itself re-run the analysis.
+ * Flags are first created by validating a milestone from the forecast page's
+ * Milestones control — that click is the deliberate "my forecast is ready"
+ * signal. This page then justifies them (every edit autosaves; a flag counts as
+ * justified only with a context AND a comment) and offers **Revalidate** for
+ * milestones that have a validation record (including "pending" ones that
+ * haven't passed yet), so the user doesn't have to go back to the forecast page.
+ * Revalidate re-runs the exact same check on the saved forecast and the latest
+ * admin / MediaOcean data (`runClientStepCheck`). A milestone only turns green
+ * when that check passes; with flags still pending it shows a "Not validated —
+ * N flags pending" message, scrolls to the first one and leaves the milestone
+ * not validated (`nextStepStatus`). Justifying a flag never revalidates by itself.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, DollarSign, FlaskConical, TrendingUp } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  DollarSign,
+  FlaskConical,
+  Loader2,
+  RefreshCw,
+  TrendingUp,
+} from "lucide-react";
 import PageHeader from "../../../components/_shared/page-header";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import FlagCard from "../../../components/flags/flag-card";
@@ -32,7 +48,14 @@ import type { MediaType } from "../../../lib/types/common.types";
 import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { RFQ } from "../../../lib/types/rfq.types";
 import { stepsForRfq } from "../../../lib/constants/confirmation-steps";
-import type { RfqValidationStatus } from "../../../lib/types/forecast-flags.types";
+import { runClientStepCheck } from "../../../lib/services/milestone-check-service";
+import { useAuth } from "../../../lib/auth-context";
+import type { FlagContext, RfqValidationStatus } from "../../../lib/types/forecast-flags.types";
+
+/** Outcome of the last Revalidate click, shown under the milestone strip. */
+type RevalidateOutcome =
+  | { kind: "done"; passed: string[]; failed: { label: string; unjustified: number }[] }
+  | { kind: "error"; message: string };
 
 const STATUS_META: Record<
   RfqValidationStatus,
@@ -130,6 +153,83 @@ export default function FlagsPage() {
   const underTarget = validation.flags.filter((f) => f.category === "under_target");
   const steps = selectedRFQ ? stepsForRfq(selectedRFQ.type) : [];
 
+  // ─── Revalidate ─────────────────────────────────────────────────────────────
+  const { user } = useAuth();
+
+  const selectionKey = ready ? `${selectedClient!.cl_id}_${selectedYear}_${selectedRFQ!.type}` : "";
+  const [revalidating, setRevalidating] = useState(false);
+  const [outcome, setOutcome] = useState<{ key: string; value: RevalidateOutcome } | null>(null);
+  const shownOutcome = outcome && outcome.key === selectionKey ? outcome.value : null;
+
+  // Justification writes still in flight. Clicking Revalidate blurs the comment
+  // box first (which fires its save), so waiting on these makes the check read
+  // the justification the user just typed.
+  const inflightSaves = useRef(new Set<Promise<void>>());
+  const { justify } = validation;
+  const trackedJustify = useCallback(
+    (flagKey: string, input: { context?: FlagContext; note: string }) => {
+      // A justification change makes the last Revalidate result stale.
+      setOutcome(null);
+      const p = justify(flagKey, input);
+      inflightSaves.current.add(p);
+      void p.finally(() => inflightSaves.current.delete(p)).catch(() => {});
+      return p;
+    },
+    [justify]
+  );
+
+  // Only milestones already validated from the forecast page (any record —
+  // including "pending" ones that haven't passed yet) can be revalidated here;
+  // the first validation stays a deliberate action on the forecast page.
+  const recordedSteps = steps.filter((s) => !!validation.stepValidations[s.id]);
+  // Recorded but not green: still pending, or yellow after a data change.
+  const anyFailed = recordedSteps.some((s) => validation.stepStatus(s.id) !== "validated");
+  const allResolved = validation.unjustifiedCount === 0;
+
+  const revalidate = async () => {
+    if (!ready || recordedSteps.length === 0 || revalidating) return;
+    const key = selectionKey;
+    setRevalidating(true);
+    setOutcome(null);
+    try {
+      await Promise.allSettled([...inflightSaves.current]);
+      const deps = {
+        allRfqs,
+        partnerLabel,
+        partnerMediaType,
+        windows: validation.windows,
+        userUid: user?.uid,
+      };
+      const passed: string[] = [];
+      const failed: { label: string; unjustified: number }[] = [];
+      for (const step of recordedSteps) {
+        const r = await runClientStepCheck(selectedClient!.cl_id, selectedYear!, step, deps);
+        if (r.status === "validated") passed.push(step.short);
+        else if (r.status === "failed") failed.push({ label: step.short, unjustified: r.unjustified });
+      }
+      setOutcome({ key, value: { kind: "done", passed, failed } });
+      // Show the BL which flag still needs them.
+      if (failed.length > 0) {
+        setTimeout(() => {
+          document
+            .querySelector("[data-pending-flag]")
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
+      }
+    } catch (err) {
+      console.error("Revalidate from the Flags page failed:", err);
+      setOutcome({
+        key,
+        value: {
+          kind: "error",
+          message: "Revalidation failed — please try again. If it keeps failing, validate from the forecast page.",
+        },
+      });
+    } finally {
+      setRevalidating(false);
+    }
+  };
+
   return (
     <div className="flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col bg-muted">
       <header className="sticky top-14 lg:top-0 z-20 bg-white">
@@ -147,7 +247,8 @@ export default function FlagsPage() {
           </div>
         ) : (
           <>
-            {/* Validation status for this RFQ's milestones. */}
+            {/* Validation status for this RFQ's milestones + Revalidate. */}
+            <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-semibold text-gray-700">Validation:</span>
               {steps.map((s) => {
@@ -163,9 +264,66 @@ export default function FlagsPage() {
                   </span>
                 );
               })}
-              <span className="text-xs text-gray-400">
-                Run a validation from the forecast page to refresh these flags.
-              </span>
+              {recordedSteps.length === 0 ? (
+                <span className="text-xs text-gray-400">
+                  When the forecast is ready, validate it from the forecast page; then justify the
+                  flags here and revalidate from this page.
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void revalidate()}
+                  disabled={revalidating}
+                  title="Re-run the check on the saved forecast and the latest data for the milestones already validated"
+                  className={`ml-auto flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 ${
+                    anyFailed && allResolved
+                      ? "border-gray-900 bg-gray-900 text-white hover:bg-gray-800"
+                      : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  {revalidating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                  Revalidate
+                </button>
+              )}
+            </div>
+
+            {/* Prompt to revalidate once every flag is resolved — inline, never a popup. */}
+            {!revalidating && !shownOutcome && anyFailed && allResolved && (
+              <p className="bg-green-500 px-3 py-2 text-xs font-medium text-white">
+                All flags are justified. Click <span className="font-bold">Revalidate</span> to
+                turn the milestone green.
+              </p>
+            )}
+            {!revalidating && !shownOutcome && anyFailed && !allResolved && (
+              <p className="text-xs text-gray-500">
+                {validation.unjustifiedCount} flag{validation.unjustifiedCount !== 1 ? "s" : ""} left
+                to justify or correct — then revalidate.
+              </p>
+            )}
+            {shownOutcome?.kind === "error" && (
+              <p className="bg-red-500 px-3 py-2 text-xs font-medium text-white">
+                {shownOutcome.message}
+              </p>
+            )}
+            {shownOutcome?.kind === "done" && (
+              <p
+                className={`px-3 py-2 text-xs font-medium ${
+                  shownOutcome.failed.length === 0
+                    ? "bg-green-500 text-white"
+                    : "bg-yellow-400 text-gray-900"
+                }`}
+              >
+                {shownOutcome.failed.length === 0 && shownOutcome.passed.length === 0
+                  ? "Nothing to check — no forecast has been saved for this submission yet."
+                  : shownOutcome.failed.length === 0
+                  ? `Validation successful — ${shownOutcome.passed.join(" and ")} ${
+                      shownOutcome.passed.length > 1 ? "are" : "is"
+                    } green.`
+                  : `Not validated — ${shownOutcome.failed
+                      .map((f) => `${f.label}: ${f.unjustified} flag${f.unjustified !== 1 ? "s" : ""} still pending`)
+                      .join(" · ")}. Justify (or correct) every flag below, then revalidate.`}
+              </p>
+            )}
             </div>
 
             {/* §1 — QA checks (cat 2, persisted). */}
@@ -177,8 +335,11 @@ export default function FlagsPage() {
             >
               {!loadingAxes && pendingQa > 0 && (
                 <p className="mb-3 bg-yellow-400 px-3 py-2 text-xs font-medium text-gray-900">
-                  {pendingQa} QA issue{pendingQa !== 1 ? "s" : ""} found since the last validation — run a
-                  validation from the forecast page to add {pendingQa !== 1 ? "them" : "it"} here.
+                  {pendingQa} QA issue{pendingQa !== 1 ? "s" : ""} found since the last validation —{" "}
+                  {recordedSteps.length > 0
+                    ? "revalidate"
+                    : "validate from the forecast page"}{" "}
+                  to add {pendingQa !== 1 ? "them" : "it"} here.
                 </p>
               )}
               {qaChecks.length === 0 ? (
@@ -186,7 +347,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {qaChecks.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={validation.justify} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} />
                   ))}
                 </div>
               )}
@@ -204,7 +365,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {swings.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={validation.justify} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} />
                   ))}
                 </div>
               )}
@@ -222,7 +383,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {underTarget.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={validation.justify} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} />
                   ))}
                 </div>
               )}
