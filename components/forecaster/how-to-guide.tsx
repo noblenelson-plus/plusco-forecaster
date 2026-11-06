@@ -456,8 +456,12 @@ const GROUPS: ChapterGroup[] = [
                 bar (left of Flags). Validate each milestone (RFQ deadlines and
                 Prelim RFQs) to (re)run its flag analysis. Validation succeeds
                 only when every flag is justified; otherwise justify or fix the
-                data on the Flags page and re-validate. It locks nothing — it
-                signals completion to the team.
+                data on the Flags page and re-validate. Justifications save
+                automatically once a context and a comment are both filled in,
+                and once a milestone has been validated the Flags page has its
+                own <strong>Revalidate</strong> button, so there&apos;s no need
+                to go back to the forecast. It locks nothing — it signals
+                completion to the team.
               </Step>
             </Steps>
           </>
