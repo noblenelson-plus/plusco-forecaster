@@ -23,7 +23,7 @@
  * not validated (`nextStepStatus`). Justifying a flag never revalidates by itself.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -49,6 +49,7 @@ import type { LabsPartner } from "../../../lib/types/labs.types";
 import type { RFQ } from "../../../lib/types/rfq.types";
 import { stepsForRfq } from "../../../lib/constants/confirmation-steps";
 import { runClientStepCheck } from "../../../lib/services/milestone-check-service";
+import { fetchStepWindows } from "../../../lib/services/flag-config-service";
 import { useAuth } from "../../../lib/auth-context";
 import type { FlagContext, RfqValidationStatus } from "../../../lib/types/forecast-flags.types";
 
@@ -73,7 +74,18 @@ export default function FlagsPage() {
 
   // Lab partners (all years) — name + media-type resolvers for the engines.
   const [labsPartners, setLabsPartners] = useState<LabsPartner[]>([]);
-  useEffect(() => subscribeToLabsPartners(setLabsPartners), []);
+  // Loaded flags: Revalidate stays disabled until the partners and RFQs have
+  // arrived — running the check on empty lists would drop real flags (and their
+  // justifications) and could pass a milestone that shouldn't.
+  const [partnersLoaded, setPartnersLoaded] = useState(false);
+  useEffect(
+    () =>
+      subscribeToLabsPartners((p) => {
+        setLabsPartners(p);
+        setPartnersLoaded(true);
+      }),
+    []
+  );
   const partnerById = useMemo(() => {
     const map = new Map<string, LabsPartner>();
     for (const p of labsPartners) map.set(p.partnerId, p);
@@ -89,7 +101,15 @@ export default function FlagsPage() {
   );
 
   const [rfqs, setRFQs] = useState<RFQ[]>([]);
-  useEffect(() => subscribeToRFQs(setRFQs), []);
+  const [rfqsLoaded, setRfqsLoaded] = useState(false);
+  useEffect(
+    () =>
+      subscribeToRFQs((r) => {
+        setRFQs(r);
+        setRfqsLoaded(true);
+      }),
+    []
+  );
   const allRfqs = useMemo(() => rfqs.map((r) => ({ year: r.year, type: r.type })), [rfqs]);
 
   // Saved axes for the selected submission — media/labs merge the annual
@@ -186,18 +206,23 @@ export default function FlagsPage() {
   const anyFailed = recordedSteps.some((s) => validation.stepStatus(s.id) !== "validated");
   const allResolved = validation.unjustifiedCount === 0;
 
+  const depsLoaded = partnersLoaded && rfqsLoaded && allRfqs.length > 0;
+
   const revalidate = async () => {
-    if (!ready || recordedSteps.length === 0 || revalidating) return;
+    if (!ready || !depsLoaded || recordedSteps.length === 0 || revalidating) return;
     const key = selectionKey;
     setRevalidating(true);
     setOutcome(null);
     try {
       await Promise.allSettled([...inflightSaves.current]);
+      // Fresh admin month windows (like the batch check) — never a not-yet-
+      // loaded subscription value.
+      const windows = await fetchStepWindows();
       const deps = {
         allRfqs,
         partnerLabel,
         partnerMediaType,
-        windows: validation.windows,
+        windows,
         userUid: user?.uid,
       };
       const passed: string[] = [];
@@ -246,7 +271,10 @@ export default function FlagsPage() {
             Select a Client, Year and submission to see its flags.
           </div>
         ) : (
-          <>
+          // Keyed by submission: switching client/year/RFQ remounts the flag cards,
+          // so a pending justification autosave flushes against the submission it
+          // was typed for — never the newly selected one.
+          <Fragment key={selectionKey}>
             {/* Validation status for this RFQ's milestones + Revalidate. */}
             <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -273,7 +301,7 @@ export default function FlagsPage() {
                 <button
                   type="button"
                   onClick={() => void revalidate()}
-                  disabled={revalidating}
+                  disabled={revalidating || !depsLoaded}
                   title="Re-run the check on the saved forecast and the latest data for the milestones already validated"
                   className={`ml-auto flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 ${
                     anyFailed && allResolved
@@ -295,6 +323,7 @@ export default function FlagsPage() {
                 <button
                   type="button"
                   onClick={() => void revalidate()}
+                  disabled={!depsLoaded}
                   className="inline-flex items-center gap-1 border border-white bg-white px-2 py-0.5 text-xs font-bold text-gray-900 transition-colors hover:bg-gray-900 hover:text-white"
                 >
                   <RefreshCw size={12} />
@@ -397,7 +426,7 @@ export default function FlagsPage() {
                 </div>
               )}
             </Section>
-          </>
+          </Fragment>
         )}
       </main>
     </div>
