@@ -107,8 +107,22 @@ export default function FlagCard({
     input: { context?: FlagContext; note: string }
   ) => Promise<void>;
 }) {
-  const [context, setContext] = useState<FlagContext | "">(flag.context ?? "");
-  const [note, setNote] = useState(flag.note ?? "");
+  const storedContext: FlagContext | "" = flag.context ?? "";
+  const storedNote = flag.note ?? "";
+  const [context, setContext] = useState<FlagContext | "">(storedContext);
+  const [note, setNote] = useState(storedNote);
+  // The stored values the fields were last synced from. When the stored flag
+  // changes — our own save landing, or a teammate justifying the same flag in
+  // another tab — a field the user hasn't touched follows the new stored value;
+  // a field being edited keeps the user's text. Without this, a stale blank
+  // field would count as "dirty" and autosave would wipe the teammate's
+  // justification. (React's "adjust state when a prop changes" pattern.)
+  const [synced, setSynced] = useState({ context: storedContext, note: storedNote });
+  if (synced.context !== storedContext || synced.note !== storedNote) {
+    if (context === synced.context) setContext(storedContext);
+    if (note === synced.note) setNote(storedNote);
+    setSynced({ context: storedContext, note: storedNote });
+  }
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   // Guards against a second write while one is in flight (the autosave timer,
@@ -119,7 +133,7 @@ export default function FlagCard({
   const correctable = !isJustifiableRule(flag.ruleId);
   const justified = flag.justified && !correctable;
   const drift = flagDrift(flag);
-  const dirty = context !== (flag.context ?? "") || note !== (flag.note ?? "");
+  const dirty = context !== storedContext || note !== storedNote;
   const wouldJustify = !!context && !!note.trim();
 
   const save = async () => {
