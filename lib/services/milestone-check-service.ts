@@ -38,6 +38,7 @@ import { computeQaCheckFlags } from "../flags/bl-alerts";
 import { computeSwingFlags } from "../flags/swing-rules";
 import { computeUnderTargetFlags } from "../flags/under-target-rules";
 import { reconcileFlags } from "../flags/reconcile";
+import { nextStepStatus } from "../flags/status";
 import type { StepWindowMap } from "./flag-config-service";
 import {
   fetchDataEntry,
@@ -183,7 +184,8 @@ export async function runClientStepCheck(
 
   const passed = result.unjustified === 0;
   await recordStepValidation(clientId, year, step.id, {
-    status: passed ? "validated" : "failed",
+    // Never-passed steps stay "pending" (not validated) — see nextStepStatus.
+    status: nextStepStatus(validations[step.id], passed),
     validatedAt: now,
     ...(deps.userUid ? { validatedBy: deps.userUid } : {}),
     analyzedMonths: [...window],

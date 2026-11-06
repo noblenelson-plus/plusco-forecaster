@@ -167,8 +167,17 @@ export function flagDrift(flag: StoredFlag): {
 
 // ─── Validation status (per confirmation step) ───────────────────────────────
 
-/** Outcome of one validation run for a milestone step. Absence = not validated. */
-export type StepValidationStatus = "validated" | "failed";
+/**
+ * Outcome of one validation run for a milestone step. Absence = not validated.
+ *   validated — the last check passed (every flag justified).
+ *   failed    — the step HAD passed, then a later check (data change) found
+ *               flags to resolve: shown yellow ("Flags to justify").
+ *   pending   — the BL validated but has never passed: flags are still open.
+ *               Shown as "Not validated" — a BL can't turn a milestone yellow by
+ *               validating with blank justifications (Adriana, 2026-11-06).
+ * Transitions live in `nextStepStatus` (lib/flags/status.ts).
+ */
+export type StepValidationStatus = "validated" | "failed" | "pending";
 
 /** One step's last validation, stored under `steps[stepId]` on forecast_validations. */
 export interface StepValidation {
@@ -193,6 +202,6 @@ export type StepValidationMap = Record<string, StepValidation>;
  * stored outcome is always current.
  */
 export type RfqValidationStatus =
-  | "not_validated" // never validated (no check has run for this step yet)
-  | "failed" // last check left some flags unjustified
+  | "not_validated" // never passed a check yet (no record, or a "pending" one)
+  | "failed" // had passed, but a later check found flags to resolve
   | "validated"; // last check passed — every flag justified

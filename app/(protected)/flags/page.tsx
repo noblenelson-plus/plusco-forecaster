@@ -12,14 +12,15 @@
  *
  * Flags are first created by validating a milestone from the forecast page's
  * Milestones control — that click is the deliberate "my forecast is ready"
- * signal. This page then justifies them (justifications autosave once a context
- * and a comment are both set) and offers **Revalidate** for milestones that have
- * already been validated, so the user doesn't have to go back to the forecast
- * page. Revalidate re-runs the exact same check on the saved forecast and the
- * latest admin / MediaOcean data (`runClientStepCheck`): it never validates a
- * milestone for the first time, never bypasses an unjustified flag, and a
- * milestone only turns green when that check passes. Justifying a flag never
- * revalidates by itself.
+ * signal. This page then justifies them (every edit autosaves; a flag counts as
+ * justified only with a context AND a comment) and offers **Revalidate** for
+ * milestones that have a validation record (including "pending" ones that
+ * haven't passed yet), so the user doesn't have to go back to the forecast page.
+ * Revalidate re-runs the exact same check on the saved forecast and the latest
+ * admin / MediaOcean data (`runClientStepCheck`). A milestone only turns green
+ * when that check passes; with flags still pending it shows a "Not validated —
+ * N flags pending" message, scrolls to the first one and leaves the milestone
+ * not validated (`nextStepStatus`). Justifying a flag never revalidates by itself.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -177,10 +178,12 @@ export default function FlagsPage() {
     [justify]
   );
 
-  // Only milestones already validated from the forecast page can be revalidated
-  // here — the first validation stays a deliberate action on the forecast page.
-  const recordedSteps = steps.filter((s) => validation.stepStatus(s.id) !== "not_validated");
-  const anyFailed = recordedSteps.some((s) => validation.stepStatus(s.id) === "failed");
+  // Only milestones already validated from the forecast page (any record —
+  // including "pending" ones that haven't passed yet) can be revalidated here;
+  // the first validation stays a deliberate action on the forecast page.
+  const recordedSteps = steps.filter((s) => !!validation.stepValidations[s.id]);
+  // Recorded but not green: still pending, or yellow after a data change.
+  const anyFailed = recordedSteps.some((s) => validation.stepStatus(s.id) !== "validated");
   const allResolved = validation.unjustifiedCount === 0;
 
   const revalidate = async () => {
@@ -205,6 +208,14 @@ export default function FlagsPage() {
         else if (r.status === "failed") failed.push({ label: step.short, unjustified: r.unjustified });
       }
       setOutcome({ key, value: { kind: "done", passed, failed } });
+      // Show the BL which flag still needs them.
+      if (failed.length > 0) {
+        setTimeout(() => {
+          document
+            .querySelector("[data-pending-flag]")
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
+      }
     } catch (err) {
       console.error("Revalidate from the Flags page failed:", err);
       setOutcome({
@@ -256,7 +267,7 @@ export default function FlagsPage() {
               {recordedSteps.length === 0 ? (
                 <span className="text-xs text-gray-400">
                   When the forecast is ready, validate it from the forecast page; then justify the
-                  flags here and revalidate.
+                  flags here and revalidate from this page.
                 </span>
               ) : (
                 <button
@@ -308,9 +319,9 @@ export default function FlagsPage() {
                   ? `Validation successful — ${shownOutcome.passed.join(" and ")} ${
                       shownOutcome.passed.length > 1 ? "are" : "is"
                     } green.`
-                  : `Not validated yet — ${shownOutcome.failed
-                      .map((f) => `${f.label}: ${f.unjustified} flag${f.unjustified !== 1 ? "s" : ""} to justify or correct`)
-                      .join(" · ")}.`}
+                  : `Not validated — ${shownOutcome.failed
+                      .map((f) => `${f.label}: ${f.unjustified} flag${f.unjustified !== 1 ? "s" : ""} still pending`)
+                      .join(" · ")}. Justify (or correct) every flag below, then revalidate.`}
               </p>
             )}
             </div>

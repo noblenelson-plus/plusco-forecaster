@@ -14,14 +14,18 @@
  *   3. reconciles them with the stored flags — new flags start unjustified,
  *      existing flags keep their justification but refresh their numbers, gone
  *      flags are dropped;
- *   4. writes the reconciled set and records the step's status: "validated" when
- *      every flag is justified, otherwise "failed".
+ *   4. writes the reconciled set and records the step's status via
+ *      `nextStepStatus`: "validated" when every flag is justified; otherwise
+ *      "pending" (shown as not validated) if the step never passed, or "failed"
+ *      (yellow) if it had passed and new flags surfaced. Validating with flags
+ *      left unjustified never turns a milestone yellow — the caller shows a
+ *      "flags still to justify" message instead.
  *
  * Auto-recheck: whenever the forecast is saved, `recheckValidatedSteps` re-runs
  * the check for every step of the selected RFQ that already has a validation
- * record, so a validated step never drifts out of date — its stored outcome is
- * refreshed in place ("validated" ⇄ "failed"). Steps never validated are left
- * untouched (they stay "not validated" until someone runs the manual Validate).
+ * record (pending included), so a step never drifts out of date. Steps never
+ * validated are left untouched (they stay "not validated" until someone runs
+ * the manual Validate).
  */
 
 "use client";
@@ -51,7 +55,7 @@ import { computeSwingFlags } from "../flags/swing-rules";
 import { computeUnderTargetFlags } from "../flags/under-target-rules";
 import { reconcileFlags } from "../flags/reconcile";
 import { justifyStoredFlag } from "../flags/reconcile";
-import { deriveStepStatus } from "../flags/status";
+import { deriveStepStatus, nextStepStatus } from "../flags/status";
 import {
   previousRFQ,
   type AxisData,
@@ -201,8 +205,8 @@ export function useForecastValidation(
   const [runningStep, setRunningStep] = useState<string | null>(null);
   // Keep the latest working copies reachable from the async run without
   // re-creating runValidation on every keystroke.
-  const liveRef = useRef({ media, labs, revenue, allRfqs, partnerLabel, partnerMediaType, windows });
-  liveRef.current = { media, labs, revenue, allRfqs, partnerLabel, partnerMediaType, windows };
+  const liveRef = useRef({ media, labs, revenue, allRfqs, partnerLabel, partnerMediaType, windows, stepValidations });
+  liveRef.current = { media, labs, revenue, allRfqs, partnerLabel, partnerMediaType, windows, stepValidations };
 
   const runValidation = useCallback(
     async (stepId: string): Promise<ValidationRunResult | null> => {
@@ -264,7 +268,7 @@ export function useForecastValidation(
 
         const passed = result.unjustified === 0;
         await recordStepValidation(clientId, year, stepId, {
-          status: passed ? "validated" : "failed",
+          status: nextStepStatus(live.stepValidations[stepId], passed),
           validatedAt: now,
           ...(user?.uid ? { validatedBy: user.uid } : {}),
           analyzedMonths: [...window],

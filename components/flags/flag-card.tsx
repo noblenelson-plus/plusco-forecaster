@@ -10,12 +10,16 @@
  * now $Y" note. Editable even on a locked RFQ (the justification is an
  * annotation, not forecast data).
  *
- * Autosave: once BOTH a context and a comment are filled in, the justification
- * saves itself ~1.5 s after the last keystroke (and right away on blur, tab hide
- * or leaving the page), so a filled-in flag can't be left unsaved. Partial input
- * is never autosaved. The Save button stays for explicit saves, including
- * clearing a justification. Saving a justification never validates anything —
+ * Autosave: every change saves itself ~1.5 s after the last keystroke (and
+ * right away on blur, tab hide or leaving the page), so moving on to the next
+ * flag never loses what was typed. Partial input (a comment without a context,
+ * or the reverse) is saved as a draft but does NOT count as justified — the card
+ * then shows a red "Pick a context" / "Add a comment" warning. The Save button
+ * stays for an explicit save. Saving a justification never validates anything —
  * revalidating stays a deliberate action (Flags page / forecast page).
+ *
+ * The card root carries `data-pending-flag` while unresolved, so the Flags page
+ * can scroll to the first one after a failed revalidation.
  *
  * A flag whose rule can't be justified (Labs over media) has no editor: it
  * says to correct the forecast, with the red "Over 100%" chip of the Labs
@@ -134,9 +138,12 @@ export default function FlagCard({
     }
   };
 
-  // Autosave only a complete justification (context + comment); partial input
-  // waits for the user. Off for flags that can't be justified (no editor).
-  const autosaveReady = !correctable && dirty && wouldJustify;
+  // Autosave any change — a partial one is kept as a draft (not justified).
+  // Off for flags that can't be justified (no editor).
+  const autosaveReady = !correctable && dirty;
+  // Half-filled: the BL started but the flag still doesn't count as justified.
+  const missingContext = !context && !!note.trim();
+  const missingNote = !!context && !note.trim();
   // Latest save + readiness, read by the timer / unmount flush (no stale closures).
   const saveRef = useRef(save);
   const readyRef = useRef(autosaveReady);
@@ -206,6 +213,7 @@ export default function FlagCard({
 
   return (
     <div
+      data-pending-flag={justified ? undefined : ""}
       className={`border border-l-4 ${AXIS_STYLE[flag.axis].stripe} ${
         justified ? "border-gray-200 bg-white" : "border-yellow-400 bg-yellow-400"
       }`}
@@ -304,7 +312,9 @@ export default function FlagCard({
           value={context}
           onChange={(e) => setContext(e.target.value as FlagContext | "")}
           onBlur={saveOnBlur}
-          className="mt-1 w-full border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-900 focus:outline-none"
+          className={`mt-1 w-full border bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-900 focus:outline-none ${
+            missingContext ? "border-2 border-red-500" : "border-gray-200"
+          }`}
         >
           <option value="">Select a context…</option>
           {FLAG_CONTEXTS.map((c) => (
@@ -323,8 +333,18 @@ export default function FlagCard({
           onBlur={saveOnBlur}
           rows={2}
           placeholder="Explain this variance…"
-          className="mt-1 w-full resize-y border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none"
+          className={`mt-1 w-full resize-y border bg-white px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none ${
+            missingNote ? "border-2 border-red-500" : "border-gray-200"
+          }`}
         />
+
+        {(missingContext || missingNote) && (
+          <p className="mt-2 bg-red-500 px-2.5 py-1.5 text-[12px] font-medium text-white">
+            {missingContext
+              ? "Pick a context — this flag isn't justified until you do."
+              : "Add a comment — this flag isn't justified until you do."}
+          </p>
+        )}
 
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-[11px] text-gray-400">
@@ -333,13 +353,15 @@ export default function FlagCard({
             ) : status === "saving" || status === "pending" ? (
               "Saving…"
             ) : status === "saved" ? (
-              <span className="font-medium text-green-700">Saved — counts as justified.</span>
-            ) : !wouldJustify ? (
-              "A context and a comment are both required. Saves automatically once both are set."
-            ) : dirty ? (
-              "Unsaved changes."
-            ) : (
+              wouldJustify ? (
+                <span className="font-medium text-green-700">Saved — counts as justified.</span>
+              ) : (
+                "Saved as a draft — not justified yet."
+              )
+            ) : wouldJustify ? (
               "Context + comment set — counts as justified."
+            ) : (
+              "A context and a comment are both required. Changes save automatically."
             )}
           </span>
           <button
