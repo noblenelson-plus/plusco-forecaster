@@ -289,9 +289,18 @@ export default function FlagsPage() {
 
             {/* Prompt to revalidate once every flag is resolved — inline, never a popup. */}
             {!revalidating && !shownOutcome && anyFailed && allResolved && (
-              <p className="bg-green-500 px-3 py-2 text-xs font-medium text-white">
-                All flags are justified. Click <span className="font-bold">Revalidate</span> to
-                turn the milestone green.
+              <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 bg-green-500 px-3 py-2 text-xs font-medium text-white">
+                All flags are justified. Click
+                {/* Same action as the Revalidate button above — BLs click the word. */}
+                <button
+                  type="button"
+                  onClick={() => void revalidate()}
+                  className="inline-flex items-center gap-1 border border-white bg-white px-2 py-0.5 text-xs font-bold text-gray-900 transition-colors hover:bg-gray-900 hover:text-white"
+                >
+                  <RefreshCw size={12} />
+                  Revalidate
+                </button>
+                to turn the milestone green.
               </p>
             )}
             {!revalidating && !shownOutcome && anyFailed && !allResolved && (
