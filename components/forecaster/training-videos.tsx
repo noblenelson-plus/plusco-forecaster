@@ -28,7 +28,41 @@ interface TrainingVideo {
   poster: Record<Lang, string>;
 }
 
+// Listed in learning order: start with onboarding, end with validation.
 const TRAINING_VIDEOS: TrainingVideo[] = [
+  {
+    id: "forecaster-onboarding",
+    title: { en: "Forecaster onboarding", fr: "Prise en main du Forecaster" },
+    summary: {
+      en: "Your forecast page, section by section: selectors, tabs, the grid, reference data and more.",
+      fr: "Votre page de prévision, section par section : sélecteurs, onglets, grille, données de référence et plus.",
+    },
+    length: { en: "3:09", fr: "3:20" },
+    src: { en: "/training/forecaster-onboarding-en.mp4", fr: "/training/forecaster-onboarding-fr.mp4" },
+    poster: { en: "/training/forecaster-onboarding-en.jpg", fr: "/training/forecaster-onboarding-fr.jpg" },
+  },
+  {
+    id: "copy-paste",
+    title: { en: "Copy and paste", fr: "Copier-coller" },
+    summary: {
+      en: "Five ways to fill your forecast faster: bookings, another year, one line, Media to Labs, Product.",
+      fr: "Cinq façons de remplir votre prévision plus vite : réservations, autre année, une ligne, Média vers Labs, Product.",
+    },
+    length: { en: "2:27", fr: "2:36" },
+    src: { en: "/training/copy-paste-en.mp4", fr: "/training/copy-paste-fr.mp4" },
+    poster: { en: "/training/copy-paste-en.jpg", fr: "/training/copy-paste-fr.jpg" },
+  },
+  {
+    id: "google-sheets",
+    title: { en: "Working with Google Sheets", fr: "Travailler avec Google Sheets" },
+    summary: {
+      en: "Export, edit with your team, import back, and start a new RFQ from the previous one.",
+      fr: "Exportez, modifiez en équipe, réimportez, et démarrez un nouveau RFQ à partir du précédent.",
+    },
+    length: { en: "2:11", fr: "2:15" },
+    src: { en: "/training/google-sheets-en.mp4", fr: "/training/google-sheets-fr.mp4" },
+    poster: { en: "/training/google-sheets-en.jpg", fr: "/training/google-sheets-fr.jpg" },
+  },
   {
     id: "flags-overview",
     title: { en: "Overview of automated flags", fr: "Aperçu des signalements automatiques" },
