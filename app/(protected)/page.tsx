@@ -820,7 +820,6 @@ function DashboardContent() {
             focusComparisonData={focusComparisonData}
             focusedClientId={activeFocusId}
             focusLoading={focusLoading}
-            mediabox={mediaboxData}
             scopedClientIds={scopedClientIds}
             clientDimensions={clientDimensions}
             clientNameById={clientNameById}

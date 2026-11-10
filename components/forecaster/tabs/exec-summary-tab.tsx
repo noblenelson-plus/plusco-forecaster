@@ -27,7 +27,6 @@ import { sumMonthlyMap } from "../../../lib/types/common.types";
 import { computeVariance } from "../../../lib/types/forecaster.types";
 import type { Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
-import type { ScopeMediaboxData } from "../../../lib/dashboard/data/use-scope-mediabox-totals";
 import SpendBreakdownRow from "../../dashboard/spend-breakdown-row";
 import type { ClientDimensions } from "../../dashboard/dimension-breakdown";
 
@@ -60,7 +59,6 @@ export default function ExecSummaryTab({
   focusComparisonData,
   focusedClientId,
   focusLoading,
-  mediabox,
   scopedClientIds,
   clientDimensions,
   clientNameById,
@@ -74,8 +72,6 @@ export default function ExecSummaryTab({
   focusComparisonData: ScopeForecastData;
   focusedClientId: string | null;
   focusLoading: boolean;
-  /** MediaBox totals for the scope — feeds the adoption KPI (scope-wide). */
-  mediabox: ScopeMediaboxData;
   scopedClientIds: string[];
   clientDimensions: ClientDimensions;
   clientNameById: Record<string, string>;
@@ -93,22 +89,6 @@ export default function ExecSummaryTab({
   const labs = shown.labs;
   const revenue = shown.revenueByMode.blSubmission.breakdown;
   const ratio = media.totalAnnual > 0 ? revenue.totalAnnual / media.totalAnnual : null;
-
-  // MediaBox adoption — MediaBox spend ÷ BL forecast, mapped clients only.
-  // Always scope-wide (never the focused single client), matching the tab.
-  const mappedIds = new Set(
-    Object.values(mediabox.byClient).filter((c) => c.mapped).map((c) => c.clientId)
-  );
-  const mbForecastTotal = data.mediaByClient
-    .filter((cb) => mappedIds.has(cb.clientId))
-    .reduce(
-      (acc, cb) => acc + Object.values(cb.byType).reduce((a, m) => a + sumMonthlyMap(m), 0),
-      0
-    );
-  const mbTotal = Object.values(mediabox.byClient)
-    .filter((c) => c.mapped)
-    .reduce((acc, c) => acc + c.total, 0);
-  const mbCoverage = mbForecastTotal > 0 ? mbTotal / mbForecastTotal : null;
 
   const compMedia = shownComparison.hasContext ? shownComparison.media : null;
   const compLabs = shownComparison.hasContext ? shownComparison.labs : null;
@@ -200,7 +180,7 @@ export default function ExecSummaryTab({
   return (
     <div className="space-y-8">
       <div className="relative space-y-8">
-      <div data-scroll-section data-scroll-label="Key metrics" className="grid grid-cols-2 gap-5 lg:grid-cols-3 xl:grid-cols-6">
+      <div data-scroll-section data-scroll-label="Key metrics" className="grid grid-cols-2 gap-5 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
           icon={TrendingUp}
           label="Total media spend"
@@ -237,13 +217,6 @@ export default function ExecSummaryTab({
           sub={`Target ${formatPct(labs.targetRatio)}`}
           accent={labs.ratio !== null && labs.ratio >= labs.targetRatio ? "text-emerald-500" : "text-yellow-500"}
           variance={getVariance(labs.ratio ?? 0, compLabs?.ratio ?? 0, true, true)}
-        />
-        <StatCard
-          icon={Box}
-          label="MediaBox adoption"
-          value={mediabox.loading ? "…" : formatPct(mbCoverage)}
-          sub="of BL forecast in MediaBox"
-          accent="text-indigo-500"
         />
       </div>
 
