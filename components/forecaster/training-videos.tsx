@@ -11,10 +11,19 @@
  * is remembered in localStorage (a per-viewer convenience; safe to lose).
  * Add a video by adding an entry to TRAINING_VIDEOS and its files under
  * public/training/ (built in the plusco-training repo folder).
+ *
+ * Who sees what (lib/format/training-videos.ts): the forecast videos go to
+ * people who open the team spaces; the dashboard overview comes in one video
+ * per access level, and each person gets the one matching their tabs. Those
+ * show real dashboard data, so their file names are not in this code: they
+ * come from config/training_videos, readable only after sign-in.
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { PlayCircle } from "lucide-react";
+import { useAccess } from "../../lib/hooks/use-access";
+import { dashboardVideoLevels, seesForecastVideos, type DashboardVideoLevel } from "../../lib/format/training-videos";
+import { fetchDashboardVideoFiles, type DashboardVideoFiles } from "../../lib/services/training-video-service";
 
 type Lang = "en" | "fr";
 
@@ -28,7 +37,7 @@ interface TrainingVideo {
   poster: Record<Lang, string>;
 }
 
-// Listed in learning order: start with onboarding, end with validation.
+// Forecast videos, in learning order: start with onboarding, end with validation.
 const TRAINING_VIDEOS: TrainingVideo[] = [
   {
     id: "forecaster-onboarding",
@@ -76,6 +85,31 @@ const TRAINING_VIDEOS: TrainingVideo[] = [
   },
 ];
 
+// Dashboard overview: titles here, files from config/training_videos.
+const DASHBOARD_VIDEO_TEXT: Record<DashboardVideoLevel, { title: Record<Lang, string>; summary: Record<Lang, string> }> = {
+  agency: {
+    title: { en: "Dashboard overview", fr: "Aperçu du tableau de bord" },
+    summary: {
+      en: "Filters, Media Investments, Labs Pacing and Reports.",
+      fr: "Filtres, Media Investments, Labs Pacing et Reports.",
+    },
+  },
+  leads: {
+    title: { en: "Dashboard overview for business and digital leads", fr: "Aperçu du tableau de bord : business et digital leads" },
+    summary: {
+      en: "Filters, the Forecaster tab, Media Investments, Labs Pacing and Reports.",
+      fr: "Filtres, onglet Forecaster, Media Investments, Labs Pacing et Reports.",
+    },
+  },
+  leadership: {
+    title: { en: "Dashboard overview for leadership", fr: "Aperçu du tableau de bord : direction" },
+    summary: {
+      en: "Every tab, including Exec KPI and MediaBox Adoption.",
+      fr: "Tous les onglets, y compris Exec KPI et MediaBox Adoption.",
+    },
+  },
+};
+
 // ─── Language preference (external store: localStorage + in-memory fallback) ──
 // Read through useSyncExternalStore so the server render ("en") and the first
 // client render agree, then the stored / browser language takes over.
@@ -116,6 +150,44 @@ function saveLang(l: Lang): void {
 export default function TrainingVideos() {
   const lang = useSyncExternalStore(subscribeLang, readLang, (): Lang => "en");
   const choose = saveLang;
+  const { ctx, hasTeamSpaces, openTabs, loading } = useAccess();
+
+  const audience = { isAdmin: ctx.isAdmin, hasTeamSpaces, openTabs };
+  const forecast = !loading && seesForecastVideos(audience);
+  const levelsKey = loading ? "" : dashboardVideoLevels(audience).join(",");
+
+  // The private dashboard files, fetched once the person's levels are known.
+  const [files, setFiles] = useState<DashboardVideoFiles>({});
+  useEffect(() => {
+    if (!levelsKey) return;
+    let cancelled = false;
+    fetchDashboardVideoFiles()
+      .then((f) => {
+        if (!cancelled) setFiles(f);
+      })
+      .catch(() => {}); // not published yet / offline: just no dashboard videos
+    return () => {
+      cancelled = true;
+    };
+  }, [levelsKey]);
+
+  const videos: TrainingVideo[] = useMemo(() => {
+    const levels = levelsKey ? (levelsKey.split(",") as DashboardVideoLevel[]) : [];
+    const dashboard = levels.flatMap((level): TrainingVideo[] => {
+      const f = files[level];
+      if (!f) return [];
+      return [{
+        id: `dashboard-${level}`,
+        ...DASHBOARD_VIDEO_TEXT[level],
+        length: { en: f.en.length, fr: f.fr.length },
+        src: { en: f.en.src, fr: f.fr.src },
+        poster: { en: f.en.poster, fr: f.fr.poster },
+      }];
+    });
+    return [...(forecast ? TRAINING_VIDEOS : []), ...dashboard];
+  }, [forecast, levelsKey, files]);
+
+  if (videos.length === 0) return null;
 
   return (
     <section className="mb-8">
@@ -153,7 +225,7 @@ export default function TrainingVideos() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {TRAINING_VIDEOS.map((v) => (
+        {videos.map((v) => (
           <article key={v.id} className="border border-gray-200 bg-white">
             {/* key={lang}: switching language loads the other file from the start. */}
             <video
