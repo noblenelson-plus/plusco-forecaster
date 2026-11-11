@@ -11,7 +11,10 @@
  *      Digital Media line → Total Media LMI and Digital Media LMI (the two
  *      figures in the Exec KPI presentation).
  * US-focused clients (BRP, Intact Financial Global Brand, Mekanism USD clients)
- * are excluded, as in the sheet; the page names the ones it left out.
+ * are excluded, as in the sheet; the page names the ones it left out. With no
+ * dashboard filter active, MIR clients that aren't Forecaster clients (no
+ * `_clientId`) are included too, so the totals match the sheet; the page names
+ * them. The LMI tiles compare with the previous monthly MIR pull.
  * Driven by the dashboard filters, the Year and the Exec Months filter. CAD.
  */
 
@@ -61,10 +64,16 @@ export default function LocalMediaSection({
   clients,
   year,
   months,
+  includeUnlinked = false,
 }: {
   scopedClientIds: string[];
   clients: Client[];
   year: number;
+  /**
+   * Include MIR rows of clients that aren't Forecaster clients (true when no
+   * dashboard filter is active, so the totals match the full MIR).
+   */
+  includeUnlinked?: boolean;
   /** Exec Months filter (1–12; empty = full year). */
   months?: readonly number[];
 }) {
@@ -87,27 +96,58 @@ export default function LocalMediaSection({
 
   const monthSet = useMemo(() => new Set(months && months.length ? months : MONTH_ABBR.map((_, i) => i + 1)), [months]);
 
-  const { inScope, excluded, source } = useMemo(() => {
+  const { inScope, excluded, unlinked, unlinkedTotal, source, prevSource } = useMemo(() => {
     const inScope = [];
     const excluded = new Set<string>();
+    const unlinked = new Map<string, number>();
     const sources = new Set<string>();
+    const prevSources = new Set<string>();
     for (const r of rows) {
       if (r.PLUSCO_YEAR !== String(year)) continue;
-      if (!scopedNames.has(String(r.PLUSCO_CLIENT_NAME ?? "").trim().toLowerCase())) continue;
+      const isUnlinked = !r._clientId;
+      const inClientScope = scopedNames.has(String(r.PLUSCO_CLIENT_NAME ?? "").trim().toLowerCase());
+      if (!inClientScope && !(includeUnlinked && isUnlinked)) continue;
       const m = localMediaMonth(r);
       if (m === null || !monthSet.has(m)) continue;
       if (r.SOURCE) sources.add(r.SOURCE);
+      if (r.PREV_SOURCE) prevSources.add(r.PREV_SOURCE);
       if (r.US_FOCUSED) {
         excluded.add(String(r.PLUSCO_CLIENT_NAME));
         continue;
       }
+      if (!inClientScope) {
+        const name = r.PLUSCO_CLIENT_NAME?.trim() || "No client name";
+        unlinked.set(name, (unlinked.get(name) ?? 0) + (Number(r.NET_ORDERED_CAD) || 0));
+      }
       inScope.push(r);
     }
-    return { inScope, excluded: [...excluded].sort(), source: [...sources].sort().join(", ") };
-  }, [rows, year, scopedNames, monthSet]);
+    const unlinkedNames = [...unlinked.entries()].filter(([, v]) => Math.round(v) !== 0).sort((a, b) => b[1] - a[1]);
+    return {
+      inScope,
+      excluded: [...excluded].sort(),
+      unlinked: unlinkedNames.map(([n]) => n),
+      unlinkedTotal: unlinkedNames.reduce((t, [, v]) => t + v, 0),
+      source: [...sources].sort().join(", "),
+      prevSource: [...prevSources].sort().join(", "),
+    };
+  }, [rows, year, scopedNames, monthSet, includeUnlinked]);
 
   const yearProxies = proxies?.[String(year)];
   const s = useMemo(() => summarizeLocalMedia(inScope, yearProxies), [inScope, yearProxies]);
+  // Same rows, previous monthly MIR pull (same proxies), for the tiles' change.
+  const prev = useMemo(
+    () => summarizeLocalMedia(inScope, yearProxies, "NET_ORDERED_CAD_PREV"),
+    [inScope, yearProxies]
+  );
+  const change = (now: number | null, before: number | null) => {
+    if (now === null || before === null || !prevSource) return null;
+    const pts = Math.round((now - before) * 1000) / 10;
+    return {
+      pillLabel: `${pts > 0 ? "+" : pts < 0 ? "−" : ""}${Math.abs(pts).toFixed(1)} pts`,
+      isFavorable: pts >= 0,
+      absoluteLabel: `vs ${pct(before)} in ${prevSource}`,
+    };
+  };
 
   if (loading || !proxies) {
     return (
@@ -141,6 +181,12 @@ export default function LocalMediaSection({
             Booked net ordered (CAD) from the MIR{source ? ` (${source})` : ""}, media channel N/A left out.{" "}
             <span className="font-semibold text-foreground">Excludes US-focused clients</span> (BRP, Intact Financial (IFC) &amp; Mekanism US clients)
             {excluded.length > 0 && <>: {excluded.join(", ")}</>}.
+            {unlinked.length > 0 && (
+              <>
+                {" "}Includes {money(unlinkedTotal)} for MIR clients that aren&apos;t in the Forecaster ({unlinked.join(", ")}); filtering the
+                dashboard leaves them out.
+              </>
+            )}
           </p>
         </div>
 
@@ -150,25 +196,20 @@ export default function LocalMediaSection({
           </div>
         ) : (
           <>
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-6 sm:grid-cols-2">
               <StatCard
                 icon={Percent}
                 label="Total Media LMI"
                 value={pct(s.totalLmi)}
                 sub={`${money(s.splitTotal.local)} local of ${money(s.splitTotal.total)}`}
+                variance={change(s.totalLmi, prev.totalLmi)}
               />
               <StatCard
                 icon={Percent}
                 label="Digital Media LMI"
                 value={pct(s.digitalLmi)}
                 sub={`${money(s.digital.local)} local of ${money(s.digital.total)}`}
-              />
-              <StatCard icon={MapPin} label="Total Media" value={money(s.tagTotal.total)} sub="Foreign + hybrid + local" />
-              <StatCard
-                icon={SlidersHorizontal}
-                label="Hybrid, split by proxy"
-                value={money(s.tagTotal.hybrid)}
-                sub={`${pct(s.tagTotal.total ? s.tagTotal.hybrid / s.tagTotal.total : null)} of total media`}
+                variance={change(s.digitalLmi, prev.digitalLmi)}
               />
             </div>
 
@@ -207,22 +248,11 @@ export default function LocalMediaSection({
         )}
       </div>
 
-      <div data-scroll-section data-scroll-label="Hybrid Proxies">
-        <ProxiesCard
-          year={String(year)}
-          allProxies={proxies}
-          proxies={yearProxies}
-          hybridSplit={s.hybridSplit}
-          canEdit={ctx.isAdmin}
-          editor={user?.email ?? null}
-        />
-      </div>
-
       {!empty && (
         <div data-scroll-section data-scroll-label="Local vs Foreign">
           <ChartCard
             title="Local vs Foreign, Hybrid Split by Proxy"
-            subtitle="Hybrid dollars assigned to local and foreign with the proxies above"
+            subtitle="Hybrid dollars assigned to local and foreign with the proxies below"
             icon={Table}
           >
             {s.missingProxies.length > 0 && (
@@ -279,6 +309,17 @@ export default function LocalMediaSection({
           </ChartCard>
         </div>
       )}
+
+      <div data-scroll-section data-scroll-label="Hybrid Proxies">
+        <ProxiesCard
+          year={String(year)}
+          allProxies={proxies}
+          proxies={yearProxies}
+          hybridSplit={s.hybridSplit}
+          canEdit={ctx.isAdmin}
+          editor={user?.email ?? null}
+        />
+      </div>
     </div>
   );
 }
