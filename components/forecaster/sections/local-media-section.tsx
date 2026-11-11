@@ -146,6 +146,7 @@ export default function LocalMediaSection({
       pillLabel: `${pts > 0 ? "+" : pts < 0 ? "−" : ""}${Math.abs(pts).toFixed(1)} pts`,
       isFavorable: pts >= 0,
       absoluteLabel: `vs ${pct(before)} in ${prevSource}`,
+      absoluteSuffix: "",
     };
   };
 

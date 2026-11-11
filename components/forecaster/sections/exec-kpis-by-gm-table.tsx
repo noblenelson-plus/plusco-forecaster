@@ -331,6 +331,7 @@ export default function ExecKpisByGmTable({
   bands,
   sourceLabel = "Booked to date (MIR)",
   mirAsOf,
+  period,
   annualTargets = false,
 }: {
   rows: KpiByClientRow[];
@@ -340,6 +341,8 @@ export default function ExecKpisByGmTable({
   sourceLabel?: string;
   /** MIR "as of" date shown in the Labs-by-partner note (e.g. "Sep 28, 2026"). */
   mirAsOf?: string;
+  /** Months shown (e.g. "Jan–Sep 2026", "Full year 2026"), named in the Labs-by-partner note. */
+  period?: string;
   /** A month period is shown: label the (annual) Meta Target as such. */
   annualTargets?: boolean;
 }) {
@@ -740,7 +743,7 @@ export default function ExecKpisByGmTable({
                           >
                             Labs — by partner
                             <span className="ml-2 font-normal normal-case tracking-normal">
-                              · Forecast target ({LABS_TARGET_RFQ}) vs MediaOcean booked (MIR
+                              · {period ? `${period} · ` : ""}Forecast target ({LABS_TARGET_RFQ}) vs MediaOcean booked (MIR
                               {mirAsOf ? ` as of ${mirAsOf}` : ""})
                             </span>
                           </td>

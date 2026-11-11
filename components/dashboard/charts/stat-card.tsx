@@ -19,6 +19,8 @@ export interface StatVariance {
   isFavorable: boolean;
   /** Optional absolute difference text, e.g. "+$1.2M" */
   absoluteLabel?: string;
+  /** Text after absoluteLabel (default " vs comparison"; "" when the label already names what it compares with). */
+  absoluteSuffix?: string;
 }
 
 export default function StatCard({
@@ -81,7 +83,7 @@ export default function StatCard({
         {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
         {variance?.absoluteLabel && (
           <div className="mt-0.5 text-[11px] text-muted-foreground">
-            {variance.absoluteLabel} vs comparison
+            {variance.absoluteLabel}{variance.absoluteSuffix ?? " vs comparison"}
           </div>
         )}
       </div>
