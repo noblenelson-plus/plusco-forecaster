@@ -24,8 +24,15 @@ export interface LocalMediaRow {
   US_FOCUSED: boolean;
   SOURCE: string | null;
   NET_ORDERED_CAD: number;
+  /** Same grain in the previous monthly MIR pull (0 when absent). */
+  NET_ORDERED_CAD_PREV?: number;
+  PREV_SOURCE?: string | null;
+  /** Forecaster client id; absent for MIR clients that aren't Forecaster clients. */
   _clientId?: string;
 }
+
+/** Which MIR pull to roll up: the current one or the previous month's. */
+export type LocalMediaAmount = "NET_ORDERED_CAD" | "NET_ORDERED_CAD_PREV";
 
 /** How a channel's HYBRID dollars split. `local` is a 0–1 share; foreign = 1 − local. */
 export interface LocalMediaProxy {
@@ -105,14 +112,15 @@ const ratio = (a: number, b: number) => (b ? a / b : null);
 /** Rolls the in-scope rows (US-focused already removed) up to the two tables. */
 export function summarizeLocalMedia(
   rows: readonly LocalMediaRow[],
-  proxies: Record<string, LocalMediaProxy> | undefined
+  proxies: Record<string, LocalMediaProxy> | undefined,
+  amount: LocalMediaAmount = "NET_ORDERED_CAD"
 ): LocalMediaSummary {
   const byChannel = new Map<string, TagRow>();
   for (const r of rows) {
     const channel = r.PLUSCO_MEDIA_CHANNEL.trim();
     let t = byChannel.get(channel);
     if (!t) byChannel.set(channel, (t = { channel, foreign: 0, hybrid: 0, local: 0, total: 0 }));
-    const v = Number(r.NET_ORDERED_CAD) || 0;
+    const v = Number(r[amount]) || 0;
     if (r.PLUSCO_LOCAL_MEDIA === "FOREIGN") t.foreign += v;
     else if (r.PLUSCO_LOCAL_MEDIA === "HYBRID") t.hybrid += v;
     else if (r.PLUSCO_LOCAL_MEDIA === "LOCAL") t.local += v;

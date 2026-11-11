@@ -792,6 +792,7 @@ function DashboardContent() {
             sub={execActiveSub}
             onSubChange={setExecSub}
             summaryMonths={execMonths}
+            hasActiveFilters={hasActiveFilters}
           />
         ) : error ? (
           <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">

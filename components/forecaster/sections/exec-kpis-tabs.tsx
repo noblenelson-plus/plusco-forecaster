@@ -47,6 +47,7 @@ export default function ExecKpisTabs({
   sub: controlledSub,
   onSubChange,
   summaryMonths,
+  hasActiveFilters = false,
 }: {
   forecastData: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -67,6 +68,8 @@ export default function ExecKpisTabs({
   onSubChange?: (sub: ExecSubTab) => void;
   /** Media & Labs KPIs and Local Media: the top-bar Months filter (1–12; empty = full year). */
   summaryMonths?: readonly number[];
+  /** A dashboard filter narrows the clients (Local Media then leaves out non-Forecaster MIR clients). */
+  hasActiveFilters?: boolean;
 }) {
   const [ownSub, setOwnSub] = useState<ExecSubTab>("summary");
   const sub = controlledSub ?? ownSub;
@@ -128,6 +131,7 @@ export default function ExecKpisTabs({
           clients={clients}
           year={year}
           months={summaryMonths}
+          includeUnlinked={!hasActiveFilters}
         />
       )}
     </div>
