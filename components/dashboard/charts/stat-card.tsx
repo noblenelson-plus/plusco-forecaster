@@ -19,6 +19,8 @@ export interface StatVariance {
   isFavorable: boolean;
   /** Optional absolute difference text, e.g. "+$1.2M" */
   absoluteLabel?: string;
+  /** Text after absoluteLabel (default " vs comparison"; "" when the label already names what it compares with). */
+  absoluteSuffix?: string;
 }
 
 export default function StatCard({
