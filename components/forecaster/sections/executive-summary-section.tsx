@@ -383,6 +383,7 @@ export default function ExecutiveSummarySection({
         billupsShareGoal={goals.billupsShare}
         sourceLabel={mirOnlyLabel}
         mirAsOf={mirAsOf}
+        period={mirPeriod}
         annualTargets={booked.monthsApplied}
         bands={bands}
       />
