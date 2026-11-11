@@ -545,6 +545,13 @@ service cloud.firestore {
       allow create, update: if false;
       allow delete: if isAdmin();
     }
+    // local_media_mix — MIR booked net by client × month × channel × local-media
+    // tag (Exec KPI → Local Media; scripts/sync-local-media-mix.mjs). Same as above.
+    match /local_media_mix/{docId} {
+      allow read: if canReadAgencyData(resource.data._agency) || canReadClientRow(resource.data);
+      allow create, update: if false;
+      allow delete: if isAdmin();
+    }
     // mediabox_planner_mix — MediaBox planned budgets (Media Investments →
     // MediaBox view),
     // client × month × channel × partner × status grain. Same as above.

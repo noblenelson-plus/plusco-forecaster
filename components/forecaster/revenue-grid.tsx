@@ -58,6 +58,8 @@ import {
   Info,
   AlertTriangle,
   Copy,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import type {
   ForecastBucket,
@@ -1007,6 +1009,30 @@ function RevenueToolbar({
   const [addingBucket, setAddingBucket] = useState(false);
   const [bucketName, setBucketName] = useState("");
 
+  // Keyboard undo/redo, same as the Media and Labs grids: Ctrl/Cmd+Z and
+  // Ctrl/Cmd+Shift+Z (or Ctrl+Y). Skipped while typing in a field so native
+  // text undo still works inside a cell.
+  const { locked, undo, redo } = grid;
+  useEffect(() => {
+    if (locked) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k !== "z" && k !== "y") return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [locked, undo, redo]);
+
   function submitBucket() {
     const name = bucketName.trim();
     // "General" is the fixed project — a duplicate would confuse the required
@@ -1066,6 +1092,29 @@ function RevenueToolbar({
               Add project
             </button>
           ))}
+
+        {!grid.locked && (
+          <div className="flex items-center">
+            <button
+              onClick={grid.undo}
+              disabled={!grid.canUndo}
+              title="Undo (Ctrl+Z)"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-l-lg bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-40 disabled:hover:bg-white transition-colors"
+            >
+              <Undo2 size={14} />
+              Undo
+            </button>
+            <button
+              onClick={grid.redo}
+              disabled={!grid.canRedo}
+              title="Redo (Ctrl+Shift+Z)"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 border border-l-0 border-gray-200 rounded-r-lg bg-white hover:bg-gray-50 hover:text-gray-900 disabled:opacity-40 disabled:hover:bg-white transition-colors"
+            >
+              <Redo2 size={14} />
+              Redo
+            </button>
+          </div>
+        )}
 
         <button
           onClick={onToggleNotes}

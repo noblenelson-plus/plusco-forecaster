@@ -444,7 +444,8 @@ function DashboardContent() {
   const execActiveSub = execSubtabs.some((t) => t.id === execSub)
     ? execSub
     : (execSubtabs[0]?.id ?? execSub);
-  const showsExecMonths = topTab === "exec-kpis" && execActiveSub === "summary";
+  const showsExecMonths =
+    topTab === "exec-kpis" && (execActiveSub === "summary" || execActiveSub === "local-media");
   const [execMonthsPick, setExecMonthsPick] = useState<{ year: number | null; months: number[] } | null>(null);
   const execMonths = useMemo(
     () =>
@@ -626,8 +627,8 @@ function DashboardContent() {
                       onChange={(vals) => setSelMonths(vals.map(Number))}
                     />
                   )}
-                  {/* Exec KPI → Media & Labs KPIs: its own Months filter
-                      (default: the full year). */}
+                  {/* Exec KPI → Media & Labs KPIs and Local Media: their own
+                      Months filter (default: the full year). */}
                   {showsExecMonths && (
                     <MultiSelectDropdown
                       label="Months"
