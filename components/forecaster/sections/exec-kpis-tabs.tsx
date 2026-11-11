@@ -10,7 +10,8 @@
  * Summary and Billups take the page's forecast scope (dashboard filters +
  * currency already applied). Investment Strategy KPIs, Meta and Billups are all
  * scoped by the same global scopedClientIds, so one filter bar drives every
- * sub-page. Local Media is a placeholder for now.
+ * sub-page. Local Media (MIR local / foreign split) also follows the Year and
+ * the Exec Months filter.
  */
 
 import { useState } from "react";
@@ -19,6 +20,7 @@ import InvestmentKpisSection from "./investment-kpis-section";
 import BillupsSection from "./billups-section";
 import MetaSection from "./meta-section";
 import LabsPacingPage from "./labs-pacing-page";
+import LocalMediaSection from "./local-media-section";
 import SubTabBar from "../sub-tab-bar";
 import type { Client, Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
@@ -30,15 +32,6 @@ import {
 
 
 const NO_HIDDEN: ReadonlySet<string> = new Set();
-
-/** Placeholder for sub-pages not built yet. */
-function ComingSoon({ label }: { label: string }) {
-  return (
-    <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
-      {label} — coming soon
-    </div>
-  );
-}
 
 export default function ExecKpisTabs({
   forecastData,
@@ -72,7 +65,7 @@ export default function ExecKpisTabs({
    */
   sub?: ExecSubTab;
   onSubChange?: (sub: ExecSubTab) => void;
-  /** Media & Labs KPIs: the top-bar Months filter (1–12; empty = full year). */
+  /** Media & Labs KPIs and Local Media: the top-bar Months filter (1–12; empty = full year). */
   summaryMonths?: readonly number[];
 }) {
   const [ownSub, setOwnSub] = useState<ExecSubTab>("summary");
@@ -129,7 +122,14 @@ export default function ExecKpisTabs({
         />
       )}
 
-      {active === "local-media" && <ComingSoon label="Local Media" />}
+      {active === "local-media" && (
+        <LocalMediaSection
+          scopedClientIds={scopedClientIds}
+          clients={clients}
+          year={year}
+          months={summaryMonths}
+        />
+      )}
     </div>
   );
 }
