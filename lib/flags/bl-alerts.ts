@@ -13,13 +13,15 @@
  *                         (ε $0.5). An ERROR to correct: it can't be justified,
  *                         so it blocks validation until the forecast is fixed.
  *   2. Under-forecast (media) — a media type's yearly MediaOcean actuals exceed
- *                         its yearly BL forecast               (≥ $1,000).
- *   3. Under-forecast (Labs)  — same per Labs partner          (≥ $1,000).
+ *                         its yearly BL forecast               (≥ $100,000).
+ *   3. Under-forecast (Labs)  — same per Labs partner          (≥ $100,000).
  *                         The under-forecast checks are justifiable, like the
  *                         big swings.
  *
- * Each flagged row also lists the months that are over on their own (same
- * threshold), shown behind "Show months" to help locate what to fix.
+ * Each flagged row also lists the months that are over on their own, shown
+ * behind "Show months" to help locate what to fix (Labs over media: same ε;
+ * under-forecast: months over by $1,000 or more, so the drivers of a $100K gap
+ * still show).
  */
 
 import {
@@ -39,8 +41,15 @@ import type { ComputedFlag } from "../types/forecast-flags.types";
 /** Float-noise floor for the Labs-over-media alert (effectively threshold $0). */
 export const BL_LABS_EPSILON = 0.5;
 
-/** Dollar threshold (per media type / partner) for the two under-forecast alerts. */
-export const BL_MEDIAOCEAN_THRESHOLD = 1_000;
+/**
+ * Dollar threshold (per media type / partner, full year) for the two
+ * under-forecast alerts: flagged when actuals − forecast ≥ this (Adriana,
+ * 2026-11-13; was $1,000, which flagged negligible variances).
+ */
+export const BL_MEDIAOCEAN_THRESHOLD = 100_000;
+
+/** Per-month floor for the under-forecast "Show months" detail. */
+export const BL_MEDIAOCEAN_MONTH_DETAIL = 1_000;
 
 export type BlAlertId =
   | "labs-over-media"
@@ -157,24 +166,25 @@ const ALERT_META: Record<BlAlertId, AlertMeta> = {
 const yearTotal = (map: MonthlyMap) => MONTHS.reduce((acc, m) => acc + (map[m] ?? 0), 0);
 
 /**
- * The yearly row when `left`'s 12-month total exceeds `right`'s by more than
- * `slack` (null otherwise), with the months that are over on their own.
+ * The yearly row when `left`'s 12-month total exceeds `right`'s by at least
+ * `slack` (null otherwise), with the months over by at least `monthSlack`.
  */
 function overYear(
   left: MonthlyMap,
   right: MonthlyMap,
   slack: number,
   subject: string,
-  label?: string
+  label?: string,
+  monthSlack: number = slack
 ): BlAlertRow | null {
   const l = yearTotal(left);
   const r = yearTotal(right);
-  if (!(l > r + slack)) return null;
+  if (!(l - r >= slack)) return null;
   const months: BlAlertMonth[] = [];
   for (const m of MONTHS) {
     const lm = left[m] ?? 0;
     const rm = right[m] ?? 0;
-    if (lm > rm + slack) months.push({ month: m, left: lm, right: rm, variance: lm - rm });
+    if (lm - rm >= monthSlack) months.push({ month: m, left: lm, right: rm, variance: lm - rm });
   }
   return { subject, ...(label ? { label } : {}), left: l, right: r, variance: l - r, months };
 }
@@ -193,7 +203,14 @@ function underForecastRows(
   const actuals = aggregateByType(data, "ADMIN_INPUT");
   const rows: BlAlertRow[] = [];
   for (const [type, map] of Object.entries(actuals)) {
-    const row = overYear(map, forecast[type] ?? {}, BL_MEDIAOCEAN_THRESHOLD, type, label(type));
+    const row = overYear(
+      map,
+      forecast[type] ?? {},
+      BL_MEDIAOCEAN_THRESHOLD,
+      type,
+      label(type),
+      BL_MEDIAOCEAN_MONTH_DETAIL
+    );
     if (row) rows.push(row);
   }
   return rows.sort((a, b) => b.variance - a.variance);
