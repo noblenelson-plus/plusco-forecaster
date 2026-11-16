@@ -47,3 +47,6 @@ next-env.d.ts
 
 # auth migration backups (hold staff emails / access data)
 /scripts/backups/
+
+# Finance Toolkit raw Maconomy exports (row-level, never committed)
+/data-prep/input/

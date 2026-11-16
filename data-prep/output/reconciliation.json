@@ -1,0 +1,103 @@
+{
+  "generatedAt": "2026-11-16T19:20:19.230Z",
+  "hours": {
+    "Cossette Media 2025": {
+      "rows": 150065,
+      "hours": 407433.91,
+      "costBase1": 19437671.53,
+      "costEnterprise": 19437671.53,
+      "billed": 8978369.77,
+      "from": "2025-01-01",
+      "to": "2025-12-31"
+    },
+    "Cossette Media 2026": {
+      "rows": 138709,
+      "hours": 344011.44,
+      "costBase1": 15684811.55,
+      "costEnterprise": 15684811.55,
+      "billed": 12949436.19,
+      "from": "2026-01-01",
+      "to": "2026-08-31"
+    },
+    "Jungle Media": {
+      "rows": 85717,
+      "hours": 192954.64,
+      "costBase1": 9030388.12,
+      "costEnterprise": 9030388.12,
+      "billed": 8629839.93,
+      "from": "2025-01-01",
+      "to": "2026-08-31"
+    },
+    "MEK US": {
+      "rows": 8144,
+      "hours": 22942.17,
+      "costBase1": 592312.4,
+      "costEnterprise": 821063.47,
+      "billed": 3280049,
+      "from": "2025-01-01",
+      "to": "2026-08-31"
+    }
+  },
+  "totalRows": 382635,
+  "rowsByCurrency": {
+    "Cossette Media 2025|CAD|CAD": 147038,
+    "Cossette Media 2025|USD|CAD": 2796,
+    "Cossette Media 2025|USD|USD": 231,
+    "Cossette Media 2026|CAD|CAD": 138418,
+    "Cossette Media 2026|USD|CAD": 280,
+    "Cossette Media 2026|USD|USD": 11,
+    "Jungle Media|CAD|CAD": 84452,
+    "Jungle Media|USD|CAD": 1226,
+    "Jungle Media|USD|USD": 39,
+    "MEK US|USD|USD": 8144
+  },
+  "grossRevenue": {
+    "Cossette Media": {
+      "clients": 87,
+      "jobLines": 765,
+      "revenue": 24260640,
+      "reportedClientTotal": 24260629,
+      "monthMismatches": 0,
+      "monthsAfterAugust": []
+    },
+    "Jungle Media": {
+      "clients": 104,
+      "jobLines": 303,
+      "revenue": 6594401,
+      "reportedClientTotal": 6594396,
+      "monthMismatches": 0,
+      "monthsAfterAugust": []
+    },
+    "MEK US": {
+      "clients": 5,
+      "jobLines": 34,
+      "revenue": 1013290,
+      "reportedClientTotal": 1013289,
+      "monthMismatches": 0,
+      "monthsAfterAugust": []
+    },
+    "K72": {
+      "clients": 6,
+      "jobLines": 15,
+      "revenue": 343288,
+      "reportedClientTotal": 343288,
+      "monthMismatches": 0,
+      "monthsAfterAugust": []
+    }
+  },
+  "matching": {
+    "revenueClients": 202,
+    "matched": 180,
+    "matchedByNumber": 179,
+    "matchedByName": 1,
+    "unmatchedRevenueClients": 21,
+    "unmatchedHoursClients": 141,
+    "internalHouseAccounts": 7
+  },
+  "fte": {
+    "employeeMonths": 5364,
+    "medianTotalHours": 173.5,
+    "medianClientHours": 138.5
+  },
+  "employees": 500
+}
