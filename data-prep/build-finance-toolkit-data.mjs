@@ -248,11 +248,13 @@ months.forEach((m, i) => monthIndex.set(m, i));
 for (const [ci, month, ri, tc, hours, c1, ce, billed, ei] of pending) {
   const mi = monthIndex.get(month);
   const fk = `${ci}|${mi}|${ri}|${tc}`;
-  const f = facts.get(fk) ?? [0, 0, 0, 0];
+  const f = facts.get(fk) ?? [0, 0, 0, 0, 0];
   f[0] += hours;
   f[1] += c1;
   f[2] += ce;
   f[3] += billed;
+  // Hours that carry a Maconomy cost amount (some employees have no cost rate on file).
+  if (c1 !== 0 || ce !== 0) f[4] += hours;
   facts.set(fk, f);
   if (tc === 0 && hours > 0) {
     const sk = `${ci}|${mi}`;
@@ -491,7 +493,7 @@ const outFacts = [];
 for (const [fk, f] of facts) {
   const [ci, mi, ri, tc] = fk.split("|").map(Number);
   if (f[0] === 0 && f[1] === 0 && f[2] === 0 && f[3] === 0) continue;
-  outFacts.push([newIndex.get(ci), mi, ri, tc, round2(f[0]), Math.round(f[1]), Math.round(f[2]), Math.round(f[3])]);
+  outFacts.push([newIndex.get(ci), mi, ri, tc, round2(f[0]), Math.round(f[1]), Math.round(f[2]), Math.round(f[3]), round2(f[4])]);
 }
 outFacts.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]);
 

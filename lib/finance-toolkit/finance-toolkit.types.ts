@@ -39,8 +39,12 @@ export type FtClientTuple = [number, string, string, FtMatchStatus, number, numb
  */
 export type FtTimeClass = 0 | 1 | 2;
 
-/** [client, month, role, timeClass, hours, costBase1, costEnterprise, billed] */
-export type FtFactTuple = [number, number, number, FtTimeClass, number, number, number, number];
+/**
+ * [client, month, role, timeClass, hours, costBase1, costEnterprise, billed, costedHours]
+ * costedHours = the hours whose Maconomy entry carries a cost amount; the rest
+ * belong to employees with no cost rate on file.
+ */
+export type FtFactTuple = [number, number, number, FtTimeClass, number, number, number, number, number];
 
 /** [client, revenueMonth, grossRevenue] */
 export type FtRevenueTuple = [number, number, number];
