@@ -1,88 +1,55 @@
 // lib/dashboard/default-submissions.ts
 
 /**
- * Default Time & Context submissions for the Forecaster dashboard.
+ * Default Time & Context submissions for the Forecaster dashboard: the latest
+ * round of a year vs the round before it (Adriana, 2026-11-16 — e.g. Final 2026
+ * vs RFQ3 2026, RFQ1 2027 vs RFQ0 2027).
  *
- * The primary ("current") submission is PINNED to a fixed Year + RFQ round via
- * DEFAULT_PRIMARY_SUBMISSION below — the dashboard opens on that round every
- * time. The comparison default is the round immediately preceding it, resolved
- * with `previousRFQ` so the "previous round" semantics match the forecast
- * editing page (including year boundaries).
+ * "Latest" is the year's open round — the earliest UNLOCKED one — because every
+ * round of a year is created up front: the later rounds sit there LOCKED as
+ * placeholders (2027 RFQ2 / RFQ3 / FINAL while RFQ1 is open), so neither the
+ * highest round nor the latest LOCKED round is the current one. A year with no
+ * open round (fully closed) uses its last round.
+ *
+ * The comparison is the round immediately preceding it (`previousRFQ`, so it
+ * crosses into the previous year only for an RFQ0 with no earlier round).
  *
  * Pure and read-only: it selects from the RFQ list the selector already
- * subscribes to. The page forces these on mount (see the effect in
- * app/(protected)/forecaster/page.tsx).
+ * subscribes to. The dashboard page applies it on mount and whenever the
+ * primary Year changes (app/(protected)/page.tsx).
  */
 
-import type { RFQ, RFQType } from "../types/rfq.types";
+import type { RFQ } from "../types/rfq.types";
 import { RFQ_TYPE_ORDER } from "../types/rfq.types";
 import { previousRFQ } from "../types/forecaster.types";
 
-/**
- * ▶︎ EDIT THIS EACH FORECAST CYCLE ◀︎
- *
- * The submission the Forecaster dashboard opens on by default. Set it to the
- * current round. When the cycle advances (e.g. RFQ3 → FINAL, or into a new
- * year), change these two values. The comparison side updates automatically to
- * the round immediately before it — no other edits needed.
- */
-export const DEFAULT_PRIMARY_SUBMISSION: { year: number; type: RFQType } = {
-  year: 2026,
-  type: "RFQ3",
-};
-
-/**
- * Chronological rank of a submission: year first, then RFQ order within the
- * year. Mirrors the private ranking used by `previousRFQ`, so "latest" here and
- * "previous" there agree on ordering.
- */
-function submissionRank(year: number, type: RFQType): number {
-  return year * 10 + RFQ_TYPE_ORDER[type];
-}
-
 export interface DefaultSubmissions {
-  /** The pinned current submission. null when none exist at all. */
+  /** The year's latest (open) round. null when the year has no rounds. */
   primary: RFQ | null;
-  /** The submission immediately preceding the primary. null when none precedes it. */
+  /** The round immediately preceding the primary. null when none precedes it. */
   comparison: RFQ | null;
 }
 
 /**
- * Picks the current submission (primary) and the previous one (comparison)
- * from the full RFQ list.
- *
- * Primary is the round pinned in DEFAULT_PRIMARY_SUBMISSION. If that exact
- * round is not present in the data (e.g. the pin is stale), it falls back to
- * the latest round overall so the dashboard is never empty.
- *
- * The comparison is the round immediately preceding the primary, regardless of
- * status, so variance is always measured against the prior round.
- *
- * Returns nulls when the list is empty or has no earlier submission to compare
- * against.
+ * The year the dashboard opens on: the current calendar year when it has
+ * rounds, otherwise the latest year that does. null when there are no rounds.
  */
-export function pickDefaultSubmissions(rfqs: RFQ[]): DefaultSubmissions {
-  if (rfqs.length === 0) {
-    return { primary: null, comparison: null };
-  }
+export function defaultDashboardYear(rfqs: RFQ[], now: Date = new Date()): number | null {
+  if (rfqs.length === 0) return null;
+  const thisYear = now.getFullYear();
+  if (rfqs.some((r) => r.year === thisYear)) return thisYear;
+  return Math.max(...rfqs.map((r) => r.year));
+}
 
-  // Primary = the pinned submission when present; otherwise the latest round
-  // overall (safety net for a stale pin).
-  const pinned =
-    rfqs.find(
-      (r) =>
-        r.year === DEFAULT_PRIMARY_SUBMISSION.year &&
-        r.type === DEFAULT_PRIMARY_SUBMISSION.type
-    ) ?? null;
+/** Picks the latest round of `year` (primary) and the round before it (comparison). */
+export function pickDefaultSubmissions(rfqs: RFQ[], year: number | null): DefaultSubmissions {
+  if (year === null) return { primary: null, comparison: null };
+  const ofYear = rfqs
+    .filter((r) => r.year === year)
+    .sort((a, b) => RFQ_TYPE_ORDER[a.type] - RFQ_TYPE_ORDER[b.type]);
+  if (ofYear.length === 0) return { primary: null, comparison: null };
 
-  const primary =
-    pinned ??
-    rfqs.reduce((best, candidate) =>
-      submissionRank(candidate.year, candidate.type) >
-      submissionRank(best.year, best.type)
-        ? candidate
-        : best
-    );
+  const primary = ofYear.find((r) => r.status === "UNLOCKED") ?? ofYear[ofYear.length - 1];
 
   // Previous submission (any status), resolved back to the concrete RFQ doc.
   const prev = previousRFQ(rfqs, primary.year, primary.type);

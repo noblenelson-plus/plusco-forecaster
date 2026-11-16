@@ -79,7 +79,7 @@ import { getCurrencyRateForYear } from "../../lib/services/currency-service";
 import { useForecastSelection } from "../../lib/stores/forecast-selection.store";
 import { useComparisonSelection } from "../../lib/stores/comparison-selection.store";
 import { subscribeToRFQs } from "../../lib/services/rfq-service";
-import { pickDefaultSubmissions } from "../../lib/dashboard/default-submissions";
+import { defaultDashboardYear, pickDefaultSubmissions } from "../../lib/dashboard/default-submissions";
 import type { ClientDimensions } from "../../components/dashboard/dimension-breakdown";
 import type { RFQ } from "../../lib/types/rfq.types";
 import type { DashboardScope } from "../../lib/dashboard/widgets/widget.types";
@@ -296,23 +296,23 @@ function DashboardContent() {
     return () => unsubscribe();
   }, []);
 
-  // Set the default Time & Context once the RFQ list has arrived. A reporting
-  // dashboard should open on the latest submission, so we FORCE the current
-  // submission on each mount rather than only filling an empty selection —
-  // otherwise a previously-persisted (localStorage) primary would pin an older
-  // round. Primary → current submission (latest year + highest round);
-  // comparison → the round immediately before it. A manual change made after
-  // mount still sticks, because the ref stops this from running again.
-  const seededDefaultsRef = useRef(false);
+  // Default Time & Context: the year's latest round vs the round before it
+  // (pickDefaultSubmissions). Forced on mount — on the current year, not the
+  // persisted (localStorage) selection, which could pin an older round — and
+  // again whenever the primary Year changes. A manual RFQ / comparison pick
+  // within the same year sticks, because the ref remembers the seeded year.
+  const seededYearRef = useRef<number | null>(null);
   useEffect(() => {
-    if (seededDefaultsRef.current || rfqs.length === 0) return;
+    if (rfqs.length === 0) return;
+    const year =
+      seededYearRef.current === null ? defaultDashboardYear(rfqs) : selectedYear;
+    if (year === null || year === seededYearRef.current) return;
 
-    const { primary: current, comparison } = pickDefaultSubmissions(rfqs);
+    const { primary, comparison } = pickDefaultSubmissions(rfqs, year);
+    seededYearRef.current = year;
+    if (!primary) return;
 
-    if (current) {
-      setRFQ(current); // also aligns the primary year
-    }
-
+    setRFQ(primary); // also aligns the primary year
     if (comparison) {
       setComparisonYear(comparison.year);
       setComparisonRFQ(comparison);
@@ -320,9 +320,7 @@ function DashboardContent() {
       // No earlier round exists — clear any stale comparison.
       setComparisonYear(null);
     }
-
-    seededDefaultsRef.current = true;
-  }, [rfqs, setRFQ, setComparisonYear, setComparisonRFQ]);
+  }, [rfqs, selectedYear, setRFQ, setComparisonYear, setComparisonRFQ]);
 
   const currencyByClient = useMemo(
     () =>
