@@ -14,7 +14,7 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Briefcase, CalendarRange, Calculator, DollarSign, Percent, Plus, Sparkles, Table2, Users, X } from "lucide-react";
 import StatCard from "../dashboard/charts/stat-card";
 import ChartCard from "../dashboard/charts/chart-card";
-import { CATEGORICAL_COLORS, NEUTRAL_FILL } from "../dashboard/charts/colors";
+import { NEUTRAL_FILL, PLUS } from "../dashboard/charts/colors";
 import { Card } from "../ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "../ui/chart";
 import {
@@ -37,6 +37,9 @@ const AGENCIES = [
   { id: "mek", label: "MEK US" },
 ] as const;
 type AgencyId = (typeof AGENCIES)[number]["id"];
+
+/** Plus palette plus darker shades of the same hues, so up to 12 roles stay distinct. */
+const ROLE_COLORS = [PLUS.purple, PLUS.yellow, PLUS.green, PLUS.blue, PLUS.pink, PLUS.red, "#2f2659", "#b38600", "#2e7d31", "#2a9aa6", PLUS.lightPink, PLUS.lightBlue];
 
 const PRESET_REVENUE = [250_000, 500_000, 1_000_000, 2_500_000, 5_000_000];
 const SLIDER_MIN = Math.log10(50_000);
@@ -97,7 +100,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
 
   const roleColors = useMemo(() => {
     const map = new Map<string, string>();
-    plan?.roles.forEach((r, i) => map.set(r.key, r.key === "other" ? NEUTRAL_FILL : CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length]));
+    plan?.roles.forEach((r, i) => map.set(r.key, r.key === "other" ? NEUTRAL_FILL : ROLE_COLORS[i % ROLE_COLORS.length]));
     return map;
   }, [plan]);
 
@@ -409,8 +412,8 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               <Formula name="Role mix" formula={`comparables’ client hours by role ÷ their total; roles under ${ROLE_MIN_SHARE * 100}% grouped as “Other roles”`} />
               <Formula
                 name="Onboarding ramp"
-                formula="month m hours ÷ average of months 7–12, median across new clients"
-                worked={`${plan.ramp.factors.slice(0, 6).map((f, i) => `M${i + 1} ${pct(f, 0)}`).join(" · ")} · M7–12 100%`}
+                formula="month m hours ÷ average of months 7–12, median across new clients, smoothed so the ramp never steps back"
+                worked={`Plan: ${plan.ramp.factors.slice(0, 6).map((f, i) => `M${i + 1} ${pct(f, 0)}`).join(" · ")} · M7–12 100%${plan.ramp.observed.length ? ` (observed medians: ${plan.ramp.observed.map((f) => pct(f, 0)).join(" · ")})` : ""}`}
               />
               <Formula name="Plan hours" formula="run-rate hours × role mix × ramp factor (month m)" />
               <Formula name="Cost per hour (role)" formula={`Σ agency cost ÷ Σ hours with a cost on file, by role, ${plan.ratesWindow}`} worked={`${basis === "base1" ? "Base1" : "Enterprise"} cost basis`} />
@@ -425,7 +428,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                   annualized from {REVENUE_WINDOW.label} (× 12 ÷ {REVENUE_WINDOW.months}).
                 </p>
                 <p>
-                  <strong>The ramp.</strong> Measured on clients whose first client hour falls between Mar 2025 and Dec 2025 (so at least 9 months are observed)
+                  <strong>The ramp.</strong> Measured on clients that started inside the data (first client hour at least one month after their agency’s export begins, and early enough for 9+ months to be observed)
                   and that settle at 40+ hours a month. Month 1 is usually a partial month. The agency’s own new clients are used when there are at least 5;
                   otherwise all agencies (the ratios are unitless).
                 </p>

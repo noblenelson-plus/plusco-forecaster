@@ -43,10 +43,15 @@ export const FLAG_MIN_HOURS = 40;
 /** Roles under this share of the comparables' hours are grouped as "Other roles". */
 export const ROLE_MIN_SHARE = 0.02;
 
-/** Ramp: a client counts as "new" when its first client hour is on/after this
- *  month index (Mar 2025 — Jan/Feb starts may predate the data) and it has at
- *  least RAMP_MIN_HISTORY months observed; steady state = months 7–12. */
-const RAMP_MIN_FIRST_MONTH = 2;
+/** Ramp: a client counts as "new" when its first client hour comes at least one
+ *  full month after its agency's data really starts (the export is near-empty
+ *  in Jan 2025, and MEK US only starts in Apr 2025 — a client first seen in the
+ *  agency's first month may simply predate the data), and it has at least
+ *  RAMP_MIN_HISTORY months observed; steady state = months 7–12. */
+const RAMP_START_BUFFER = 1;
+/** A month counts as the start of an agency's data once its hours reach this
+ *  share of the agency's median month. */
+const DATA_START_SHARE = 0.25;
 const RAMP_MIN_HISTORY = 9;
 const RAMP_MIN_STEADY_HOURS = 40;
 const RAMP_MIN_CLIENTS = 5;
@@ -142,6 +147,31 @@ for (const [client, month, ids] of DATA.staff) {
   m.set(month, ids);
 }
 
+/**
+ * First month in which each agency's export is really populated (hours ≥
+ * DATA_START_SHARE of the agency's median month). Jan 2025 is near-empty in
+ * every file and MEK US starts in Apr 2025.
+ */
+const AGENCY_DATA_START: Record<string, number> = (() => {
+  const byAgency = new Map<string, number[]>();
+  for (const f of facts) {
+    const a = clients[f.client].agencyId;
+    let arr = byAgency.get(a);
+    if (!arr) byAgency.set(a, (arr = new Array(DATA.months.length).fill(0)));
+    arr[f.month] += f.hours;
+  }
+  const out: Record<string, number> = {};
+  for (const [a, arr] of byAgency) {
+    const sorted = [...arr].sort((x, y) => x - y);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    out[a] = Math.max(0, arr.findIndex((h) => h >= median * DATA_START_SHARE));
+  }
+  return out;
+})();
+
+/** First month index in which every agency's hours export is populated. */
+const FIRST_FULL_MONTH = Math.min(...Object.values(AGENCY_DATA_START));
+
 export const MODEL = {
   clients,
   roles: DATA.roles,
@@ -151,6 +181,10 @@ export const MODEL = {
   revenueMonthIndices: revenueMonthToMonth,
   source: DATA.source,
   generatedAt: DATA.generatedAt,
+  /** Month index where each agency's export becomes populated. */
+  agencyDataStart: AGENCY_DATA_START,
+  /** Earliest month index with a populated export (Feb 2025). */
+  firstFullMonth: FIRST_FULL_MONTH,
 };
 
 export const costOf = (f: { costBase1: number; costEnterprise: number }, basis: CostBasis) =>
@@ -334,7 +368,8 @@ export function portal(filters: PortalFilters, group: PortalGroup, basis: CostBa
 // ─── Tab 2 · Account Profitability ───────────────────────────────────────────
 
 export type ProfitStatus = "matched" | "no-revenue" | "no-hours";
-export type ProfitFlag = "loss" | "over-serviced" | null;
+/** loss: staffing cost > positive revenue · over-serviced: low revenue per hour · credit: the period nets to ≤ 0 revenue (credit notes / reversals), so margin is not meaningful. */
+export type ProfitFlag = "loss" | "over-serviced" | "credit" | null;
 
 export interface ProfitRow {
   client: FtClient;
@@ -453,6 +488,10 @@ export function profitability(scope: Scope, from: number, to: number, basis: Cos
   const portfolioRevPerHour = ratio(matchedRevenue, matchedHours);
 
   for (const r of matched) {
+    if (r.revenue! <= 0) {
+      r.flag = "credit";
+      continue;
+    }
     if (r.hours < FLAG_MIN_HOURS) continue;
     if (r.margin! < 0) r.flag = "loss";
     else if (portfolioRevPerHour !== null && r.revenuePerHour !== null && r.revenuePerHour < portfolioRevPerHour * OVER_SERVICED_RATIO) {
@@ -487,7 +526,7 @@ export function profitability(scope: Scope, from: number, to: number, basis: Cos
       unmatchedAccounts: unmatchedRows.filter((r) => r.hours > 0).length,
       overheadHours,
       overheadCost,
-      flagged: matched.filter((r) => r.flag !== null).length,
+      flagged: matched.filter((r) => r.flag === "loss" || r.flag === "over-serviced").length,
       lossMaking: matched.filter((r) => r.flag === "loss").length,
       costCoverage: ratio(
         matched.reduce((a, r) => a + (costed.get(r.client.index) ?? 0), 0),
@@ -595,8 +634,11 @@ export function suggestComparables(candidates: Comparable[], annualRevenue: numb
 }
 
 export interface RampCurve {
-  /** Hours in month m ÷ steady-state hours, m = 1…12. Months 7–12 = 1 by definition. */
+  /** Hours in month m ÷ steady-state hours, m = 1…12 (months 1–6 smoothed to
+   *  never step back; months 7–12 = 1 by definition). */
   factors: number[];
+  /** Raw medians for months 1–6, before smoothing (empty when flat). */
+  observed: number[];
   /** New clients the curve was measured on. */
   clients: number;
   basis: "agency" | "all agencies" | "flat";
@@ -607,7 +649,7 @@ export function rampCurve(agencyId: string): RampCurve {
   const measure = (filter: (c: FtClient) => boolean) => {
     const series: number[][] = [];
     for (const c of clients) {
-      if (c.internal || !filter(c) || c.firstMonth < RAMP_MIN_FIRST_MONTH) continue;
+      if (c.internal || !filter(c) || c.firstMonth < AGENCY_DATA_START[c.agencyId] + RAMP_START_BUFFER) continue;
       if (MODEL.months.length - c.firstMonth < RAMP_MIN_HISTORY) continue;
       const h = new Array(12).fill(0);
       for (const f of facts) {
@@ -630,15 +672,34 @@ export function rampCurve(agencyId: string): RampCurve {
     basis = "all agencies";
   }
   if (series.length < RAMP_MIN_CLIENTS) {
-    return { factors: new Array(12).fill(1), clients: series.length, basis: "flat" };
+    return { factors: new Array(12).fill(1), observed: [], clients: series.length, basis: "flat" };
   }
   const median = (xs: number[]) => {
     const s = [...xs].sort((a, b) => a - b);
     const mid = Math.floor(s.length / 2);
     return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
   };
-  const early = [0, 1, 2, 3, 4, 5].map((m) => median(series.map((s) => s[m])));
-  return { factors: [...early, 1, 1, 1, 1, 1, 1], clients: series.length, basis };
+  const observed = [0, 1, 2, 3, 4, 5].map((m) => median(series.map((s) => s[m])));
+  return { factors: [...monotone(observed), 1, 1, 1, 1, 1, 1], observed, clients: series.length, basis };
+}
+
+/**
+ * Pool-adjacent-violators (isotonic regression): the closest non-decreasing
+ * sequence to `xs`. Medians over a dozen clients are noisy; a staffing plan
+ * should not step back mid-onboarding.
+ */
+function monotone(xs: number[]): number[] {
+  const blocks: { sum: number; n: number }[] = [];
+  for (const x of xs) {
+    blocks.push({ sum: x, n: 1 });
+    while (blocks.length > 1) {
+      const b = blocks[blocks.length - 1];
+      const a = blocks[blocks.length - 2];
+      if (a.sum / a.n <= b.sum / b.n) break;
+      blocks.splice(blocks.length - 2, 2, { sum: a.sum + b.sum, n: a.n + b.n });
+    }
+  }
+  return blocks.flatMap((b) => new Array(b.n).fill(b.sum / b.n));
 }
 
 export interface PlanRole {

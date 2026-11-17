@@ -14,7 +14,7 @@ import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartToo
 import { PLUS } from "../dashboard/charts/colors";
 import { clientDetail, monthLabel, periodLabel, type ProfitRow } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { Chip } from "./ft-ui";
+import { COVERAGE_NOTE_BELOW, Chip } from "./ft-ui";
 import { formatCompactMoney, hours, money, pct, rate } from "./ft-format";
 
 const config: ChartConfig = {
@@ -84,7 +84,7 @@ export default function ClientDetailDrawer({
             {row.flag === "loss" && <Chip tone="loss">Staffing cost exceeds revenue</Chip>}
             {row.flag === "over-serviced" && <Chip tone="over">Over-serviced</Chip>}
             {row.client.match === "name" && <Chip tone="neutral">Revenue matched by name</Chip>}
-            {row.costCoverage !== null && row.costCoverage < 0.98 && (
+            {row.costCoverage !== null && row.costCoverage < COVERAGE_NOTE_BELOW && (
               <Chip tone="over">{pct(1 - row.costCoverage, 0)} of hours have no cost on file</Chip>
             )}
           </div>

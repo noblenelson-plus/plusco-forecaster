@@ -29,7 +29,7 @@ import {
   type TimeType,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { DataTable, Field, GhostButton, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
+import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, DataTable, Field, GhostButton, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
 import { downloadCsv, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
 
 const GROUPS: { id: PortalGroup; label: string }[] = [
@@ -244,16 +244,20 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
         />
       </div>
 
-      {totals.costCoverage !== null && totals.costCoverage < 0.98 && (
-        <Notice tone="warn">
+      {totals.costCoverage !== null && totals.costCoverage < COVERAGE_NOTE_BELOW && (
+        <Notice tone={totals.costCoverage < COVERAGE_WARN_BELOW ? "warn" : "info"}>
           <p>
             <strong>{pct(1 - totals.costCoverage)} of these hours carry no cost in Maconomy</strong> (employees without a cost rate on
-            file), so staffing cost is understated for this selection.
+            file), so staffing cost is understated by about that much for this selection.
           </p>
         </Notice>
       )}
 
-      <ChartCard title="Hours by month" subtitle="Client work vs internal time and time off" icon={BarChart3}>
+      <ChartCard
+        title="Hours by month"
+        subtitle={`Client work vs internal time and time off${from < MODEL.firstFullMonth ? ` · ${monthLabel(0)} is nearly empty in the Maconomy export` : ""}`}
+        icon={BarChart3}
+      >
         <ChartContainer config={chartConfig} className="aspect-auto w-full" style={{ height: 240 }}>
           <BarChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />

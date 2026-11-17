@@ -26,7 +26,7 @@ import {
   type Scope,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { Chip, DataTable, Field, Formula, GhostButton, HowCalculated, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
+import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, Chip, DataTable, Field, Formula, GhostButton, HowCalculated, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
 import { downloadCsv, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
 import ClientDetailDrawer from "./client-detail-drawer";
 
@@ -50,11 +50,25 @@ const scatterConfig: ChartConfig = {
   loss: { label: "Cost exceeds revenue", color: PLUS.red },
 };
 
+/** Power-of-ten axis label: 1000 → "$1K", 1e6 → "$1M". */
+function logTick(v: number): string {
+  if (v >= 1e6) return `$${v / 1e6}M`;
+  if (v >= 1e3) return `$${v / 1e3}K`;
+  return `$${v}`;
+}
+
 function FlagChip({ row }: { row: ProfitRow }) {
   if (row.status === "no-revenue") return <Chip tone="neutral" title="Hours booked to this account but no gross revenue line">No revenue match</Chip>;
   if (row.status === "no-hours") return <Chip tone="neutral" title="Gross revenue with no hours in the same agency">No hours match</Chip>;
   if (row.flag === "loss") return <Chip tone="loss">Cost &gt; revenue</Chip>;
   if (row.flag === "over-serviced") return <Chip tone="over">Over-serviced</Chip>;
+  if (row.flag === "credit") {
+    return (
+      <Chip tone="neutral" title="Revenue nets to zero or below in this period (credit notes / reversals) — margin is not meaningful">
+        Net credit
+      </Chip>
+    );
+  }
   return null;
 }
 
@@ -73,7 +87,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
     return {
       matched: m,
       unmatched: result.rows.filter((r) => r.status !== "matched"),
-      flagged: m.filter((r) => r.flag).sort((a, b) => (a.margin ?? 0) - (b.margin ?? 0)),
+      // "To review" = loss-making or over-serviced; net-credit periods are labeled, not reviewed.
+      flagged: m.filter((r) => r.flag === "loss" || r.flag === "over-serviced").sort((a, b) => (a.margin ?? 0) - (b.margin ?? 0)),
     };
   }, [result]);
   // The drawer follows the period / cost basis: keep the id, re-derive the row.
@@ -126,7 +141,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
     { id: "hours", label: "Hours", align: "right", sort: (r) => r.hours, render: (r) => hours(r.hours), total: view === "all" ? hours(totals.matchedHours) : undefined },
     { id: "people", label: "People", align: "right", sort: (r) => r.people, render: (r) => r.people || "—", total: view === "all" ? String(totals.people) : undefined, headerTitle: "Distinct employees who logged client hours in the period" },
     { id: "costPct", label: "Cost % of revenue", align: "right", sort: (r) => r.costPctRevenue, render: (r) => pct(r.costPctRevenue), total: view === "all" ? pct(totals.costPctRevenue) : undefined },
-    { id: "flag", label: "Flag", sort: (r) => (r.flag === "loss" ? 2 : r.flag ? 1 : 0), render: (r) => (r.margin === null ? null : <FlagChip row={r} />) },
+    { id: "flag", label: "Flag", sort: (r) => (r.flag === "loss" ? 3 : r.flag === "over-serviced" ? 2 : r.flag ? 1 : 0), render: (r) => (r.margin === null ? null : <FlagChip row={r} />) },
   ];
 
   const scatter = useMemo(() => {
@@ -140,6 +155,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
       over: pts.filter((p) => p.flag === "over-serviced"),
       loss: pts.filter((p) => p.flag === "loss"),
       domain: [Math.pow(10, Math.floor(Math.log10(min))), Math.pow(10, Math.ceil(Math.log10(max)))] as [number, number],
+      // Clean log ticks: one per power of ten.
+      ticks: Array.from({ length: Math.ceil(Math.log10(max)) - Math.floor(Math.log10(min)) + 1 }, (_, i) => Math.pow(10, Math.floor(Math.log10(min)) + i)),
     };
   }, [matched]);
 
@@ -207,8 +224,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         />
       </div>
 
-      {totals.costCoverage !== null && totals.costCoverage < 0.98 && (
-        <Notice tone="warn">
+      {totals.costCoverage !== null && totals.costCoverage < COVERAGE_NOTE_BELOW && (
+        <Notice tone={totals.costCoverage < COVERAGE_WARN_BELOW ? "warn" : "info"}>
           <p>
             <strong>{pct(1 - totals.costCoverage)} of the client hours in this scope carry no cost in Maconomy</strong> (employees with no
             cost rate on file). Staffing cost is understated and margins overstated by that much — confirm cost rates with Finance before
@@ -230,8 +247,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
             <ChartContainer config={scatterConfig} className="aspect-auto w-full" style={{ height: 320 }}>
               <ScatterChart margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="x" name="Revenue" scale="log" domain={scatter.domain} allowDataOverflow tickFormatter={(v) => formatCompactMoney(Number(v))} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} label={{ value: "Gross revenue", position: "insideBottomRight", offset: -2, fontSize: 11 }} />
-                <YAxis type="number" dataKey="y" name="Cost" scale="log" domain={scatter.domain} allowDataOverflow tickFormatter={(v) => formatCompactMoney(Number(v))} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={52} />
+                <XAxis type="number" dataKey="x" name="Revenue" scale="log" domain={scatter.domain} ticks={scatter.ticks} allowDataOverflow tickFormatter={(v) => logTick(Number(v))} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} height={36} label={{ value: "Gross revenue →", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                <YAxis type="number" dataKey="y" name="Cost" scale="log" domain={scatter.domain} ticks={scatter.ticks} allowDataOverflow tickFormatter={(v) => logTick(Number(v))} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={64} label={{ value: "Staffing cost →", angle: -90, position: "insideLeft", offset: 4, fontSize: 11 }} />
                 <ZAxis type="number" dataKey="z" range={[24, 400]} />
                 <ReferenceLine
                   segment={[{ x: scatter.domain[0], y: scatter.domain[0] }, { x: scatter.domain[1], y: scatter.domain[1] }]}
@@ -373,6 +390,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
           formula={`revenue per hour < ${OVER_SERVICED_RATIO * 100}% of the scope's revenue per hour, ≥ ${FLAG_MIN_HOURS} h`}
           worked={`threshold this view: ${rate(totals.revenuePerHour === null ? null : totals.revenuePerHour * OVER_SERVICED_RATIO)} per hour`}
         />
+        <Formula name="Net credit" formula="revenue ≤ 0 in the period (credit notes / reversals): labeled, no margin %, not reviewed" />
         <Formula name="People" formula="distinct employees who logged client hours on the account in the period" />
         <div className="mt-3 space-y-1.5 text-xs text-gray-600">
           <p>

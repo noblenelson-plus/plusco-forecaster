@@ -121,6 +121,11 @@ export { selectClass };
 
 // ─── Notices ─────────────────────────────────────────────────────────────────
 
+/** Cost coverage (share of hours with a cost on file): below NOTE a quiet note
+ *  is shown, below WARN a yellow warning. */
+export const COVERAGE_NOTE_BELOW = 0.98;
+export const COVERAGE_WARN_BELOW = 0.9;
+
 export function Notice({ tone = "info", children }: { tone?: "info" | "warn"; children: React.ReactNode }) {
   const Icon = tone === "warn" ? AlertTriangle : Info;
   return (

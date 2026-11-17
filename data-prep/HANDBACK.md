@@ -53,17 +53,23 @@ The largest accounts with hours but no revenue line are Industrielle Alliance (C
 3. **Cost basis.** Base1 and Enterprise are identical for Cossette and Jungle; they differ only for MEK US. Base1 is the default.
 4. **Cost coverage.** Some employees have no cost on file in Maconomy: **MEK US 59% of client hours**, Cossette 7%, Jungle 1%. The UI warns wherever coverage is below 98%. The calculator prices roles from costed hours only, and roles with no cost at all use the agency average (for MEK: Media Planner, Media Supervisor, VP).
 5. **FTE = 140 client hours/month.** The data agrees: the median full employee-month logs 138.5 client hours (173.5 h including time off and internal work).
-6. **Flags.** "Cost > revenue" means staffing cost exceeds revenue. "Over-serviced" means revenue per hour is below 50% of the scope's average. Both need ≥ 40 client hours in the period.
+6. **Flags.** "Cost > revenue" means staffing cost exceeds revenue. "Over-serviced" means revenue per hour is below 50% of the scope's average. Both need ≥ 40 client hours in the period. Accounts whose revenue nets to ≤ 0 in the period (credit notes or reversals, e.g. Conseil québécois sur le tabac et la santé at −$134,495 for Jan–Aug) are labeled **Net credit**: no margin %, and they are kept out of "Accounts to review". Their revenue still counts in the totals, so the totals tie to the reports. Jan–Aug 2026, all Canadian agencies: 17 cost > revenue, 2 over-serviced, 5 net credit.
 7. **Calculator.**
    - Hours per revenue $ = Σ comparables' hours ÷ Σ their revenue (Jan–Aug 2026).
    - Role mix comes from the comparables. Roles under 2% are grouped as "Other roles".
    - Role cost per hour is the agency average over the trailing 12 months.
-   - The ramp is the median, across new clients, of month-m hours ÷ the average of months 7–12. A new client is one whose first client hour falls between Mar and Dec 2025 and that settles at ≥ 40 h/month. The agency's own clients are used when there are at least 5; otherwise all agencies are pooled. Observed ramp: M1 12% · M2 59% · M3 68% · M4 89% · M5 104% · M6 114%.
+   - The ramp is the median, across new clients, of month-m hours ÷ the average of months 7–12, smoothed with a monotone (isotonic) fit so the plan never steps back. A new client is one whose first client hour comes at least one month after its agency's export really starts (Feb 2025 for Cossette/Jungle, Apr 2025 for MEK US), with 9+ months observed and ≥ 40 h/month at steady state. The agency's own clients are used when there are at least 5; otherwise all agencies are pooled (13 clients today). Plan ramp: M1 11% · M2 55% · M3 55% · M4 77% · M5 91% · M6 109% (observed medians 11 · 59 · 52 · 77 · 91 · 109).
    - Revenue is assumed to arrive evenly across the year.
 8. **Cross-agency work is not merged.** Clients are kept as booked, one row per agency. Where the same client number has revenue in one agency and hours in another, the match report says so.
 9. **K72** shows as revenue-only ("No hours match") inside "All Canadian agencies", since there is no K72 hours export.
 10. **Employee filter dropped.** No employee names, numbers or emails ship to the browser. Headcounts use anonymous ids.
 11. **No client type input.** Maconomy has no client-type field. Comparables are picked by revenue size; client attributes could later come from the Forecaster `clients` collection.
+
+## Found during the visual review
+
+- **The Jan 2025 export is nearly empty**: about 2,100 hours, against roughly 43,000 in a normal month. MEK US only starts in Apr 2025. The Hours chart labels this, and the ramp ignores each agency's first populated month.
+- **Cost coverage on the biggest account.** 18% of BRP's client hours (Jan–Aug 2026) carry no cost on file, so its 54% margin is overstated. Cost coverage is low enough to matter on large accounts, not just at MEK US. Notices are a quiet note below 98% coverage and a yellow warning below 90%.
+- **Verified in the browser** (dev server, admin account): all three tabs, the account drawer, the scope switch (USD labels for MEK US), the Base1 / Enterprise toggle (MEK US staffing cost $155K → $215K) and the MEK warnings. No console errors from the toolkit; the only one is the app-wide zoom hydration warning that predates this branch.
 
 ## Known gaps / open questions for Adriana
 
