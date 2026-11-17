@@ -1,18 +1,18 @@
 # Finance Toolkit — handback
 
-Branch `finance-toolkit`. Not merged and not deployed. Route: `/admin/finance-toolkit` (sidebar → Admin → **Finance Toolkit**).
+Branch `finance-toolkit`. Route: `/admin/finance-toolkit` (sidebar → Admin → **Finance Toolkit**, visible only to the viewers in `lib/finance-toolkit/access.ts`).
 
 ## What was built
 
 | Piece | Where |
 | :- | :- |
 | Data prep script (reads the 8 CSVs, reconciles, matches, aggregates) | `data-prep/build-finance-toolkit-data.mjs`, `data-prep/lib/csv.mjs` |
-| Generated sample dataset (committed) | `lib/finance-toolkit/finance-toolkit-data.ts` (~690 KB source, ~190 KB gzipped, one lazy chunk) |
+| Generated sample dataset (committed, server-only) | `lib/server/finance-toolkit-data.ts` (~690 KB), served by `app/api/finance-toolkit-data/route.ts` |
 | Types | `lib/finance-toolkit/finance-toolkit.types.ts` |
 | All formulas (pure, no React) | `lib/finance-toolkit/model.ts` |
 | Page + tabs | `app/(protected)/admin/finance-toolkit/page.tsx`, `components/finance-toolkit/*` |
 | Match report / reconciliation | `data-prep/output/match-report.csv`, `data-prep/output/reconciliation.json` |
-| Existing code touched | `components/_shared/sidebar.tsx` (one nav entry), `.gitignore` (raw CSVs) |
+| Existing code touched | `components/_shared/sidebar.tsx` (one nav entry, viewer-list gated), `lib/server/report-access.ts` (`verifyIdToken` exported), `.gitignore` (raw CSVs) |
 
 **Tab 1 · Hours Report Portal.** Period (Jan 2025 – Aug 2026), client / role / time-type filters, group by client, role, month, time type or agency. KPIs, a monthly hours chart (client work vs internal vs time off), a sortable table with a totals row (cost per hour = Σ cost ÷ Σ hours), and a CSV download of the current view.
 
@@ -73,7 +73,7 @@ The largest accounts with hours but no revenue line are Industrielle Alliance (C
 
 ## Known gaps / open questions for Adriana
 
-- **Security.** The page is admin-gated in the UI and the dataset loads only after the admin check, but the data chunk is a static file on Hosting that anyone holding its URL could fetch. That is fine for a preview demo; it is **not fine for production**. Before deploying, move the data behind Firestore/Storage rules (admin-only), as was done for Reports.
+- **Access.** Only the people listed in `lib/finance-toolkit/access.ts` can open the page (Noble for now, not every admin); the sidebar entry is hidden from everyone else. The dataset is in no browser bundle: it lives in `lib/server/finance-toolkit-data.ts` and is served by `app/api/finance-toolkit-data/route.ts`, which verifies the Firebase sign-in token and checks the same list server-side (403 for anyone else). To open it up, add emails to that list.
 - Cost basis: which one is the true loaded cost (Base1 vs Enterprise)? Also, MEK US cost rates are missing for several people.
 - Should cross-agency work be merged per client (e.g. Industrielle Alliance: K72 revenue, Cossette hours)?
 - Is K72 in scope? What about GAIA-type clients?
@@ -90,4 +90,4 @@ The largest accounts with hours but no revenue line are Industrielle Alliance (C
 node data-prep/build-finance-toolkit-data.mjs
 ```
 
-It prints the reconciliation and matching summary, rewrites `lib/finance-toolkit/finance-toolkit-data.ts` and `data-prep/output/*`, and exits with an error (writing nothing) if the hours don't reconcile. When new files arrive, update `EXPECTED` at the top of the script with the new BigQuery totals.
+It prints the reconciliation and matching summary, rewrites `lib/server/finance-toolkit-data.ts` and `data-prep/output/*`, and exits with an error (writing nothing) if the hours don't reconcile. When new files arrive, update `EXPECTED` at the top of the script with the new BigQuery totals.

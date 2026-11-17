@@ -32,6 +32,7 @@ import {
 import { useAuth } from "../../lib/auth-context";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { useAccess } from "../../lib/hooks/use-access";
+import { canViewFinanceToolkit } from "../../lib/finance-toolkit/access";
 import { APP_ROLE_LABELS } from "../../lib/types/access.types";
 import PlusLogo from "./plus-logo";
 import ZoomControl from "./zoom-control";
@@ -41,6 +42,8 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  // Only for the named viewers in lib/finance-toolkit/access.ts (work in progress).
+  financeToolkitOnly?: boolean;
   // Team spaces: shown only to admins and people on at least one client team.
   teamOnly?: boolean;
   // Shown to people with any access (a team or a dashboard grant).
@@ -72,7 +75,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "RFQs",         href: "/admin/rfqs",  icon: <CalendarRange size={18} />,   section: "admin", adminOnly: true },
   { label: "LABS",         href: "/admin/labs",  icon: <FlaskConical size={18} />,    section: "admin", adminOnly: true },
   { label: "Deal Targets", href: "/admin/targets", icon: <Target size={18} />,       section: "admin", adminOnly: true },
-  { label: "Finance Toolkit", href: "/admin/finance-toolkit", icon: <Landmark size={18} />, section: "admin", adminOnly: true },
+  { label: "Finance Toolkit", href: "/admin/finance-toolkit", icon: <Landmark size={18} />, section: "admin", financeToolkitOnly: true },
   { label: "DISH Products", href: "/admin/products", icon: <Package size={18} />,     section: "admin", adminOnly: true },
   { label: "Currency",     href: "/admin/currency", icon: <DollarSign size={18} />,   section: "admin", adminOnly: true },
   { label: "QA",           href: "/admin/qa",    icon: <ShieldCheck size={18} />,     section: "admin", adminOnly: true },
@@ -99,7 +102,10 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
       (!item.needsAccess || hasAnyAccess)
   );
   const adminItems = NAV_ITEMS.filter(
-    (item) => item.section === "admin" && (!item.adminOnly || isAdmin)
+    (item) =>
+      item.section === "admin" &&
+      (!item.adminOnly || isAdmin) &&
+      (!item.financeToolkitOnly || canViewFinanceToolkit(user?.email))
   );
 
   const initials = profile?.displayName

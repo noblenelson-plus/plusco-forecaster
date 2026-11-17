@@ -18,7 +18,7 @@
  * overhead and never enters profitability or the calculator.
  */
 
-import { FINANCE_TOOLKIT_DATA as DATA } from "./finance-toolkit-data";
+import { getFinanceToolkitData } from "./data-holder";
 import type {
   AgencyCurrency,
   CostBasis,
@@ -26,6 +26,9 @@ import type {
   FtMatchStatus,
   FtTimeClass,
 } from "./finance-toolkit.types";
+
+// Downloaded by the page (admin/finance-toolkit) before this module loads.
+const DATA = getFinanceToolkitData();
 
 // ─── Assumptions (shown in the UI) ───────────────────────────────────────────
 

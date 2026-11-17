@@ -158,7 +158,7 @@ async function fetchAgencyDomains(token: string): Promise<Record<string, string[
 // ─── Access + download ────────────────────────────────────────────────────────
 
 /** Verifies a Firebase ID token; null when invalid or expired. */
-async function verifyIdToken(idToken: string): Promise<{ email?: string; emailVerified: boolean } | null> {
+export async function verifyIdToken(idToken: string): Promise<{ email?: string; emailVerified: boolean } | null> {
   const res = await getJson(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${WEB_API_KEY}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
