@@ -1,0 +1,349 @@
+status,agency,side,client_number,client_name,revenue_jan_aug_2026,client_hours_jan_aug_2026,note
+internal (house account),Cossette Media,hours,200623,Cossette Communication Inc.,,0,no client hours in Jan–Aug 2026
+internal (house account),Cossette Media,hours,200630,Plus Company Ignition Inc.,,46.75,
+internal (house account),Jungle Media,hours,212595,Cossette Media Inc.,,0,no client hours in Jan–Aug 2026; revenue booked under Cossette Media (not merged)
+internal (house account),Jungle Media,hours,205126,Inter-Business Units,,47,revenue booked under Cossette Media (not merged)
+internal (house account),Jungle Media,hours,200630,Plus Company Ignition Inc.,,0,no client hours in Jan–Aug 2026
+"matched (client number, merged)",Jungle Media,revenue,211236,I-HEALTH INC.,40462,,
+matched (client number),Cossette Media,revenue,216379,AEROPORT DE QUEBEC INC.,25322,,
+matched (client number),Cossette Media,revenue,213308,AIR CANADA,40483,,
+matched (client number),Cossette Media,revenue,216845,AIRBUS CANADA LIMITED PARTNERSHIP,41154,,
+matched (client number),Cossette Media,revenue,209304,ALBERTA GAMING AND LIQUOR COMMISSION (AGLC),28339,,
+matched (client number),Cossette Media,revenue,215310,AMAZON.COM.CA INC.,16000,,
+matched (client number),Cossette Media,revenue,216273,ASSOCIATION TOURISTIQUE DE CHARLEVOIX INC.,10688,,
+matched (client number),Cossette Media,revenue,204552,ATKINSREALIS,10826,,
+matched (client number),Cossette Media,revenue,204605,AUTORITE DES MARCHES FINANCIERS (AMF),-3500,,
+matched (client number),Cossette Media,revenue,215845,AVIVA CANADA INC.,-2025,,
+matched (client number),Cossette Media,revenue,200857,BANQUE DE DEVELOPPEMENT DU CANADA,697265,,
+matched (client number),Cossette Media,revenue,200809,BC LOTTERY CORPORATION,939375,,
+matched (client number),Cossette Media,revenue,214290,BOMBARDIER RECREATIONAL PRODUCTS INC.,5733119,,
+matched (client number),Cossette Media,revenue,218318,BRITISH COLUMBIA DENTAL ASSOCIATION,10812,,
+matched (client number),Cossette Media,revenue,218437,BRITISH COLUMBIA HYDRO AND POWER AUTHORITY,194505,,
+matched (client number),Cossette Media,revenue,216364,CAG - ARTM,14700,,
+matched (client number),Cossette Media,revenue,217404,CAG - REGIE DU BATIMENT DU QUEBEC,1450,,
+matched (client number),Cossette Media,revenue,216781,CAG - REVENU QUEBEC,37100,,
+matched (client number),Cossette Media,revenue,201038,CAISSE DE DEPOT ET DE PLACEMENT DU QC,3920,,
+matched (client number),Cossette Media,revenue,212177,CANADIAN CURLING ASSOCIATION,33832,,
+matched (client number),Cossette Media,revenue,211293,CAPSANA INC.,0,,
+matched (client number),Cossette Media,revenue,200871,CENTRE D'ACQUISITIONS GOUVERNEMENTALES (CAG),1297468,,
+matched (client number),Cossette Media,revenue,217958,CGI INC,6084,,
+matched (client number),Cossette Media,revenue,214032,COAST CAPITAL SAVINGS FEDERAL CREDIT UNION,328325,,
+matched (client number),Cossette Media,revenue,217542,"COEFFISCIENCE / COMITE SECTORIEL DE LA MAIN-D'OEUVRE ENERGIES, PROCEDES & CHIMIE",18270,,
+matched (client number),Cossette Media,revenue,213605,CONSEILLERS EN GESTION ET INFORMATIQUE CGI INC.,0,,
+matched (client number),Cossette Media,revenue,212595,Cossette Media Inc.,-10824,,
+matched (client number),Cossette Media,revenue,213630,Cossette Media Pitch,0,,
+matched (client number),Cossette Media,revenue,216863,COURAGE INC,1200,,
+matched (client number),Cossette Media,revenue,217090,DECATHLON CANADA INC.,46390,,
+matched (client number),Cossette Media,revenue,200940,ELECTIONS CANADA,360864,,
+matched (client number),Cossette Media,revenue,217021,ELEVEN AD GROUP,57293,,
+matched (client number),Cossette Media,revenue,208709,ENERGIR S.E.C,197458,,
+matched (client number),Cossette Media,revenue,201108,ERNST & YOUNG,10774,,
+matched (client number),Cossette Media,revenue,216425,FEDERATION DES CEGEPS,17307,,
+matched (client number),Cossette Media,revenue,212643,FONDATION DE L'INSTITUT DE CARDIOLOGIE DE MONTREAL,6086,,
+matched (client number),Cossette Media,revenue,216934,GCI COMMUNICATION CORP,3390,,
+matched (client number),Cossette Media,revenue,217214,GLOBAL X INVESTMENTS CANADA INC,463062,,
+matched (client number),Cossette Media,revenue,200953,GOVERNMENT OF CANADA,295580,,
+matched (client number),Cossette Media,revenue,201320,GROUPE GERMAIN INC. (HOTEL GERMAIN),93130,,
+matched (client number),Cossette Media,revenue,200885,GROUPE NAITRE ET GRANDIR,50935,,
+matched (client number),Cossette Media,revenue,206867,GROUPEMENT DES ASSUREURS,3500,,
+matched (client number),Cossette Media,revenue,200015,HYDRO-QUEBEC,437330,,
+matched (client number),Cossette Media,revenue,208808,HYDROSOLUTION,62885,,
+matched (client number),Cossette Media,revenue,211236,I-HEALTH INC.,443824,,
+matched (client number),Cossette Media,revenue,205126,Inter-Business Units,0,,
+matched (client number),Cossette Media,revenue,210712,"LA COMMISSION DES NORMES, DE L'EQUITE, DE LA SANTE ET DE LA SECURITE AU TRAVAIL (CNESST)",3220,,
+matched (client number),Cossette Media,revenue,209160,LA FONDATION DE L'HOPITAL DE MONTREAL POUR ENFANTS,12008,,
+matched (client number),Cossette Media,revenue,201332,LA PRESSE INC,49591,,
+matched (client number),Cossette Media,revenue,209596,LES ELEVEURS DE PORCS DU QUEBEC,32743,,
+matched (client number),Cossette Media,revenue,201029,LOTO QUEBEC,696574,,
+matched (client number),Cossette Media,revenue,208385,MMBC RECYCLING INC,30000,,
+matched (client number),Cossette Media,revenue,217999,MUSEE NATIONAL DE L'HISTOIRE DU QUEBEC,3750,,
+matched (client number),Cossette Media,revenue,208567,NOVO NORDISK,2056681,,
+matched (client number),Cossette Media,revenue,201114,ONTARIO LOTTERY CORPORATION,2743424,,
+matched (client number),Cossette Media,revenue,210033,"PENDOPHARM, DIVISION DE/OF PHARMASCIENCE INC.",219861,,
+matched (client number),Cossette Media,revenue,201243,PERFETTI VAN MELLE,191640,,
+matched (client number),Cossette Media,revenue,216693,PHARMASAVE DRUGS (NATIONAL) LTD.,8990,,
+matched (client number),Cossette Media,revenue,218378,PROFESSIONAL GOLFERS' ASSOCIATION OF CANADA,8000,,
+matched (client number),Cossette Media,revenue,209988,PUBLIC MOBILE,0,,
+matched (client number),Cossette Media,revenue,218194,"PURSUIT ATTRACTIONS AND HOSPITALITY, INC. (""PURSUIT"")",220367,,
+matched (client number),Cossette Media,revenue,211847,RESEAU DE TRANSPORT DE LA CAPITALE,75855,,
+matched (client number),Cossette Media,revenue,210987,RESTIGOUCHE CBDC INC.,-1135,,
+matched (client number),Cossette Media,revenue,217532,RONA INC.,1129615,,
+matched (client number),Cossette Media,revenue,215561,SOCIETE DE L'ASSURANCE AUTOMOBILE DU QUEBEC,10947,,
+matched (client number),Cossette Media,revenue,201410,SOCIETE DES ALCOOLS DU QUEBEC (FIRME EXPERIENTIELLE),555805,,
+matched (client number),Cossette Media,revenue,207699,SOCIETE DES BINGOS DU QUEBEC,9836,,
+matched (client number),Cossette Media,revenue,208129,SOCIETE DES CASINOS DU QUEBEC - MARQUE,208840,,
+matched (client number),Cossette Media,revenue,201031,SOCIETE DES ETABLISSEMENTS DE PLEIN AIR DU QUEBEC (SEPAQ),40512,,
+matched (client number),Cossette Media,revenue,214341,ST. LAWRENCE PARKS COMMISSION,45418,,
+matched (client number),Cossette Media,revenue,206936,TELE-QUEBEC,349394,,
+matched (client number),Cossette Media,revenue,207354,THE GLOBE & MAIL INC.,399090,,
+matched (client number),Cossette Media,revenue,217061,THE INSURANCE CORPORATION OF BRITISH COLUMBIA (ICBC),255903,,
+matched (client number),Cossette Media,revenue,217943,"THE NATURE CONSERVANCY OF CANADA,",35187,,
+matched (client number),Cossette Media,revenue,218168,THE PRINCESS MARGARET FOUNDATION,49092,,
+matched (client number),Cossette Media,revenue,211936,TOYOTA CANADA INC,2243393,,
+matched (client number),Cossette Media,revenue,208354,UNIVERSITE LAVAL,143885,,
+matched (client number),Cossette Media,revenue,200942,VILLE DE MONTREAL (ET ARRONDISSEMENTS),77615,,
+matched (client number),Cossette Media,revenue,218447,"YETI CANADA, LTD.",65442,,
+matched (client number),Cossette Media,revenue,216341,YORK UNIVERSITY,193365,,
+matched (client number),Cossette Media,revenue,210011,"YUKON GOVERNMENT, THE DEPARTMENT OF TOURISM AND CULTURE",67221,,
+matched (client number),Jungle Media,revenue,214585,123DENTISTE QUÉBEC INC.,205668,,
+matched (client number),Jungle Media,revenue,218002,"4473191 CANADA INC. (RAISON SOCIALE : BOTA BOTA, SPA-SUR-L'EAU)",50510,,
+matched (client number),Jungle Media,revenue,217975,9621539 CANADA INC.,5438,,
+matched (client number),Jungle Media,revenue,208699,ABBVIE CORPORATION c/o MCCARTHY TETRAULT,11036,,
+matched (client number),Jungle Media,revenue,217375,ACOLYTE COMMUNICATION INC,2100,,
+matched (client number),Jungle Media,revenue,218010,AGENCE MINIMAL INC.,0,,
+matched (client number),Jungle Media,revenue,210817,AGF INVESTMENTS INC.,64481,,
+matched (client number),Jungle Media,revenue,214602,AGROPUR,46817,,
+matched (client number),Jungle Media,revenue,216798,ALLERGIES QUEBEC,1050,,
+matched (client number),Jungle Media,revenue,216273,ASSOCIATION TOURISTIQUE DE CHARLEVOIX INC.,12050,,
+matched (client number),Jungle Media,revenue,204552,ATKINSREALIS,0,,
+matched (client number),Jungle Media,revenue,214484,BANFIELD-SEGUIN LTD,-103,,
+matched (client number),Jungle Media,revenue,218290,BENEVA INC.,131949,,
+matched (client number),Jungle Media,revenue,217182,BETTYS & TAYLORS OF HARROGATE LTD.,9600,,
+matched (client number),Jungle Media,revenue,218323,BISHOP'S UNIVERSITY,4500,,
+matched (client number),Jungle Media,revenue,218486,BOUTHILLETTE PARIZEAU INC.,12500,,
+matched (client number),Jungle Media,revenue,217716,BOXX MODULAR LP,5400,,
+matched (client number),Jungle Media,revenue,213279,BURNBRAE FARMS LIMITED,22566,,
+matched (client number),Jungle Media,revenue,217333,CAFE WILLIAM SPARTIVENTO INC. WILLIAM SPARTIVENTO COFFEE INC.,136222,,
+matched (client number),Jungle Media,revenue,213080,CAMH FOUNDATION,81555,,
+matched (client number),Jungle Media,revenue,217121,CANADIAN BEVERAGE CONTAINER RECYCLING ASSOCIATION (CBCRA),79327,,
+matched (client number),Jungle Media,revenue,207185,CAPITAL ONE CANADA,16072,,
+matched (client number),Jungle Media,revenue,211293,CAPSANA INC.,461,,
+matched (client number),Jungle Media,revenue,201283,CARE CANADA,10500,,
+matched (client number),Jungle Media,revenue,218171,CHARTWELL MASTER CARE LP,86537,,
+matched (client number),Jungle Media,revenue,209903,CLUB DES PETITS DÉJEUNERS,-92,,
+matched (client number),Jungle Media,revenue,217035,COMMUNICATIONS LABASE INC.,7408,,
+matched (client number),Jungle Media,revenue,214513,CONCOURS MUSICAL INTERNATIONAL DE MONTREAL,5080,,
+matched (client number),Jungle Media,revenue,213536,CONSEIL QUEBECOIS SUR LE TABAC ET LA SANTE,-134495,,
+matched (client number),Jungle Media,revenue,213938,CORPORATION DE GESTION DES MARCHES PUBLICS DE MONTREAL,573,,
+matched (client number),Jungle Media,revenue,217908,COVENANT HOUSE TORONTO,75000,,
+matched (client number),Jungle Media,revenue,216286,COZEY INC.,48150,,
+matched (client number),Jungle Media,revenue,217124,DIALOGUE HEALTH TECHNOLOGIES INC.,9852,,
+matched (client number),Jungle Media,revenue,218125,FEDERATION DES MEDECINS OMNIPRATICIENS DU QUEBEC,-31,,
+matched (client number),Jungle Media,revenue,204310,FONDATION CHU SAINTE-JUSTINE,700,,
+matched (client number),Jungle Media,revenue,212819,FRIENDS OF CANADIAN BROADCASTING,1240,,
+matched (client number),Jungle Media,revenue,217820,GLOBO,33110,,
+matched (client number),Jungle Media,revenue,211296,GO RVING CANADA,57399,,
+matched (client number),Jungle Media,revenue,215370,GORECYCLE CANADA INC.,41516,,
+matched (client number),Jungle Media,revenue,217804,GREEN SHIELD HOLDINGS INC.,19150,,
+matched (client number),Jungle Media,revenue,212374,GROUPE BBA INC.,10952,,
+matched (client number),Jungle Media,revenue,218382,GROUPE BEV INC.,882,,
+matched (client number),Jungle Media,revenue,213636,GROUPE CONSEIL SYRUS INC,0,,
+matched (client number),Jungle Media,revenue,213687,GROUPE CONTEX INC,3264,,
+matched (client number),Jungle Media,revenue,215267,GROUPE MARCELLE INC.,307499,,
+matched (client number),Jungle Media,revenue,208152,GROUPE PROMUTUEL FEDERATION DE SOCIETES MUTUELLES D'ASSURANCE GENERALE,-2395,,
+matched (client number),Jungle Media,revenue,211821,HEC MONTREAL,23900,,
+matched (client number),Jungle Media,revenue,217280,HUBBLO IMMERSION INC.,2559,,
+matched (client number),Jungle Media,revenue,217289,IDORSIA PHARMACEUTICALS LTD,2564,,
+matched (client number),Jungle Media,revenue,210381,ILLVA SARONNO S.P.A.,7468,,
+matched (client number),Jungle Media,revenue,215052,INTELCOM COURRIER CANADA INC.,76439,,
+matched (client number),Jungle Media,revenue,211996,J.E. MONDOU LTEE,8721,,
+matched (client number),Jungle Media,revenue,214040,KALEIDO CROISSANCE INC,10176,,
+matched (client number),Jungle Media,revenue,201149,KEG RESTAURANTS LTD.,156622,,
+matched (client number),Jungle Media,revenue,218053,KOMBI SPORTS INC,53096,,
+matched (client number),Jungle Media,revenue,218421,LAURA SHOPPE,30498,,
+matched (client number),Jungle Media,revenue,209844,LAVO INC,110444,,
+matched (client number),Jungle Media,revenue,216329,LE GROUPE MONTONI INC.,8500,,
+matched (client number),Jungle Media,revenue,205044,LIQUOR CONTROL BOARD OF ONTARIO (LCBO),149160,,
+matched (client number),Jungle Media,revenue,209123,LITTLE CEASARS,344052,,
+matched (client number),Jungle Media,revenue,218050,MAPLE OMNICHANNEL LTD (PLAYOJO),504595,,
+matched (client number),Jungle Media,revenue,216382,MC COMMERCIAL INC (GE APPLIANCES / A CANADIAN COMPANY),135026,,
+matched (client number),Jungle Media,revenue,217087,MCMICHAEL CANADIAN ART COLLECTION,9020,,
+matched (client number),Jungle Media,revenue,211272,MEDCAN HEALTH MANAGEMENT INC.,292269,,
+matched (client number),Jungle Media,revenue,213427,MINISTRY OF EDUCATION - COMMUNICATIONS BRANCH,2400,,
+matched (client number),Jungle Media,revenue,218399,MTY FRANCHISING INC - SUSHI SHOP,66369,,
+matched (client number),Jungle Media,revenue,213089,NATIONAL FILM BOARD OF CANADA,38364,,
+matched (client number),Jungle Media,revenue,216703,NATURE-ACTION QUEBEC INC,1500,,
+matched (client number),Jungle Media,revenue,218475,NAUTILUS PLUS INC.,3120,,
+matched (client number),Jungle Media,revenue,212412,NESTO INC,48000,,
+matched (client number),Jungle Media,revenue,217198,NUTRIGROUPE INC,51672,,
+matched (client number),Jungle Media,revenue,211519,OPTO-RESEAU INC.,21190,,
+matched (client number),Jungle Media,revenue,216928,PIERRE FABRE DERMO-COSMETIQUE CANADA,180064,,
+matched (client number),Jungle Media,revenue,205265,PMA CANADA,35102,,
+matched (client number),Jungle Media,revenue,216037,"POST FOODS CANADA, INC.",83200,,
+matched (client number),Jungle Media,revenue,210702,PROGRAMME DE PORTAGE RELATIF A LA DEPENDANCE DE LA DROGUE,365,,
+matched (client number),Jungle Media,revenue,213477,PROMOTION IN MOTION CANADA INC.,7897,,
+matched (client number),Jungle Media,revenue,209988,PUBLIC MOBILE,413042,,
+matched (client number),Jungle Media,revenue,216689,RELIANCE COMFORT LIMITED PARTNERSHIP,327180,,
+matched (client number),Jungle Media,revenue,209180,RESERVOIR - CPA,6635,,
+matched (client number),Jungle Media,revenue,218329,ROLEX CANADA LTD.,15000,,
+matched (client number),Jungle Media,revenue,206778,SLEEMAN BREWERIES LTD,331982,,
+matched (client number),Jungle Media,revenue,217162,SOCIETE EN COMMANDITE FREE 2 PLAY,3496,,
+matched (client number),Jungle Media,revenue,204558,SOLLIO AGRICULTURE,1065,,
+matched (client number),Jungle Media,revenue,215301,STAPLES CANADA ULC,209678,,
+matched (client number),Jungle Media,revenue,210601,TELUS COMMUNICATION INC,343145,,
+matched (client number),Jungle Media,revenue,217000,THE FRENCH SHOP - L'ATELIER FRANCAIS,-1,,
+matched (client number),Jungle Media,revenue,218018,TOURISME GASPESIE,118088,,
+matched (client number),Jungle Media,revenue,218150,TOURISME MONTEREGIE,42280,,
+matched (client number),Jungle Media,revenue,213487,TRADER CORPORATION / AUTOTRADER.CA,133915,,
+matched (client number),Jungle Media,revenue,211080,UAP INC,208686,,
+matched (client number),Jungle Media,revenue,211790,VANCOUVER COASTAL HEALTH,11080,,
+matched (client number),Jungle Media,revenue,212961,WEALTHSIMPLE TECHNOLOGIES ALBERTA INC.,391164,,
+matched (client number),Jungle Media,revenue,210011,"YUKON GOVERNMENT, THE DEPARTMENT OF TOURISM AND CULTURE",4004,,
+matched (client number),MEK US,revenue,215650,AMAZON USA,81873,,
+matched (client number),MEK US,revenue,211236,I-HEALTH INC.,4366,,
+matched (client number),MEK US,revenue,210862,LOCAL PLANET,0,,
+matched (client number),MEK US,revenue,217039,PEMCO MUTUAL INSURANCE COMPANY,169482,,
+matched (client number),MEK US,revenue,215668,SILICON VALLEY,757569,,
+matched (normalized name),Jungle Media,revenue,207199,I-HEALTH INC,-86,,
+no hours match,Cossette Media,revenue,218375,ALIMENTS SOFINA INC.,1950,,
+no hours match,Cossette Media,revenue,211239,BRUNICO COMMUNICATIONS LTD.,12,,
+no hours match,Cossette Media,revenue,200963,BUREAU D'ASSURANCE DU CANADA,1300,,
+no hours match,Cossette Media,revenue,201415,C.A.A. (QUEBEC),903,,
+no hours match,Cossette Media,revenue,216594,HARLEQUIN ENTERPRISES ULC,0,,
+no hours match,Cossette Media,revenue,200027,MCDONALD'S,650,,
+no hours match,Cossette Media,revenue,210517,VIA RAIL - MARQUE,0,,
+no hours match,Jungle Media,revenue,215855,AGENCYX INC.,0,,
+no hours match,Jungle Media,revenue,209229,CORPORATION ABBVIE,1187,,
+no hours match,Jungle Media,revenue,218396,EXCELSIOR WORKS LTD,43790,,
+no hours match,Jungle Media,revenue,218359,GROUPE TECNIC CANADA INC.,7500,,
+no hours match,Jungle Media,revenue,218342,LES EDITIONS PROTEGEZ-VOUS,-4998,,
+no hours match,Jungle Media,revenue,216300,OTSUKA CANADA PHARMACEUTICAL INC,7,,
+no hours match,Jungle Media,revenue,217758,TANK COMMUNICATIONS ENTERPRISE INC.,750,,
+no hours match,Jungle Media,revenue,218247,VGC GROUP LP,0,,
+no hours match,K72,revenue,217901,BULK BARN FOODS LIMITED,48979,,agency has no hours export; same client number has hours under Jungle Media (not merged)
+no hours match,K72,revenue,215237,EASYFINANCIAL SERVICES INC.,87404,,agency has no hours export; same client number has hours under Jungle Media (not merged)
+no hours match,K72,revenue,218396,EXCELSIOR WORKS LTD,4250,,agency has no hours export
+no hours match,K72,revenue,204612,INDUSTRIELLE ALLIANCE ASSURANCE ET SERVICES FINANCIERS INC.,164633,,agency has no hours export; same client number has hours under Cossette Media (not merged)
+no hours match,K72,revenue,207226,PLUS COMPANY MEDIA INC.,0,,agency has no hours export; same client number has hours under Cossette Media (not merged)
+no hours match,K72,revenue,218247,VGC GROUP LP,38022,,agency has no hours export
+no revenue match,Cossette Media,hours,214585,123DENTISTE QUÉBEC INC.,,80,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,210817,AGF INVESTMENTS INC.,,75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,214602,AGROPUR,,29.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,216798,ALLERGIES QUEBEC,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,206554,AMNISTIE INTERNATIONALE,,20.5,
+no revenue match,Cossette Media,hours,214990,APOLLO INSURANCE,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,213279,BURNBRAE FARMS LIMITED,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,217333,CAFE WILLIAM SPARTIVENTO INC. WILLIAM SPARTIVENTO COFFEE INC.,,9,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,213803,CAG - AUTRES,,3.25,
+no revenue match,Cossette Media,hours,216555,CAG - SAAQ,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,213080,CAMH FOUNDATION,,131,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,200023,CANADA POST CORPORATION,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,217121,CANADIAN BEVERAGE CONTAINER RECYCLING ASSOCIATION (CBCRA),,47.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,207185,CAPITAL ONE CANADA,,3,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,201283,CARE CANADA,,1.25,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,213131,CMHC GRANVILLE ISLAND ADMIN OFFICE,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,216413,CONSEIL DE L'INDUSTRIE FORESTIERE DU QUEBEC (CIFQ),,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,213536,CONSEIL QUEBECOIS SUR LE TABAC ET LA SANTE,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,213938,CORPORATION DE GESTION DES MARCHES PUBLICS DE MONTREAL,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,207885,COSSETTE PITCH,,564.75,
+no revenue match,Cossette Media,hours,216286,COZEY INC.,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,217465,CRÉATIONS DIVING HORSE LIMITÉE,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,216827,DIGITAL ADVERTISING ALLIANCE OF CANADA (DAAC),,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,207461,EGG FARMERS OF CANADA,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,204310,FONDATION CHU SAINTE-JUSTINE,,0.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,216777,FONDATION DES JEUNES DE LA DPJ,,5.5,
+no revenue match,Cossette Media,hours,211296,GO RVING CANADA,,34.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,211135,GOOGLE,,3.5,
+no revenue match,Cossette Media,hours,215370,GORECYCLE CANADA INC.,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,201041,GROUPE ALDO,,14.25,
+no revenue match,Cossette Media,hours,215267,GROUPE MARCELLE INC.,,26,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,208152,GROUPE PROMUTUEL FEDERATION DE SOCIETES MUTUELLES D'ASSURANCE GENERALE,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,211821,HEC MONTREAL,,5.75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,217289,IDORSIA PHARMACEUTICALS LTD,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,204612,INDUSTRIELLE ALLIANCE ASSURANCE ET SERVICES FINANCIERS INC.,,1850.5,revenue booked under K72 (not merged)
+no revenue match,Cossette Media,hours,215469,INNERGEX ENERGIE RENOUVELABLE INC.,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,207661,INTACT INSURANCE COMPANY,,543.5,
+no revenue match,Cossette Media,hours,209935,K72 PITCH,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,214040,KALEIDO CROISSANCE INC,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,201149,KEG RESTAURANTS LTD.,,11.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,218053,KOMBI SPORTS INC,,8.25,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,209844,LAVO INC,,8.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,200859,LE CIRQUE DU SOLEIL INC.,,1.5,
+no revenue match,Cossette Media,hours,205044,LIQUOR CONTROL BOARD OF ONTARIO (LCBO),,122,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,209123,LITTLE CEASARS,,200.75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,218050,MAPLE OMNICHANNEL LTD (PLAYOJO),,253.75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,216382,MC COMMERCIAL INC (GE APPLIANCES / A CANADIAN COMPANY),,35.25,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,217087,MCMICHAEL CANADIAN ART COLLECTION,,0.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,211272,MEDCAN HEALTH MANAGEMENT INC.,,16,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,210686,MEDIAS TRANSCONTINENTAL S.E.N.C.,,55.5,
+no revenue match,Cossette Media,hours,200025,METRO INC,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,218399,MTY FRANCHISING INC - SUSHI SHOP,,6.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,213089,NATIONAL FILM BOARD OF CANADA,,1,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,218475,NAUTILUS PLUS INC.,,23,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,212412,NESTO INC,,5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,211519,OPTO-RESEAU INC.,,0,no client hours in Jan–Aug 2026; revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,218274,"PAPA JOHN'S MARKETING FUND, INC",,1,
+no revenue match,Cossette Media,hours,217039,PEMCO MUTUAL INSURANCE COMPANY,,35,revenue booked under MEK US (not merged)
+no revenue match,Cossette Media,hours,216916,PGA TOUR EVENT MANAGEMENT CANADA ULC,,9,
+no revenue match,Cossette Media,hours,216928,PIERRE FABRE DERMO-COSMETIQUE CANADA,,55.75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,204814,Plus Company Canada Inc.,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,210434,PLUS COMPANY IGNITION PITCH,,33,
+no revenue match,Cossette Media,hours,207226,PLUS COMPANY MEDIA INC.,,410,revenue booked under K72 (not merged)
+no revenue match,Cossette Media,hours,205265,PMA CANADA,,36.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,216037,"POST FOODS CANADA, INC.",,11,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,205005,QUEBEC - REGIONAL,,75,
+no revenue match,Cossette Media,hours,206385,QUEBEC EN FORME,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,200789,RECYC-QUEBEC,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,216689,RELIANCE COMFORT LIMITED PARTNERSHIP,,27.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,217751,RESEAU DES UNITES REGIONALES DE LOISIR ET DE SPORT DU QUEBEC,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,209180,RESERVOIR - CPA,,1,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,215668,SILICON VALLEY,,183.5,revenue booked under MEK US (not merged)
+no revenue match,Cossette Media,hours,206778,SLEEMAN BREWERIES LTD,,104,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,217746,SOCIETE DE RECHERCHE SUR LE CANCER,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,211724,SOCIETE DES CASINOS DU QUEBEC - CRM CASINO,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,217162,SOCIETE EN COMMANDITE FREE 2 PLAY,,6.75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,204558,SOLLIO AGRICULTURE,,1.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,215301,STAPLES CANADA ULC,,22.75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,201231,TD CANADA TRUST,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,210601,TELUS COMMUNICATION INC,,346.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,212430,TORQ LE GROUPE,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,218018,TOURISME GASPESIE,,7.25,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,218150,TOURISME MONTEREGIE,,0.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,213487,TRADER CORPORATION / AUTOTRADER.CA,,21.75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,211080,UAP INC,,0.75,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,211790,VANCOUVER COASTAL HEALTH,,74.5,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,200000,WAL-MART CANADA INC.,,0,no client hours in Jan–Aug 2026
+no revenue match,Cossette Media,hours,212961,WEALTHSIMPLE TECHNOLOGIES ALBERTA INC.,,1.25,revenue booked under Jungle Media (not merged)
+no revenue match,Cossette Media,hours,208879,WORKSAFEBC,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,213253,9374-4845 QUEBEC INC. (MINT'N DRY),,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,200809,BC LOTTERY CORPORATION,,0,no client hours in Jan–Aug 2026; revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,213100,BOB L'AGENCE,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,214290,BOMBARDIER RECREATIONAL PRODUCTS INC.,,1.5,revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,211760,BOOTS AND HEARTS LIMITED PARTNERSHIP,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,217901,BULK BARN FOODS LIMITED,,34,revenue booked under K72 (not merged)
+no revenue match,Jungle Media,hours,213657,BURL'S CREEK EVENT GROUNDS INC.,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,201315,CHAMBRE DE COMMERCE DU MONTREAL METROPOLITAIN (CCMM),,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,214032,COAST CAPITAL SAVINGS FEDERAL CREDIT UNION,,0,no client hours in Jan–Aug 2026; revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,215237,EASYFINANCIAL SERVICES INC.,,498,revenue booked under K72 (not merged)
+no revenue match,Jungle Media,hours,217132,FORMATIONS INFOPRESSE,,85.5,
+no revenue match,Jungle Media,hours,209961,FRANKLIN TEMPLETON INVESTMENTS,,4,
+no revenue match,Jungle Media,hours,216934,GCI COMMUNICATION CORP,,0,no client hours in Jan–Aug 2026; revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,217214,GLOBAL X INVESTMENTS CANADA INC,,0,no client hours in Jan–Aug 2026; revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,201041,GROUPE ALDO,,410,
+no revenue match,Jungle Media,hours,213970,LA CORDEE MACAP INC.,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,215389,LA VITRINE CULTURELLE DE MONTREAL,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,209243,LES PETITS FRERES,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,213741,LES VIANDES DU BRETON INC.,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,213432,MALLETTE S.E.N.C.R.L.,,12,
+no revenue match,Jungle Media,hours,209938,MEKANISM CANADA PITCH,,9,
+no revenue match,Jungle Media,hours,208385,MMBC RECYCLING INC,,0,no client hours in Jan–Aug 2026; revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,205006,MONTREAL - REGIONAL,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,209112,MUSEE MCCORD ET MUSEE STEWART,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,208567,NOVO NORDISK,,161.5,revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,201114,ONTARIO LOTTERY CORPORATION,,133,revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,217336,PASSIONIMO INC.,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,217039,PEMCO MUTUAL INSURANCE COMPANY,,5,revenue booked under MEK US (not merged)
+no revenue match,Jungle Media,hours,210434,PLUS COMPANY IGNITION PITCH,,565.75,
+no revenue match,Jungle Media,hours,216617,QWELLI,,0,no client hours in Jan–Aug 2026
+no revenue match,Jungle Media,hours,217532,RONA INC.,,0,no client hours in Jan–Aug 2026; revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,201039,SHOPPERS DRUG MART INC.,,5,
+no revenue match,Jungle Media,hours,215668,SILICON VALLEY,,273,revenue booked under MEK US (not merged)
+no revenue match,Jungle Media,hours,210284,SOLUTIONS ELEVENT INC.,,19,
+no revenue match,Jungle Media,hours,206936,TELE-QUEBEC,,172.5,revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,207354,THE GLOBE & MAIL INC.,,4,revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,217943,"THE NATURE CONSERVANCY OF CANADA,",,4,revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,211936,TOYOTA CANADA INC,,194,revenue booked under Cossette Media (not merged)
+no revenue match,Jungle Media,hours,215392,VETOQUINOL N.-A INC.,,12,
+no revenue match,Jungle Media,hours,210892,VISCERAL PERFORMANCE INC.,,0,no client hours in Jan–Aug 2026
+no revenue match,MEK US,hours,215661,ALASKA AIR USA,,0,no client hours in Jan–Aug 2026
+no revenue match,MEK US,hours,212439,COMMONSPIRIT HEALTH,,0,no client hours in Jan–Aug 2026
+no revenue match,MEK US,hours,215708,DEL MONTE FOODS CORPORATION II INC,,0,no client hours in Jan–Aug 2026
+no revenue match,MEK US,hours,217153,"FOUNDATION TO COMBAT ANTI-SEMITISM, INC.",,0,no client hours in Jan–Aug 2026
+no revenue match,MEK US,hours,214293,HARMLESS HARVEST,,271,
+no revenue match,MEK US,hours,218336,"INTERACTIVE MEMORIES, INC",,71,
+no revenue match,MEK US,hours,218268,JOINT VENTURE,,13.25,
+no revenue match,MEK US,hours,217952,MARK ANTHONY BRANDS,,0,no client hours in Jan–Aug 2026
+no revenue match,MEK US,hours,215981,MEKANISM INC.,,0,no client hours in Jan–Aug 2026
+no revenue match,MEK US,hours,216429,MEKANISM PITCH,,70,
+no revenue match,MEK US,hours,215659,SCHWAB,,147,
+no revenue match,MEK US,hours,217510,ZEVIA PBC,,0,no client hours in Jan–Aug 2026
