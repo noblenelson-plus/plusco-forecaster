@@ -21,6 +21,10 @@
  * when that check passes; with flags still pending it shows a "Not validated —
  * N flags pending" message, scrolls to the first one and leaves the milestone
  * not validated (`nextStepStatus`). Justifying a flag never revalidates by itself.
+ *
+ * Closed round (a locked RFQ, non-admin — `validation.roundClosed`): the flags
+ * and their justifications show read-only and there is no Revalidate; a locked
+ * round can't be re-checked after its deadline (lib/format/rfq-lock.ts).
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -51,6 +55,7 @@ import { stepsForRfq } from "../../../lib/constants/confirmation-steps";
 import { runClientStepCheck } from "../../../lib/services/milestone-check-service";
 import { fetchStepWindows } from "../../../lib/services/flag-config-service";
 import { useAuth } from "../../../lib/auth-context";
+import { CLOSED_ROUND_NOTE } from "../../../lib/format/rfq-lock";
 import type { FlagContext, RfqValidationStatus } from "../../../lib/types/forecast-flags.types";
 
 /** Outcome of the last Revalidate click, shown under the milestone strip. */
@@ -207,9 +212,11 @@ export default function FlagsPage() {
   const allResolved = validation.unjustifiedCount === 0;
 
   const depsLoaded = partnersLoaded && rfqsLoaded && allRfqs.length > 0;
+  // Locked RFQ, non-admin: read-only flags, no Revalidate.
+  const closed = validation.roundClosed;
 
   const revalidate = async () => {
-    if (!ready || !depsLoaded || recordedSteps.length === 0 || revalidating) return;
+    if (!ready || !depsLoaded || closed || recordedSteps.length === 0 || revalidating) return;
     const key = selectionKey;
     setRevalidating(true);
     setOutcome(null);
@@ -292,7 +299,7 @@ export default function FlagsPage() {
                   </span>
                 );
               })}
-              {recordedSteps.length === 0 ? (
+              {closed ? null : recordedSteps.length === 0 ? (
                 <span className="text-xs text-gray-400">
                   When the forecast is ready, validate it from the forecast page; then justify the
                   flags here and revalidate from this page.
@@ -315,8 +322,14 @@ export default function FlagsPage() {
               )}
             </div>
 
+            {closed && (
+              <p className="bg-gray-900 px-3 py-2 text-xs font-medium text-white">
+                {CLOSED_ROUND_NOTE}
+              </p>
+            )}
+
             {/* Prompt to revalidate once every flag is resolved — inline, never a popup. */}
-            {!revalidating && !shownOutcome && anyFailed && allResolved && (
+            {!closed && !revalidating && !shownOutcome && anyFailed && allResolved && (
               <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 bg-green-500 px-3 py-2 text-xs font-medium text-white">
                 All flags are justified. Click
                 {/* Same action as the Revalidate button above — BLs click the word. */}
@@ -332,7 +345,7 @@ export default function FlagsPage() {
                 to turn the milestone green.
               </p>
             )}
-            {!revalidating && !shownOutcome && anyFailed && !allResolved && (
+            {!closed && !revalidating && !shownOutcome && anyFailed && !allResolved && (
               <p className="text-xs text-gray-500">
                 {validation.unjustifiedCount} flag{validation.unjustifiedCount !== 1 ? "s" : ""} left
                 to justify or correct — then revalidate.
@@ -371,7 +384,7 @@ export default function FlagsPage() {
               subtitle="Full-year data-consistency issues. Under-forecast (full-year MediaOcean bookings $100K or more above the BL forecast for a media type or Labs partner): correct the forecast and re-validate, or justify it with a context and comment. Labs over media spend is an error: it can't be justified — correct the Labs or Media forecast and re-validate."
               count={qaChecks.length}
             >
-              {!loadingAxes && pendingQa > 0 && (
+              {!closed && !loadingAxes && pendingQa > 0 && (
                 <p className="mb-3 bg-yellow-400 px-3 py-2 text-xs font-medium text-gray-900">
                   {pendingQa} QA issue{pendingQa !== 1 ? "s" : ""} found since the last validation —{" "}
                   {recordedSteps.length > 0
@@ -385,7 +398,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {qaChecks.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} />
                   ))}
                 </div>
               )}
@@ -403,7 +416,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {swings.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} />
                   ))}
                 </div>
               )}
@@ -421,7 +434,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {underTarget.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} />
                   ))}
                 </div>
               )}

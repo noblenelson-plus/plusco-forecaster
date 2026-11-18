@@ -26,6 +26,10 @@
  * record (pending included), so a step never drifts out of date. Steps never
  * validated are left untouched (they stay "not validated" until someone runs
  * the manual Validate).
+ *
+ * Closed rounds: on a LOCKED RFQ a non-admin can't validate, reset or justify
+ * (`roundClosed`; see lib/format/rfq-lock.ts). Every action below is a no-op
+ * there (justify throws), and the UI hides the controls.
  */
 
 "use client";
@@ -33,6 +37,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MediaType } from "../types/common.types";
 import { useAuth } from "../auth-context";
+import { useUserProfile } from "./use-user-profile";
+import { ClosedRoundError, isRoundClosedFor } from "../format/rfq-lock";
 import { useForecastSelection } from "../stores/forecast-selection.store";
 import {
   fetchDataEntry,
@@ -118,6 +124,8 @@ export interface ValidationRunResult {
 
 export interface UseForecastValidationResult {
   ready: boolean;
+  /** The selected RFQ is locked and the person isn't an admin — read-only flags + milestones. */
+  roundClosed: boolean;
   flags: StoredFlag[];
   unjustifiedCount: number;
   stepValidations: StepValidationMap;
@@ -154,8 +162,10 @@ export function useForecastValidation(
   } = params;
 
   const { user } = useAuth();
+  const { isAdmin } = useUserProfile();
   const { selectedClient, selectedYear, selectedRFQ } = useForecastSelection();
   const ready = !!selectedClient && !!selectedYear && !!selectedRFQ;
+  const roundClosed = isRoundClosedFor(selectedRFQ, isAdmin);
 
   // ─── Subscriptions ──────────────────────────────────────────────────────────
   const [flagMap, setFlagMap] = useState<StoredFlagMap>({});
@@ -215,6 +225,8 @@ export function useForecastValidation(
       // A step only validates its target RFQ; the working copies belong to the
       // selected RFQ, so the two must match.
       if (step.targetRfq !== selectedRFQ.type) return null;
+      // A closed round is read-only for non-admins.
+      if (roundClosed) return null;
 
       setRunningStep(stepId);
       try {
@@ -286,11 +298,11 @@ export function useForecastValidation(
         setRunningStep(null);
       }
     },
-    [selectedClient?.cl_id, selectedYear, selectedRFQ?.type, persistDirty, user?.uid]
+    [selectedClient?.cl_id, selectedYear, selectedRFQ?.type, roundClosed, persistDirty, user?.uid]
   );
 
   const recheckValidatedSteps = useCallback(async (): Promise<void> => {
-    if (!selectedRFQ) return;
+    if (!selectedRFQ || roundClosed) return;
     // Only steps of the selected RFQ that have already been validated — a
     // never-validated step stays "not validated" until a manual Validate.
     const steps = CONFIRMATION_STEPS.filter(
@@ -299,11 +311,11 @@ export function useForecastValidation(
     for (const step of steps) {
       await runValidation(step.id);
     }
-  }, [selectedRFQ?.type, stepValidations, runValidation]);
+  }, [selectedRFQ?.type, roundClosed, stepValidations, runValidation]);
 
   const unvalidate = useCallback(
     async (stepId: string): Promise<void> => {
-      if (!selectedClient || !selectedYear) return;
+      if (!selectedClient || !selectedYear || roundClosed) return;
       setRunningStep(stepId);
       try {
         await clearStepValidation(selectedClient.cl_id, selectedYear, stepId);
@@ -311,7 +323,7 @@ export function useForecastValidation(
         setRunningStep(null);
       }
     },
-    [selectedClient?.cl_id, selectedYear]
+    [selectedClient?.cl_id, selectedYear, roundClosed]
   );
 
   const justify = useCallback(
@@ -320,6 +332,7 @@ export function useForecastValidation(
       input: { context?: FlagContext; note: string }
     ): Promise<void> => {
       if (!selectedClient || !selectedYear || !selectedRFQ) return;
+      if (roundClosed) throw new ClosedRoundError();
       const flag = flagMap[flagKey];
       if (!flag) return;
       const next = justifyStoredFlag(
@@ -336,11 +349,12 @@ export function useForecastValidation(
         next
       );
     },
-    [selectedClient?.cl_id, selectedYear, selectedRFQ?.type, flagMap, user?.uid]
+    [selectedClient?.cl_id, selectedYear, selectedRFQ?.type, roundClosed, flagMap, user?.uid]
   );
 
   return {
     ready,
+    roundClosed,
     flags,
     unjustifiedCount,
     stepValidations,

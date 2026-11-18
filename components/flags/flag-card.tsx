@@ -18,6 +18,9 @@
  * stays for an explicit save. Saving a justification never validates anything —
  * revalidating stays a deliberate action (Flags page / forecast page).
  *
+ * Read-only (`readOnly`: a closed round viewed by a non-admin) shows the saved
+ * justification as text, with no editor and no autosave.
+ *
  * The card root carries `data-pending-flag` while unresolved, so the Flags page
  * can scroll to the first one after a failed revalidation.
  *
@@ -99,9 +102,12 @@ export default function FlagCard({
   flag,
   currency,
   onJustify,
+  readOnly = false,
 }: {
   flag: StoredFlag;
   currency?: string;
+  /** Closed round (locked RFQ, non-admin): show the justification, no editing. */
+  readOnly?: boolean;
   onJustify: (
     flagKey: string,
     input: { context?: FlagContext; note: string }
@@ -154,7 +160,7 @@ export default function FlagCard({
 
   // Autosave any change — a partial one is kept as a draft (not justified).
   // Off for flags that can't be justified (no editor).
-  const autosaveReady = !correctable && dirty;
+  const autosaveReady = !readOnly && !correctable && dirty;
   // Half-filled: the BL started but the flag still doesn't count as justified.
   const missingContext = !context && !!note.trim();
   const missingNote = !!context && !note.trim();
@@ -315,6 +321,21 @@ export default function FlagCard({
           <span className="font-semibold text-gray-900">Can&apos;t be justified.</span> Correct the
           Labs or Media forecast on the forecast page so the Labs partners don&apos;t exceed the
           media type&apos;s forecast, then re-validate.
+        </div>
+      ) : readOnly ? (
+        <div className="border-t border-black/10 bg-white px-4 py-3 text-[12px] text-gray-700">
+          {storedContext || storedNote ? (
+            <>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                {FLAG_CONTEXTS.find((c) => c.value === storedContext)?.label ?? "No context"}
+              </p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-gray-900">
+                {storedNote || "No comment."}
+              </p>
+            </>
+          ) : (
+            <p>Not justified. This round is closed, so it can no longer be justified.</p>
+          )}
         </div>
       ) : (
       /* Justification editor */

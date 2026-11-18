@@ -10,12 +10,17 @@
  * large agency doesn't open hundreds of Firestore reads at once. Progress and a
  * per-status summary are exposed for the UI; a client whose write is rejected
  * (e.g. not actually writable) is captured as an error, never aborting the rest.
+ *
+ * A step whose target RFQ is locked is closed to non-admins (`isStepClosed`,
+ * lib/format/rfq-lock.ts): `run` does nothing for it.
  */
 
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth-context";
+import { useUserProfile } from "./use-user-profile";
+import { isRoundClosedFor } from "../format/rfq-lock";
 import type { ConfirmationStep } from "../constants/confirmation-steps";
 import type { RFQ } from "../types/rfq.types";
 import type { LabsPartner } from "../types/labs.types";
@@ -64,6 +69,8 @@ export interface UseMilestoneBatchCheckResult {
   run: (step: ConfirmationStep, clientIds: string[], year: number) => Promise<void>;
   /** Clear the last run's progress + summary. */
   reset: () => void;
+  /** The step's target RFQ of `year` is locked and the person isn't an admin. */
+  isStepClosed: (step: ConfirmationStep, year: number | null) => boolean;
 }
 
 /** Bounded-concurrency fan-out — at most `limit` workers active at a time. */
@@ -84,6 +91,7 @@ async function runPool<T>(
 
 export function useMilestoneBatchCheck(): UseMilestoneBatchCheckResult {
   const { user } = useAuth();
+  const { isAdmin } = useUserProfile();
 
   const [rfqs, setRFQs] = useState<RFQ[]>([]);
   useEffect(() => subscribeToRFQs(setRFQs), []);
@@ -116,6 +124,16 @@ export function useMilestoneBatchCheck(): UseMilestoneBatchCheckResult {
   const runningRef = useRef(false);
   const uid = user?.uid;
 
+  const isStepClosed = useCallback(
+    (step: ConfirmationStep, year: number | null): boolean =>
+      year !== null &&
+      isRoundClosedFor(
+        rfqs.find((r) => r.year === year && r.type === step.targetRfq),
+        isAdmin
+      ),
+    [rfqs, isAdmin]
+  );
+
   const reset = useCallback(() => {
     setProgress(null);
     setSummary(null);
@@ -124,6 +142,8 @@ export function useMilestoneBatchCheck(): UseMilestoneBatchCheckResult {
   const run = useCallback(
     async (step: ConfirmationStep, clientIds: string[], year: number): Promise<void> => {
       if (runningRef.current || clientIds.length === 0) return;
+      // Closed round (locked target RFQ, non-admin): nothing to run.
+      if (isStepClosed(step, year)) return;
       runningRef.current = true;
 
       setRunning(true);
@@ -176,7 +196,7 @@ export function useMilestoneBatchCheck(): UseMilestoneBatchCheckResult {
       setRunning(false);
       runningRef.current = false;
     },
-    [uid]
+    [uid, isStepClosed]
   );
 
   return {
@@ -186,5 +206,6 @@ export function useMilestoneBatchCheck(): UseMilestoneBatchCheckResult {
     summary,
     run,
     reset,
+    isStepClosed,
   };
 }
