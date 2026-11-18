@@ -33,6 +33,12 @@ export async function fetchProgrammaticPreview(): Promise<ProgrammaticPreviewDat
   );
   const rows: ProgRow[] = chunks.flatMap((s) => ((s.data()?.rows as string[]) ?? []).map((r) => toObject<ProgRow>(columns, r)));
   const mir: MirRow[] = ((meta.mir as string[]) ?? []).map((r) => toObject<MirRow>(mirColumns, r));
+  const infoColumns: string[] = meta.clientInfoColumns ?? ["client", "agency", "region", "gm"];
+  const clientInfo: ProgrammaticPreviewData["clientInfo"] = {};
+  for (const r of (meta.clientInfo as string[]) ?? []) {
+    const o = toObject<{ client: string; agency: string; region: string; gm: string }>(infoColumns, r);
+    clientInfo[o.client] = { agency: o.agency, region: o.region, gm: o.gm };
+  }
 
   return {
     generatedAt: meta.generatedAt ?? "",
@@ -42,5 +48,6 @@ export async function fetchProgrammaticPreview(): Promise<ProgrammaticPreviewDat
     usdBasis: meta.fx?.USD?.basis ?? null,
     rows,
     mir,
+    clientInfo,
   };
 }
