@@ -40,7 +40,8 @@ export const DSP_STATUS_TEXT: Record<ProgDsp, string> = {
 export const DSP_SOURCE_NOTES: Record<ProgDsp, string> = {
   DV360:
     "BigQuery (Jan–Jun manual upload, then the plus-collect pipeline). Deals mapped through Harshal's SDF file. The feed covers 8 partners: OLG (Monks), Globe and Mail, Novo Nordisk, Gov. of Canada and Pursuit are missing.",
-  Amazon: "Harshal's Amazon YTD export (Jan 1 – Nov 17): deals, site/app and supply source. Complete.",
+  Amazon:
+    "Harshal's Amazon YTD export (Jan 1 – Nov 17): deals, site/app and supply source. Complete. About $980K of Edgewell brand accounts (Schick, Bulldog, Hawaiian Tropic…) with no DSP account or supply source is left out: it isn't DSP spend.",
   TTD: "Harshal's TTD YTD export, OLG + BCLC seats (Jan 1 – Nov 17). Publisher from the deal name; open market has no site in the export.",
   Yahoo:
     "BRP seats only. The YTD exports stopped at Yahoo's 1M-row limit, so missing months come from the template's Yahoo tab (deal level, no publisher), which uses a different spend metric.",

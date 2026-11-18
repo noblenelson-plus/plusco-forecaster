@@ -236,6 +236,7 @@ const CLIENT_RULES = [
   [/IAAH/i, "INDUSTRIELLE ALLIANCE ASSURANCE ET SERVICES FINANCIERS INC."],
   [/GE APPLIANCES/i, "MC COMMERCIAL INC"],
   [/GOEASY/i, "EASYFINANCIAL SERVICES INC"],
+  [/GIBSON/i, "PMA"], // Gibson's Finest whisky is booked under client PMA in MediaOcean
   [/LOTO.?QUEBEC/i, "GOVT QC - LOTO QC"],
   [/TELE.?QUEBEC/i, "GOVT QC - TÉLÉ QC"],
   [/^(CSPQ|CAG)\b/i, GOVQC],
@@ -422,10 +423,19 @@ async function loadDv360() {
 async function loadAmazon() {
   const rl = readline.createInterface({ input: fs.createReadStream(inDir("amazon_ytd.csv")) });
   let H = null, n = 0;
+  const skipped = new Map(); // advertiser → CAD, rows left out (no DSP entity)
   for await (const line of rl) {
     const r = parseCsvLine(line);
     if (!H) { H = r.map((h) => h.replace(/^﻿/, "").trim()); continue; }
     const o = Object.fromEntries(H.map((h, i) => [h, r[i]]));
+    // Rows with no DSP entity and no supply source are not DSP buys (2026-11-18:
+    // exactly the Edgewell brand accounts, ~$980K, while "Edgewell Canada DSP"
+    // matches its MediaOcean booking). Leave them out of the DSP numbers.
+    if (!o["Entity ID"] && !o["Supply source"]) {
+      const a = o["Advertiser account name"] || "?";
+      skipped.set(a, (skipped.get(a) || 0) + toCad(num(o["Total cost"]), o["Budget currency"]));
+      continue;
+    }
     n++;
     const supply = o["Supply source"], site = o["Site or app"], deal = o["Deal name"];
     const m = matchPartner([deal, supply, site]);
@@ -443,6 +453,9 @@ async function loadAmazon() {
     });
   }
   console.log(`Amazon: ${n} rows`);
+  const skippedTotal = [...skipped.values()].reduce((s, v) => s + v, 0);
+  if (skipped.size)
+    console.log(`Amazon: left out $${Math.round(skippedTotal).toLocaleString()} with no DSP entity (${[...skipped.keys()].join(", ")})`);
 }
 
 // ─── TTD ─────────────────────────────────────────────────────────────────────
