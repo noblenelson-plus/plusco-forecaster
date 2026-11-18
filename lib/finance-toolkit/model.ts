@@ -705,16 +705,101 @@ function monotone(xs: number[]): number[] {
   return blocks.flatMap((b) => new Array(b.n).fill(b.sum / b.n));
 }
 
+// ─── Plan settings (what-if levers) ──────────────────────────────────────────
+
+export type RampSetting = "data" | "faster" | "slower" | "none";
+export type RevenueTiming = "even" | "ramp";
+
+/**
+ * What-if settings on top of the data-based plan. DEFAULT_LEVERS reproduces
+ * the data exactly; every other value is a user assumption, labelled as such
+ * wherever it is used.
+ */
+export interface PlanLevers {
+  /** Multiplier on the comparables' hours per revenue $ (1 = as observed). */
+  hoursAdj: number;
+  /** Run-rate team size in FTE; when set, the team no longer scales with revenue. */
+  fixedFte: number | null;
+  /** Role key → mix weight (normalized to 100%); roles not listed keep their data share. */
+  mix: Record<string, number>;
+  /** Role key → cost per hour override. */
+  rates: Record<string, number>;
+  /** Multiplier on every data-based role rate (seniority: < 1 more junior, > 1 more senior). */
+  rateAdj: number;
+  /** Client hours per FTE per month. */
+  fteHours: number;
+  ramp: RampSetting;
+  /** "even": revenue from month 1; "ramp": revenue follows the onboarding ramp. */
+  revenueTiming: RevenueTiming;
+}
+
+export const DEFAULT_LEVERS: PlanLevers = {
+  hoursAdj: 1,
+  fixedFte: null,
+  mix: {},
+  rates: {},
+  rateAdj: 1,
+  fteHours: FTE_HOURS_PER_MONTH,
+  ramp: "data",
+  revenueTiming: "even",
+};
+
+/** Number of settings that differ from the data-based defaults. */
+export function changedLevers(l: PlanLevers): number {
+  return (
+    (l.hoursAdj !== 1 ? 1 : 0) +
+    (l.fixedFte !== null ? 1 : 0) +
+    Object.keys(l.mix).length +
+    Object.keys(l.rates).length +
+    (l.rateAdj !== 1 ? 1 : 0) +
+    (l.fteHours !== FTE_HOURS_PER_MONTH ? 1 : 0) +
+    (l.ramp !== "data" ? 1 : 0) +
+    (l.revenueTiming !== "even" ? 1 : 0)
+  );
+}
+
+export const RAMP_SETTINGS: { id: RampSetting; label: string; hint: string }[] = [
+  { id: "data", label: "As observed", hint: "The onboarding ramp measured on real new clients" },
+  { id: "faster", label: "1 month faster", hint: "Each ramp step one month sooner" },
+  { id: "slower", label: "1 month slower", hint: "Each ramp step one month later" },
+  { id: "none", label: "Full team from M1", hint: "No onboarding ramp" },
+];
+
+function shiftRamp(base: number[], setting: RampSetting): number[] {
+  switch (setting) {
+    case "none":
+      return base.map(() => 1);
+    case "faster":
+      return base.map((_, m) => base[Math.min(base.length - 1, m + 1)]);
+    case "slower":
+      return base.map((_, m) => base[Math.max(0, m - 1)]);
+    default:
+      return base;
+  }
+}
+
+// ─── Staffing plan ───────────────────────────────────────────────────────────
+
+export type RateSource = "role" | "agency" | "override";
+
 export interface PlanRole {
   key: string;
   label: string;
-  /** Share of the comparables' client hours. */
+  /** Share of the plan's client hours (after any mix adjustment). */
   share: number;
-  /** Agency cost per hour for this role, trailing 12 months. */
+  /** Share of the comparables' client hours (data). */
+  dataShare: number;
+  /** Cost per hour used in the plan. */
   rate: number;
+  /** Agency cost per hour for this role, trailing 12 months (data). */
+  dataRate: number;
+  /** Hours with a cost on file behind dataRate (0 when the agency average is used). */
+  rateHours: number;
+  rateSource: RateSource;
   monthlyHours: number[];
   yearHours: number;
   yearCost: number;
+  runRateHours: number;
   runRateFte: number;
   peakFte: number;
   /** Roles merged into "Other roles". */
@@ -723,18 +808,29 @@ export interface PlanRole {
 
 export interface StaffingPlan {
   annualRevenue: number;
+  levers: PlanLevers;
   comparables: Comparable[];
-  /** Σ comparables' hours ÷ Σ comparables' revenue. */
+  compHours: number;
+  compRevenue: number;
+  /** Σ comparables' hours ÷ Σ comparables' revenue (data). */
+  dataHoursPerDollar: number;
+  /** dataHoursPerDollar × hoursAdj, or implied by a fixed team. */
   hoursPerDollar: number;
   steadyMonthlyHours: number;
   ramp: RampCurve;
+  /** Ramp factors used in the plan (after the ramp setting). */
+  rampFactors: number[];
   roles: PlanRole[];
   monthlyHours: number[];
   monthlyCost: number[];
+  monthlyRevenue: number[];
+  yearRevenue: number;
   yearHours: number;
   yearCost: number;
   yearMargin: number;
   yearMarginPct: number;
+  /** Σ share × rate: average cost of one plan hour. */
+  blendedRate: number;
   runRateCost: number;
   runRateMargin: number;
   runRateMarginPct: number;
@@ -745,6 +841,7 @@ export interface StaffingPlan {
   ratesWindow: string;
   /** Agency average cost per costed hour (fallback rate). */
   agencyRate: number;
+  agencyCostedHours: number;
   /** Roles with no cost on file in the agency, priced at the agency average. */
   fallbackRoles: string[];
 }
@@ -753,15 +850,19 @@ export function staffingPlan(
   agencyId: string,
   annualRevenue: number,
   comparables: Comparable[],
-  basis: CostBasis
+  basis: CostBasis,
+  levers: PlanLevers = DEFAULT_LEVERS
 ): StaffingPlan | null {
   if (comparables.length === 0 || annualRevenue <= 0) return null;
   const compIds = new Set(comparables.map((c) => c.client.index));
   const compRevenue = comparables.reduce((a, c) => a + c.revenue, 0);
   const compHours = comparables.reduce((a, c) => a + c.hours, 0);
   const compCost = comparables.reduce((a, c) => a + c.cost, 0);
-  const hoursPerDollar = compHours / compRevenue;
-  const steadyMonthlyHours = (annualRevenue * hoursPerDollar) / 12;
+  const dataHoursPerDollar = compHours / compRevenue;
+  const fteHours = levers.fteHours > 0 ? levers.fteHours : FTE_HOURS_PER_MONTH;
+  const steadyMonthlyHours =
+    levers.fixedFte !== null ? Math.max(0, levers.fixedFte) * fteHours : (annualRevenue * dataHoursPerDollar * levers.hoursAdj) / 12;
+  const hoursPerDollar = (steadyMonthlyHours * 12) / annualRevenue;
 
   // Role mix of the comparables over the revenue window.
   const roleHours = new Map<number, number>();
@@ -783,6 +884,7 @@ export function staffingPlan(
   }
   const totalRoleHours = [...roleHours.values()].reduce((a, b) => a + b, 0);
   const ramp = rampCurve(agencyId);
+  const rampFactors = shiftRamp(ramp.factors, levers.ramp);
   let agencyCost = 0;
   let agencyCostedHours = 0;
   for (const r of rateAcc.values()) {
@@ -791,73 +893,144 @@ export function staffingPlan(
   }
   const agencyRate = agencyCostedHours > 0 ? agencyCost / agencyCostedHours : 0;
   const fallbackRoles: string[] = [];
-  const rateOf = (role: number) => {
+  const rateOf = (role: number): { rate: number; hours: number } => {
     const r = rateAcc.get(role);
-    if (r && r.hours > 0 && r.cost > 0) return r.cost / r.hours;
+    if (r && r.hours > 0 && r.cost > 0) return { rate: r.cost / r.hours, hours: r.hours };
     fallbackRoles.push(MODEL.roles[role]);
-    return agencyRate;
+    return { rate: agencyRate, hours: 0 };
   };
 
-  const major: { key: string; label: string; share: number; rate: number; members?: string[] }[] = [];
+  const base: { key: string; label: string; share: number; rate: number; rateHours: number; members?: string[] }[] = [];
   let otherShare = 0;
   let otherCostWeight = 0;
+  let otherRateHours = 0;
   const otherMembers: string[] = [];
   for (const [role, h] of [...roleHours.entries()].sort((a, b) => b[1] - a[1])) {
     if (h <= 0) continue;
     const share = h / totalRoleHours;
+    const r = rateOf(role);
     if (share >= ROLE_MIN_SHARE) {
-      major.push({ key: String(role), label: MODEL.roles[role], share, rate: rateOf(role) });
+      base.push({ key: String(role), label: MODEL.roles[role], share, rate: r.rate, rateHours: r.hours });
     } else {
       otherShare += share;
-      otherCostWeight += share * rateOf(role);
+      otherCostWeight += share * r.rate;
+      otherRateHours += r.hours;
       otherMembers.push(MODEL.roles[role]);
     }
   }
   if (otherShare > 0) {
-    major.push({ key: "other", label: "Other roles", share: otherShare, rate: otherCostWeight / otherShare, members: otherMembers });
+    base.push({ key: "other", label: "Other roles", share: otherShare, rate: otherCostWeight / otherShare, rateHours: otherRateHours, members: otherMembers });
   }
 
-  const roles: PlanRole[] = major.map((r) => {
-    const monthlyHours = ramp.factors.map((f) => steadyMonthlyHours * r.share * f);
+  const weights = base.map((r) => Math.max(0, levers.mix[r.key] ?? r.share));
+  const weightSum = weights.reduce((a, b) => a + b, 0) || 1;
+
+  const roles: PlanRole[] = base.map((r, i) => {
+    const share = weights[i] / weightSum;
+    const override = levers.rates[r.key];
+    const rate = override !== undefined ? override : r.rate * levers.rateAdj;
+    const runRateHours = steadyMonthlyHours * share;
+    const monthlyHours = rampFactors.map((f) => runRateHours * f);
     const yearHours = monthlyHours.reduce((a, b) => a + b, 0);
     return {
-      ...r,
+      key: r.key,
+      label: r.label,
+      members: r.members,
+      share,
+      dataShare: r.share,
+      rate,
+      dataRate: r.rate,
+      rateHours: r.rateHours,
+      rateSource: override !== undefined ? "override" : r.rateHours > 0 ? "role" : "agency",
       monthlyHours,
       yearHours,
-      yearCost: yearHours * r.rate,
-      runRateFte: (steadyMonthlyHours * r.share) / FTE_HOURS_PER_MONTH,
-      peakFte: Math.max(...monthlyHours) / FTE_HOURS_PER_MONTH,
+      yearCost: yearHours * rate,
+      runRateHours,
+      runRateFte: runRateHours / fteHours,
+      peakFte: Math.max(...monthlyHours) / fteHours,
     };
   });
 
-  const monthlyHours = ramp.factors.map((_, m) => roles.reduce((a, r) => a + r.monthlyHours[m], 0));
-  const monthlyCost = ramp.factors.map((_, m) => roles.reduce((a, r) => a + r.monthlyHours[m] * r.rate, 0));
+  const monthlyHours = rampFactors.map((_, m) => roles.reduce((a, r) => a + r.monthlyHours[m], 0));
+  const monthlyCost = rampFactors.map((_, m) => roles.reduce((a, r) => a + r.monthlyHours[m] * r.rate, 0));
+  const monthlyRevenue = rampFactors.map((f) => (annualRevenue / 12) * (levers.revenueTiming === "ramp" ? f : 1));
+  const yearRevenue = monthlyRevenue.reduce((a, b) => a + b, 0);
   const yearHours = monthlyHours.reduce((a, b) => a + b, 0);
   const yearCost = monthlyCost.reduce((a, b) => a + b, 0);
-  const runRateCost = roles.reduce((a, r) => a + steadyMonthlyHours * r.share * r.rate, 0) * 12;
+  const blendedRate = roles.reduce((a, r) => a + r.share * r.rate, 0);
+  const runRateCost = steadyMonthlyHours * blendedRate * 12;
 
   return {
     annualRevenue,
+    levers,
     comparables,
+    compHours,
+    compRevenue,
+    dataHoursPerDollar,
     hoursPerDollar,
     steadyMonthlyHours,
     ramp,
+    rampFactors,
     roles,
     monthlyHours,
     monthlyCost,
+    monthlyRevenue,
+    yearRevenue,
     yearHours,
     yearCost,
-    yearMargin: annualRevenue - yearCost,
-    yearMarginPct: (annualRevenue - yearCost) / annualRevenue,
+    yearMargin: yearRevenue - yearCost,
+    yearMarginPct: yearRevenue > 0 ? (yearRevenue - yearCost) / yearRevenue : 0,
+    blendedRate,
     runRateCost,
     runRateMargin: annualRevenue - runRateCost,
     runRateMarginPct: (annualRevenue - runRateCost) / annualRevenue,
-    runRateFte: steadyMonthlyHours / FTE_HOURS_PER_MONTH,
-    peakFte: Math.max(...monthlyHours) / FTE_HOURS_PER_MONTH,
+    runRateFte: steadyMonthlyHours / fteHours,
+    peakFte: Math.max(...monthlyHours) / fteHours,
     comparablesMarginPct: ratio(compRevenue - compCost, compRevenue),
     ratesWindow: periodLabel(RATE_FROM, RATE_TO),
     agencyRate,
+    agencyCostedHours,
     fallbackRoles: [...new Set(fallbackRoles)],
+  };
+}
+
+// ─── Work backwards from a target margin ─────────────────────────────────────
+
+/**
+ * Three ways to reach a target run-rate margin T, each holding everything else
+ * in the plan constant. Run-rate margin = 1 − hours per $ × blended cost per
+ * hour, so it moves with team intensity or cost, never with revenue alone —
+ * unless the team is held at a fixed size.
+ */
+export interface TargetSolution {
+  target: number;
+  /** Largest run-rate team that still makes T (current mix and rates). */
+  maxFte: number;
+  maxMonthlyHours: number;
+  /** hoursAdj that produces maxFte when the team scales with revenue. */
+  hoursAdj: number;
+  /** Highest average cost per hour that still makes T (current team size). */
+  maxBlendedRate: number;
+  /** Multiplier on the current rates (seniority) that produces maxBlendedRate. */
+  rateFactor: number;
+  /** Revenue that makes T with the current team held at its size. */
+  revenueNeeded: number;
+}
+
+export function solveForMargin(plan: StaffingPlan, target: number): TargetSolution | null {
+  if (!(target < 1) || plan.blendedRate <= 0 || plan.steadyMonthlyHours <= 0) return null;
+  const fteHours = plan.levers.fteHours > 0 ? plan.levers.fteHours : FTE_HOURS_PER_MONTH;
+  const budget = plan.annualRevenue * (1 - target);
+  const maxMonthlyHours = budget / 12 / plan.blendedRate;
+  const maxBlendedRate = budget / 12 / plan.steadyMonthlyHours;
+  return {
+    target,
+    maxFte: maxMonthlyHours / fteHours,
+    maxMonthlyHours,
+    hoursAdj: maxMonthlyHours / ((plan.annualRevenue * plan.dataHoursPerDollar) / 12),
+    maxBlendedRate,
+    rateFactor: maxBlendedRate / plan.blendedRate,
+    revenueNeeded: plan.runRateCost / (1 - target),
   };
 }
 
