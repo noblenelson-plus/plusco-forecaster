@@ -16,7 +16,9 @@
  *   Section 2  Insights by flag type — the current flags of the checkpoint's
  *              RFQ by type / category, overall or by GM / Agency / Region
  *              (flag-insights-section.tsx). The flag filters (category, flag)
- *              only narrow this section.
+ *              only narrow this section and Section 3.
+ *   Section 3  Flags by client — every current flag with its justification
+ *              verbatim (flag-detail-table.tsx).
  *
  * Validation lives at the {client, year} level (no RFQ dimension). The "Re-run
  * check" batch (writable clients only) re-runs the selected checkpoint.
@@ -31,6 +33,7 @@ import MilestoneTrackingSummary from "../../../components/progression/milestone-
 import ProgressionRecapTable from "../../../components/progression/progression-recap-table";
 import MilestoneBatchRunner from "../../../components/progression/milestone-batch-runner";
 import FlagInsightsSection from "../../../components/progression/flag-insights-section";
+import FlagDetailTable from "../../../components/progression/flag-detail-table";
 import { useCheckpointFlags } from "../../../lib/hooks/use-checkpoint-flags";
 import { resolveFlagTypes, type ClientFlags } from "../../../lib/format/flag-insights";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
@@ -128,10 +131,14 @@ export default function ProgressionRecapPage() {
         gm: gmLabel(c.GM_Pod),
         agency: c.CL_Agency ?? "",
         region: c.CL_Business_Unit_Region ?? "",
+        bl: c.CL_Business_Lead
+          ? usersMap.get(c.CL_Business_Lead) ?? c.CL_Business_Lead
+          : "Unassigned",
+        currency: c.CL_Currency ?? "CAD",
         toCad: c.CL_Currency === "USD" ? checkpointFlags.usdToCad ?? 1 : 1,
         flags: checkpointFlags.flagsByClient.get(c.cl_id) ?? [],
       })),
-    [filteredClients, checkpointFlags]
+    [filteredClients, checkpointFlags, usersMap]
   );
 
   // The filtered clients the current user may WRITE to — the batch check writes
@@ -267,6 +274,14 @@ export default function ProgressionRecapPage() {
                 checkpoint={checkpoint}
                 year={year}
                 missingUsdRate={hasUsdClients && checkpointFlags.usdToCad === undefined}
+              />
+            )}
+            {!checkpointFlags.loading && !checkpointFlags.error && (
+              <FlagDetailTable
+                clients={clientFlags}
+                types={selectedFlagTypes}
+                checkpoint={checkpoint}
+                year={year}
               />
             )}
           </>

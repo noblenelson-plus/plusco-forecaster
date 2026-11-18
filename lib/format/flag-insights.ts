@@ -129,6 +129,10 @@ export interface ClientFlags {
   gm: string;
   agency: string;
   region: string;
+  /** Business Lead display name (Section 3). */
+  bl?: string;
+  /** Client currency — amounts are stored in it (Section 3 shows them as is). */
+  currency?: string;
   /** Multiplier to CAD (1 for CAD clients, the year's USD→CAD rate for USD). */
   toCad: number;
   flags: StoredFlag[];
