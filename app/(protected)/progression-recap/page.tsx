@@ -22,10 +22,16 @@
  *
  * Validation lives at the {client, year} level (no RFQ dimension). The "Re-run
  * check" batch (writable clients only) re-runs the selected checkpoint.
+ * The view (year, checkpoint, every filter) lives in the URL
+ * (lib/format/milestone-url.ts), so a link reopens the same view. Without a
+ * year anywhere (URL or saved selection) the page opens on the current year.
+ *
  * Accessible to every authenticated user (no admin guard).
  */
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { buildMilestoneQuery, parseMilestoneView } from "../../../lib/format/milestone-url";
 import { Loader2, ClipboardCheck, MousePointerClick } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import MilestoneFilters from "../../../components/progression/milestone-filters";
@@ -58,12 +64,33 @@ const gmLabel = (v: string | undefined) =>
   v ? CLIENT_GM_PODS.find((g) => g.value === v)?.label ?? v : "";
 
 export default function ProgressionRecapPage() {
+  // useSearchParams needs a Suspense boundary on a statically rendered page.
+  return (
+    <Suspense fallback={null}>
+      <MilestonesPage />
+    </Suspense>
+  );
+}
+
+function MilestonesPage() {
   const { clients, loading: clientsLoading, error: clientsError } = useAccessibleClients();
   const { profile, isAdmin } = useUserProfile();
   const { editGrant } = useAccess();
   const usersMap = useUsersMap();
-  const { selectedYear } = useForecastSelection();
+  const { selectedYear, setYear } = useForecastSelection();
   const year = selectedYear ?? new Date().getFullYear();
+
+  // The view a shared link carries — read once, on load.
+  const params = useSearchParams();
+  const [linked] = useState(() => parseMilestoneView(params.toString()));
+
+  // Year: the link's, else the saved one, else the current year.
+  useEffect(() => {
+    const target = linked.year ?? selectedYear ?? new Date().getFullYear();
+    if (target !== selectedYear) setYear(target);
+    // Once, on load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Bumped after a batch run to force the (one-shot) recap reads to reload.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -86,7 +113,12 @@ export default function ProgressionRecapPage() {
     filteredClientIds,
     hasActiveFilters: hasFacetFilters,
     reset: resetFacets,
-  } = useDashboardFilters(activeClients, usersMap, year);
+  } = useDashboardFilters(activeClients, usersMap, year, {
+    gmPods: linked.gm,
+    agencies: linked.agency,
+    regions: linked.region,
+    businessLeads: linked.bl,
+  });
   const pageFacetViews = useMemo(
     () =>
       PAGE_FACETS.map((k) => facetViews.find((v) => v.key === k)).filter(
@@ -96,18 +128,43 @@ export default function ProgressionRecapPage() {
   );
 
   // Checkpoint: follows the year (latest milestone due) until the user picks one.
-  const [pickedCheckpoint, setPickedCheckpoint] = useState<{ year: number; id: string } | null>(null);
+  const [pickedCheckpoint, setPickedCheckpoint] = useState<{ year: number; id: string } | null>(
+    () =>
+      linked.checkpoint
+        ? { year: linked.year ?? selectedYear ?? new Date().getFullYear(), id: linked.checkpoint }
+        : null
+  );
   const checkpoint =
     (pickedCheckpoint?.year === year ? stepById(pickedCheckpoint.id) : undefined) ??
     defaultCheckpointStep(year);
 
-  const [statuses, setStatuses] = useState<RfqValidationStatus[]>([]);
-  const [flagCategories, setFlagCategories] = useState<string[]>([]);
-  const [flagTypeIds, setFlagTypeIds] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<RfqValidationStatus[]>(linked.status);
+  const [flagCategories, setFlagCategories] = useState<string[]>(linked.flagCategory);
+  const [flagTypeIds, setFlagTypeIds] = useState<string[]>(linked.flag);
   const selectedFlagTypes = useMemo(
     () => resolveFlagTypes(flagCategories, flagTypeIds),
     [flagCategories, flagTypeIds]
   );
+
+  // Keep the URL in step with the view (replace, no history entries).
+  const facetSel = (key: FacetKey) => pageFacetViews.find((v) => v.key === key)?.selected ?? [];
+  const query = buildMilestoneQuery({
+    year: selectedYear ?? undefined,
+    checkpoint: pickedCheckpoint?.year === year ? checkpoint.id : undefined,
+    gm: facetSel("gmPods"),
+    agency: facetSel("agencies"),
+    region: facetSel("regions"),
+    bl: facetSel("businessLeads"),
+    status: statuses,
+    flagCategory: flagCategories,
+    flag: flagTypeIds,
+  });
+  useEffect(() => {
+    if (!selectedYear) return; // the year effect hasn't landed yet
+    if (window.location.search !== query) {
+      window.history.replaceState(null, "", `${window.location.pathname}${query}`);
+    }
+  }, [query, selectedYear]);
 
   const recap = useProgressionRecap({
     clientIds: filteredClientIds,

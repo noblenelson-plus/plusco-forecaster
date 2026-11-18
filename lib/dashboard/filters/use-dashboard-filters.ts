@@ -87,9 +87,14 @@ export function useDashboardFilters(
   clients: Client[],
   usersMap: Map<string, string>,
   /** Globally selected year — drives year-dependent facets (Status). */
-  year: number
+  year: number,
+  /** Starting selection (e.g. restored from a shared link); read once. */
+  initialSelection?: Partial<DashboardFilterState>
 ): UseDashboardFiltersResult {
-  const [selection, setSelection] = useState<DashboardFilterState>(EMPTY_FILTER_STATE);
+  const [selection, setSelection] = useState<DashboardFilterState>(() => ({
+    ...EMPTY_FILTER_STATE,
+    ...initialSelection,
+  }));
 
   const ctx = useMemo<FacetCtx>(() => {
     const clientNames = new Map(clients.map((c) => [c.cl_id, c.CL_Name]));

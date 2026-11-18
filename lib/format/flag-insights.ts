@@ -45,7 +45,6 @@ export interface FlagTypeDef {
   id: FlagTypeId;
   category: FlagCategoryId;
   label: string;
-  rules: FlagRuleId[];
   /** Threshold in words, for the header / footnote. */
   threshold: string;
   /** How to read the $ (what "up" and "down" mean for this type). */
@@ -59,7 +58,6 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     id: "labs_error",
     category: "forecast_qa",
     label: "Labs error",
-    rules: ["labs-over-media"],
     threshold: "Labs forecast above the media forecast of its media type (full year) — must be corrected, can't be justified",
     amountNote: "Labs above media",
   },
@@ -67,7 +65,6 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     id: "under_forecasting",
     category: "forecast_qa",
     label: "Under-forecasting",
-    rules: ["mediaocean-over-media", "mediaocean-over-labs"],
     threshold: `MediaOcean bookings ${k(BL_MEDIAOCEAN_THRESHOLD)}+ above the BL forecast (full year), per media type / Labs partner`,
     amountNote: "Booked above forecast",
   },
@@ -75,7 +72,6 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     id: "swing_revenue",
     category: "rfq_swings",
     label: "RFQ swing — Revenues",
-    rules: ["revenue-swing"],
     threshold: `Annual revenue ±${k(REVENUE_SWING_THRESHOLD)} vs the previous RFQ`,
     amountNote: "vs previous RFQ",
   },
@@ -83,7 +79,6 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     id: "swing_media",
     category: "rfq_swings",
     label: "RFQ swing — Media",
-    rules: ["media-swing"],
     threshold: `Annual media ±${k(MEDIA_LABS_SWING_THRESHOLD)} vs the previous RFQ, per media type`,
     amountNote: "vs previous RFQ",
   },
@@ -91,7 +86,6 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     id: "swing_labs",
     category: "rfq_swings",
     label: "RFQ swing — Labs",
-    rules: ["labs-swing"],
     threshold: `Annual Labs ±${k(MEDIA_LABS_SWING_THRESHOLD)} vs the previous RFQ, per partner`,
     amountNote: "vs previous RFQ",
   },
@@ -99,7 +93,6 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     id: "pacing_labs",
     category: "pacing",
     label: "Labs pacing YTD",
-    rules: ["labs-under-target"],
     threshold: `Booked ${Math.round(UNDER_TARGET_RELATIVE * 100)}% or ${k(UNDER_TARGET_ABSOLUTE)}+ under the forecast over the milestone's months, per partner`,
     amountNote: "Booked vs forecast",
   },
@@ -107,19 +100,33 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     id: "pacing_media",
     category: "pacing",
     label: "Media pacing YTD",
-    rules: ["media-under-target"],
     threshold: `Booked ${Math.round(UNDER_TARGET_RELATIVE * 100)}% or ${k(UNDER_TARGET_ABSOLUTE)}+ under the forecast over the milestone's months, per media type`,
     amountNote: "Booked vs forecast",
   },
 ];
 
-const TYPE_BY_RULE = new Map<FlagRuleId, FlagTypeDef>(
-  FLAG_TYPES.flatMap((t) => t.rules.map((r) => [r, t] as const))
-);
+/**
+ * Every persisted flag rule → its report flag type. A Record over FlagRuleId,
+ * so adding a rule to the engine without placing it here fails the build
+ * instead of silently dropping its flags from the Milestones page.
+ */
+export const FLAG_TYPE_BY_RULE: Record<FlagRuleId, FlagTypeId> = {
+  "labs-over-media": "labs_error",
+  "mediaocean-over-media": "under_forecasting",
+  "mediaocean-over-labs": "under_forecasting",
+  "revenue-swing": "swing_revenue",
+  "media-swing": "swing_media",
+  "labs-swing": "swing_labs",
+  "labs-under-target": "pacing_labs",
+  "media-under-target": "pacing_media",
+};
+
+const TYPE_BY_ID = new Map<FlagTypeId, FlagTypeDef>(FLAG_TYPES.map((t) => [t.id, t]));
 
 /** The report flag type of a stored flag (undefined for an unknown rule). */
 export function flagTypeOf(flag: Pick<StoredFlag, "ruleId">): FlagTypeDef | undefined {
-  return TYPE_BY_RULE.get(flag.ruleId);
+  const id = FLAG_TYPE_BY_RULE[flag.ruleId];
+  return id ? TYPE_BY_ID.get(id) : undefined;
 }
 
 /** One client's flags for the checkpoint's RFQ, with what grouping needs. */
