@@ -53,7 +53,7 @@ export default function ProgrammaticPreviewPage() {
 
   return (
     <div>
-      <PageHeader title="Programmatic (preview)" description="Programmatic spend across DSPs by publisher and local media. Demo, visible to you only." />
+      <PageHeader title="Programmatic (preview)" description="Where our programmatic money goes: which DSPs, which publishers, and how much is Canadian. Demo, visible to you only." />
       <div className="p-6">
         {state.status === "loading" && (
           <div className="flex items-center justify-center gap-2 py-24 text-gray-400">
