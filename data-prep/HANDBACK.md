@@ -20,6 +20,14 @@ Branch `finance-toolkit`. Route: `/admin/finance-toolkit` (sidebar → Admin →
 
 **Tab 3 · New Business Targets Calculator.** Inputs are agency, expected annual gross revenue (field, log slider, presets) and 1–3 comparable accounts. By default the 3 closest by annualized revenue are suggested, and you can edit the list. Outputs: recommended team (run-rate and peak FTE), year-1 staffing cost, year-1 and run-rate margin, a 12-month stacked chart by role (hours or FTE), the plan table by role × month (CSV), the comparables used, and a formula panel with the worked numbers.
 
+**Calculator what-ifs (phase 1).** The data-based plan is the default, and every change from it is labelled as the user's assumption.
+- **Adjust the plan:** team size (scales with revenue, or a fixed number of FTE), team intensity (50–150% of the comparables' hours per $), seniority (70–130% of data cost rates), hours per FTE, onboarding ramp (as observed / 1 month faster / 1 month slower / full team from M1), year-1 revenue timing (even from M1, or ramps with the team), and per-role mix % and cost per hour. Each control shows the data value and resets to it.
+- **Hit a target margin** (`solveForMargin`): for a run-rate margin goal, it solves for the largest team, the highest average cost per hour, and the revenue needed with today's team held fixed. Each answer has an Apply button that writes it into the settings, and each lands exactly on the target.
+- **Scenarios:** up to 5 saved versions, compared side by side with the current plan and recomputed live on the current cost basis. They are kept in the viewer's browser (localStorage).
+- **"Why?":** click any headline figure or role row to see a step-by-step trace with the real numbers, each input tagged Data / Your setting / Calculated. It is generated from the plan, so it always ties out.
+- With no settings changed, the plan reproduces the original output exactly. Example: $1M at Cossette gives 5.5 FTE, $330K year-1 cost, 67.0% year-1 margin and 60.4% run-rate margin.
+- Phase 2, an "Ask the toolkit" chatbot, is parked until the demo. If approved, it would use Claude with tool calls into `model.ts`. It needs an Anthropic API key and sign-off to send client figures to Anthropic's API.
+
 **Context bar.** Agency scope: All Canadian agencies (CAD), Cossette, Jungle or MEK US (USD). CAD and USD are never added together. The cost basis (Base1 / Enterprise) applies to all three tabs.
 
 ## Data checks (script output)

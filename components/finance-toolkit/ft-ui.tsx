@@ -54,11 +54,41 @@ export function Segmented<T extends string>({
 
 // ─── Labeled control wrapper ─────────────────────────────────────────────────
 
-export function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
+export function Field({ label, hint, children, className = "" }: { label: string; hint?: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</span>
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+        {label}
+        {hint && <InfoTip text={hint} />}
+      </span>
       {children}
+    </div>
+  );
+}
+
+// ─── Plain-language helpers ──────────────────────────────────────────────────
+
+/** A small (i) that explains a term on hover or keyboard focus. */
+export function InfoTip({ text, align = "center" }: { text: string; align?: "center" | "left" | "right" }) {
+  const pos = align === "left" ? "left-0" : align === "right" ? "right-0" : "left-1/2 -translate-x-1/2";
+  return (
+    <span className="group/tip relative inline-flex normal-case tracking-normal" tabIndex={0} aria-label={text} role="note">
+      <Info size={12} className="cursor-help text-gray-400 group-hover/tip:text-gray-900 group-focus/tip:text-gray-900" />
+      <span
+        className={`pointer-events-none absolute bottom-full z-30 mb-1.5 hidden w-64 bg-gray-900 px-3 py-2 text-left text-xs font-normal leading-snug text-white shadow-xl group-hover/tip:block group-focus/tip:block ${pos}`}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/** The plain-English takeaway at the top of a tab, computed from the view. */
+export function InShort({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-l-4 border-yellow-400 bg-white px-5 py-4">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">In short</div>
+      <p className="mt-1 text-[15px] leading-relaxed text-gray-900">{children}</p>
     </div>
   );
 }

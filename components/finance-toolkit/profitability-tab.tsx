@@ -26,7 +26,7 @@ import {
   type Scope,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, Chip, DataTable, Field, Formula, GhostButton, HowCalculated, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
+import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, Chip, DataTable, Field, Formula, GhostButton, HowCalculated, InShort, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
 import { downloadCsv, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
 import ClientDetailDrawer from "./client-detail-drawer";
 
@@ -61,7 +61,7 @@ function FlagChip({ row }: { row: ProfitRow }) {
   if (row.status === "no-revenue") return <Chip tone="neutral" title="Hours booked to this account but no gross revenue line">No revenue match</Chip>;
   if (row.status === "no-hours") return <Chip tone="neutral" title="Gross revenue with no hours in the same agency">No hours match</Chip>;
   if (row.flag === "loss") return <Chip tone="loss">Cost &gt; revenue</Chip>;
-  if (row.flag === "over-serviced") return <Chip tone="over">Over-serviced</Chip>;
+  if (row.flag === "over-serviced") return <Chip tone="over" title="Earns less than half the average revenue per hour worked">Over-serviced</Chip>;
   if (row.flag === "credit") {
     return (
       <Chip tone="neutral" title="Revenue nets to zero or below in this period (credit notes / reversals) — margin is not meaningful">
@@ -199,27 +199,54 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         </p>
       </div>
 
+      <InShort>
+        In {periodLabel(from, to)}, {scope.id === "canada" ? "our Canadian agencies" : scope.label} booked <strong>{formatCompactMoney(totals.revenue)}</strong> of gross revenue
+        {scope.currency === "USD" ? " (USD)" : ""}. On the {matched.length} accounts we can tie to timesheets
+        {totals.revenue > 0 ? ` (${pct(totals.matchedRevenue / totals.revenue, 0)} of revenue)` : ""}, the people who served them cost{" "}
+        {formatCompactMoney(totals.matchedCost)}, leaving <strong>{pct(totals.marginPct, 0)}</strong> of revenue as margin after staffing.{" "}
+        {totals.flagged > 0 ? (
+          <>
+            <strong>
+              {totals.flagged} account{totals.flagged === 1 ? "" : "s"} deserve{totals.flagged === 1 ? "s" : ""} a closer look
+            </strong>
+            : {totals.lossMaking} cost{totals.lossMaking === 1 ? "s" : ""} more to staff than {totals.lossMaking === 1 ? "it brings" : "they bring"} in
+            {totals.flagged - totals.lossMaking > 0
+              ? ` and ${totals.flagged - totals.lossMaking} earn${totals.flagged - totals.lossMaking === 1 ? "s" : ""} less than half the average revenue per hour`
+              : ""}
+            .
+          </>
+        ) : (
+          "No account costs more to staff than it brings in."
+        )}
+        {totals.costCoverage !== null && totals.costCoverage < COVERAGE_WARN_BELOW && " Margins here are optimistic: many hours have no cost rate on file (see below)."}
+      </InShort>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           icon={DollarSign}
           label={`Gross revenue (${scope.currency})`}
           value={formatCompactMoney(totals.revenue)}
-          sub={`${matched.length} accounts with hours${totals.revenueOnly ? ` · ${formatCompactMoney(totals.revenueOnly)} without hours` : ""}`}
+          sub={`${matched.length} accounts with timesheets${totals.revenueOnly ? ` · ${formatCompactMoney(totals.revenueOnly)} has no timesheets (left out of margin)` : ""}`}
         />
-        <StatCard icon={Clock} label="Staffing cost" value={formatCompactMoney(totals.matchedCost)} sub={`${pct(totals.costPctRevenue)} of matched revenue · ${hours(totals.matchedHours)} h`} />
+        <StatCard
+          icon={Clock}
+          label="Staffing cost"
+          value={formatCompactMoney(totals.matchedCost)}
+          sub={`${pct(totals.costPctRevenue)} of those accounts’ revenue · ${hours(totals.matchedHours)} hours`}
+        />
         <StatCard
           icon={Percent}
-          label="Gross margin after staffing"
+          label="Margin after staffing"
           value={pct(totals.marginPct)}
-          sub={`${formatCompactMoney(totals.margin)} on matched accounts`}
+          sub={`${formatCompactMoney(totals.margin)} kept after paying the team`}
           accent={totals.marginPct !== null && totals.marginPct < 0 ? "text-red-500" : "text-green-500"}
         />
-        <StatCard icon={TrendingUp} label="Revenue per client hour" value={rate(totals.revenuePerHour)} sub={`vs ${rate(totals.costPerHour)} cost per hour`} />
+        <StatCard icon={TrendingUp} label="Revenue per hour worked" value={rate(totals.revenuePerHour)} sub={`vs ${rate(totals.costPerHour)} an hour costs us`} />
         <StatCard
           icon={AlertTriangle}
           label="Accounts to review"
           value={String(totals.flagged)}
-          sub={`${totals.lossMaking} with cost > revenue · ${totals.flagged - totals.lossMaking} over-serviced`}
+          sub={`${totals.lossMaking} cost more than they earn · ${totals.flagged - totals.lossMaking} earn under half the average per hour`}
           accent={totals.flagged ? "text-red-500" : "text-primary"}
         />
       </div>
@@ -227,9 +254,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
       {totals.costCoverage !== null && totals.costCoverage < COVERAGE_NOTE_BELOW && (
         <Notice tone={totals.costCoverage < COVERAGE_WARN_BELOW ? "warn" : "info"}>
           <p>
-            <strong>{pct(1 - totals.costCoverage)} of the client hours in this scope carry no cost in Maconomy</strong> (employees with no
-            cost rate on file). Staffing cost is understated and margins overstated by that much — confirm cost rates with Finance before
-            relying on these margins.
+            <strong>{pct(1 - totals.costCoverage)} of client hours here have no cost rate on file in Maconomy</strong>, so staffing cost is understated
+            and margins look better than they are. Confirm cost rates with Finance before relying on these margins.
           </p>
         </Notice>
       )}
@@ -238,7 +264,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         <ChartCard
           className="xl:col-span-2"
           title="Revenue vs staffing cost by account"
-          subtitle="Log scales · above the line, staffing cost exceeds revenue · bubble size = hours"
+          subtitle="Each dot is an account · above the red line, it costs more to staff than it brings in · bigger dot = more hours"
           icon={Scale}
         >
           {scatter.ok.length + scatter.over.length + scatter.loss.length === 0 ? (
