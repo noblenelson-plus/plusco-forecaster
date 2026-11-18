@@ -28,7 +28,12 @@ import {
 import { resolveClientStatus } from "../format/client";
 import { computeTeamEmails } from "../format/client-team";
 import { isValidEmail, normalizeEmail, normalizeEmailList } from "../format/email";
-import { computeTierFromDigitalSpend, sumDigitalSpend } from "../format/tier";
+import {
+  computeTierFromDigitalSpend,
+  hasMediaForecast,
+  parseTier,
+  sumDigitalSpend,
+} from "../format/tier";
 import { MEDIA_TYPES, MONTHS, type MediaType } from "../types/common.types";
 import { MEDIA_TYPE_LABELS } from "../types/forecaster.types";
 import type { RFQType } from "../types/rfq.types";
@@ -682,14 +687,15 @@ export function validateClientTable(
     row.updatedAt = new Date().toISOString();
     delete row.cl_id;
 
-    // Tier is computed from the digital spend forecast (see lib/format/tier.ts),
-    // never imported: the CSV column is ignored on existing clients so an import
-    // can't overwrite a computed value. New clients (no cl_id, or one matching
-    // no existing client) start at PARTNER (no forecast yet → $0 digital
-    // spend) until the next recompute.
+    // Tier is computed from the digital spend forecast (see lib/format/tier.ts):
+    // the column is ignored on existing clients so an import can't overwrite a
+    // computed value. New clients (no cl_id, or one matching no existing
+    // client) take the file's tier (the request form's answer) when it is a
+    // valid one, else PARTNER.
+    const importedTier = parseTier(row.CL_Tier);
     delete row.CL_Tier;
     const isNew = !existingId || (existingIds !== undefined && !existingIds.has(existingId));
-    if (isNew) row.CL_Tier = "PARTNER";
+    if (isNew) row.CL_Tier = importedTier ?? "PARTNER";
 
     validRows.push({ id, data: row });
   }
@@ -712,13 +718,17 @@ export interface TierComputation {
   digitalSpendCad: number;
   /** USD client with no USD→CAD rate for the year — tier left untouched. */
   skippedNoRate: boolean;
+  /** No media forecast in the reference submission — tier left untouched. */
+  keptNoForecast: boolean;
 }
 
 export interface TierRecomputeReport {
   computations: TierComputation[];
-  /** Computations whose tier actually changes (excluding skipped ones). */
+  /** Computations whose tier actually changes (excluding skipped / kept ones). */
   changes: TierComputation[];
   skipped: TierComputation[];
+  /** Clients with no media forecast in the reference submission — tier kept. */
+  keptNoForecast: TierComputation[];
 }
 
 /**
@@ -751,10 +761,21 @@ export async function computeTierUpdates(
           computedTier: client.CL_Tier ?? "PARTNER",
           digitalSpendCad: 0,
           skippedNoRate: true,
+          keptNoForecast: false,
         };
       }
 
       const axis = await fetchAxisData(client.cl_id, year, rfq, "media");
+      // No forecast yet → keep the tier set on creation (default Partner).
+      if (!hasMediaForecast(axis)) {
+        return {
+          ...base,
+          computedTier: client.CL_Tier ?? "PARTNER",
+          digitalSpendCad: 0,
+          skippedNoRate: false,
+          keptNoForecast: true,
+        };
+      }
       const rate = client.CL_Currency === "USD" ? usdToCad! : 1;
       const digitalSpendCad = sumDigitalSpend(axis) * rate;
 
@@ -763,6 +784,7 @@ export async function computeTierUpdates(
         computedTier: computeTierFromDigitalSpend(digitalSpendCad),
         digitalSpendCad,
         skippedNoRate: false,
+        keptNoForecast: false,
       };
     })
   );
@@ -770,9 +792,10 @@ export async function computeTierUpdates(
   return {
     computations,
     changes: computations.filter(
-      (c) => !c.skippedNoRate && c.computedTier !== c.currentTier
+      (c) => !c.skippedNoRate && !c.keptNoForecast && c.computedTier !== c.currentTier
     ),
     skipped: computations.filter((c) => c.skippedNoRate),
+    keptNoForecast: computations.filter((c) => c.keptNoForecast),
   };
 }
 

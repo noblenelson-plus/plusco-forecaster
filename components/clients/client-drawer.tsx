@@ -25,6 +25,7 @@ import {
   CLIENT_CURRENCIES,
   CLIENT_FEE_STRUCTURES,
   CLIENT_ADVERTISER_VERTICALS,
+  type ClientTier,
 } from "../../lib/constants/client.constants";
 import {
   DEFAULT_FORECASTING_TYPE,
@@ -71,6 +72,13 @@ interface ClientDrawerProps {
 
 // Empty form: all dropdowns start blank except Status (defaults to ACTIVE).
 // The "" values on strict-typed fields are validated away before saveClient.
+/** Tier choices on creation, worded like the New Client Request Form. */
+const TIER_PICK_OPTIONS: { value: ClientTier; label: string }[] = [
+  { value: "PARTNER", label: "Partner (<$500K digital / yr)" },
+  { value: "GROW", label: "Grow ($500K–$5M)" },
+  { value: "FULL", label: "Full ($5M+)" },
+];
+
 const EMPTY_FORM: ClientFormData = {
   CL_Name: "",
   CL_Logo: "",
@@ -710,14 +718,33 @@ export default function ClientDrawer({
           <Section label="Classification">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Tier">
-                <div className="px-3 py-2 text-sm border border-gray-100 rounded-lg bg-gray-50 text-gray-700">
-                  {CLIENT_TIERS.find((t) => t.value === form.CL_Tier)?.label ??
-                    form.CL_Tier ?? "—"}
-                </div>
-                <p className="text-xs text-gray-400 mt-1">
-                  Computed from the digital spend forecast — use “Tiers” on the
-                  Clients page to recompute.
-                </p>
+                {isEditing ? (
+                  <>
+                    <div className="px-3 py-2 text-sm border border-gray-100 rounded-lg bg-gray-50 text-gray-700">
+                      {CLIENT_TIERS.find((t) => t.value === form.CL_Tier)?.label ??
+                        form.CL_Tier ?? "—"}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Computed from the digital spend forecast — use “Tiers” on the
+                      Clients page to recompute.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    {/* New client: the request form's "typical digital media
+                        spend per year" answer. Recomputed from the forecast
+                        once one exists (lib/format/tier.ts). */}
+                    <Select
+                      value={form.CL_Tier}
+                      onChange={(v) => set("CL_Tier", v as ClientTier)}
+                      options={TIER_PICK_OPTIONS}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      From the request form&apos;s digital spend. Recomputed from
+                      the forecast once there is one.
+                    </p>
+                  </>
+                )}
               </Field>
               <Field label="Currency *">
                 <Select
