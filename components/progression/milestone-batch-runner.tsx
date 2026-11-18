@@ -52,7 +52,9 @@ export default function MilestoneBatchRunner({
   const step: ConfirmationStep =
     CONFIRMATION_STEPS.find((s) => s.id === stepId) ?? CONFIRMATION_STEPS[0];
   const count = writableClientIds.length;
-  const canRun = !!year && count > 0 && batch.ready && !batch.running;
+  // Locked target RFQ, non-admin: the step can't be re-checked any more.
+  const stepClosed = batch.isStepClosed(step, year);
+  const canRun = !!year && count > 0 && batch.ready && !batch.running && !stepClosed;
 
   // Close the step picker on outside click / Escape.
   useEffect(() => {
@@ -128,7 +130,9 @@ export default function MilestoneBatchRunner({
         onClick={() => setConfirming(true)}
         disabled={!canRun}
         title={
-          count === 0
+          stepClosed
+            ? `${step.targetRfq} ${year} is locked — its milestones can no longer be checked`
+            : count === 0
             ? "No clients you can edit in the current filter"
             : `Run this check for ${count} client${count > 1 ? "s" : ""}`
         }

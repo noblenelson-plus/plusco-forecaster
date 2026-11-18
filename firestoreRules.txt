@@ -372,12 +372,13 @@ service cloud.firestore {
         // Submission annotations (shared note, flag reviews) — the first write
         // may annotate a submission that has no grid data yet. Allowed for the
         // team even when the RFQ is locked (annotation-only create: nothing but
-        // these metadata keys is written).
+        // these metadata keys is written). `flags` is NOT an annotation here:
+        // a locked round's flags are closed to non-admins (lib/format/rfq-lock.ts).
         (
           canWriteClient(request.resource.data.clientId) &&
           request.resource.data.keys()
             .hasOnly(['clientId', 'year', 'rfq', 'submissionNote',
-                      'flagReviews', 'flags', 'createdAt', 'lastModifiedBy',
+                      'flagReviews', 'createdAt', 'lastModifiedBy',
                       'updatedAt'])
         );
 
@@ -392,12 +393,16 @@ service cloud.firestore {
         // Submission annotations (shared note, flag reviews) — the team may
         // add/edit these even when the RFQ is locked. The write only touches
         // annotation keys (+ updatedAt); every forecast field keeps its value,
-        // so this can never alter locked data.
+        // so this can never alter locked data. `flags` (validation results +
+        // justifications) is excluded: on a locked RFQ only admins may write it,
+        // so a BL can't re-validate or re-justify a closed round. A validation
+        // writes the flags before the milestone status, so the refused write
+        // also stops the status change (lib/format/rfq-lock.ts).
         (
           canWriteClient(resource.data.clientId) &&
           request.resource.data.clientId == resource.data.clientId &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['submissionNote', 'flagReviews', 'flags',
+            .hasOnly(['submissionNote', 'flagReviews',
                       'lastModifiedBy', 'updatedAt'])
         );
 

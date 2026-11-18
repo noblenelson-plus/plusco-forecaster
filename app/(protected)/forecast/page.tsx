@@ -672,6 +672,7 @@ function ForecastPageContent() {
                 onOpenFlags={() => router.push("/flags")}
                 unjustifiedCount={validation.unjustifiedCount}
                 locked={selectedRFQ?.status === "LOCKED"}
+                closed={validation.roundClosed}
               />
               {validation.flags.length > 0 && (
                 <button

@@ -12,6 +12,10 @@
  * auto-rechecked on every save. Justifying happens on the Flags page — this
  * control links there, and the Flags page can revalidate.
  *
+ * Closed round (`closed`: a locked RFQ, non-admin): the steps and their status
+ * still show, but Validate / Re-validate / Reset are gone — a locked round can't
+ * be re-checked after its deadline (lib/format/rfq-lock.ts). Admins keep them.
+ *
  * Presentational: the parent owns the validation hook and passes its state in.
  */
 
@@ -20,6 +24,7 @@ import { CalendarCheck, ChevronDown, Loader2, Play, RotateCcw } from "lucide-rea
 import type { ConfirmationStep } from "../../lib/constants/confirmation-steps";
 import type { RfqValidationStatus } from "../../lib/types/forecast-flags.types";
 import type { ValidationRunResult } from "../../lib/hooks/use-forecast-validation";
+import { CLOSED_ROUND_NOTE } from "../../lib/format/rfq-lock";
 
 const STATUS_META: Record<
   RfqValidationStatus,
@@ -38,8 +43,10 @@ interface ValidationControlProps {
   onUnvalidate: (stepId: string) => Promise<void>;
   onOpenFlags: () => void;
   unjustifiedCount: number;
-  /** RFQ is locked — validation still allowed (reads actuals); label reflects it. */
+  /** RFQ is locked, viewed by an admin — validation still allowed (reads actuals); label reflects it. */
   locked?: boolean;
+  /** RFQ is locked and the person isn't an admin — status only, no actions. */
+  closed?: boolean;
 }
 
 export default function ValidationControl({
@@ -51,6 +58,7 @@ export default function ValidationControl({
   onOpenFlags,
   unjustifiedCount,
   locked = false,
+  closed = false,
 }: ValidationControlProps) {
   const [open, setOpen] = useState(false);
   const [lastResult, setLastResult] = useState<ValidationRunResult | null>(null);
@@ -113,10 +121,12 @@ export default function ValidationControl({
         <div className="absolute right-0 z-50 mt-1.5 w-80 border border-gray-200 bg-white shadow-xl">
           <div className="border-b border-gray-100 px-3 py-2">
             <span className="text-xs font-semibold text-gray-700">
-              Validate this submission
+              {closed ? "Validation status" : "Validate this submission"}
             </span>
             <p className="mt-0.5 text-[11px] text-gray-400">
-              Saves your edits, then re-checks the flags for the step&apos;s months.
+              {closed
+                ? CLOSED_ROUND_NOTE
+                : "Saves your edits, then re-checks the flags for the step's months."}
             </p>
           </div>
 
@@ -137,7 +147,7 @@ export default function ValidationControl({
                     </div>
                     <div className="text-[11px] text-gray-500">{meta.label}</div>
                   </div>
-                  {status !== "not_validated" && (
+                  {!closed && status !== "not_validated" && (
                     <button
                       type="button"
                       onClick={() => void onUnvalidate(step.id)}
@@ -149,6 +159,7 @@ export default function ValidationControl({
                       Reset
                     </button>
                   )}
+                  {!closed && (
                   <button
                     type="button"
                     onClick={() => void runStep(step.id)}
@@ -162,6 +173,7 @@ export default function ValidationControl({
                     )}
                     {status === "not_validated" ? "Validate" : "Re-validate"}
                   </button>
+                  )}
                 </div>
               );
             })}
@@ -192,7 +204,7 @@ export default function ValidationControl({
             </div>
           )}
 
-          {locked && (
+          {locked && !closed && (
             <p className="border-t border-gray-100 px-3 py-2 text-[11px] text-gray-400">
               This RFQ is locked — validation still checks the latest MediaOcean
               actuals.
