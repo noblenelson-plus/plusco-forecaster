@@ -13,6 +13,10 @@
  *   Section 1  Milestone tracking — status totals, breakdown by GM, clients
  *              left to validate (milestone-tracking-summary.tsx).
  *   Table      Every milestone per client (progression-recap-table.tsx).
+ *   Section 2  Insights by flag type — the current flags of the checkpoint's
+ *              RFQ by type / category, overall or by GM / Agency / Region
+ *              (flag-insights-section.tsx). The flag filters (category, flag)
+ *              only narrow this section.
  *
  * Validation lives at the {client, year} level (no RFQ dimension). The "Re-run
  * check" batch (writable clients only) re-runs the selected checkpoint.
@@ -26,6 +30,9 @@ import MilestoneFilters from "../../../components/progression/milestone-filters"
 import MilestoneTrackingSummary from "../../../components/progression/milestone-tracking-summary";
 import ProgressionRecapTable from "../../../components/progression/progression-recap-table";
 import MilestoneBatchRunner from "../../../components/progression/milestone-batch-runner";
+import FlagInsightsSection from "../../../components/progression/flag-insights-section";
+import { useCheckpointFlags } from "../../../lib/hooks/use-checkpoint-flags";
+import { resolveFlagTypes, type ClientFlags } from "../../../lib/format/flag-insights";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import { useAccess } from "../../../lib/hooks/use-access";
@@ -92,12 +99,40 @@ export default function ProgressionRecapPage() {
     defaultCheckpointStep(year);
 
   const [statuses, setStatuses] = useState<RfqValidationStatus[]>([]);
+  const [flagCategories, setFlagCategories] = useState<string[]>([]);
+  const [flagTypeIds, setFlagTypeIds] = useState<string[]>([]);
+  const selectedFlagTypes = useMemo(
+    () => resolveFlagTypes(flagCategories, flagTypeIds),
+    [flagCategories, flagTypeIds]
+  );
 
   const recap = useProgressionRecap({
     clientIds: filteredClientIds,
     year: selectedYear,
     refreshKey,
   });
+
+  // Section 2 — current flags of the checkpoint's RFQ for the filtered clients.
+  const checkpointFlags = useCheckpointFlags({
+    clientIds: filteredClientIds,
+    year: selectedYear,
+    rfq: checkpoint.targetRfq,
+    refreshKey,
+  });
+  const hasUsdClients = filteredClients.some((c) => c.CL_Currency === "USD");
+  const clientFlags = useMemo<ClientFlags[]>(
+    () =>
+      filteredClients.map((c) => ({
+        clientId: c.cl_id,
+        clientName: c.CL_Name,
+        gm: gmLabel(c.GM_Pod),
+        agency: c.CL_Agency ?? "",
+        region: c.CL_Business_Unit_Region ?? "",
+        toCad: c.CL_Currency === "USD" ? checkpointFlags.usdToCad ?? 1 : 1,
+        flags: checkpointFlags.flagsByClient.get(c.cl_id) ?? [],
+      })),
+    [filteredClients, checkpointFlags]
+  );
 
   // The filtered clients the current user may WRITE to — the batch check writes
   // flags + validations, so it can only target the editable subset.
@@ -130,10 +165,13 @@ export default function ProgressionRecapPage() {
     [rows, statuses, checkpoint.id]
   );
 
-  const hasActiveFilters = hasFacetFilters || statuses.length > 0;
+  const hasActiveFilters =
+    hasFacetFilters || statuses.length > 0 || flagCategories.length > 0 || flagTypeIds.length > 0;
   const resetAll = () => {
     resetFacets();
     setStatuses([]);
+    setFlagCategories([]);
+    setFlagTypeIds([]);
   };
 
   const contextReady = !!selectedYear;
@@ -173,6 +211,10 @@ export default function ProgressionRecapPage() {
           year={selectedYear}
           hasActiveFilters={hasActiveFilters}
           onReset={resetAll}
+          flagCategories={flagCategories}
+          onFlagCategoriesChange={setFlagCategories}
+          flagTypes={flagTypeIds}
+          onFlagTypesChange={setFlagTypeIds}
         />
       </header>
 
@@ -209,6 +251,24 @@ export default function ProgressionRecapPage() {
               checkpointId={checkpoint.id}
               fileLabel={String(selectedYear)}
             />
+            {checkpointFlags.error ? (
+              <div className="border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
+                {checkpointFlags.error}
+              </div>
+            ) : checkpointFlags.loading ? (
+              <div className="flex h-40 items-center justify-center text-gray-400">
+                <Loader2 size={20} className="animate-spin" />
+              </div>
+            ) : (
+              <FlagInsightsSection
+                clients={clientFlags}
+                activeClientCount={rows.length}
+                types={selectedFlagTypes}
+                checkpoint={checkpoint}
+                year={year}
+                missingUsdRate={hasUsdClients && checkpointFlags.usdToCad === undefined}
+              />
+            )}
           </>
         )}
       </main>

@@ -8,6 +8,9 @@
  * the selected checkpoint and is multi-select (e.g. Not validated + Flags to
  * justify together); none selected = every status.
  *
+ * The flag filters (category + flag type) only narrow the flag sections; the
+ * Flag list follows the selected categories.
+ *
  * The page is always limited to the clients active in the selected year, so
  * there is no client-status or tier filter here.
  */
@@ -19,6 +22,7 @@ import { CONFIRMATION_STEPS } from "../../lib/constants/confirmation-steps";
 import { MILESTONE_STATUS_ORDER } from "../../lib/format/milestone-summary";
 import type { RfqValidationStatus } from "../../lib/types/forecast-flags.types";
 import { STATUS_META } from "./milestone-status";
+import { FLAG_CATEGORIES, FLAG_TYPES } from "../../lib/format/flag-insights";
 
 interface MilestoneFiltersProps {
   checkpointId: string;
@@ -32,6 +36,10 @@ interface MilestoneFiltersProps {
   year: number | null;
   hasActiveFilters: boolean;
   onReset: () => void;
+  flagCategories: string[];
+  onFlagCategoriesChange: (v: string[]) => void;
+  flagTypes: string[];
+  onFlagTypesChange: (v: string[]) => void;
 }
 
 export default function MilestoneFilters({
@@ -45,7 +53,14 @@ export default function MilestoneFilters({
   year,
   hasActiveFilters,
   onReset,
+  flagCategories,
+  onFlagCategoriesChange,
+  flagTypes,
+  onFlagTypesChange,
 }: MilestoneFiltersProps) {
+  const typeOptions = FLAG_TYPES.filter(
+    (t) => flagCategories.length === 0 || flagCategories.includes(t.category)
+  ).map((t) => ({ value: t.id, label: t.label }));
   const toggleStatus = (s: RfqValidationStatus) =>
     onStatusesChange(
       statuses.includes(s) ? statuses.filter((x) => x !== s) : [...statuses, s]
@@ -111,6 +126,30 @@ export default function MilestoneFilters({
             );
           })}
         </div>
+
+        <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
+
+        {/* Flag filters — narrow the flag sections only. */}
+        <MultiSelectDropdown
+          label="Flag category"
+          options={FLAG_CATEGORIES.map((c) => ({ value: c.id, label: c.label }))}
+          selectedValues={flagCategories}
+          onChange={(v) => {
+            onFlagCategoriesChange(v);
+            // Drop picked flags that left the category selection.
+            const allowed = new Set<string>(
+              FLAG_TYPES.filter((t) => v.length === 0 || v.includes(t.category)).map((t) => t.id)
+            );
+            const kept = flagTypes.filter((id) => allowed.has(id));
+            if (kept.length !== flagTypes.length) onFlagTypesChange(kept);
+          }}
+        />
+        <MultiSelectDropdown
+          label="Flag"
+          options={typeOptions}
+          selectedValues={flagTypes}
+          onChange={onFlagTypesChange}
+        />
 
         <div className="ml-auto flex items-center gap-3">
           <span className="text-xs text-gray-500 tabular-nums">
