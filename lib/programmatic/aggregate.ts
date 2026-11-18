@@ -8,15 +8,35 @@ import type { LocalCategory, MirRow, ProgDsp, ProgRow } from "./programmatic.typ
 
 export const ALL_DSPS: ProgDsp[] = ["DV360", "Amazon", "TTD", "Yahoo", "Quantcast", "StackAdapt"];
 export const LOCAL_ORDER: LocalCategory[] = ["LOCAL", "HYBRID", "FOREIGN", "UNKNOWN", "UNMAPPED"];
+/** Plain-language names, for readers who don't know the naming tab's codes. */
 export const LOCAL_LABELS: Record<LocalCategory, string> = {
-  LOCAL: "Local",
-  HYBRID: "Hybrid",
+  LOCAL: "Canadian",
+  HYBRID: "Mixed (Canadian + global)",
   FOREIGN: "Foreign",
-  UNKNOWN: "Partner, no category",
-  UNMAPPED: "Publisher not mapped",
+  UNKNOWN: "Known partner, no category",
+  UNMAPPED: "Not identified yet",
 };
 
-/** What each DSP's numbers are built from and what is known to be missing. */
+/** One-line definitions, shown in the "What do these terms mean?" box. */
+export const LOCAL_DEFINITIONS: Record<LocalCategory, string> = {
+  LOCAL: "Canadian-owned media (e.g. Bell Media, Postmedia, CBC, Toronto Star, Village Media).",
+  HYBRID: "Sellers with both Canadian and global inventory, such as Google/YouTube, Amazon/Prime Video and ad exchanges like Magnite or Index.",
+  FOREIGN: "Media owned outside Canada (e.g. Netflix, Spotify, The Weather Company).",
+  UNKNOWN: "A Plus media partner that has no Canadian/foreign category in the naming list yet.",
+  UNMAPPED: "The DSP report doesn't name the publisher clearly enough to match it to a Plus media partner (yet).",
+};
+
+/** Plain status per DSP for the "How complete is this?" panel. */
+export const DSP_STATUS_TEXT: Record<ProgDsp, string> = {
+  DV360: "Most accounts. OLG, Globe and Mail, Novo Nordisk, Gov. of Canada and Pursuit are not in the feed yet.",
+  Amazon: "All accounts, January to November 17.",
+  TTD: "OLG and BCLC, January to November 17.",
+  Yahoo: "BRP accounts only. Publisher detail for part of the year only.",
+  Quantcast: "Not connected yet. Only the amount booked in MediaOcean is shown.",
+  StackAdapt: "Not connected yet. Only the amount booked in MediaOcean is shown.",
+};
+
+/** What each DSP's numbers are built from and what is known to be missing (technical detail). */
 export const DSP_SOURCE_NOTES: Record<ProgDsp, string> = {
   DV360:
     "BigQuery (Jan–Jun manual upload, then the plus-collect pipeline). Deals mapped through Harshal's SDF file. The feed covers 8 partners: OLG (Monks), Globe and Mail, Novo Nordisk, Gov. of Canada and Pursuit are missing.",
