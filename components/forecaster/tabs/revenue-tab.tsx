@@ -16,8 +16,9 @@
  * Client Revenue table, Revenue Types and Product Revenue agree on them; every
  * other stream keeps the BL Submission rule.
  *
- * Order: main revenue table, the revenue-types breakdown, then product revenue
- * last (per Adriana's layout).
+ * Order: main revenue table, revenue by Agency / Region / GM (the same numbers
+ * rolled up, for GMs' year-over-year view), the revenue-types breakdown, then
+ * product revenue last (per Adriana's layout).
  */
 
 import { useMemo } from "react";
@@ -25,6 +26,7 @@ import { Loader2 } from "lucide-react";
 import { withBlInputProductFees } from "../../../lib/dashboard/data/product-fees-bl-input";
 import { filterableStreams } from "../sections/revenue-types-data";
 import ClientRevenueSection from "../sections/client-revenue-section";
+import RevenueByGroupSection from "../sections/revenue-by-group-section";
 import RevenueTypesSection from "../sections/revenue-types-section";
 import ProductRevenueSection from "../sections/product-revenue-section";
 import RevenueTypesFilter from "../sections/revenue-types-filter";
@@ -115,6 +117,16 @@ export default function RevenueTab({
         secondaryMode={secondaryMode}
         focusedClientId={focusedClientId}
         onFocusChange={onFocusChange}
+        selectedStreams={selectedStreams}
+        revenueTypeFiltered={revenueTypeFiltered}
+      />
+
+      <RevenueByGroupSection
+        data={data}
+        comparisonData={comparisonData}
+        scopedClientIds={scopedClientIds}
+        primaryMode={primaryMode}
+        secondaryMode={secondaryMode}
         selectedStreams={selectedStreams}
         revenueTypeFiltered={revenueTypeFiltered}
       />
