@@ -140,16 +140,14 @@ function SliderRow({
   );
 }
 
-export default function LeversCard({
-  plan,
-  levers,
-  onChange,
-}: {
-  plan: StaffingPlan;
-  levers: PlanLevers;
-  onChange: (l: PlanLevers) => void;
-}) {
+export default function LeversCard({ plan, levers, onChange }: { plan: StaffingPlan; levers: PlanLevers; onChange: (l: PlanLevers) => void }) {
   const [rolesOpen, setRolesOpen] = useState(false);
+  const advancedChanged =
+    levers.ramp !== "data" ||
+    levers.fteHours !== FTE_HOURS_PER_MONTH ||
+    levers.revenueTiming !== "even" ||
+    Object.keys(levers.mix).length + Object.keys(levers.rates).length > 0;
+  const [moreOpen, setMoreOpen] = useState(advancedChanged);
   const set = (patch: Partial<PlanLevers>) => onChange({ ...levers, ...patch });
   const changed = changedLevers(levers);
   const mixTotal = plan.roles.reduce((a, r) => a + (levers.mix[r.key] ?? r.dataShare), 0);
@@ -178,10 +176,22 @@ export default function LeversCard({
           size="sm"
           ariaLabel="Team size"
           value={levers.fixedFte === null ? "scale" : "fixed"}
-          onChange={(v) => set({ fixedFte: v === "fixed" ? Math.round(plan.runRateFte * 10) / 10 : null })}
+          onChange={(v) =>
+            set({
+              fixedFte: v === "fixed" ? Math.round(plan.runRateFte * 10) / 10 : null,
+            })
+          }
           options={[
-            { id: "scale", label: "Scales with revenue", hint: "Team = revenue × hours per $ of the comparables" },
-            { id: "fixed", label: "Fixed team", hint: "Hold the team at a size you choose" },
+            {
+              id: "scale",
+              label: "Scales with revenue",
+              hint: "Team = revenue × hours per $ of the comparables",
+            },
+            {
+              id: "fixed",
+              label: "Fixed team",
+              hint: "Hold the team at a size you choose",
+            },
           ]}
         />
         {levers.fixedFte !== null && (
@@ -202,7 +212,7 @@ export default function LeversCard({
       </Field>
 
       <SliderRow
-        label="Team intensity"
+        label="Team size vs similar accounts"
         value={levers.hoursAdj}
         min={0.5}
         max={1.5}
@@ -210,7 +220,7 @@ export default function LeversCard({
         onChange={(v) => set({ hoursAdj: Math.round(v * 100) / 100 })}
         left="Leaner"
         right="Richer"
-        display={`${pct(levers.hoursAdj, 0)} · ${(plan.dataHoursPerDollar * levers.hoursAdj * 1000).toFixed(1)} h per $1K`}
+        display={`${pct(levers.hoursAdj, 0)} · ${(plan.dataHoursPerDollar * levers.hoursAdj * 1000).toFixed(1)} h per $1,000`}
         changed={levers.hoursAdj !== 1}
         onReset={() => set({ hoursAdj: 1 })}
         disabled={levers.fixedFte !== null}
@@ -230,140 +240,165 @@ export default function LeversCard({
         onReset={() => set({ rateAdj: 1 })}
       />
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Onboarding ramp">
-          <select
-            aria-label="Onboarding ramp"
-            className={`${selectClass} text-xs`}
-            value={levers.ramp}
-            onChange={(e) => set({ ramp: e.target.value as RampSetting })}
+      <button
+        type="button"
+        onClick={() => setMoreOpen((o) => !o)}
+        aria-expanded={moreOpen}
+        className="flex items-center justify-between border-t border-gray-100 pt-3 text-xs font-semibold text-gray-600 hover:text-gray-900"
+      >
+        <span>
+          More settings
+          <span className="ml-1 font-normal text-gray-400">ramp-up, hours per person, revenue timing, roles</span>
+          {advancedChanged && <span className="ml-1.5 bg-yellow-400 px-1 text-[10px] text-gray-900">changed</span>}
+        </span>
+        <ChevronDown size={14} className={`transition-transform ${moreOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      {moreOpen && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Onboarding ramp" hint="How fast the team builds up. As observed = how real new clients were staffed in their first months.">
+              <select
+                aria-label="Onboarding ramp"
+                className={`${selectClass} text-xs`}
+                value={levers.ramp}
+                onChange={(e) => set({ ramp: e.target.value as RampSetting })}
+              >
+                {RAMP_SETTINGS.map((r) => (
+                  <option key={r.id} value={r.id} title={r.hint}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Hours per FTE / month" hint="Client hours one full-time person works in a month. 140 matches what our people actually log.">
+              <NumInput
+                ariaLabel="Client hours per FTE per month"
+                value={levers.fteHours}
+                min={60}
+                max={200}
+                suffix="h"
+                onChange={(v) => v !== null && v >= 60 && set({ fteHours: v })}
+              />
+            </Field>
+          </div>
+          <p className="-mt-2 text-[10px] leading-snug text-gray-400">
+            Data: {FTE_HOURS_PER_MONTH} h per FTE (median full month {MODEL.source.fteMedianClientHours} h).
+          </p>
+
+          <Field
+            label="Year-1 revenue timing"
+            hint="Even = the full monthly revenue from month 1. Ramps with the team = revenue builds up the way the team does (more conservative)."
           >
-            {RAMP_SETTINGS.map((r) => (
-              <option key={r.id} value={r.id} title={r.hint}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Hours per FTE / month">
-          <NumInput
-            ariaLabel="Client hours per FTE per month"
-            value={levers.fteHours}
-            min={60}
-            max={200}
-            suffix="h"
-            onChange={(v) => v !== null && v >= 60 && set({ fteHours: v })}
-          />
-        </Field>
-      </div>
-      <p className="-mt-2 text-[10px] leading-snug text-gray-400">
-        Data: {FTE_HOURS_PER_MONTH} h per FTE (median full month {MODEL.source.fteMedianClientHours} h).
-      </p>
+            <Segmented
+              size="sm"
+              ariaLabel="Revenue timing"
+              value={levers.revenueTiming}
+              onChange={(v) => set({ revenueTiming: v })}
+              options={[
+                { id: "even", label: "Even from month 1" },
+                {
+                  id: "ramp",
+                  label: "Ramps with the team",
+                  hint: "Revenue follows the onboarding ramp in year 1",
+                },
+              ]}
+            />
+          </Field>
 
-      <Field label="Year-1 revenue timing">
-        <Segmented
-          size="sm"
-          ariaLabel="Revenue timing"
-          value={levers.revenueTiming}
-          onChange={(v) => set({ revenueTiming: v })}
-          options={[
-            { id: "even", label: "Even from month 1" },
-            { id: "ramp", label: "Ramps with the team", hint: "Revenue follows the onboarding ramp in year 1" },
-          ]}
-        />
-      </Field>
-
-      <div className="border-t border-gray-100 pt-3">
-        <button
-          type="button"
-          onClick={() => setRolesOpen((o) => !o)}
-          aria-expanded={rolesOpen}
-          className="flex w-full items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-900"
-        >
-          <span>
-            Role mix &amp; cost per hour
-            {Object.keys(levers.mix).length + Object.keys(levers.rates).length > 0 && (
-              <span className="ml-1.5 normal-case tracking-normal text-gray-900">
-                · {Object.keys(levers.mix).length + Object.keys(levers.rates).length} changed
+          <div className="border-t border-gray-100 pt-3">
+            <button
+              type="button"
+              onClick={() => setRolesOpen((o) => !o)}
+              aria-expanded={rolesOpen}
+              className="flex w-full items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-900"
+            >
+              <span>
+                Role mix &amp; cost per hour
+                {Object.keys(levers.mix).length + Object.keys(levers.rates).length > 0 && (
+                  <span className="ml-1.5 normal-case tracking-normal text-gray-900">
+                    · {Object.keys(levers.mix).length + Object.keys(levers.rates).length} changed
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-          <ChevronDown size={14} className={`transition-transform ${rolesOpen ? "rotate-180" : ""}`} />
-        </button>
-        {rolesOpen && (
-          <div className="mt-2 space-y-1.5">
-            <div className="grid grid-cols-[1fr_64px_76px_14px] gap-1.5 text-[10px] uppercase tracking-wide text-gray-400">
-              <span>Role</span>
-              <span className="text-right">Mix</span>
-              <span className="text-right">Cost / h</span>
-              <span />
-            </div>
-            {plan.roles.map((r) => {
-              const rowChanged = levers.mix[r.key] !== undefined || levers.rates[r.key] !== undefined;
-              return (
-                <div key={r.key} className="grid grid-cols-[1fr_64px_76px_14px] items-center gap-1.5">
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-medium text-gray-800" title={r.members?.join(", ") ?? r.label}>
-                      {r.label}
-                    </div>
-                    <div className="text-[10px] tabular-nums text-gray-400">
-                      data {pct(r.dataShare, 0)} · {rate(r.dataRate)} · now {fte(r.runRateFte)} FTE
-                    </div>
-                  </div>
-                  <NumInput
-                    ariaLabel={`${r.label} mix`}
-                    value={Math.round((levers.mix[r.key] ?? r.dataShare) * 1000) / 10}
-                    min={0}
-                    max={100}
-                    suffix="%"
-                    onChange={(v) => {
-                      const mix = { ...levers.mix };
-                      if (v === null) delete mix[r.key];
-                      else mix[r.key] = v / 100;
-                      set({ mix });
-                    }}
-                  />
-                  <NumInput
-                    ariaLabel={`${r.label} cost per hour`}
-                    value={levers.rates[r.key] ?? null}
-                    placeholder={String(Math.round(r.dataRate * levers.rateAdj))}
-                    min={0}
-                    max={1000}
-                    prefix="$"
-                    onChange={(v) => {
-                      const rates = { ...levers.rates };
-                      if (v === null) delete rates[r.key];
-                      else rates[r.key] = v;
-                      set({ rates });
-                    }}
-                  />
-                  {rowChanged ? (
-                    <button
-                      type="button"
-                      aria-label={`Reset ${r.label}`}
-                      className="text-gray-400 hover:text-gray-900"
-                      onClick={() => {
-                        const mix = { ...levers.mix };
-                        const rates = { ...levers.rates };
-                        delete mix[r.key];
-                        delete rates[r.key];
-                        set({ mix, rates });
-                      }}
-                    >
-                      <RotateCcw size={11} />
-                    </button>
-                  ) : (
-                    <span />
-                  )}
+              <ChevronDown size={14} className={`transition-transform ${rolesOpen ? "rotate-180" : ""}`} />
+            </button>
+            {rolesOpen && (
+              <div className="mt-2 space-y-1.5">
+                <div className="grid grid-cols-[1fr_64px_76px_14px] gap-1.5 text-[10px] uppercase tracking-wide text-gray-400">
+                  <span>Role</span>
+                  <span className="text-right">Mix</span>
+                  <span className="text-right">Cost / h</span>
+                  <span />
                 </div>
-              );
-            })}
-            {Math.abs(mixTotal - 1) > 0.005 && (
-              <p className="text-[10px] text-gray-500">Mix entered totals {pct(mixTotal, 0)}; the plan scales it to 100%.</p>
+                {plan.roles.map((r) => {
+                  const rowChanged = levers.mix[r.key] !== undefined || levers.rates[r.key] !== undefined;
+                  return (
+                    <div key={r.key} className="grid grid-cols-[1fr_64px_76px_14px] items-center gap-1.5">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-medium text-gray-800" title={r.members?.join(", ") ?? r.label}>
+                          {r.label}
+                        </div>
+                        <div className="text-[10px] tabular-nums text-gray-400">
+                          data {pct(r.dataShare, 0)} · {rate(r.dataRate)} · now {fte(r.runRateFte)} FTE
+                        </div>
+                      </div>
+                      <NumInput
+                        ariaLabel={`${r.label} mix`}
+                        value={Math.round((levers.mix[r.key] ?? r.dataShare) * 1000) / 10}
+                        min={0}
+                        max={100}
+                        suffix="%"
+                        onChange={(v) => {
+                          const mix = { ...levers.mix };
+                          if (v === null) delete mix[r.key];
+                          else mix[r.key] = v / 100;
+                          set({ mix });
+                        }}
+                      />
+                      <NumInput
+                        ariaLabel={`${r.label} cost per hour`}
+                        value={levers.rates[r.key] ?? null}
+                        placeholder={String(Math.round(r.dataRate * levers.rateAdj))}
+                        min={0}
+                        max={1000}
+                        prefix="$"
+                        onChange={(v) => {
+                          const rates = { ...levers.rates };
+                          if (v === null) delete rates[r.key];
+                          else rates[r.key] = v;
+                          set({ rates });
+                        }}
+                      />
+                      {rowChanged ? (
+                        <button
+                          type="button"
+                          aria-label={`Reset ${r.label}`}
+                          className="text-gray-400 hover:text-gray-900"
+                          onClick={() => {
+                            const mix = { ...levers.mix };
+                            const rates = { ...levers.rates };
+                            delete mix[r.key];
+                            delete rates[r.key];
+                            set({ mix, rates });
+                          }}
+                        >
+                          <RotateCcw size={11} />
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                    </div>
+                  );
+                })}
+                {Math.abs(mixTotal - 1) > 0.005 && (
+                  <p className="text-[10px] text-gray-500">Mix entered totals {pct(mixTotal, 0)}; the plan scales it to 100%.</p>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </Card>
   );
 }

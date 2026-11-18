@@ -29,7 +29,7 @@ import {
   type TimeType,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, DataTable, Field, GhostButton, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
+import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, DataTable, Field, GhostButton, InShort, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
 import { downloadCsv, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
 
 const GROUPS: { id: PortalGroup; label: string }[] = [
@@ -95,6 +95,16 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
   );
   const { totals } = result;
   const clientHours = result.monthly.reduce((a, m) => a + m.client, 0);
+  const internalHours = result.monthly.reduce((a, m) => a + m.internal, 0);
+  const timeOffHours = result.monthly.reduce((a, m) => a + m.timeoff, 0);
+  // Whole-percent split that always adds up to 100% (largest remainder).
+  const split = (() => {
+    const parts = [clientHours, internalHours, timeOffHours].map((h) => (totals.hours ? (h / totals.hours) * 100 : 0));
+    const floors = parts.map(Math.floor);
+    let left = Math.round(parts.reduce((a, b) => a + b, 0)) - floors.reduce((a, b) => a + b, 0);
+    [...parts.keys()].sort((a, b) => parts[b] - floors[b] - (parts[a] - floors[a])).forEach((i) => left-- > 0 && floors[i]++);
+    return floors;
+  })();
   const filtered = validClients.length + roleSel.length + timeSel.length > 0 || from !== 0 || to !== LAST;
 
   const chartData = result.monthly.map((m) => ({ month: monthLabel(m.month, true), client: Math.round(m.client), internal: Math.round(m.internal), timeoff: Math.round(m.timeoff) }));
@@ -216,6 +226,15 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
         )}
       </div>
 
+      {totals.hours > 0 && (
+        <InShort>
+          In {periodLabel(from, to)}, {scope.id === "canada" ? "our Canadian agencies" : scope.label}
+          {validClients.length + roleSel.length + timeSel.length > 0 ? " (with your filters)" : ""} logged <strong>{hours(totals.hours)} hours</strong>:{" "}
+          <strong>{split[0]}% on client work</strong>, {split[1]}% on internal and overhead work and {split[2]}% on time off. That time cost {formatCompactMoney(totals.cost)} at Maconomy cost rates, about{" "}
+          {rate(totals.costPerHour)} an hour.
+        </InShort>
+      )}
+
       {/* KPIs */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -228,7 +247,7 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
           icon={DollarSign}
           label={`Staffing cost (${scope.currency})`}
           value={formatCompactMoney(totals.cost)}
-          sub={`${rate(totals.costPerHour)} per hour · ${basis === "base1" ? "Base1" : "Enterprise"} cost`}
+          sub={`${rate(totals.costPerHour)} per hour · ${basis === "base1" ? "Standard (Base1)" : "Enterprise"} cost rates`}
         />
         <StatCard
           icon={Users}

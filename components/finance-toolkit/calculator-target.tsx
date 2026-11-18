@@ -75,7 +75,7 @@ export default function TargetCard({
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
             <Crosshair size={16} className="text-primary" /> Hit a target margin
           </div>
-          <p className="mt-0.5 text-xs text-gray-500">Three ways to land the run-rate margin on your target, each holding the rest of the plan as is.</p>
+          <p className="mt-0.5 text-xs text-gray-500">Pick the margin you want once the team is fully staffed. Here are three ways to get there; each keeps the rest of the plan as it is.</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">

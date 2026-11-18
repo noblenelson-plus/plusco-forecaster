@@ -125,17 +125,17 @@ function kpiSteps(plan: StaffingPlan, id: KpiId): { title: string; steps: Step[]
   switch (id) {
     case "team":
       return {
-        title: `Why ${fte(plan.runRateFte)} FTE?`,
+        title: `Why ${fte(plan.runRateFte)} full-time people?`,
         steps: [
           ...intensitySteps(plan),
           fteStep(plan),
-          { label: "Team at run rate", value: `${fte(plan.runRateFte)} FTE`, detail: `${hours(plan.steadyMonthlyHours)} h ÷ ${L.fteHours} h`, source: "calc" },
+          { label: "Team once fully staffed", value: `${fte(plan.runRateFte)} FTE`, detail: `${hours(plan.steadyMonthlyHours)} h ÷ ${L.fteHours} h`, source: "calc" },
         ],
         note: `Peak in year 1 is ${fte(plan.peakFte)} FTE; the first months are lighter because of the onboarding ramp.`,
       };
     case "cost":
       return {
-        title: `Why ${money(plan.yearCost)} of year-1 staffing cost?`,
+        title: `Why ${money(plan.yearCost)} of first-year staffing cost?`,
         steps: [
           ...intensitySteps(plan),
           rampStep(plan),
@@ -147,7 +147,7 @@ function kpiSteps(plan: StaffingPlan, id: KpiId): { title: string; steps: Step[]
       };
     case "yearMargin":
       return {
-        title: `Why ${pct(plan.yearMarginPct)} year-1 margin?`,
+        title: `Why a ${pct(plan.yearMarginPct)} first-year margin?`,
         steps: [
           {
             label: "Year-1 gross revenue",
@@ -174,7 +174,7 @@ function kpiSteps(plan: StaffingPlan, id: KpiId): { title: string; steps: Step[]
     case "runRate": {
       const costShare = plan.hoursPerDollar * plan.blendedRate;
       return {
-        title: `Why ${pct(plan.runRateMarginPct)} run-rate margin?`,
+        title: `Why a ${pct(plan.runRateMarginPct)} margin once fully staffed?`,
         steps: [
           ...(L.fixedFte !== null
             ? intensitySteps(plan)

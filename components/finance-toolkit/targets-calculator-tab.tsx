@@ -37,7 +37,7 @@ import {
   type TargetSolution,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { Chip, DataTable, Field, Formula, GhostButton, HowCalculated, Notice, Segmented, selectClass, type Column } from "./ft-ui";
+import { Chip, DataTable, Field, Formula, GhostButton, HowCalculated, InShort, Notice, Segmented, selectClass, type Column } from "./ft-ui";
 import { downloadCsv, formatCompactMoney, fte, hours, money, pct, rate } from "./ft-format";
 import LeversCard from "./calculator-levers";
 import TargetCard from "./calculator-target";
@@ -254,7 +254,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
           render: (r) => (unit === "fte" ? fte(r.yearHours / 12 / fteHours) : hours(r.yearHours)),
           total: unit === "fte" ? fte(plan.yearHours / 12 / fteHours) : hours(plan.yearHours),
         },
-        { id: "fte", label: "Run-rate FTE", align: "right", render: (r) => fte(r.runRateFte), total: fte(plan.runRateFte) },
+        { id: "fte", label: "FTE fully staffed", align: "right", render: (r) => fte(r.runRateFte), total: fte(plan.runRateFte) },
         { id: "cost", label: "Year 1 cost", align: "right", render: (r) => money(r.yearCost), total: money(plan.yearCost) },
       ]
     : [];
@@ -368,11 +368,11 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
         <Card className="gap-3 p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-              <Briefcase size={16} className="text-primary" /> Comparable accounts
+              <Briefcase size={16} className="text-primary" /> Similar accounts (the benchmark)
             </div>
             {auto ? (
               <Chip tone="dark">
-                <Sparkles size={10} className="mr-1" /> Auto
+                <Sparkles size={10} className="mr-1" /> Picked automatically
               </Chip>
             ) : (
               <button type="button" onClick={() => setAuto(true)} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">
@@ -382,8 +382,8 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
           </div>
           <p className="text-[11px] leading-snug text-gray-500">
             {auto
-              ? `The ${MAX_COMPARABLES} ${AGENCIES.find((a) => a.id === agency)!.label} accounts closest in annualized revenue.`
-              : "Your selection. Pick 1 to 3 accounts that look like the prospect."}
+              ? `The ${MAX_COMPARABLES} ${AGENCIES.find((a) => a.id === agency)!.label} accounts closest in yearly revenue. The plan staffs the new account the way these are staffed today.`
+              : "Your selection: pick 1 to 3 accounts that look most like the prospect. The plan staffs it the way these are staffed today."}
           </p>
           <ul className="divide-y divide-gray-100 border border-gray-200">
             {chosen.length === 0 && <li className="px-3 py-3 text-xs text-gray-500">No comparable selected.</li>}
@@ -394,7 +394,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                     {c.client.name}
                   </div>
                   <div className="text-[11px] tabular-nums text-gray-500">
-                    {formatCompactMoney(c.annualizedRevenue)}/yr · {c.hoursPerThousand.toFixed(1)} h per $1K
+                    {formatCompactMoney(c.annualizedRevenue)}/yr · {c.hoursPerThousand.toFixed(1)} h per $1,000
                   </div>
                 </div>
                 <button type="button" onClick={() => removeComparable(c.client.index)} aria-label={`Remove ${c.client.name}`} className="p-1 text-gray-400 hover:text-gray-900">
@@ -452,13 +452,26 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               </div>
             )}
 
+            <InShort>
+              A {formatCompactMoney(revenue)}-a-year {AGENCIES.find((a) => a.id === agency)!.label} account would need about{" "}
+              <strong>{fte(plan.runRateFte)} full-time people</strong> once fully staffed
+              {plan.rampFactors[0] < 0.95 ? ", built up over the first months" : ""}. First-year staffing would cost {formatCompactMoney(plan.yearCost)},
+              leaving a <strong>{pct(plan.yearMarginPct, 0)}</strong> margin in year 1 and <strong>{pct(plan.runRateMarginPct, 0)}</strong> once the team is
+              fully in place
+              {plan.yearMarginPct > plan.runRateMarginPct + 0.005 && levers.revenueTiming === "even"
+                ? " (year 1 looks better only because the team is still building up while revenue is assumed to arrive in full)"
+                : ""}
+              . Based on how {chosen.length} similar account{chosen.length === 1 ? " is" : "s are"} staffed today
+              {nChanged > 0 ? `, adjusted by ${nChanged} of your own assumption${nChanged === 1 ? "" : "s"}` : ""}.
+            </InShort>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
               <KpiButton active={kpiActive("team")} onClick={() => toggleWhy({ kind: "kpi", id: "team" })}>
                 <StatCard
                   icon={Users}
-                  label="Recommended team"
+                  label="Team needed"
                   value={`${fte(plan.runRateFte)} FTE`}
-                  sub={`At run rate · peak ${fte(plan.peakFte)} FTE${changedNote(fte(plan.runRateFte), fte(dataPlan.runRateFte))}`}
+                  sub={`Full-time people once fully staffed · peak ${fte(plan.peakFte)}${changedNote(fte(plan.runRateFte), fte(dataPlan.runRateFte))}`}
                 />
               </KpiButton>
               <KpiButton active={kpiActive("cost")} onClick={() => toggleWhy({ kind: "kpi", id: "cost" })}>
@@ -473,7 +486,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               <KpiButton active={kpiActive("yearMargin")} onClick={() => toggleWhy({ kind: "kpi", id: "yearMargin" })}>
                 <StatCard
                   icon={Percent}
-                  label="Projected year 1 margin"
+                  label="First-year margin"
                   value={pct(plan.yearMarginPct)}
                   sub={`${formatCompactMoney(plan.yearMargin)} on ${formatCompactMoney(plan.yearRevenue)} year-1 revenue`}
                   accent={plan.yearMarginPct < 0 ? "text-red-500" : "text-green-500"}
@@ -483,15 +496,20 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               <KpiButton active={kpiActive("runRate")} onClick={() => toggleWhy({ kind: "kpi", id: "runRate" })}>
                 <StatCard
                   icon={CalendarRange}
-                  label="Run-rate margin"
+                  label="Margin once fully staffed"
                   value={pct(plan.runRateMarginPct)}
-                  sub={`Once fully staffed · comparables earn ${pct(plan.comparablesMarginPct)}`}
+                  sub={`The similar accounts earn ${pct(plan.comparablesMarginPct)} today`}
                   accent={plan.runRateMarginPct < 0 ? "text-red-500" : "text-green-500"}
                   variance={nChanged > 0 ? vsData(plan.runRateMarginPct, dataPlan.runRateMarginPct, "pts", true) : null}
                 />
               </KpiButton>
             </div>
 
+            {!why && (
+              <p className="-mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+                <HelpCircle size={13} /> Click any figure above, or any role in the plan below, to see exactly how it is worked out.
+              </p>
+            )}
             {why && <WhyPanel plan={plan} topic={why} currency={currency} onClose={() => setWhy(null)} />}
 
             {(plan.fallbackRoles.length > 0 || currency === "USD") && (
@@ -570,7 +588,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
 
             <ScenariosCard current={inputs} currentPlan={plan} basis={basis} maxComparables={MAX_COMPARABLES} onLoad={loadScenario} />
 
-            <ChartCard title="Comparables used" subtitle={`Actuals, ${REVENUE_WINDOW.label}`} icon={Briefcase}>
+            <ChartCard title="The similar accounts behind this plan" subtitle={`What they actually earned and used, ${REVENUE_WINDOW.label}`} icon={Briefcase}>
               <DataTable columns={compColumns} rows={chosen} rowKey={(c) => String(c.client.index)} />
             </ChartCard>
 
