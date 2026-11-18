@@ -116,6 +116,36 @@ export function computeLabsPacing(
   return { rows, totals };
 }
 
+/** Partner families rolled into one line by the "Grouped" view (name prefix). */
+export const LABS_PARTNER_FAMILIES = ["Billups", "MIQ", "AIM"];
+
+/**
+ * "Grouped" view of the By-Partner rows: Billups-* / MIQ-* / AIM-* roll into
+ * Billups / MIQ / AIM (same families as the Forecaster Labs tab's Grouped
+ * view); other partners are unchanged. Variance and % booked are recomputed
+ * on the combined dollars, never averaged. Totals are unaffected.
+ */
+export function groupLabsPacingRows(rows: LabsPacingRow[]): LabsPacingRow[] {
+  const familyOf = (name: string) =>
+    LABS_PARTNER_FAMILIES.find((f) => name === f || name.startsWith(`${f}-`)) ?? null;
+  const byKey = new Map<string, { partnerId: string; partnerName: string; target: number; booked: number }>();
+  for (const r of rows) {
+    const family = familyOf(r.partnerName);
+    const key = family ? `__${family.toUpperCase()}__` : r.partnerId;
+    const cur = byKey.get(key) ?? { partnerId: key, partnerName: family ?? r.partnerName, target: 0, booked: 0 };
+    cur.target += r.target;
+    cur.booked += r.booked;
+    byKey.set(key, cur);
+  }
+  return [...byKey.values()]
+    .map((v) => ({
+      ...v,
+      variance: v.booked - v.target,
+      percentBooked: pct(v.booked, v.target),
+    }))
+    .sort((a, b) => b.target - a.target);
+}
+
 /** Behind target (Booked < Target) reads red; ahead reads green. */
 function varianceStyle(value: number): CSSProperties | undefined {
   if (value < 0) return { color: "#b91c1c" };
