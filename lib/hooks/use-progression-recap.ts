@@ -11,6 +11,11 @@
  * to recompute here (the old per-RFQ data_entries + MediaOcean reads are gone).
  * A stale request (scope/year changed mid-flight) is discarded via a
  * cancellation flag.
+ *
+ * Milestones page reading of "pending": a step validated with flags still
+ * unjustified that never passed is stored "pending", which the forecast page's
+ * control shows as not validated. Here it counts as "failed" (Flags to
+ * justify): the BL did validate and owes justifications — what a GM must chase.
  */
 
 "use client";
@@ -72,9 +77,9 @@ export function useProgressionRecap({
         const validations = await fetchStepValidations(clientId, year);
         const statusByStep: Record<string, RfqValidationStatus> = {};
         for (const step of CONFIRMATION_STEPS) {
-          statusByStep[step.id] = deriveStepStatus({
-            validation: validations[step.id],
-          });
+          const v = validations[step.id];
+          statusByStep[step.id] =
+            v?.status === "pending" ? "failed" : deriveStepStatus({ validation: v });
         }
         return { clientId, statusByStep };
       })

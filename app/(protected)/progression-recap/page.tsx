@@ -2,52 +2,169 @@
 "use client";
 
 /**
- * BL Forecast Validation — a per-client table (one row per client) showing, for
- * the globally-selected Year, the Business Lead and a ticked column for each
- * confirmation step. Validation lives at the {client, year} level (no RFQ
- * dimension). Downloadable as CSV.
+ * Milestones — a dashboard of the BL forecast validation for the globally
+ * selected Year, for GMs and MDs:
  *
- * Reuses the dashboard's client scope: the same accessible-clients set, the same
- * faceted filter bar, and the same global Year selector. Accessible to every
- * authenticated user (no admin guard).
+ *   Filters    Checkpoint (one milestone, defaults to the latest one due),
+ *              GM Pod / Agency / Region / Business Lead, and the status at the
+ *              checkpoint (multi-select). Always limited to the clients ACTIVE
+ *              in the selected year (resolveClientStatus), test clients
+ *              excluded — no status/tier filter.
+ *   Section 1  Milestone tracking — status totals, breakdown by GM, clients
+ *              left to validate (milestone-tracking-summary.tsx).
+ *   Table      Every milestone per client (progression-recap-table.tsx).
+ *   Section 2  Insights by flag type — the current flags of the checkpoint's
+ *              RFQ by type / category, overall or by GM / Agency / Region
+ *              (flag-insights-section.tsx). The flag filters (category, flag)
+ *              only narrow this section and Section 3.
+ *   Section 3  Flags by client — every current flag with its justification
+ *              verbatim (flag-detail-table.tsx).
+ *
+ * Validation lives at the {client, year} level (no RFQ dimension). The "Re-run
+ * check" batch (writable clients only) re-runs the selected checkpoint.
+ * The view (year, checkpoint, every filter) lives in the URL
+ * (lib/format/milestone-url.ts), so a link reopens the same view. Without a
+ * year anywhere (URL or saved selection) the page opens on the current year.
+ *
+ * Accessible to every authenticated user (no admin guard).
  */
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { buildMilestoneQuery, parseMilestoneView } from "../../../lib/format/milestone-url";
 import { Loader2, ClipboardCheck, MousePointerClick } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
-import DashboardFilterBar from "../../../components/dashboard/filters/dashboard-filter-bar";
-import ProgressionRecapTable, {
-  type RecapDisplayRow,
-} from "../../../components/progression/progression-recap-table";
+import MilestoneFilters from "../../../components/progression/milestone-filters";
+import MilestoneTrackingSummary from "../../../components/progression/milestone-tracking-summary";
+import ProgressionRecapTable from "../../../components/progression/progression-recap-table";
 import MilestoneBatchRunner from "../../../components/progression/milestone-batch-runner";
+import FlagInsightsSection from "../../../components/progression/flag-insights-section";
+import FlagDetailTable from "../../../components/progression/flag-detail-table";
+import { useCheckpointFlags } from "../../../lib/hooks/use-checkpoint-flags";
+import { resolveFlagTypes, type ClientFlags } from "../../../lib/format/flag-insights";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import { useAccess } from "../../../lib/hooks/use-access";
 import { useUsersMap } from "../../../lib/hooks/use-users-map";
 import { useDashboardFilters } from "../../../lib/dashboard/filters/use-dashboard-filters";
+import type { FacetKey } from "../../../lib/dashboard/filters/filter.types";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useProgressionRecap } from "../../../lib/hooks/use-progression-recap";
 import { filterWritableClients } from "../../../lib/services/assignment-service";
+import { isTestClient, resolveClientStatus } from "../../../lib/format/client";
+import { CLIENT_GM_PODS } from "../../../lib/constants/client.constants";
+import { defaultCheckpointStep, stepById } from "../../../lib/constants/confirmation-steps";
+import { statusAt, type MilestoneClientRow } from "../../../lib/format/milestone-summary";
+import type { RfqValidationStatus } from "../../../lib/types/forecast-flags.types";
+
+/** The client facets this page offers, in display order. */
+const PAGE_FACETS: FacetKey[] = ["gmPods", "agencies", "regions", "businessLeads"];
+
+const gmLabel = (v: string | undefined) =>
+  v ? CLIENT_GM_PODS.find((g) => g.value === v)?.label ?? v : "";
 
 export default function ProgressionRecapPage() {
+  // useSearchParams needs a Suspense boundary on a statically rendered page.
+  return (
+    <Suspense fallback={null}>
+      <MilestonesPage />
+    </Suspense>
+  );
+}
+
+function MilestonesPage() {
   const { clients, loading: clientsLoading, error: clientsError } = useAccessibleClients();
   const { profile, isAdmin } = useUserProfile();
   const { editGrant } = useAccess();
   const usersMap = useUsersMap();
-  const { selectedYear } = useForecastSelection();
+  const { selectedYear, setYear } = useForecastSelection();
+  const year = selectedYear ?? new Date().getFullYear();
+
+  // The view a shared link carries — read once, on load.
+  const params = useSearchParams();
+  const [linked] = useState(() => parseMilestoneView(params.toString()));
+
+  // Year: the link's, else the saved one, else the current year.
+  useEffect(() => {
+    const target = linked.year ?? selectedYear ?? new Date().getFullYear();
+    if (target !== selectedYear) setYear(target);
+    // Once, on load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Bumped after a batch run to force the (one-shot) recap reads to reload.
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Same faceted filters as the dashboard.
+  // Always the clients ACTIVE in the selected year (per-year status), test
+  // clients excluded (same rule as the dashboard).
+  const activeClients = useMemo(
+    () =>
+      clients.filter(
+        (c) => resolveClientStatus(c, year) === "ACTIVE" && !isTestClient(c.CL_Name)
+      ),
+    [clients, year]
+  );
+
+  // Same cascading facet engine as the dashboard, shown for PAGE_FACETS only
+  // (the hidden ones never get a selection, so they never filter).
   const {
     facetViews,
     filteredClients,
     filteredClientIds,
-    totalAccessible,
-    hasActiveFilters,
-    reset,
-  } = useDashboardFilters(clients, usersMap, selectedYear ?? new Date().getFullYear());
+    hasActiveFilters: hasFacetFilters,
+    reset: resetFacets,
+  } = useDashboardFilters(activeClients, usersMap, year, {
+    gmPods: linked.gm,
+    agencies: linked.agency,
+    regions: linked.region,
+    businessLeads: linked.bl,
+  });
+  const pageFacetViews = useMemo(
+    () =>
+      PAGE_FACETS.map((k) => facetViews.find((v) => v.key === k)).filter(
+        (v): v is NonNullable<typeof v> => !!v
+      ),
+    [facetViews]
+  );
+
+  // Checkpoint: follows the year (latest milestone due) until the user picks one.
+  const [pickedCheckpoint, setPickedCheckpoint] = useState<{ year: number; id: string } | null>(
+    () =>
+      linked.checkpoint
+        ? { year: linked.year ?? selectedYear ?? new Date().getFullYear(), id: linked.checkpoint }
+        : null
+  );
+  const checkpoint =
+    (pickedCheckpoint?.year === year ? stepById(pickedCheckpoint.id) : undefined) ??
+    defaultCheckpointStep(year);
+
+  const [statuses, setStatuses] = useState<RfqValidationStatus[]>(linked.status);
+  const [flagCategories, setFlagCategories] = useState<string[]>(linked.flagCategory);
+  const [flagTypeIds, setFlagTypeIds] = useState<string[]>(linked.flag);
+  const selectedFlagTypes = useMemo(
+    () => resolveFlagTypes(flagCategories, flagTypeIds),
+    [flagCategories, flagTypeIds]
+  );
+
+  // Keep the URL in step with the view (replace, no history entries).
+  const facetSel = (key: FacetKey) => pageFacetViews.find((v) => v.key === key)?.selected ?? [];
+  const query = buildMilestoneQuery({
+    year: selectedYear ?? undefined,
+    checkpoint: pickedCheckpoint?.year === year ? checkpoint.id : undefined,
+    gm: facetSel("gmPods"),
+    agency: facetSel("agencies"),
+    region: facetSel("regions"),
+    bl: facetSel("businessLeads"),
+    status: statuses,
+    flagCategory: flagCategories,
+    flag: flagTypeIds,
+  });
+  useEffect(() => {
+    if (!selectedYear) return; // the year effect hasn't landed yet
+    if (window.location.search !== query) {
+      window.history.replaceState(null, "", `${window.location.pathname}${query}`);
+    }
+  }, [query, selectedYear]);
 
   const recap = useProgressionRecap({
     clientIds: filteredClientIds,
@@ -55,46 +172,79 @@ export default function ProgressionRecapPage() {
     refreshKey,
   });
 
+  // Section 2 — current flags of the checkpoint's RFQ for the filtered clients.
+  const checkpointFlags = useCheckpointFlags({
+    clientIds: filteredClientIds,
+    year: selectedYear,
+    rfq: checkpoint.targetRfq,
+    refreshKey,
+  });
+  const hasUsdClients = filteredClients.some((c) => c.CL_Currency === "USD");
+  const clientFlags = useMemo<ClientFlags[]>(
+    () =>
+      filteredClients.map((c) => ({
+        clientId: c.cl_id,
+        clientName: c.CL_Name,
+        gm: gmLabel(c.GM_Pod),
+        agency: c.CL_Agency ?? "",
+        region: c.CL_Business_Unit_Region ?? "",
+        bl: c.CL_Business_Lead
+          ? usersMap.get(c.CL_Business_Lead) ?? c.CL_Business_Lead
+          : "Unassigned",
+        currency: c.CL_Currency ?? "CAD",
+        toCad: c.CL_Currency === "USD" ? checkpointFlags.usdToCad ?? 1 : 1,
+        flags: checkpointFlags.flagsByClient.get(c.cl_id) ?? [],
+      })),
+    [filteredClients, checkpointFlags, usersMap]
+  );
+
   // The filtered clients the current user may WRITE to — the batch check writes
-  // flags + validations, so it can only target the editable subset (read scope
-  // can be broader). With nothing writable there is no runner.
+  // flags + validations, so it can only target the editable subset.
   const writableClientIds = useMemo(
     () =>
       filterWritableClients(filteredClients, profile, isAdmin, editGrant).map((c) => c.cl_id),
     [filteredClients, profile, isAdmin, editGrant]
   );
 
-  const recapByClient = useMemo(() => {
-    const map = new Map(recap.rows.map((r) => [r.clientId, r]));
-    return map;
-  }, [recap.rows]);
+  // One row per filtered client (keeps the accessible-clients sort order).
+  const rows = useMemo<MilestoneClientRow[]>(() => {
+    const byClient = new Map(recap.rows.map((r) => [r.clientId, r]));
+    return filteredClients.map((c) => ({
+      clientId: c.cl_id,
+      clientName: c.CL_Name,
+      gm: gmLabel(c.GM_Pod),
+      bl: c.CL_Business_Lead
+        ? usersMap.get(c.CL_Business_Lead) ?? c.CL_Business_Lead
+        : "Unassigned",
+      statusByStep: byClient.get(c.cl_id)?.statusByStep ?? {},
+    }));
+  }, [filteredClients, recap.rows, usersMap]);
 
-  // One display row per filtered client (keeps the accessible-clients sort order).
-  const displayRows = useMemo<RecapDisplayRow[]>(
+  // Status chips narrow the table (status at the checkpoint).
+  const tableRows = useMemo(
     () =>
-      filteredClients.map((c) => {
-        const r = recapByClient.get(c.cl_id);
-        return {
-          clientId: c.cl_id,
-          clientName: c.CL_Name,
-          bl: c.CL_Business_Lead
-            ? usersMap.get(c.CL_Business_Lead) ?? c.CL_Business_Lead
-            : "Unassigned",
-          currency: c.CL_Currency ?? "CAD",
-          statusByStep: r?.statusByStep ?? {},
-        };
-      }),
-    [filteredClients, recapByClient, usersMap]
+      statuses.length === 0
+        ? rows
+        : rows.filter((r) => statuses.includes(statusAt(r, checkpoint.id))),
+    [rows, statuses, checkpoint.id]
   );
 
-  const fileLabel = selectedYear ? String(selectedYear) : undefined;
+  const hasActiveFilters =
+    hasFacetFilters || statuses.length > 0 || flagCategories.length > 0 || flagTypeIds.length > 0;
+  const resetAll = () => {
+    resetFacets();
+    setStatuses([]);
+    setFlagCategories([]);
+    setFlagTypeIds([]);
+  };
+
   const contextReady = !!selectedYear;
 
   return (
     <div className="flex min-h-[calc(100vh/var(--app-zoom,1))] flex-col">
-      {/* Header — title + global Year selector */}
-      <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
-        <div className="flex flex-wrap items-center gap-3 px-6 py-3">
+      <header className="sticky top-0 z-30 bg-white">
+        {/* Title + global Year selector + batch re-run */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 px-6 py-3">
           <span className="flex items-center gap-2 text-base font-semibold text-gray-900">
             <ClipboardCheck size={18} className="text-yellow-500" />
             Milestones
@@ -102,41 +252,47 @@ export default function ProgressionRecapPage() {
           <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
           <ForecastSelectors orientation="horizontal" theme="light" fields={["year"]} />
 
-          {/* Batch milestone check — run one step for every editable, filtered
-              client at once. Only when some filtered client is editable. */}
           {writableClientIds.length > 0 && (
-            <>
-              <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
+            <div className="ml-auto">
               <MilestoneBatchRunner
                 writableClientIds={writableClientIds}
                 year={selectedYear}
+                step={checkpoint}
                 onComplete={() => setRefreshKey((k) => k + 1)}
               />
-            </>
+            </div>
           )}
         </div>
 
-        {/* Same faceted filter bar as the dashboard */}
-        <DashboardFilterBar
-          facetViews={facetViews}
-          filteredCount={filteredClientIds.length}
-          totalAccessible={totalAccessible}
+        <MilestoneFilters
+          checkpointId={checkpoint.id}
+          onCheckpointChange={(id) => setPickedCheckpoint({ year, id })}
+          facetViews={pageFacetViews}
+          statuses={statuses}
+          onStatusesChange={setStatuses}
+          shownCount={tableRows.length}
+          activeCount={activeClients.length}
+          year={selectedYear}
           hasActiveFilters={hasActiveFilters}
-          onReset={reset}
+          onReset={resetAll}
+          flagCategories={flagCategories}
+          onFlagCategoriesChange={setFlagCategories}
+          flagTypes={flagTypeIds}
+          onFlagTypesChange={setFlagTypeIds}
         />
       </header>
 
-      <main className="mx-auto w-full max-w-[1700px] flex-1 p-6">
+      <main className="mx-auto w-full max-w-[1700px] flex-1 space-y-8 p-6">
         {clientsError ? (
-          <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
+          <div className="border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {clientsError}
           </div>
         ) : !contextReady ? (
-          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 text-gray-400">
+          <div className="flex h-64 flex-col items-center justify-center border border-dashed border-gray-200 text-gray-400">
             <p className="mb-1 text-sm font-medium text-gray-500">Select a Year</p>
             <p className="flex items-center gap-1 text-xs">
               <MousePointerClick size={12} />
-              Use the selector at the top of the page to load the recap.
+              Use the selector at the top of the page to load the milestones.
             </p>
           </div>
         ) : clientsLoading || recap.loading ? (
@@ -144,17 +300,51 @@ export default function ProgressionRecapPage() {
             <Loader2 size={20} className="animate-spin" />
           </div>
         ) : recap.error ? (
-          <div className="rounded-lg border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
+          <div className="border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
             {recap.error}
           </div>
-        ) : totalAccessible === 0 ? (
-          <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-400">
-            No clients are available for your account yet.
+        ) : activeClients.length === 0 ? (
+          <div className="flex h-64 items-center justify-center border border-dashed border-gray-200 text-sm text-gray-400">
+            No active clients for {selectedYear} in your scope.
           </div>
         ) : (
-          <ProgressionRecapTable rows={displayRows} fileLabel={fileLabel} />
+          <>
+            <MilestoneTrackingSummary rows={rows} checkpoint={checkpoint} statuses={statuses} />
+            <ProgressionRecapTable
+              rows={tableRows}
+              checkpointId={checkpoint.id}
+              fileLabel={String(selectedYear)}
+            />
+            {checkpointFlags.error ? (
+              <div className="border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
+                {checkpointFlags.error}
+              </div>
+            ) : checkpointFlags.loading ? (
+              <div className="flex h-40 items-center justify-center text-gray-400">
+                <Loader2 size={20} className="animate-spin" />
+              </div>
+            ) : (
+              <FlagInsightsSection
+                clients={clientFlags}
+                activeClientCount={rows.length}
+                types={selectedFlagTypes}
+                checkpoint={checkpoint}
+                year={year}
+                missingUsdRate={hasUsdClients && checkpointFlags.usdToCad === undefined}
+              />
+            )}
+            {!checkpointFlags.loading && !checkpointFlags.error && (
+              <FlagDetailTable
+                clients={clientFlags}
+                types={selectedFlagTypes}
+                checkpoint={checkpoint}
+                year={year}
+              />
+            )}
+          </>
         )}
       </main>
     </div>
   );
 }
+

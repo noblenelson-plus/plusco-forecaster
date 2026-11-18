@@ -9,31 +9,32 @@
  * excluded upstream. Only clients ALREADY validated for the step are refreshed —
  * never-validated ones are skipped (handy after a data import).
  *
- * Presentational shell around useMilestoneBatchCheck: a step picker, a confirm
+ * The step is the page's Checkpoint filter (`step` prop) — there is no picker of
+ * its own any more (it looked like a filter that did nothing).
+ *
+ * Presentational shell around useMilestoneBatchCheck: a confirm
  * step (it writes many docs), a progress bar and a per-status summary. Calls
  * onComplete when a run finishes so the parent can reload the recap table.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
   Loader2,
   MinusCircle,
   Play,
   XCircle,
 } from "lucide-react";
-import {
-  CONFIRMATION_STEPS,
-  type ConfirmationStep,
-} from "../../lib/constants/confirmation-steps";
+import type { ConfirmationStep } from "../../lib/constants/confirmation-steps";
 import { useMilestoneBatchCheck } from "../../lib/hooks/use-milestone-batch-check";
 
 interface MilestoneBatchRunnerProps {
   /** Ids of the filtered clients the current user may write to. */
   writableClientIds: string[];
   year: number | null;
+  /** The milestone to re-run — the page's Checkpoint. */
+  step: ConfirmationStep;
   /** Called when a run completes — the parent reloads the recap table. */
   onComplete: () => void;
 }
@@ -41,39 +42,16 @@ interface MilestoneBatchRunnerProps {
 export default function MilestoneBatchRunner({
   writableClientIds,
   year,
+  step,
   onComplete,
 }: MilestoneBatchRunnerProps) {
   const batch = useMilestoneBatchCheck();
-  const [stepId, setStepId] = useState<string>(CONFIRMATION_STEPS[0].id);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
 
-  const step: ConfirmationStep =
-    CONFIRMATION_STEPS.find((s) => s.id === stepId) ?? CONFIRMATION_STEPS[0];
   const count = writableClientIds.length;
   // Locked target RFQ, non-admin: the step can't be re-checked any more.
   const stepClosed = batch.isStepClosed(step, year);
   const canRun = !!year && count > 0 && batch.ready && !batch.running && !stepClosed;
-
-  // Close the step picker on outside click / Escape.
-  useEffect(() => {
-    if (!pickerOpen) return;
-    function onDown(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setPickerOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [pickerOpen]);
 
   async function handleConfirm() {
     if (!year) return;
@@ -88,42 +66,7 @@ export default function MilestoneBatchRunner({
       : 0;
 
   return (
-    <div ref={rootRef} className="flex flex-wrap items-center gap-2">
-      {/* Step picker */}
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setPickerOpen((v) => !v)}
-          disabled={batch.running}
-          aria-expanded={pickerOpen}
-          className="flex items-center gap-1.5 border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
-        >
-          <span className="text-gray-400">Milestone</span>
-          <span className="text-gray-900">{step.label}</span>
-          <ChevronDown size={13} className="opacity-60" />
-        </button>
-        {pickerOpen && (
-          <div className="absolute left-0 z-50 mt-1.5 w-64 border border-gray-200 bg-white p-1 shadow-xl">
-            {CONFIRMATION_STEPS.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => {
-                  setStepId(s.id);
-                  setPickerOpen(false);
-                }}
-                className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 ${
-                  s.id === stepId ? "font-semibold text-gray-900" : "text-gray-700"
-                }`}
-              >
-                <span>{s.label}</span>
-                <span className="text-[11px] text-gray-400">{s.targetRfq}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
+    <div className="flex flex-wrap items-center gap-2">
       {/* Run button */}
       <button
         type="button"
@@ -143,7 +86,7 @@ export default function MilestoneBatchRunner({
         ) : (
           <Play size={13} />
         )}
-        Run check · {count} client{count === 1 ? "" : "s"}
+        Re-run {step.short} check · {count} client{count === 1 ? "" : "s"}
       </button>
 
       {/* Progress while running */}
