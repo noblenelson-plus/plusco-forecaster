@@ -56,6 +56,8 @@ import { runClientStepCheck } from "../../../lib/services/milestone-check-servic
 import { fetchStepWindows } from "../../../lib/services/flag-config-service";
 import { useAuth } from "../../../lib/auth-context";
 import { CLOSED_ROUND_NOTE } from "../../../lib/format/rfq-lock";
+import { fetchFlagSnapshots, type FlagSnapshot } from "../../../lib/services/flag-history-service";
+import { previousJustification } from "../../../lib/format/flag-history";
 import type { FlagContext, RfqValidationStatus } from "../../../lib/types/forecast-flags.types";
 
 /** Outcome of the last Revalidate click, shown under the milestone strip. */
@@ -190,6 +192,28 @@ export default function FlagsPage() {
   // box first (which fires its save), so waiting on these makes the check read
   // the justification the user just typed.
   const inflightSaves = useRef(new Set<Promise<void>>());
+  // Flag history for the year — each card shows what was written for the same
+  // flag at an earlier round ("Last time (RFQ3): …").
+  const [history, setHistory] = useState<{ key: string; snaps: Record<string, FlagSnapshot> } | null>(null);
+  const historyKey = ready ? `${selectedClient!.cl_id}_${selectedYear}` : "";
+  useEffect(() => {
+    if (!historyKey) return;
+    let cancelled = false;
+    fetchFlagSnapshots(selectedClient!.cl_id, selectedYear!)
+      .then((snaps) => {
+        if (!cancelled) setHistory({ key: historyKey, snaps });
+      })
+      .catch((err) => console.error("Flag history fetch failed:", err));
+    return () => {
+      cancelled = true;
+    };
+    // historyKey stands for the client + year.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyKey]);
+  const snapshots = history?.key === historyKey ? history.snaps : undefined;
+  const previousOf = (key: string) =>
+    selectedRFQ ? previousJustification(snapshots, selectedRFQ.type, key) : undefined;
+
   const { justify } = validation;
   const trackedJustify = useCallback(
     (flagKey: string, input: { context?: FlagContext; note: string }) => {
@@ -398,7 +422,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {qaChecks.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} previous={previousOf(f.key)} />
                   ))}
                 </div>
               )}
@@ -416,7 +440,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {swings.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} previous={previousOf(f.key)} />
                   ))}
                 </div>
               )}
@@ -434,7 +458,7 @@ export default function FlagsPage() {
               ) : (
                 <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
                   {underTarget.map((f) => (
-                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} />
+                    <FlagCard key={f.key} flag={f} currency={currency} onJustify={trackedJustify} readOnly={closed} previous={previousOf(f.key)} />
                   ))}
                 </div>
               )}

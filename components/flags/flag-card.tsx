@@ -41,6 +41,7 @@ import {
   type StoredFlag,
 } from "../../lib/types/forecast-flags.types";
 import { AXIS_STYLE } from "./axis-style";
+import type { PreviousJustification } from "../../lib/format/flag-history";
 
 /** Idle time after the last keystroke before a complete justification autosaves. */
 const AUTOSAVE_DELAY_MS = 1500;
@@ -103,11 +104,14 @@ export default function FlagCard({
   currency,
   onJustify,
   readOnly = false,
+  previous,
 }: {
   flag: StoredFlag;
   currency?: string;
   /** Closed round (locked RFQ, non-admin): show the justification, no editing. */
   readOnly?: boolean;
+  /** The same flag's justification at an earlier round of the year (a reminder). */
+  previous?: PreviousJustification;
   onJustify: (
     flagKey: string,
     input: { context?: FlagContext; note: string }
@@ -306,6 +310,13 @@ export default function FlagCard({
         {flag.category === "under_target" && (
           <p className={`mt-1 text-[11px] ${justified ? "text-gray-400" : "text-gray-700"}`}>
             Months analyzed: {formatMonths(flag.analyzedMonths ?? [])}
+          </p>
+        )}
+        {previous && !correctable && (
+          <p className="mt-1 text-[11px] text-gray-700">
+            <span className="font-semibold">Last time ({previous.rfq}):</span>{" "}
+            {previous.context ? FLAG_CONTEXTS.find((c) => c.value === previous.context)?.label : ""}
+            {previous.note ? `${previous.context ? " — " : ""}“${previous.note}”` : ""}
           </p>
         )}
         {drift.changed && !correctable && (

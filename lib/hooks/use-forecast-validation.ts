@@ -56,6 +56,7 @@ import {
   subscribeToStepWindows,
   type StepWindowMap,
 } from "../services/flag-config-service";
+import { syncSnapshotFlag, writeFlagSnapshot } from "../services/flag-history-service";
 import { computeQaCheckFlags } from "../flags/bl-alerts";
 import { computeSwingFlags } from "../flags/swing-rules";
 import { computeUnderTargetFlags } from "../flags/under-target-rules";
@@ -67,7 +68,7 @@ import {
   type AxisData,
   type AxisId,
 } from "../types/forecaster.types";
-import { CONFIRMATION_STEPS, stepById } from "../constants/confirmation-steps";
+import { CONFIRMATION_STEPS, stepById, stepsForRfq } from "../constants/confirmation-steps";
 import type {
   FlagContext,
   RfqValidationStatus,
@@ -279,12 +280,24 @@ export function useForecastValidation(
         await writeReconciledFlags(clientId, year, rfqType, result.flags, user?.uid);
 
         const passed = result.unjustified === 0;
+        const status = nextStepStatus(live.stepValidations[stepId], passed);
         await recordStepValidation(clientId, year, stepId, {
-          status: nextStepStatus(live.stepValidations[stepId], passed),
+          status,
           validatedAt: now,
           ...(user?.uid ? { validatedBy: user.uid } : {}),
           analyzedMonths: [...window],
           targetRfq: step.targetRfq,
+        });
+        // History: what the flags looked like at this milestone.
+        await writeFlagSnapshot({
+          clientId,
+          year,
+          stepId,
+          targetRfq: step.targetRfq,
+          status,
+          validatedAt: now,
+          ...(user?.uid ? { validatedBy: user.uid } : {}),
+          flags: result.flags,
         });
 
         return {
@@ -348,8 +361,20 @@ export function useForecastValidation(
         selectedRFQ.type,
         next
       );
+      // History: keep the latest-validated milestone of this round in step
+      // (a BL often justifies after validating, without revalidating).
+      const latest = stepsForRfq(selectedRFQ.type)
+        .filter((s) => stepValidations[s.id])
+        .sort((a, b) =>
+          (stepValidations[b.id]!.validatedAt ?? "").localeCompare(stepValidations[a.id]!.validatedAt ?? "")
+        )[0];
+      if (latest) {
+        await syncSnapshotFlag(selectedClient.cl_id, selectedYear, latest.id, next).catch((err) =>
+          console.error("Flag history sync failed:", err)
+        );
+      }
     },
-    [selectedClient?.cl_id, selectedYear, selectedRFQ?.type, roundClosed, flagMap, user?.uid]
+    [selectedClient?.cl_id, selectedYear, selectedRFQ?.type, roundClosed, flagMap, stepValidations, user?.uid]
   );
 
   return {

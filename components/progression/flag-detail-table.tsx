@@ -9,8 +9,9 @@
  * flag); adds a text search and a Justified / Not justified switch. Scrolls
  * inside ~18 rows; downloadable as CSV.
  *
- * Current flags only — a flag gone at the last validation isn't listed (no
- * per-milestone history yet). Presentational — the page loads the flags.
+ * The flags saved at the checkpoint (flag_history), plus each flag's previous
+ * justification — what the BL wrote for the same flag at an earlier round of
+ * the year. Presentational — the page loads the flags.
  */
 
 import { useMemo, useState } from "react";
@@ -22,6 +23,7 @@ import {
 } from "../../lib/format/flag-insights";
 import { flagContextLabel, type StoredFlag } from "../../lib/types/forecast-flags.types";
 import { flagComparison, formatMonths } from "../flags/flag-card";
+import { previousJustification, type PreviousJustification } from "../../lib/format/flag-history";
 import { formatMoney, formatSigned } from "../../lib/format/money";
 import type { ConfirmationStep } from "../../lib/constants/confirmation-steps";
 
@@ -41,6 +43,8 @@ interface DetailRow {
   justified: boolean;
   /** Labs error — can't be justified. */
   correctOnly: boolean;
+  /** Same flag justified at an earlier round of the year. */
+  previous?: PreviousJustification;
 }
 
 function subjectOf(flag: StoredFlag): string {
@@ -87,6 +91,7 @@ export default function FlagDetailTable({
           flag: f,
           justified: !!f.justified,
           correctOnly: type.id === "labs_error",
+          previous: previousJustification(c.history, checkpoint.targetRfq, f.key),
         });
       }
     }
@@ -97,7 +102,7 @@ export default function FlagDetailTable({
         (typeOrder.get(flagTypeOf(a.flag)!.id) ?? 0) - (typeOrder.get(flagTypeOf(b.flag)!.id) ?? 0) ||
         Math.abs(b.flag.delta ?? 0) - Math.abs(a.flag.delta ?? 0)
     );
-  }, [clients, types]);
+  }, [clients, types, checkpoint.targetRfq]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -116,7 +121,7 @@ export default function FlagDetailTable({
   const clientCount = useMemo(() => new Set(rows.map((r) => r.clientName)).size, [rows]);
 
   function downloadCsv() {
-    const header = ["Client", "GM", "Business Lead", "Flag", "On", "Current", "Reference", "Compared with", "Gap", "Currency", "Months", "Status", "Context", "Comment"];
+    const header = ["Client", "GM", "Business Lead", "Flag", "On", "Current", "Reference", "Compared with", "Gap", "Currency", "Months", "Status", "Context", "Comment", "Previous justification"];
     const body = rows.map((r) => [
       r.clientName,
       r.gm,
@@ -132,6 +137,9 @@ export default function FlagDetailTable({
       r.correctOnly ? "To correct" : r.justified ? "Justified" : "Not justified",
       r.flag.context ? flagContextLabel(r.flag.context) : "",
       r.flag.note ?? "",
+      r.previous
+        ? `${r.previous.rfq}: ${r.previous.context ? flagContextLabel(r.previous.context) : ""}${r.previous.note ? ` — ${r.previous.note}` : ""}`
+        : "",
     ]);
     const csv = [header, ...body].map((row) => row.map(csvField).join(",")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -150,7 +158,7 @@ export default function FlagDetailTable({
       <div>
         <h2 className="text-lg font-semibold text-gray-900">Flags by client</h2>
         <p className="text-sm text-gray-500">
-          Current flags on <span className="font-semibold text-gray-900">{checkpoint.targetRfq} {year}</span>{" "}
+          Flags at <span className="font-semibold text-gray-900">{checkpoint.label} {year}</span>{" "}
           with the Business Lead&apos;s justification · amounts in the client&apos;s currency
         </p>
       </div>
@@ -206,7 +214,7 @@ export default function FlagDetailTable({
         </div>
 
         <div className="max-h-[700px] overflow-auto">
-          <table className="w-full min-w-[1200px] border-collapse text-sm">
+          <table className="w-full min-w-[1400px] border-collapse text-sm">
             <thead className="sticky top-0 z-20">
               <tr className="bg-gray-900 text-left text-white">
                 <th className="sticky left-0 z-10 bg-gray-900 px-3 py-2 font-semibold">Client</th>
@@ -219,12 +227,13 @@ export default function FlagDetailTable({
                 <th className="px-3 py-2 font-semibold">Status</th>
                 <th className="px-3 py-2 font-semibold">Context</th>
                 <th className="px-3 py-2 font-semibold">Comment</th>
+                <th className="px-3 py-2 font-semibold">Previous justification</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-sm text-gray-400">
+                  <td colSpan={11} className="px-3 py-8 text-center text-sm text-gray-400">
                     {allRows.length === 0 ? "No flags." : "No flags match."}
                   </td>
                 </tr>
@@ -272,6 +281,17 @@ export default function FlagDetailTable({
                       </td>
                       <td className="min-w-[280px] px-3 py-2 text-gray-700 whitespace-pre-wrap">
                         {r.flag.note || <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="min-w-[240px] px-3 py-2 text-gray-500">
+                        {r.previous ? (
+                          <>
+                            <span className="font-semibold text-gray-700">{r.previous.rfq}</span>
+                            {r.previous.context ? ` · ${flagContextLabel(r.previous.context)}` : ""}
+                            {r.previous.note ? <div className="whitespace-pre-wrap">{r.previous.note}</div> : null}
+                          </>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </td>
                     </tr>
                   );

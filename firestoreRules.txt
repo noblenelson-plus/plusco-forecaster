@@ -412,6 +412,27 @@ service cloud.firestore {
       // (deleteClient in client-service.ts).
       allow delete: if isAdmin();
     }
+    // ─── flag_history (Milestones history) ─────────────────────────────────────
+    // Document ID format: {cl_id}_{year}_{stepId}. What a client's flags and
+    // justifications looked like at each milestone (flag-history-service.ts):
+    // written by each validation of the step and synced on justification.
+    // Same reach as the flags themselves: read = the client's readers; write =
+    // the client's writers while the step's target RFQ is unlocked (a closed
+    // round's history is frozen for non-admins, like its flags); admins always.
+    match /flag_history/{entryId} {
+      allow read: if isCompanyUser() &&
+        (resource == null || canReadClientData(resource.data.clientId));
+      allow create, update: if isAdmin() || (
+        canWriteClient(request.resource.data.clientId) &&
+        (resource == null || request.resource.data.clientId == resource.data.clientId) &&
+        rfqUnlocked(request.resource.data.year, request.resource.data.targetRfq) &&
+        request.resource.data.keys().hasOnly(['clientId', 'year', 'stepId', 'targetRfq',
+                                               'status', 'validatedAt', 'validatedBy',
+                                               'flags', 'updatedAt', 'seeded'])
+      );
+      allow delete: if isAdmin();
+    }
+
     // ─── forecast_validations (Milestones) ─────────────────────────────────────
     // Document ID format: {cl_id}_{year} e.g. CL_001_2026
     // The milestone steps (confirmation-steps.ts) the team ticks as complete,
