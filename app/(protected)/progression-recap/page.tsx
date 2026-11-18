@@ -13,8 +13,8 @@
  *   Section 1  Milestone tracking — status totals, breakdown by GM, clients
  *              left to validate (milestone-tracking-summary.tsx).
  *   Table      Every milestone per client (progression-recap-table.tsx).
- *   Section 2  Insights by flag type — the current flags of the checkpoint's
- *              RFQ by type / category, overall or by GM / Agency / Region
+ *   Section 2  Insights by flag type — the flags saved at the checkpoint
+ *              (flag_history) by type / category, overall or by GM / Agency / Region
  *              (flag-insights-section.tsx). The flag filters (category, flag)
  *              only narrow this section and Section 3.
  *   Section 3  Flags by client — every current flag with its justification
@@ -40,7 +40,7 @@ import ProgressionRecapTable from "../../../components/progression/progression-r
 import MilestoneBatchRunner from "../../../components/progression/milestone-batch-runner";
 import FlagInsightsSection from "../../../components/progression/flag-insights-section";
 import FlagDetailTable from "../../../components/progression/flag-detail-table";
-import { useCheckpointFlags } from "../../../lib/hooks/use-checkpoint-flags";
+import { useFlagHistory } from "../../../lib/hooks/use-flag-history";
 import { resolveFlagTypes, type ClientFlags } from "../../../lib/format/flag-insights";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
@@ -173,10 +173,9 @@ function MilestonesPage() {
   });
 
   // Section 2 — current flags of the checkpoint's RFQ for the filtered clients.
-  const checkpointFlags = useCheckpointFlags({
+  const checkpointFlags = useFlagHistory({
     clientIds: filteredClientIds,
     year: selectedYear,
-    rfq: checkpoint.targetRfq,
     refreshKey,
   });
   const hasUsdClients = filteredClients.some((c) => c.CL_Currency === "USD");
@@ -193,9 +192,13 @@ function MilestonesPage() {
           : "Unassigned",
         currency: c.CL_Currency ?? "CAD",
         toCad: c.CL_Currency === "USD" ? checkpointFlags.usdToCad ?? 1 : 1,
-        flags: checkpointFlags.flagsByClient.get(c.cl_id) ?? [],
+        // The flags as saved at this client's last validation of the checkpoint.
+        flags: Object.values(
+          checkpointFlags.snapshotsByClient.get(c.cl_id)?.[checkpoint.id]?.flags ?? {}
+        ),
+        history: checkpointFlags.snapshotsByClient.get(c.cl_id),
       })),
-    [filteredClients, checkpointFlags, usersMap]
+    [filteredClients, checkpointFlags, usersMap, checkpoint.id]
   );
 
   // The filtered clients the current user may WRITE to — the batch check writes

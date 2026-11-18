@@ -24,6 +24,7 @@
  * entered yet) rather than recorded as a vacuous "validated".
  */
 
+import { writeFlagSnapshot } from "./flag-history-service";
 import type { RFQ } from "../types/rfq.types";
 import type { MediaType } from "../types/common.types";
 import type { ConfirmationStep } from "../constants/confirmation-steps";
@@ -183,13 +184,25 @@ export async function runClientStepCheck(
   await writeReconciledFlags(clientId, year, rfqType, result.flags, deps.userUid);
 
   const passed = result.unjustified === 0;
+  // Never-passed steps stay "pending" (not validated) — see nextStepStatus.
+  const status = nextStepStatus(validations[step.id], passed);
   await recordStepValidation(clientId, year, step.id, {
-    // Never-passed steps stay "pending" (not validated) — see nextStepStatus.
-    status: nextStepStatus(validations[step.id], passed),
+    status,
     validatedAt: now,
     ...(deps.userUid ? { validatedBy: deps.userUid } : {}),
     analyzedMonths: [...window],
     targetRfq: step.targetRfq,
+  });
+  // History: what the flags looked like at this milestone.
+  await writeFlagSnapshot({
+    clientId,
+    year,
+    stepId: step.id,
+    targetRfq: step.targetRfq,
+    status,
+    validatedAt: now,
+    ...(deps.userUid ? { validatedBy: deps.userUid } : {}),
+    flags: result.flags,
   });
 
   return {
