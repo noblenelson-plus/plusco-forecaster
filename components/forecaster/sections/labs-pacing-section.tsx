@@ -32,6 +32,7 @@ import MultiSelectDropdown from "../../_shared/multi-select-dropdown";
 import { useTableSort } from "../table/use-table-sort";
 import {
   computeLabsPacing,
+  groupLabsPacingRows,
   buildLabsPacingColumns,
     computeClientPacing,
   computeGmPodMatrix,
@@ -142,12 +143,21 @@ export default function LabsPacingSection({
     [cells, partnerIds]
   );
 
-  const { rows, totals } = useMemo(
+  const { rows: detailedRows, totals } = useMemo(
     () => computeLabsPacing(filteredCells, yearPartners),
     [filteredCells, yearPartners]
   );
 
-   const percentData = useMemo(() => percentBars(rows), [rows]);
+  // By-Partner view: "Detailed" (each split partner, default) or "Grouped"
+  // (Billups-* / MIQ-* / AIM-* rolled up — same as the Forecaster Labs tab).
+  // The table, its export and the two charts below follow it; totals don't move.
+  const [view, setView] = useState<"Detailed" | "Grouped">("Detailed");
+  const rows = useMemo(
+    () => (view === "Grouped" ? groupLabsPacingRows(detailedRows) : detailedRows),
+    [view, detailedRows]
+  );
+
+  const percentData = useMemo(() => percentBars(rows), [rows]);
   // By-GM-pod matrix for the exec-KPI breakdown chart (partner x pod % booked).
   const gmPodMatrix = useMemo(
     () => computeGmPodMatrix(filteredCells, yearPartners),
@@ -217,7 +227,7 @@ export default function LabsPacingSection({
         columns={columns}
         rows={sortedRows}
         totals={totals}
-        title={`Labs Pacing — ${targetLabel}`}
+        title={`Labs Pacing${view === "Grouped" ? " (Grouped)" : ""} — ${targetLabel}`}
         sheetTitle="Labs Pacing"
         notes={exportNotes}
       />
@@ -386,7 +396,28 @@ export default function LabsPacingSection({
     <section className="space-y-6">
       {header}
 
-      <ChartCard title="By Partner" subtitle={tableNote} icon={FlaskConical}>
+      <ChartCard
+        title="By Partner"
+        subtitle={tableNote}
+        icon={FlaskConical}
+        action={
+          <div className="inline-flex border border-border bg-card p-0.5" role="group" aria-label="Partner view">
+            {(["Detailed", "Grouped"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1 text-xs font-medium transition-colors ${
+                  view === v ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        }
+      >
         <div className="overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-card">
