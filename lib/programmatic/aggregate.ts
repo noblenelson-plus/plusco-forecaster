@@ -4,7 +4,7 @@
  * Pure roll-ups for the Programmatic (preview) page. No Firebase.
  */
 
-import type { LocalCategory, MirRow, ProgDsp, ProgRow } from "./programmatic.types";
+import type { ClientInfo, LocalCategory, MirRow, ProgDsp, ProgRow } from "./programmatic.types";
 
 export const ALL_DSPS: ProgDsp[] = ["DV360", "Amazon", "TTD", "Yahoo", "Quantcast", "StackAdapt"];
 export const LOCAL_ORDER: LocalCategory[] = ["LOCAL", "HYBRID", "FOREIGN", "UNKNOWN", "UNMAPPED"];
@@ -49,19 +49,50 @@ export const DSP_SOURCE_NOTES: Record<ProgDsp, string> = {
   StackAdapt: "No DSP data yet. MIR booked spend only.",
 };
 
+/** Client facets: each is a multi-select; an empty list means "all". */
+export type ClientFacet = "agencies" | "regions" | "gms" | "clients";
+
 export interface ProgFilters {
   dsps: Set<ProgDsp>;
-  /** null = every client */
-  client: string | null;
+  agencies: string[];
+  regions: string[];
+  gms: string[];
+  clients: string[];
   /** Inclusive "YYYY-MM" bounds. */
   from: string;
   to: string;
 }
 
-export function filterRows<T extends { dsp: ProgDsp; month: string; client: string }>(rows: T[], f: ProgFilters): T[] {
-  return rows.filter(
-    (r) => f.dsps.has(r.dsp) && r.month >= f.from && r.month <= f.to && (f.client === null || r.client === f.client)
+const NONE: ClientInfo = { agency: "(none)", region: "(none)", gm: "(none)" };
+
+/** The facet value of a client (its own name for "clients"). */
+export function facetValue(client: string, facet: ClientFacet, info: Record<string, ClientInfo>): string {
+  if (facet === "clients") return client;
+  const i = info[client] ?? NONE;
+  return facet === "agencies" ? i.agency : facet === "regions" ? i.region : i.gm;
+}
+
+/** Whether a client passes every client facet, optionally ignoring one (for cascading options). */
+export function clientPasses(client: string, f: ProgFilters, info: Record<string, ClientInfo>, ignore?: ClientFacet): boolean {
+  return (["agencies", "regions", "gms", "clients"] as ClientFacet[]).every(
+    (k) => k === ignore || f[k].length === 0 || f[k].includes(facetValue(client, k, info))
   );
+}
+
+/** Options for one facet: values present among clients that pass every OTHER facet. */
+export function facetOptions(allClients: string[], f: ProgFilters, info: Record<string, ClientInfo>, facet: ClientFacet): string[] {
+  const vals = new Set<string>();
+  for (const c of allClients) if (clientPasses(c, f, info, facet)) vals.add(facetValue(c, facet, info));
+  for (const v of f[facet]) vals.add(v); // keep current picks visible
+  return [...vals].sort((a, b) => (a.startsWith("(") ? 1 : 0) - (b.startsWith("(") ? 1 : 0) || a.localeCompare(b));
+}
+
+export function filterRows<T extends { dsp: ProgDsp; month: string; client: string }>(
+  rows: T[],
+  f: ProgFilters,
+  info: Record<string, ClientInfo>
+): T[] {
+  return rows.filter((r) => f.dsps.has(r.dsp) && r.month >= f.from && r.month <= f.to && clientPasses(r.client, f, info));
 }
 
 export const sumSpend = (rows: ProgRow[]) => rows.reduce((s, r) => s + r.spendCad, 0);

@@ -39,7 +39,16 @@ export interface MirRow {
   mirCad: number;
 }
 
+/** A client's agency / BU region / GM pod (from MIR), for the filters. */
+export interface ClientInfo {
+  agency: string;
+  region: string;
+  gm: string;
+}
+
 export interface ProgrammaticPreviewData {
+  /** Keyed by client name; clients missing here filter as "(none)". */
+  clientInfo: Record<string, ClientInfo>;
   generatedAt: string;
   year: number;
   months: string[];
