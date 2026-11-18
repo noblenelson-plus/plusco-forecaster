@@ -6,9 +6,9 @@
  * and the roll-ups (flags, clients, $ up / down / net, justification mix),
  * overall or grouped by GM / Agency / Region. Pure and Firebase-free.
  *
- * Built on each client's CURRENT stored flags for the checkpoint's RFQ (a flag
- * that no longer applies after a revalidation is gone — there is no history
- * per milestone yet). Amounts are each flag's `delta` converted to CAD.
+ * Built on the flags saved at the checkpoint (flag_history: each client's last
+ * validation of that milestone, kept in step with later justifications).
+ * Amounts are each flag's `delta` converted to CAD.
  */
 
 import { BL_MEDIAOCEAN_THRESHOLD } from "../flags/bl-alerts";
@@ -23,6 +23,7 @@ import {
   type FlagRuleId,
   type StoredFlag,
 } from "../types/forecast-flags.types";
+import type { FlagSnapshot } from "../services/flag-history-service";
 
 export type FlagCategoryId = "forecast_qa" | "rfq_swings" | "pacing";
 
@@ -140,6 +141,8 @@ export interface ClientFlags {
   bl?: string;
   /** Client currency — amounts are stored in it (Section 3 shows them as is). */
   currency?: string;
+  /** The client's flag history for the year (stepId → snapshot) — Section 3's "previous justification". */
+  history?: Record<string, FlagSnapshot>;
   /** Multiplier to CAD (1 for CAD clients, the year's USD→CAD rate for USD). */
   toCad: number;
   flags: StoredFlag[];

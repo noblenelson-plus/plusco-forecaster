@@ -9,8 +9,8 @@
  * ("% of flags due to Budget Cuts"…). Headers carry each type's threshold;
  * footnotes explain what the amounts cover.
  *
- * Built on the CURRENT stored flags of the checkpoint's RFQ (no per-milestone
- * history yet). Presentational — the page loads the flags.
+ * Built on the flags saved at the checkpoint (flag_history). Presentational —
+ * the page loads the flags.
  */
 
 import { useMemo, useState } from "react";
@@ -73,8 +73,8 @@ export default function FlagInsightsSection({
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Insights by flag type</h2>
           <p className="text-sm text-gray-500">
-            Current flags on <span className="font-semibold text-gray-900">{checkpoint.targetRfq} {year}</span>{" "}
-            (the round {checkpoint.label} validates) · amounts in CAD
+            Flags at <span className="font-semibold text-gray-900">{checkpoint.label} {year}</span>{" "}
+            · amounts in CAD
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs font-medium text-gray-600">
@@ -127,9 +127,9 @@ export default function FlagInsightsSection({
           </span>
         </p>
         <p className="pl-[19px]">
-          Flags are the current ones of each submission: a flag fixed or no longer triggered at the last
-          validation is not counted (no history per milestone yet). Prelim and RFQ checkpoints of the
-          same round share the same flags. Up / Down sum the positive and negative gaps.
+          Flags as saved at each client&apos;s last validation of this milestone, with the justifications
+          written since. Clients that haven&apos;t validated it yet have no flags here. Up / Down sum the
+          positive and negative gaps.
           {missingUsdRate && " No USD→CAD rate is set for this year — USD clients are added as-is."}
         </p>
       </div>
