@@ -6,7 +6,9 @@
  * spend (Digital Direct + Programmatic + SEM + Social) of one reference
  * submission. The admin picks the year + RFQ — typically the last completed
  * one; the picker defaults to the most recent LOCKED RFQ — then reviews the
- * dry-run diff before anything is written.
+ * dry-run diff before anything is written. Clients with no media forecast in
+ * that submission keep their tier (the one set on creation) and are listed
+ * apart.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -207,7 +209,7 @@ export default function RecomputeTiersModal({
             <div className="space-y-3">
               {report.changes.length === 0 ? (
                 <div className="bg-green-500 border border-green-500 text-white px-3 py-2 rounded-lg text-sm">
-                  All {report.computations.length - report.skipped.length}{" "}
+                  All {report.computations.length - report.skipped.length - report.keptNoForecast.length}{" "}
                   computed tiers already match — nothing to update.
                 </div>
               ) : (
@@ -215,7 +217,7 @@ export default function RecomputeTiersModal({
                   <p className="text-xs font-medium text-gray-600">
                     {report.changes.length} client
                     {report.changes.length !== 1 ? "s" : ""} will change (
-                    {report.computations.length - report.skipped.length}{" "}
+                    {report.computations.length - report.skipped.length - report.keptNoForecast.length}{" "}
                     computed):
                   </p>
                   <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-64 overflow-y-auto">
@@ -241,6 +243,21 @@ export default function RecomputeTiersModal({
                     ))}
                   </div>
                 </>
+              )}
+
+              {report.keptNoForecast.length > 0 && (
+                <details className="border border-gray-200 px-3 py-2 text-xs text-gray-600">
+                  <summary className="cursor-pointer">
+                    {report.keptNoForecast.length} client
+                    {report.keptNoForecast.length !== 1 ? "s have" : " has"} no media forecast in{" "}
+                    {year} {rfqType} — tier kept as is.
+                  </summary>
+                  <p className="mt-1.5 text-gray-500">
+                    {report.keptNoForecast
+                      .map((c) => `${c.name} (${c.currentTier ? TIER_LABEL[c.currentTier] ?? c.currentTier : "—"})`)
+                      .join(", ")}
+                  </p>
+                </details>
               )}
 
               {report.skipped.length > 0 && (
