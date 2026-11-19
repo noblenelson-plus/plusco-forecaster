@@ -13,7 +13,7 @@
  * the page loads the flags.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Info } from "lucide-react";
 import {
   computeContextSummary,
@@ -33,6 +33,23 @@ import { formatCompactMoney } from "../dashboard/charts/format";
 import { CATEGORICAL_COLORS, NEUTRAL_FILL } from "../dashboard/charts/colors";
 import type { ConfirmationStep } from "../../lib/constants/confirmation-steps";
 import { ScopeLine } from "./milestone-tracking-summary";
+import RfqVarianceBand from "./rfq-variance-band";
+import type { AxisVariance, VarianceAxis } from "../../lib/format/rfq-variance";
+
+/** Swing flag type → the axis of its total variance tile. */
+const SWING_AXIS: Partial<Record<FlagTypeId, VarianceAxis>> = {
+  swing_media: "media",
+  swing_revenue: "revenue",
+  swing_labs: "labs",
+};
+
+export interface RfqVarianceView {
+  variance: Record<VarianceAxis, AxisVariance> | null;
+  rfqLabel: string;
+  previousLabel: string | null;
+  loading: boolean;
+  error: string | null;
+}
 
 const CONTEXT_COLOR: Record<string, string> = Object.fromEntries([
   ...FLAG_CONTEXTS.map((c, i) => [c.value, CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length]]),
@@ -51,7 +68,10 @@ export default function FlagInsightsSection({
   missingUsdRate,
   scopeNote,
   filtered,
+  rfqVariance,
 }: {
+  /** RFQ total variance (above the RFQ Swings table). */
+  rfqVariance: RfqVarianceView;
   /** Which clients the page covers (top filters). */
   scopeNote: string;
   /** Top filters active — "Total PlusCo" then reads "Total (filtered)". */
@@ -121,6 +141,14 @@ export default function FlagInsightsSection({
             grouped={groupBy !== "total"}
             groupLabel={GROUP_BY_OPTIONS.find((g) => g.id === groupBy)!.label}
             activeClientCount={activeClientCount}
+            header={
+              cat.id === "rfq_swings" ? (
+                <RfqVarianceBand
+                  {...rfqVariance}
+                  axes={types.map((t) => SWING_AXIS[t]).filter((a): a is VarianceAxis => !!a)}
+                />
+              ) : null
+            }
             summary={computeContextSummary(
               clients,
               FLAG_TYPES.filter((t) => t.category === cat.id && types.includes(t.id)).map((t) => t.id)
@@ -134,10 +162,9 @@ export default function FlagInsightsSection({
         <p className="flex gap-1.5">
           <Info size={13} className="mt-0.5 flex-shrink-0" />
           <span>
-            <span className="font-semibold text-gray-700">RFQ swings:</span> the amounts only cover the
-            clients whose swing crossed the threshold (the ones that needed a justification). The total
-            change between the two RFQs can be larger — e.g. a $1M revenue change of which only $500K
-            sits in clients that moved by ±$50K or more.
+            <span className="font-semibold text-gray-700">RFQ swings:</span> the table only counts the
+            changes that crossed the threshold (the ones that needed a justification). The total variance
+            above shows the whole change and how much of it is justified.
           </span>
         </p>
         <p className="pl-[19px]">
@@ -159,7 +186,10 @@ function CategoryTable({
   groupLabel,
   activeClientCount,
   summary,
+  header,
 }: {
+  /** Shown under the title, above the table (RFQ Swings: total variance). */
+  header?: ReactNode;
   /** Justification reasons across the category (whole selection, not per group). */
   summary: ContextSummary;
   label: string;
@@ -180,6 +210,7 @@ function CategoryTable({
       <div className="border-b border-gray-200 px-4 py-2.5">
         <h3 className="text-sm font-semibold text-gray-900">{label}</h3>
       </div>
+      {header}
       <div className="max-h-[480px] overflow-auto">
         <table className="w-full min-w-[960px] table-fixed text-sm">
           {/* Same column widths in every category table, so they line up. The

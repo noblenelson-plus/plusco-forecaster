@@ -15,7 +15,9 @@
  * Baseline rule: with no previous RFQ, or a previous (reference) value of 0,
  * the flag is skipped — a swing off a 0 baseline is "no baseline to compare".
  *
- * The result is a list of ComputedFlag; persistence + justification happen in
+ * `computeSwingLines` returns every compared line (no threshold) — the
+ * Milestones page sums them for the total RFQ variance; the flags are the
+ * lines that cross their threshold. Persistence + justification happen in
  * the validation flow (use-forecast-validation.ts + reconcile.ts).
  */
 
@@ -45,6 +47,24 @@ export interface SwingInput {
   partnerLabel: (partnerId: string) => string;
 }
 
+/**
+ * One compared line of a submission: the client's annual revenue, one media
+ * type or one Labs partner, current vs the previous RFQ (no threshold).
+ */
+export interface SwingLine {
+  /** Same key as the flag the line raises (`${axis}:${ruleId}:${subject}`). */
+  key: string;
+  axis: AxisId;
+  ruleId: FlagRuleId;
+  subject: string;
+  title: string;
+  current: number;
+  reference: number;
+  /** current − reference. */
+  delta: number;
+  threshold: number;
+}
+
 /** Annual total per rowType for the BL_INPUT side of an axis. */
 function blAnnualByType(data: AxisData): Record<string, number> {
   const byType = aggregateByType(data, "BL_INPUT");
@@ -55,7 +75,7 @@ function blAnnualByType(data: AxisData): Record<string, number> {
   return out;
 }
 
-function swingFlag(
+function swingLine(
   axis: AxisId,
   ruleId: FlagRuleId,
   subject: string,
@@ -63,48 +83,50 @@ function swingFlag(
   current: number,
   reference: number,
   threshold: number
-): ComputedFlag | null {
-  // No baseline (previous value 0) — skip, per the baseline rule.
-  if (reference === 0) return null;
-  const delta = current - reference;
-  if (Math.abs(delta) < threshold) return null;
+): SwingLine {
   return {
     key: `${axis}:${ruleId}:${subject}`,
-    category: "swing",
-    ruleId,
     axis,
+    ruleId,
     subject,
     title,
     current,
     reference,
-    delta,
+    delta: current - reference,
     threshold,
   };
 }
 
-/** Every swing flag raised for the submission, in axis order: revenue, media, labs. */
-export function computeSwingFlags(input: SwingInput): ComputedFlag[] {
+/**
+ * True when the line raises a swing flag. No baseline (previous value 0) —
+ * skipped, per the baseline rule.
+ */
+export function isSwingFlagged(l: Pick<SwingLine, "reference" | "delta" | "threshold">): boolean {
+  return l.reference !== 0 && Math.abs(l.delta) >= l.threshold;
+}
+
+/** Every compared line, in axis order: revenue, media, labs. Empty without a previous RFQ. */
+export function computeSwingLines(input: SwingInput): SwingLine[] {
   const { current, previous, partnerLabel } = input;
   if (!previous) return []; // no previous RFQ → nothing to compare
 
-  const flags: ComputedFlag[] = [];
+  const lines: SwingLine[] = [];
 
   // ─── Revenue — BL Submission vs previous Official Revenue, annual ───────────
   const curRevenue = current.revenue;
   const prevRevenue = previous.revenue;
   if (curRevenue && prevRevenue) {
-    const curBLSubmission = sumMonthlyMap(blSubmissionByMonth(curRevenue));
-    const prevOfficialAnnual = sumMonthlyMap(officialRevenueByMonth(prevRevenue));
-    const flag = swingFlag(
-      "revenue",
-      "revenue-swing",
-      "annual",
-      "BL Submission (year)",
-      curBLSubmission,
-      prevOfficialAnnual,
-      REVENUE_SWING_THRESHOLD
+    lines.push(
+      swingLine(
+        "revenue",
+        "revenue-swing",
+        "annual",
+        "BL Submission (year)",
+        sumMonthlyMap(blSubmissionByMonth(curRevenue)),
+        sumMonthlyMap(officialRevenueByMonth(prevRevenue)),
+        REVENUE_SWING_THRESHOLD
+      )
     );
-    if (flag) flags.push(flag);
   }
 
   // ─── Media — per channel, annual BL Input variance ──────────────────────────
@@ -113,20 +135,20 @@ export function computeSwingFlags(input: SwingInput): ComputedFlag[] {
   if (curMedia && prevMedia) {
     const cur = blAnnualByType(curMedia);
     const prev = blAnnualByType(prevMedia);
-    // Union so a dropped channel (present only in the previous RFQ) still fires.
+    // Union so a dropped channel (present only in the previous RFQ) still counts.
     const channels = new Set([...Object.keys(cur), ...Object.keys(prev)]);
     for (const channel of channels) {
-      const label = MEDIA_TYPE_LABELS[channel as MediaType] ?? channel;
-      const flag = swingFlag(
-        "media",
-        "media-swing",
-        channel,
-        label,
-        cur[channel] ?? 0,
-        prev[channel] ?? 0,
-        MEDIA_LABS_SWING_THRESHOLD
+      lines.push(
+        swingLine(
+          "media",
+          "media-swing",
+          channel,
+          MEDIA_TYPE_LABELS[channel as MediaType] ?? channel,
+          cur[channel] ?? 0,
+          prev[channel] ?? 0,
+          MEDIA_LABS_SWING_THRESHOLD
+        )
       );
-      if (flag) flags.push(flag);
     }
   }
 
@@ -138,18 +160,37 @@ export function computeSwingFlags(input: SwingInput): ComputedFlag[] {
     const prev = blAnnualByType(prevLabs);
     const partners = new Set([...Object.keys(cur), ...Object.keys(prev)]);
     for (const partnerId of partners) {
-      const flag = swingFlag(
-        "labs",
-        "labs-swing",
-        partnerId,
-        partnerLabel(partnerId),
-        cur[partnerId] ?? 0,
-        prev[partnerId] ?? 0,
-        MEDIA_LABS_SWING_THRESHOLD
+      lines.push(
+        swingLine(
+          "labs",
+          "labs-swing",
+          partnerId,
+          partnerLabel(partnerId),
+          cur[partnerId] ?? 0,
+          prev[partnerId] ?? 0,
+          MEDIA_LABS_SWING_THRESHOLD
+        )
       );
-      if (flag) flags.push(flag);
     }
   }
 
-  return flags;
+  return lines;
+}
+
+/** Every swing flag raised for the submission, in axis order: revenue, media, labs. */
+export function computeSwingFlags(input: SwingInput): ComputedFlag[] {
+  return computeSwingLines(input)
+    .filter(isSwingFlagged)
+    .map((l) => ({
+      key: l.key,
+      category: "swing",
+      ruleId: l.ruleId,
+      axis: l.axis,
+      subject: l.subject,
+      title: l.title,
+      current: l.current,
+      reference: l.reference,
+      delta: l.delta,
+      threshold: l.threshold,
+    }));
 }
