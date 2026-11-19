@@ -25,13 +25,17 @@ import {
 } from "../../lib/format/milestone-summary";
 import type { RfqValidationStatus } from "../../lib/types/forecast-flags.types";
 import { STATUS_META, StatusIcon } from "./milestone-status";
+import SheetExportButton from "../dashboard/sheet-export-button";
+import type { CellValue } from "../forecaster/table/table-export";
 
 export default function MilestoneTrackingSummary({
   rows,
   checkpoint,
   statuses,
   scopeNote,
+  year,
 }: {
+  year: number | null;
   /** Which clients the page covers (top filters), e.g. "Filtered: Region QC/East · 27 clients". */
   scopeNote: string;
   /** Active, facet-filtered clients (before the status filter). */
@@ -48,6 +52,14 @@ export default function MilestoneTrackingSummary({
       ? list
       : list.filter((r) => statuses.includes(statusAt(r, checkpoint.id)));
   }, [rows, checkpoint.id, statuses]);
+
+  // Google Sheets export of the list: scope line, blank row, table.
+  const buildLeftSheet = (): CellValue[][] => [
+    [`${scopeNote} · ${checkpoint.label}`],
+    [],
+    ["Client", "GM", "Business Lead", "Status"],
+    ...left.map((r) => [r.clientName, r.gm, r.bl, STATUS_META[statusAt(r, checkpoint.id)].label]),
+  ];
 
   return (
     <section className="space-y-4">
@@ -134,8 +146,16 @@ export default function MilestoneTrackingSummary({
         {/* Clients left to validate */}
         <div className="border border-gray-200 bg-white">
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2.5">
-            <h3 className="text-sm font-semibold text-gray-900">Clients left to validate</h3>
-            <span className="text-xs text-gray-500 tabular-nums">{left.length}</span>
+            <h3 className="text-sm font-semibold text-gray-900">
+              Clients left to validate
+              <span className="ml-2 text-xs font-normal text-gray-500 tabular-nums">{left.length}</span>
+            </h3>
+            <SheetExportButton
+              title={`Clients left to validate — ${checkpoint.label}${year ? ` ${year}` : ""}`}
+              sheetTitle="Clients left"
+              buildMatrix={buildLeftSheet}
+              disabled={left.length === 0}
+            />
           </div>
           {left.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-gray-400">

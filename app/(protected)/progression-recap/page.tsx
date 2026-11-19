@@ -41,6 +41,8 @@ import MilestoneBatchRunner from "../../../components/progression/milestone-batc
 import FlagInsightsSection from "../../../components/progression/flag-insights-section";
 import FlagDetailTable from "../../../components/progression/flag-detail-table";
 import { useFlagHistory } from "../../../lib/hooks/use-flag-history";
+import { useRfqVariance } from "../../../lib/hooks/use-rfq-variance";
+import { computeRfqVariance } from "../../../lib/format/rfq-variance";
 import { resolveFlagTypes, type ClientFlags } from "../../../lib/format/flag-insights";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
@@ -210,6 +212,39 @@ function MilestonesPage() {
     [filteredClients, checkpointFlags, usersMap, checkpoint.id]
   );
 
+  // RFQ total variance (above the RFQ Swings table): every compared line of
+  // the checkpoint's RFQ vs the previous RFQ, loaded only while a swing flag
+  // type is selected.
+  const swingsShown = selectedFlagTypes.some((t) => t.startsWith("swing_"));
+  const varianceData = useRfqVariance({
+    clientIds: filteredClientIds,
+    year: selectedYear,
+    rfq: checkpoint.targetRfq,
+    enabled: swingsShown,
+    refreshKey,
+  });
+  const rfqVariance = useMemo(
+    () => ({
+      variance:
+        varianceData.loading || varianceData.error || !varianceData.previous
+          ? null
+          : computeRfqVariance(
+              clientFlags.map((c) => ({
+                toCad: c.toCad,
+                lines: varianceData.linesByClient.get(c.clientId) ?? [],
+                flags: c.flags,
+              }))
+            ),
+      rfqLabel: `${checkpoint.targetRfq} ${year}`,
+      previousLabel: varianceData.previous
+        ? `${varianceData.previous.rfq} ${varianceData.previous.year}`
+        : null,
+      loading: varianceData.loading,
+      error: varianceData.error,
+    }),
+    [varianceData, clientFlags, checkpoint.targetRfq, year]
+  );
+
   // The filtered clients the current user may WRITE to — the batch check writes
   // flags + validations, so it can only target the editable subset.
   const writableClientIds = useMemo(
@@ -339,6 +374,7 @@ function MilestonesPage() {
               checkpoint={checkpoint}
               statuses={statuses}
               scopeNote={scopeNote}
+              year={selectedYear}
             />
             <ProgressionRecapTable
               rows={tableRows}
@@ -364,6 +400,7 @@ function MilestonesPage() {
                 missingUsdRate={hasUsdClients && checkpointFlags.usdToCad === undefined}
                 scopeNote={scopeNote}
                 filtered={!!facetScope}
+                rfqVariance={rfqVariance}
               />
             )}
             {!checkpointFlags.loading && !checkpointFlags.error && (
