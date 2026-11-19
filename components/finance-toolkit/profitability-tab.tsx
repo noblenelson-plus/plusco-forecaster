@@ -8,10 +8,9 @@
  * revenue match show hours and cost only, labeled — never a zero margin.
  */
 
-import SheetExportButton from "../dashboard/sheet-export-button";
 import { useMemo, useState } from "react";
 import { CartesianGrid, ReferenceLine, Scatter, ScatterChart, XAxis, YAxis, ZAxis } from "recharts";
-import { AlertTriangle, Clock, DollarSign, Percent, Scale, Search, Table2, TrendingUp } from "lucide-react";
+import { AlertTriangle, DollarSign, Percent, Scale, Search, Table2 } from "lucide-react";
 import StatCard from "../dashboard/charts/stat-card";
 import ChartCard from "../dashboard/charts/chart-card";
 import { PLUS } from "../dashboard/charts/colors";
@@ -27,8 +26,23 @@ import {
   type Scope,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, Chip, DataTable, Field, Formula, HowCalculated, InShort, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
+import {
+  COVERAGE_NOTE_BELOW,
+  COVERAGE_WARN_BELOW,
+  Chip,
+  DataTable,
+  Disclosure,
+  Field,
+  Formula,
+  HowCalculated,
+  InShort,
+  MonthRange,
+  Notice,
+  Segmented,
+  type Column,
+} from "./ft-ui";
 import { sheetMatrix, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
+import SheetExportButton from "../dashboard/sheet-export-button";
 import ClientDetailDrawer from "./client-detail-drawer";
 
 const REV_MONTHS = MODEL.revenueMonthIndices;
@@ -59,10 +73,25 @@ function logTick(v: number): string {
 }
 
 function FlagChip({ row }: { row: ProfitRow }) {
-  if (row.status === "no-revenue") return <Chip tone="neutral" title="Hours booked to this account but no gross revenue line">No revenue match</Chip>;
-  if (row.status === "no-hours") return <Chip tone="neutral" title="Gross revenue with no hours in the same agency">No hours match</Chip>;
+  if (row.status === "no-revenue")
+    return (
+      <Chip tone="neutral" title="Hours booked to this account but no gross revenue line">
+        No revenue match
+      </Chip>
+    );
+  if (row.status === "no-hours")
+    return (
+      <Chip tone="neutral" title="Gross revenue with no hours in the same agency">
+        No hours match
+      </Chip>
+    );
   if (row.flag === "loss") return <Chip tone="loss">Cost &gt; revenue</Chip>;
-  if (row.flag === "over-serviced") return <Chip tone="over" title="Earns less than half the average revenue per hour worked">Over-serviced</Chip>;
+  if (row.flag === "over-serviced")
+    return (
+      <Chip tone="over" title="Earns less than half the average revenue per hour worked">
+        Over-serviced
+      </Chip>
+    );
   if (row.flag === "credit") {
     return (
       <Chip tone="neutral" title="Revenue nets to zero or below in this period (credit notes / reversals) — margin is not meaningful">
@@ -93,7 +122,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
     };
   }, [result]);
   // The drawer follows the period / cost basis: keep the id, re-derive the row.
-  const selected = selectedId === null ? null : result.rows.find((r) => r.client.index === selectedId) ?? null;
+  const selected = selectedId === null ? null : (result.rows.find((r) => r.client.index === selectedId) ?? null);
   const setSelected = (r: ProfitRow | null) => setSelectedId(r ? r.client.index : null);
 
   const choosePreset = (p: Preset) => {
@@ -107,7 +136,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
 
   const q = query.trim().toLowerCase();
   const tableRows = (view === "flagged" ? flagged : view === "unmatched" ? unmatched : matched).filter(
-    (r) => !q || r.client.name.toLowerCase().includes(q) || r.client.number.includes(q)
+    (r) => !q || r.client.name.toLowerCase().includes(q) || r.client.number.includes(q),
   );
 
   const showAgency = scope.agencyIds.length > 1;
@@ -127,22 +156,78 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         </div>
       ),
     },
-    { id: "revenue", label: "Gross revenue", align: "right", sort: (r) => r.revenue, render: (r) => money(r.revenue), total: view === "all" ? money(totals.matchedRevenue) : undefined },
-    { id: "cost", label: "Staffing cost", align: "right", sort: (r) => r.cost, render: (r) => money(r.cost), total: view === "all" ? money(totals.matchedCost) : undefined },
+    {
+      id: "revenue",
+      label: "Gross revenue",
+      align: "right",
+      sort: (r) => r.revenue,
+      render: (r) => money(r.revenue),
+      total: view === "all" ? money(totals.matchedRevenue) : undefined,
+    },
+    {
+      id: "cost",
+      label: "Staffing cost",
+      align: "right",
+      sort: (r) => r.cost,
+      render: (r) => money(r.cost),
+      total: view === "all" ? money(totals.matchedCost) : undefined,
+    },
     {
       id: "margin",
       label: "Gross margin",
       align: "right",
       sort: (r) => r.margin,
-      render: (r) => (r.margin === null ? <FlagChip row={r} /> : <span className={r.margin < 0 ? "font-semibold text-red-700" : ""}>{money(r.margin)}</span>),
+      render: (r) =>
+        r.margin === null ? <FlagChip row={r} /> : <span className={r.margin < 0 ? "font-semibold text-red-700" : ""}>{money(r.margin)}</span>,
       total: view === "all" ? money(totals.margin) : undefined,
     },
-    { id: "marginPct", label: "Margin %", align: "right", sort: (r) => r.marginPct, render: (r) => pct(r.marginPct), total: view === "all" ? pct(totals.marginPct) : undefined },
-    { id: "rph", label: "Revenue / hour", align: "right", sort: (r) => r.revenuePerHour, render: (r) => rate(r.revenuePerHour), total: view === "all" ? rate(totals.revenuePerHour) : undefined },
-    { id: "hours", label: "Hours", align: "right", sort: (r) => r.hours, render: (r) => hours(r.hours), total: view === "all" ? hours(totals.matchedHours) : undefined },
-    { id: "people", label: "People", align: "right", sort: (r) => r.people, render: (r) => r.people || "—", total: view === "all" ? String(totals.people) : undefined, headerTitle: "Distinct employees who logged client hours in the period" },
-    { id: "costPct", label: "Cost % of revenue", align: "right", sort: (r) => r.costPctRevenue, render: (r) => pct(r.costPctRevenue), total: view === "all" ? pct(totals.costPctRevenue) : undefined },
-    { id: "flag", label: "Flag", sort: (r) => (r.flag === "loss" ? 3 : r.flag === "over-serviced" ? 2 : r.flag ? 1 : 0), render: (r) => (r.margin === null ? null : <FlagChip row={r} />) },
+    {
+      id: "marginPct",
+      label: "Margin %",
+      align: "right",
+      sort: (r) => r.marginPct,
+      render: (r) => pct(r.marginPct),
+      total: view === "all" ? pct(totals.marginPct) : undefined,
+    },
+    {
+      id: "rph",
+      label: "Revenue / hour",
+      align: "right",
+      sort: (r) => r.revenuePerHour,
+      render: (r) => rate(r.revenuePerHour),
+      total: view === "all" ? rate(totals.revenuePerHour) : undefined,
+    },
+    {
+      id: "hours",
+      label: "Hours",
+      align: "right",
+      sort: (r) => r.hours,
+      render: (r) => hours(r.hours),
+      total: view === "all" ? hours(totals.matchedHours) : undefined,
+    },
+    {
+      id: "people",
+      label: "People",
+      align: "right",
+      sort: (r) => r.people,
+      render: (r) => r.people || "—",
+      total: view === "all" ? String(totals.people) : undefined,
+      headerTitle: "Distinct employees who logged client hours in the period",
+    },
+    {
+      id: "costPct",
+      label: "Cost % of revenue",
+      align: "right",
+      sort: (r) => r.costPctRevenue,
+      render: (r) => pct(r.costPctRevenue),
+      total: view === "all" ? pct(totals.costPctRevenue) : undefined,
+    },
+    {
+      id: "flag",
+      label: "Flag",
+      sort: (r) => (r.flag === "loss" ? 3 : r.flag === "over-serviced" ? 2 : r.flag ? 1 : 0),
+      render: (r) => (r.margin === null ? null : <FlagChip row={r} />),
+    },
   ];
 
   const scatter = useMemo(() => {
@@ -157,13 +242,30 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
       loss: pts.filter((p) => p.flag === "loss"),
       domain: [Math.pow(10, Math.floor(Math.log10(min))), Math.pow(10, Math.ceil(Math.log10(max)))] as [number, number],
       // Clean log ticks: one per power of ten.
-      ticks: Array.from({ length: Math.ceil(Math.log10(max)) - Math.floor(Math.log10(min)) + 1 }, (_, i) => Math.pow(10, Math.floor(Math.log10(min)) + i)),
+      ticks: Array.from({ length: Math.ceil(Math.log10(max)) - Math.floor(Math.log10(min)) + 1 }, (_, i) =>
+        Math.pow(10, Math.floor(Math.log10(min)) + i),
+      ),
     };
   }, [matched]);
 
-  const exportSheet = (): (string | number)[][] => {
-    return sheetMatrix(
-      ["Account", "Agency", "Client #", "Status", `Gross revenue (${scope.currency})`, `Staffing cost (${scope.currency}, ${basis === "base1" ? "Base1" : "Enterprise"})`, "Gross margin", "Margin %", "Revenue per hour", "Client hours", "People", "Cost % of revenue", "Flag", "Hours with cost on file"],
+  const buildSheet = () =>
+    sheetMatrix(
+      [
+        "Account",
+        "Agency",
+        "Client #",
+        "Status",
+        `Gross revenue (${scope.currency})`,
+        `Staffing cost (${scope.currency}, ${basis === "base1" ? "Base1" : "Enterprise"})`,
+        "Gross margin",
+        "Margin %",
+        "Revenue per hour",
+        "Client hours",
+        "People",
+        "Cost % of revenue",
+        "Flag",
+        "Hours with cost on file",
+      ],
       result.rows.map((r) => [
         r.client.name,
         r.client.agencyName,
@@ -179,9 +281,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         r.costPctRevenue,
         r.flag === "loss" ? "Cost exceeds revenue" : r.flag === "over-serviced" ? "Over-serviced" : "",
         r.costCoverage,
-      ])
+      ]),
     );
-  };
 
   return (
     <div className="space-y-5">
@@ -200,7 +301,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
       </div>
 
       <InShort>
-        In {periodLabel(from, to)}, {scope.id === "canada" ? "our Canadian agencies" : scope.label} booked <strong>{formatCompactMoney(totals.revenue)}</strong> of gross revenue
+        In {periodLabel(from, to)}, {scope.id === "canada" ? "our Canadian agencies" : scope.label} booked{" "}
+        <strong>{formatCompactMoney(totals.revenue)}</strong> of gross revenue
         {scope.currency === "USD" ? " (USD)" : ""}. On the {matched.length} accounts we can tie to timesheets
         {totals.revenue > 0 ? ` (${pct(totals.matchedRevenue / totals.revenue, 0)} of revenue)` : ""}, the people who served them cost{" "}
         {formatCompactMoney(totals.matchedCost)}, leaving <strong>{pct(totals.marginPct, 0)}</strong> of revenue as margin after staffing.{" "}
@@ -209,7 +311,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
             <strong>
               {totals.flagged} account{totals.flagged === 1 ? "" : "s"} deserve{totals.flagged === 1 ? "s" : ""} a closer look
             </strong>
-            : {totals.lossMaking} cost{totals.lossMaking === 1 ? "s" : ""} more to staff than {totals.lossMaking === 1 ? "it brings" : "they bring"} in
+            : {totals.lossMaking} cost{totals.lossMaking === 1 ? "s" : ""} more to staff than {totals.lossMaking === 1 ? "it brings" : "they bring"}{" "}
+            in
             {totals.flagged - totals.lossMaking > 0
               ? ` and ${totals.flagged - totals.lossMaking} earn${totals.flagged - totals.lossMaking === 1 ? "s" : ""} less than half the average revenue per hour`
               : ""}
@@ -218,10 +321,12 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         ) : (
           "No account costs more to staff than it brings in."
         )}
-        {totals.costCoverage !== null && totals.costCoverage < COVERAGE_WARN_BELOW && " Margins here are optimistic: many hours have no cost rate on file (see below)."}
+        {totals.costCoverage !== null &&
+          totals.costCoverage < COVERAGE_WARN_BELOW &&
+          " Margins here are optimistic: many hours have no cost rate on file (see below)."}
       </InShort>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard
           icon={DollarSign}
           label={`Gross revenue (${scope.currency})`}
@@ -229,19 +334,12 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
           sub={`${matched.length} accounts with timesheets${totals.revenueOnly ? ` · ${formatCompactMoney(totals.revenueOnly)} has no timesheets (left out of margin)` : ""}`}
         />
         <StatCard
-          icon={Clock}
-          label="Staffing cost"
-          value={formatCompactMoney(totals.matchedCost)}
-          sub={`${pct(totals.costPctRevenue)} of those accounts’ revenue · ${hours(totals.matchedHours)} hours`}
-        />
-        <StatCard
           icon={Percent}
           label="Margin after staffing"
           value={pct(totals.marginPct)}
-          sub={`${formatCompactMoney(totals.margin)} kept after paying the team`}
+          sub={`${formatCompactMoney(totals.margin)} kept after ${formatCompactMoney(totals.matchedCost)} of staffing cost`}
           accent={totals.marginPct !== null && totals.marginPct < 0 ? "text-red-500" : "text-green-500"}
         />
-        <StatCard icon={TrendingUp} label="Revenue per hour worked" value={rate(totals.revenuePerHour)} sub={`vs ${rate(totals.costPerHour)} an hour costs us`} />
         <StatCard
           icon={AlertTriangle}
           label="Accounts to review"
@@ -254,106 +352,54 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
       {totals.costCoverage !== null && totals.costCoverage < COVERAGE_NOTE_BELOW && (
         <Notice tone={totals.costCoverage < COVERAGE_WARN_BELOW ? "warn" : "info"}>
           <p>
-            <strong>{pct(1 - totals.costCoverage)} of client hours here have no cost rate on file in Maconomy</strong>, so staffing cost is understated
-            and margins look better than they are. Confirm cost rates with Finance before relying on these margins.
+            <strong>{pct(1 - totals.costCoverage)} of client hours here have no cost rate on file in Maconomy</strong>, so staffing cost is
+            understated and margins look better than they are. Confirm cost rates with Finance before relying on these margins.
           </p>
         </Notice>
       )}
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <ChartCard
-          className="xl:col-span-2"
-          title="Revenue vs staffing cost by account"
-          subtitle="Each dot is an account · above the red line, it costs more to staff than it brings in · bigger dot = more hours"
-          icon={Scale}
-        >
-          {scatter.ok.length + scatter.over.length + scatter.loss.length === 0 ? (
-            <p className="py-16 text-center text-xs text-gray-500">No accounts with both revenue and hours in this period.</p>
-          ) : (
-            <ChartContainer config={scatterConfig} className="aspect-auto w-full" style={{ height: 320 }}>
-              <ScatterChart margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="x" name="Revenue" scale="log" domain={scatter.domain} ticks={scatter.ticks} allowDataOverflow tickFormatter={(v) => logTick(Number(v))} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} height={36} label={{ value: "Gross revenue →", position: "insideBottom", offset: -2, fontSize: 11 }} />
-                <YAxis type="number" dataKey="y" name="Cost" scale="log" domain={scatter.domain} ticks={scatter.ticks} allowDataOverflow tickFormatter={(v) => logTick(Number(v))} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={64} label={{ value: "Staffing cost →", angle: -90, position: "insideLeft", offset: 4, fontSize: 11 }} />
-                <ZAxis type="number" dataKey="z" range={[24, 400]} />
-                <ReferenceLine
-                  segment={[{ x: scatter.domain[0], y: scatter.domain[0] }, { x: scatter.domain[1], y: scatter.domain[1] }]}
-                  stroke={PLUS.red}
-                  strokeDasharray="5 4"
-                  ifOverflow="hidden"
-                  label={{ value: "Break-even", position: "insideTopLeft", fontSize: 10, fill: PLUS.red }}
-                />
-                <ReferenceLine
-                  segment={[{ x: scatter.domain[0], y: scatter.domain[0] * 0.5 }, { x: scatter.domain[1], y: scatter.domain[1] * 0.5 }]}
-                  stroke="#94a3b8"
-                  strokeDasharray="2 4"
-                  ifOverflow="hidden"
-                  label={{ value: "50% margin", position: "insideBottomRight", fontSize: 10, fill: "#64748b" }}
-                />
-                <ChartTooltip
-                  cursor={{ strokeDasharray: "3 3" }}
-                  content={({ active, payload }) => {
-                    const p = active && payload?.[0]?.payload;
-                    if (!p) return null;
-                    return (
-                      <div className="border border-gray-200 bg-white px-3 py-2 text-xs shadow-xl">
-                        <div className="mb-1 max-w-[240px] truncate font-semibold text-gray-900">{p.name}</div>
-                        <div className="tabular-nums text-gray-600">Revenue {money(p.x)}</div>
-                        <div className="tabular-nums text-gray-600">Staffing cost {money(p.y)}</div>
-                        <div className="tabular-nums text-gray-600">Margin {pct(p.marginPct)} · {hours(p.z)} h</div>
-                      </div>
-                    );
-                  }}
-                />
-                {(["ok", "over", "loss"] as const).map((k) => (
-                  <Scatter
-                    key={k}
-                    name={scatterConfig[k].label as string}
-                    data={scatter[k]}
-                    fill={`var(--color-${k})`}
-                    fillOpacity={0.85}
-                    stroke={k === "over" ? "#b38600" : "none"}
-                    isAnimationActive={false}
-                    onClick={(d: { payload?: { row: ProfitRow } }) => d?.payload?.row && setSelected(d.payload.row)}
-                    className="cursor-pointer"
-                  />
-                ))}
-              </ScatterChart>
-            </ChartContainer>
-          )}
-        </ChartCard>
-
-        <ChartCard title="Accounts to review" subtitle="Worst margin first · click to open" icon={AlertTriangle}>
-          {flagged.length === 0 ? (
-            <p className="py-10 text-center text-xs text-gray-500">No account is flagged in this period.</p>
-          ) : (
-            <ul className="-mx-2 max-h-[320px] divide-y divide-gray-100 overflow-y-auto">
-              {flagged.map((r) => (
-                <li key={r.client.index}>
-                  <button type="button" onClick={() => setSelected(r)} className="flex w-full items-center justify-between gap-3 px-2 py-2 text-left hover:bg-gray-50">
-                    <div className="min-w-0">
-                      <div className="truncate text-xs font-semibold text-gray-900">{r.client.name}</div>
-                      <div className="text-[11px] tabular-nums text-gray-500">
-                        {money(r.revenue)} revenue · {hours(r.hours)} h · {rate(r.revenuePerHour)}/h
-                      </div>
+      <ChartCard title="Accounts to review" subtitle="Worst margin first · click an account to see its trend" icon={AlertTriangle}>
+        {flagged.length === 0 ? (
+          <p className="py-10 text-center text-xs text-gray-500">No account is flagged in this period.</p>
+        ) : (
+          <ul className="-mx-2 grid max-h-[300px] grid-cols-1 gap-x-6 overflow-y-auto md:grid-cols-2 xl:grid-cols-3">
+            {flagged.map((r) => (
+              <li key={r.client.index} className="border-b border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setSelected(r)}
+                  className="flex w-full items-center justify-between gap-3 px-2 py-2 text-left hover:bg-gray-50"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-semibold text-gray-900">{r.client.name}</div>
+                    <div className="text-[11px] tabular-nums text-gray-500">
+                      {money(r.revenue)} revenue · {hours(r.hours)} h · {rate(r.revenuePerHour)}/h
                     </div>
-                    <div className="shrink-0 text-right">
-                      <FlagChip row={r} />
-                      <div className={`mt-0.5 text-xs font-semibold tabular-nums ${r.margin! < 0 ? "text-red-700" : "text-gray-700"}`}>{money(r.margin)}</div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <FlagChip row={r} />
+                    <div className={`mt-0.5 text-xs font-semibold tabular-nums ${r.margin! < 0 ? "text-red-700" : "text-gray-700"}`}>
+                      {money(r.margin)}
                     </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </ChartCard>
-      </div>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </ChartCard>
 
       <ChartCard
         title="Account league table"
         subtitle={`${scope.label} · ${periodLabel(from, to)} · ${basis === "base1" ? "Base1" : "Enterprise"} cost · click an account for its trend and role mix`}
         icon={Table2}
-        action={<SheetExportButton title="Finance Toolkit — Profitability" sheetTitle="Profitability" buildMatrix={exportSheet} />}
+        action={
+          <SheetExportButton
+            title={`Account profitability · ${scope.label} · ${periodLabel(from, to)}`}
+            sheetTitle="Accounts"
+            buildMatrix={buildSheet}
+          />
+        }
       >
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <Segmented
@@ -379,10 +425,10 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         </div>
         {view === "unmatched" && (
           <p className="mb-3 text-xs text-gray-600">
-            <strong>No revenue match</strong>: client hours ({hours(totals.unmatchedHours)} h, {money(totals.unmatchedCost)}) on accounts with no gross
-            revenue line in the same agency — often work for a client whose revenue is booked in another agency, or pitches.{" "}
-            <strong>No hours match</strong>: {money(totals.revenueOnly)} of revenue with no hours in the same agency (incl. K72, which has no hours export).
-            Neither is given a margin.
+            <strong>No revenue match</strong>: client hours ({hours(totals.unmatchedHours)} h, {money(totals.unmatchedCost)}) on accounts with no
+            gross revenue line in the same agency — often work for a client whose revenue is booked in another agency, or pitches.{" "}
+            <strong>No hours match</strong>: {money(totals.revenueOnly)} of revenue with no hours in the same agency (incl. K72, which has no hours
+            export). Neither is given a margin.
           </p>
         )}
         <DataTable
@@ -392,11 +438,107 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
           defaultSort={{ id: view === "unmatched" ? "hours" : "revenue", dir: "desc" }}
           onRowClick={setSelected}
           activeKey={selected ? String(selected.client.index) : null}
-          maxRows={40}
           footerLabel="Matched accounts"
           emptyText={q ? "No account matches your search." : "No accounts in this view."}
         />
       </ChartCard>
+
+      <Disclosure
+        title="Chart: revenue vs staffing cost"
+        subtitle="Every account as a dot · above the red line it costs more to staff than it brings in"
+        icon={Scale}
+      >
+        {scatter.ok.length + scatter.over.length + scatter.loss.length === 0 ? (
+          <p className="py-16 text-center text-xs text-gray-500">No accounts with both revenue and hours in this period.</p>
+        ) : (
+          <ChartContainer config={scatterConfig} className="aspect-auto w-full" style={{ height: 320 }}>
+            <ScatterChart margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis
+                type="number"
+                dataKey="x"
+                name="Revenue"
+                scale="log"
+                domain={scatter.domain}
+                ticks={scatter.ticks}
+                allowDataOverflow
+                tickFormatter={(v) => logTick(Number(v))}
+                tick={{ fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                height={36}
+                label={{ value: "Gross revenue →", position: "insideBottom", offset: -2, fontSize: 11 }}
+              />
+              <YAxis
+                type="number"
+                dataKey="y"
+                name="Cost"
+                scale="log"
+                domain={scatter.domain}
+                ticks={scatter.ticks}
+                allowDataOverflow
+                tickFormatter={(v) => logTick(Number(v))}
+                tick={{ fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                width={64}
+                label={{ value: "Staffing cost →", angle: -90, position: "insideLeft", offset: 4, fontSize: 11 }}
+              />
+              <ZAxis type="number" dataKey="z" range={[24, 400]} />
+              <ReferenceLine
+                segment={[
+                  { x: scatter.domain[0], y: scatter.domain[0] },
+                  { x: scatter.domain[1], y: scatter.domain[1] },
+                ]}
+                stroke={PLUS.red}
+                strokeDasharray="5 4"
+                ifOverflow="hidden"
+                label={{ value: "Break-even", position: "insideTopLeft", fontSize: 10, fill: PLUS.red }}
+              />
+              <ReferenceLine
+                segment={[
+                  { x: scatter.domain[0], y: scatter.domain[0] * 0.5 },
+                  { x: scatter.domain[1], y: scatter.domain[1] * 0.5 },
+                ]}
+                stroke="#94a3b8"
+                strokeDasharray="2 4"
+                ifOverflow="hidden"
+                label={{ value: "50% margin", position: "insideBottomRight", fontSize: 10, fill: "#64748b" }}
+              />
+              <ChartTooltip
+                cursor={{ strokeDasharray: "3 3" }}
+                content={({ active, payload }) => {
+                  const p = active && payload?.[0]?.payload;
+                  if (!p) return null;
+                  return (
+                    <div className="border border-gray-200 bg-white px-3 py-2 text-xs shadow-xl">
+                      <div className="mb-1 max-w-[240px] truncate font-semibold text-gray-900">{p.name}</div>
+                      <div className="tabular-nums text-gray-600">Revenue {money(p.x)}</div>
+                      <div className="tabular-nums text-gray-600">Staffing cost {money(p.y)}</div>
+                      <div className="tabular-nums text-gray-600">
+                        Margin {pct(p.marginPct)} · {hours(p.z)} h
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+              {(["ok", "over", "loss"] as const).map((k) => (
+                <Scatter
+                  key={k}
+                  name={scatterConfig[k].label as string}
+                  data={scatter[k]}
+                  fill={`var(--color-${k})`}
+                  fillOpacity={0.85}
+                  stroke={k === "over" ? "#b38600" : "none"}
+                  isAnimationActive={false}
+                  onClick={(d: { payload?: { row: ProfitRow } }) => d?.payload?.row && setSelected(d.payload.row)}
+                  className="cursor-pointer"
+                />
+              ))}
+            </ScatterChart>
+          </ChartContainer>
+        )}
+      </Disclosure>
 
       <HowCalculated>
         <Formula
@@ -406,10 +548,26 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
             totals.houseRevenue ? `; includes ${money(totals.houseRevenue)} booked to agency house accounts` : ""
           }`}
         />
-        <Formula name="Staffing cost" formula={`Σ Maconomy ${basis === "base1" ? "CostPriceReg_Base1" : "CostPriceReg_Enterprise"} on client-work hours`} worked={`${money(totals.matchedCost)} on ${hours(totals.matchedHours)} h → ${rate(totals.costPerHour)} per hour`} />
-        <Formula name="Gross margin" formula="gross revenue − staffing cost" worked={`${money(totals.matchedRevenue)} − ${money(totals.matchedCost)} = ${money(totals.margin)}`} />
-        <Formula name="Margin %" formula="Σ margin ÷ Σ revenue (portfolio math, not an average of %)" worked={`${money(totals.margin)} ÷ ${money(totals.matchedRevenue)} = ${pct(totals.marginPct)}`} />
-        <Formula name="Revenue per hour" formula="Σ revenue ÷ Σ client hours" worked={`${money(totals.matchedRevenue)} ÷ ${hours(totals.matchedHours)} h = ${rate(totals.revenuePerHour)}`} />
+        <Formula
+          name="Staffing cost"
+          formula={`Σ Maconomy ${basis === "base1" ? "CostPriceReg_Base1" : "CostPriceReg_Enterprise"} on client-work hours`}
+          worked={`${money(totals.matchedCost)} on ${hours(totals.matchedHours)} h → ${rate(totals.costPerHour)} per hour`}
+        />
+        <Formula
+          name="Gross margin"
+          formula="gross revenue − staffing cost"
+          worked={`${money(totals.matchedRevenue)} − ${money(totals.matchedCost)} = ${money(totals.margin)}`}
+        />
+        <Formula
+          name="Margin %"
+          formula="Σ margin ÷ Σ revenue (portfolio math, not an average of %)"
+          worked={`${money(totals.margin)} ÷ ${money(totals.matchedRevenue)} = ${pct(totals.marginPct)}`}
+        />
+        <Formula
+          name="Revenue per hour"
+          formula="Σ revenue ÷ Σ client hours"
+          worked={`${money(totals.matchedRevenue)} ÷ ${hours(totals.matchedHours)} h = ${rate(totals.revenuePerHour)}`}
+        />
         <Formula name="Cost exceeds revenue" formula={`staffing cost > revenue, and ≥ ${FLAG_MIN_HOURS} client hours in the period`} />
         <Formula
           name="Over-serviced"
@@ -425,8 +583,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
             {money(totals.overheadCost)} in this view — and are not charged to any account.
           </p>
           <p>
-            <strong>Matching:</strong> revenue lines are tied to hours by Maconomy client number within the same agency (one by exact normalized name). No
-            fuzzy matching; unmatched accounts are listed under “Unmatched”.
+            <strong>Matching:</strong> revenue lines are tied to hours by Maconomy client number within the same agency (one by exact normalized
+            name). No fuzzy matching; unmatched accounts are listed under “Unmatched”.
           </p>
           <p>
             <strong>Currency:</strong> each scope stays in its own currency ({scope.currency}); CAD and USD are never added together.

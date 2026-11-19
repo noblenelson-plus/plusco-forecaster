@@ -8,7 +8,6 @@
  * other two tabs — its totals tie back to the source files.
  */
 
-import SheetExportButton from "../dashboard/sheet-export-button";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { BarChart3, Clock, DollarSign, Receipt, RotateCcw, Users } from "lucide-react";
@@ -32,6 +31,7 @@ import {
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
 import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, DataTable, Field, InShort, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
 import { sheetMatrix, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
+import SheetExportButton from "../dashboard/sheet-export-button";
 
 const GROUPS: { id: PortalGroup; label: string }[] = [
   { id: "client", label: "Client" },
@@ -64,19 +64,13 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
         .filter((c) => inScope(scope, c) && c.match !== "revenue-only")
         .map((c) => ({ value: String(c.index), label: `${c.name}${scope.agencyIds.length > 1 ? ` · ${c.agencyName}` : ""}` }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [scope]
+    [scope],
   );
-  const roleOptions = useMemo(
-    () => MODEL.roles.map((r, i) => ({ value: String(i), label: r })).sort((a, b) => a.label.localeCompare(b.label)),
-    []
-  );
+  const roleOptions = useMemo(() => MODEL.roles.map((r, i) => ({ value: String(i), label: r })).sort((a, b) => a.label.localeCompare(b.label)), []);
   const timeOptions = TIME_TYPES.map((t) => ({ value: t.id, label: t.label }));
 
   // Drop client picks that left the scope.
-  const validClients = useMemo(
-    () => clientSel.filter((v) => clientOptions.some((o) => o.value === v)),
-    [clientSel, clientOptions]
-  );
+  const validClients = useMemo(() => clientSel.filter((v) => clientOptions.some((o) => o.value === v)), [clientSel, clientOptions]);
 
   const result = useMemo(
     () =>
@@ -90,9 +84,9 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
           to,
         },
         group,
-        basis
+        basis,
       ),
-    [scope, validClients, roleSel, timeSel, from, to, group, basis]
+    [scope, validClients, roleSel, timeSel, from, to, group, basis],
   );
   const { totals } = result;
   const clientHours = result.monthly.reduce((a, m) => a + m.client, 0);
@@ -108,7 +102,12 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
   })();
   const filtered = validClients.length + roleSel.length + timeSel.length > 0 || from !== 0 || to !== LAST;
 
-  const chartData = result.monthly.map((m) => ({ month: monthLabel(m.month, true), client: Math.round(m.client), internal: Math.round(m.internal), timeoff: Math.round(m.timeoff) }));
+  const chartData = result.monthly.map((m) => ({
+    month: monthLabel(m.month, true),
+    client: Math.round(m.client),
+    internal: Math.round(m.internal),
+    timeoff: Math.round(m.timeoff),
+  }));
 
   const groupLabel = GROUPS.find((g) => g.id === group)!.label;
   const columns: Column<PortalRow>[] = [
@@ -175,9 +174,17 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
     },
   ];
 
-  const exportSheet = (): (string | number)[][] => {
-    return sheetMatrix(
-      [groupLabel, ...(group === "client" ? ["Agency · client #"] : []), "Hours", "Share of hours", `Staffing cost (${scope.currency}, ${basis === "base1" ? "Base1" : "Enterprise"})`, "Cost per hour", "Billed value"],
+  const buildSheet = () =>
+    sheetMatrix(
+      [
+        groupLabel,
+        ...(group === "client" ? ["Agency · client #"] : []),
+        "Hours",
+        "Share of hours",
+        `Staffing cost (${scope.currency}, ${basis === "base1" ? "Base1" : "Enterprise"})`,
+        "Cost per hour",
+        "Billed value",
+      ],
       [
         ...result.rows.map((r) => [
           r.label,
@@ -189,9 +196,8 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
           r.billed,
         ]),
         ["Total", ...(group === "client" ? [""] : []), totals.hours, 1, totals.cost, totals.costPerHour, totals.billed],
-      ]
+      ],
     );
-  };
 
   const reset = () => {
     setFrom(0);
@@ -219,7 +225,11 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
           <Segmented options={GROUPS} value={group} onChange={setGroup} ariaLabel="Group by" />
         </Field>
         {filtered && (
-          <button type="button" onClick={reset} className="mb-1.5 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-900">
+          <button
+            type="button"
+            onClick={reset}
+            className="mb-1.5 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-900"
+          >
             <RotateCcw size={12} /> Reset
           </button>
         )}
@@ -228,9 +238,9 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
       {totals.hours > 0 && (
         <InShort>
           In {periodLabel(from, to)}, {scope.id === "canada" ? "our Canadian agencies" : scope.label}
-          {validClients.length + roleSel.length + timeSel.length > 0 ? " (with your filters)" : ""} logged <strong>{hours(totals.hours)} hours</strong>:{" "}
-          <strong>{split[0]}% on client work</strong>, {split[1]}% on internal and overhead work and {split[2]}% on time off. That time cost {formatCompactMoney(totals.cost)} at Maconomy cost rates, about{" "}
-          {rate(totals.costPerHour)} an hour.
+          {validClients.length + roleSel.length + timeSel.length > 0 ? " (with your filters)" : ""} logged{" "}
+          <strong>{hours(totals.hours)} hours</strong>: <strong>{split[0]}% on client work</strong>, {split[1]}% on internal and overhead work and{" "}
+          {split[2]}% on time off. That time cost {formatCompactMoney(totals.cost)} at Maconomy cost rates, about {rate(totals.costPerHour)} an hour.
         </InShort>
       )}
 
@@ -265,8 +275,8 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
       {totals.costCoverage !== null && totals.costCoverage < COVERAGE_NOTE_BELOW && (
         <Notice tone={totals.costCoverage < COVERAGE_WARN_BELOW ? "warn" : "info"}>
           <p>
-            <strong>{pct(1 - totals.costCoverage)} of these hours carry no cost in Maconomy</strong> (employees without a cost rate on
-            file), so staffing cost is understated by about that much for this selection.
+            <strong>{pct(1 - totals.costCoverage)} of these hours carry no cost in Maconomy</strong> (employees without a cost rate on file), so
+            staffing cost is understated by about that much for this selection.
           </p>
         </Notice>
       )}
@@ -281,12 +291,19 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
             <YAxis tickFormatter={(v) => `${Math.round(Number(v) / 1000)}K`} tickLine={false} axisLine={false} width={44} tick={{ fontSize: 11 }} />
-            <ChartTooltip cursor={{ fillOpacity: 0.4 }} content={<ChartTooltipContent formatter={(v, name) => (
-              <div className="flex w-full items-center justify-between gap-3">
-                <span className="text-muted-foreground">{chartConfig[name as string]?.label}</span>
-                <span className="font-medium tabular-nums text-foreground">{hours(Number(v))} h</span>
-              </div>
-            )} />} />
+            <ChartTooltip
+              cursor={{ fillOpacity: 0.4 }}
+              content={
+                <ChartTooltipContent
+                  formatter={(v, name) => (
+                    <div className="flex w-full items-center justify-between gap-3">
+                      <span className="text-muted-foreground">{chartConfig[name as string]?.label}</span>
+                      <span className="font-medium tabular-nums text-foreground">{hours(Number(v))} h</span>
+                    </div>
+                  )}
+                />
+              }
+            />
             <ChartLegend content={<ChartLegendContent />} />
             {(["client", "internal", "timeoff"] as const).map((k) => (
               <Bar key={k} dataKey={k} stackId="h" fill={`var(--color-${k})`} isAnimationActive={false} />
@@ -299,15 +316,16 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
         title={`Hours by ${groupLabel.toLowerCase()}`}
         subtitle={`${result.rows.length} ${result.rows.length === 1 ? "row" : "rows"} · ${scope.label} · ${periodLabel(from, to)}`}
         icon={Clock}
-        action={<SheetExportButton title="Finance Toolkit — Hours" sheetTitle="Hours" buildMatrix={exportSheet} disabled={result.rows.length === 0} />}
+        action={
+          <SheetExportButton
+            title={`Hours by ${groupLabel.toLowerCase()} · ${scope.label} · ${periodLabel(from, to)}`}
+            sheetTitle="Hours"
+            buildMatrix={buildSheet}
+            disabled={result.rows.length === 0}
+          />
+        }
       >
-        <DataTable
-          columns={columns}
-          rows={result.rows}
-          rowKey={(r) => r.key}
-          defaultSort={group === "month" ? null : { id: "hours", dir: "desc" }}
-          maxRows={group === "client" ? 50 : undefined}
-        />
+        <DataTable columns={columns} rows={result.rows} rowKey={(r) => r.key} defaultSort={group === "month" ? null : { id: "hours", dir: "desc" }} />
         <p className="mt-3 text-[11px] text-gray-500">
           Totals are sums of the filtered entries; cost per hour = total cost ÷ total hours. “Internal &amp; overhead” covers 16xx work codes and
           everything booked to the agencies’ own house accounts; “Time off” is the 15xx codes (vacation, holidays, sick leave).

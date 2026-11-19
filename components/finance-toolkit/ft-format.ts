@@ -1,12 +1,13 @@
 // filepath: components/finance-toolkit/ft-format.ts
 
 /**
- * Finance Toolkit formatters + CSV download. Money is whole dollars in the
+ * Finance Toolkit formatters + the Google Sheets export matrix. Money is whole dollars in the
  * scope's currency (the toolkit never mixes CAD and USD); compact money for
  * KPI tiles reuses the dashboard's formatter.
  */
 
 import { formatCompactMoney } from "../dashboard/charts/format";
+import type { CellValue } from "../forecaster/table/table-export";
 
 export { formatCompactMoney };
 
@@ -39,12 +40,10 @@ export function fte(v: number): string {
   return v.toFixed(1);
 }
 
-/**
- * Header + rows as a Google Sheets matrix (exports go to shared Sheets, not
- * downloaded CSVs). Numbers rounded to 2 decimals, empty for null.
- */
-export function sheetMatrix(header: string[], rows: (string | number | null)[][]): (string | number)[][] {
-  const cell = (v: string | number | null) =>
-    v === null ? "" : typeof v === "number" ? Math.round(v * 100) / 100 : v;
-  return [header, ...rows].map((r) => r.map(cell));
+/** Builds a CSV (RFC 4180) and triggers a browser download. */
+/** Header + rows as a Sheets matrix: blanks for missing values, numbers kept
+ *  as numbers (rounded to 4 decimals) so the sheet can sum and chart them. */
+export function sheetMatrix(header: string[], rows: (string | number | null)[][]): CellValue[][] {
+  const cell = (v: string | number | null): CellValue => (v === null ? "" : typeof v === "number" ? Math.round(v * 10000) / 10000 : v);
+  return [header, ...rows.map((r) => r.map(cell))];
 }

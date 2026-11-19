@@ -45,7 +45,7 @@ const GUIDE: { id: TabId; icon: typeof PieChart; title: string; question: string
     icon: Clock,
     title: "Hours Report Portal",
     question: "Where does our people’s time go?",
-    how: "Hours and their cost by client, role, month or type of work, with a download for any view.",
+    how: "Hours and their cost by client, role, month or type of work. Any view exports to Google Sheets.",
   },
 ];
 
@@ -92,7 +92,11 @@ export default function FinanceToolkit() {
             <div className="flex items-center gap-2 text-sm font-semibold">
               <BookOpen size={16} className="text-yellow-400" /> How to use this page
             </div>
-            <button type="button" onClick={closeGuide} className="inline-flex items-center gap-1 text-xs font-semibold text-gray-300 hover:text-white">
+            <button
+              type="button"
+              onClick={closeGuide}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-gray-300 hover:text-white"
+            >
               Got it <X size={14} />
             </button>
           </div>
@@ -108,13 +112,17 @@ export default function FinanceToolkit() {
             ))}
           </div>
           <div className="border-t border-gray-100 px-5 py-3 text-xs leading-relaxed text-gray-600">
-            <strong className="text-gray-900">Can I trust these numbers?</strong> Hours and revenue come straight from Finance’s systems and add up to Finance’s
-            own reports to the dollar. Every figure can be traced: open <em>How this is calculated</em> on any tab, or click <em>Why?</em> on a calculator
-            figure to see each step with the real numbers.
+            <strong className="text-gray-900">Can I trust these numbers?</strong> Hours and revenue come straight from Finance’s systems and add up to
+            Finance’s own reports to the dollar. Every figure can be traced: open <em>How this is calculated</em> on any tab, or click <em>Why?</em>{" "}
+            on a calculator figure to see each step with the real numbers.
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => setShowGuide(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900">
+        <button
+          type="button"
+          onClick={() => setShowGuide(true)}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900"
+        >
           <BookOpen size={13} /> How to use this page
         </button>
       )}
@@ -131,19 +139,13 @@ export default function FinanceToolkit() {
             />
           </Field>
         )}
-        <Field
-          label="Cost rates"
-          hint="Maconomy, Finance’s timesheet and costing system, holds two cost rates per person. Standard (Base1) is the default. They are identical for Cossette and Jungle and differ only for MEK US."
-        >
-          <Segmented ariaLabel="Cost rates" value={basis} onChange={setBasis} options={BASES} size="sm" />
-        </Field>
         <div className="ml-auto flex max-w-md flex-col items-end gap-1 text-right text-[11px] leading-snug text-gray-500">
           <span className="inline-flex items-center gap-1.5 font-semibold text-gray-700">
             <ShieldCheck size={13} className="text-green-500" /> Ties to Finance’s reports to the dollar
           </span>
           <span>
-            Timesheets {fmtMonth(MODEL.months[0])} – {fmtMonth(MODEL.months[MODEL.months.length - 1])} ({MODEL.source.hoursRows.toLocaleString("en-CA")}{" "}
-            entries) · gross revenue {REVENUE_WINDOW.label} · loaded {dataDate}
+            Timesheets {fmtMonth(MODEL.months[0])} – {fmtMonth(MODEL.months[MODEL.months.length - 1])} (
+            {MODEL.source.hoursRows.toLocaleString("en-CA")} entries) · gross revenue {REVENUE_WINDOW.label} · loaded {dataDate}
           </span>
         </div>
       </div>
@@ -154,10 +156,18 @@ export default function FinanceToolkit() {
       {tab === "profitability" && <ProfitabilityTab scope={scope} basis={basis} />}
       {tab === "calculator" && <TargetsCalculatorTab basis={basis} initialAgency={scope.agencyIds.length === 1 ? scope.agencyIds[0] : "cossette"} />}
 
-      <p className="pt-2 text-[11px] text-gray-400">
-        Built from Finance’s Maconomy timesheets and gross revenue reports. Staffing cost is the cost of the hours people logged to each account; it does not
-        include overhead, non-staff costs or pass-through media.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
+        <p className="max-w-3xl text-[11px] text-gray-400">
+          Built from Finance’s Maconomy timesheets and gross revenue reports. Staffing cost is the cost of the hours people logged to each account; it
+          does not include overhead, non-staff costs or pass-through media.
+        </p>
+        <Field
+          label="Cost rates (for Finance)"
+          hint="Maconomy, Finance’s timesheet and costing system, holds two cost rates per person. Standard (Base1) is the default. They are identical for Cossette and Jungle and differ only for MEK US."
+        >
+          <Segmented ariaLabel="Cost rates" value={basis} onChange={setBasis} options={BASES} size="sm" />
+        </Field>
+      </div>
     </div>
   );
 }
