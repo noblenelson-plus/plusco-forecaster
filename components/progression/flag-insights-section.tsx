@@ -149,6 +149,15 @@ export default function FlagInsightsSection({
                 />
               ) : null
             }
+            footer={
+              cat.id === "rfq_swings" ? (
+                <>
+                  <span className="font-semibold text-gray-700">RFQ swings:</span> the table only counts
+                  the changes that crossed the threshold (the ones that needed a justification). The total
+                  variance above shows the whole change and how much of it is justified.
+                </>
+              ) : null
+            }
             summary={computeContextSummary(
               clients,
               FLAG_TYPES.filter((t) => t.category === cat.id && types.includes(t.id)).map((t) => t.id)
@@ -162,16 +171,11 @@ export default function FlagInsightsSection({
         <p className="flex gap-1.5">
           <Info size={13} className="mt-0.5 flex-shrink-0" />
           <span>
-            <span className="font-semibold text-gray-700">RFQ swings:</span> the table only counts the
-            changes that crossed the threshold (the ones that needed a justification). The total variance
-            above shows the whole change and how much of it is justified.
-          </span>
-        </p>
-        <p className="pl-[19px]">
           Flags as saved at each client&apos;s last validation of this milestone, with the justifications
           written since. Clients that haven&apos;t validated it yet have no flags here. Up / Down sum the
           positive and negative gaps.
           {missingUsdRate && " No USD→CAD rate is set for this year — USD clients are added as-is."}
+          </span>
         </p>
       </div>
     </section>
@@ -187,7 +191,10 @@ function CategoryTable({
   activeClientCount,
   summary,
   header,
+  footer,
 }: {
+  /** Note under the table (RFQ Swings: what the amounts cover). */
+  footer?: ReactNode;
   /** Shown under the title, above the table (RFQ Swings: total variance). */
   header?: ReactNode;
   /** Justification reasons across the category (whole selection, not per group). */
@@ -317,6 +324,12 @@ function CategoryTable({
             ))}
           </div>
         </div>
+      )}
+      {footer && (
+        <p className="flex gap-1.5 border-t border-gray-200 px-4 py-2.5 text-xs text-gray-500">
+          <Info size={13} className="mt-0.5 flex-shrink-0" />
+          <span>{footer}</span>
+        </p>
       )}
     </div>
   );
