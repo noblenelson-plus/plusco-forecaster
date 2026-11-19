@@ -19,6 +19,7 @@
     "frameworksBackend": {
       "region": "us-central1"
     },
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "predeploy": ["node scripts/check-deploy-env.mjs"]
   }
 }
