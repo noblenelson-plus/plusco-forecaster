@@ -826,6 +826,8 @@ function DashboardContent() {
             currencyByClient={currencyByClient}
             usdToCad={usdToCad}
             selMonths={selMonths}
+            primaryMode={primaryMode}
+            secondaryMode={secondaryMode}
           />
         ) : tab === "media" ? (
           <MediaSpendTab

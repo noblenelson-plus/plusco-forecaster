@@ -14,7 +14,9 @@
  *
  * Product Fees on this page read the BL input (withBlInputProductFees), so the
  * Client Revenue table, Revenue Types and Product Revenue agree on them; every
- * other stream keeps the BL Submission rule.
+ * other stream keeps the BL Submission rule. Exception: when the client tables
+ * compare against Official Revenue, they use BL Submission throughout (see
+ * `vsOfficial`), so BL vs OF ties to Official and to Forecast Summary.
  *
  * Order: main revenue table, revenue by Agency / Region / GM (the same numbers
  * rolled up, for GMs' year-over-year view), the revenue-types breakdown, then
@@ -94,6 +96,15 @@ export default function RevenueTab({
     [streamSlices, selectedStreams]
   );
 
+  // Compared with Official Revenue (either side OF, "All" types): the client
+  // tables keep the BL Submission rule on the BL side too. Official is set
+  // from BL Submission, so an unchanged round reads a $0 variance and the
+  // totals tie with Forecast Summary. BL vs BL keeps the BL input Product Fees.
+  const vsOfficial =
+    !revenueTypeFiltered && (primaryMode === "official" || secondaryMode === "official");
+  const tableData = vsOfficial ? rawData : data;
+  const tableComparisonData = vsOfficial ? rawComparisonData : comparisonData;
+
   // The Revenue Types section (charts + totals) follows the focus; the client
   // tables never do — they stay full so you can switch between clients.
   const shown = focusedClientId ? focusData : data;
@@ -110,8 +121,8 @@ export default function RevenueTab({
       />
 
       <ClientRevenueSection
-        data={data}
-        comparisonData={comparisonData}
+        data={tableData}
+        comparisonData={tableComparisonData}
         scopedClientIds={scopedClientIds}
         primaryMode={primaryMode}
         secondaryMode={secondaryMode}
@@ -122,8 +133,8 @@ export default function RevenueTab({
       />
 
       <RevenueByGroupSection
-        data={data}
-        comparisonData={comparisonData}
+        data={tableData}
+        comparisonData={tableComparisonData}
         scopedClientIds={scopedClientIds}
         primaryMode={primaryMode}
         secondaryMode={secondaryMode}

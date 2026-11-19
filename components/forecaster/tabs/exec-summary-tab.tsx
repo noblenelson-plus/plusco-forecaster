@@ -5,8 +5,10 @@
  * Executive Summary — the headline of the dashboard: a KPI band (total media,
  * total revenue, revenue/media, total Labs, Labs share), the Investment
  * Strategy KPIs, and the mix donuts (channel mix, revenue mix, Labs spend,
- * product revenue). Everything follows the client focus. Revenue uses the BL
- * Submission basis (the standard headline figure).
+ * product revenue). Everything follows the client focus. The Total revenue card
+ * follows the header BL / OF Type toggles (primary vs secondary), so
+ * "RFQ3-BL vs RFQ3-OF" really compares against Official Revenue; Revenue /
+ * Media and the mixes stay on BL Submission (Official has no per-type split).
  */
 
 import { useMemo, useState } from "react";
@@ -26,7 +28,10 @@ import { formatCompactMoney, formatPct } from "../../dashboard/charts/format";
 import { sumMonthlyMap } from "../../../lib/types/common.types";
 import { computeVariance } from "../../../lib/types/forecaster.types";
 import type { Currency } from "../../../lib/types/client.types";
-import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
+import type {
+  ScopeForecastData,
+  RevenueMode,
+} from "../../../lib/dashboard/data/use-scope-forecast-data";
 import SpendBreakdownRow from "../../dashboard/spend-breakdown-row";
 import type { ClientDimensions } from "../../dashboard/dimension-breakdown";
 
@@ -65,6 +70,8 @@ export default function ExecSummaryTab({
   currencyByClient,
   usdToCad,
   selMonths,
+  primaryMode,
+  secondaryMode,
 }: {
   data: ScopeForecastData;
   comparisonData: ScopeForecastData;
@@ -78,6 +85,9 @@ export default function ExecSummaryTab({
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
   selMonths: number[];
+  /** Header BL / OF Type toggles — drive the Total revenue card only. */
+  primaryMode: RevenueMode;
+  secondaryMode: RevenueMode;
 }) {
   const shown = focusedClientId ? focusData : data;
   // Labs spend donut: partner families by default ("Billups-OOH" + "Billups-Print"
@@ -94,6 +104,11 @@ export default function ExecSummaryTab({
   const compLabs = shownComparison.hasContext ? shownComparison.labs : null;
   const compRevenue = shownComparison.hasContext
     ? shownComparison.revenueByMode.blSubmission.breakdown
+    : null;
+  // Total revenue card: primary vs secondary basis, as picked in the header.
+  const headlineRevenue = shown.revenueByMode[primaryMode].breakdown.totalAnnual;
+  const compHeadlineRevenue = shownComparison.hasContext
+    ? shownComparison.revenueByMode[secondaryMode].breakdown.totalAnnual
     : null;
   const compRatio =
     compMedia && compMedia.totalAnnual > 0 && compRevenue
@@ -191,9 +206,9 @@ export default function ExecSummaryTab({
         <StatCard
           icon={DollarSign}
           label="Total revenue"
-          value={formatCompactMoney(revenue.totalAnnual)}
-          sub="BL submission"
-          variance={getVariance(revenue.totalAnnual, compRevenue?.totalAnnual)}
+          value={formatCompactMoney(headlineRevenue)}
+          sub={primaryMode === "official" ? "Official revenue" : "BL submission"}
+          variance={getVariance(headlineRevenue, compHeadlineRevenue)}
         />
         <StatCard
           icon={Percent}
