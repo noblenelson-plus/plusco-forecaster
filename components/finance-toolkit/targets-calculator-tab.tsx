@@ -14,6 +14,7 @@
  * headline figure and role (calculator-why).
  */
 
+import SheetExportButton from "../dashboard/sheet-export-button";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Briefcase, CalendarRange, Calculator, DollarSign, HelpCircle, Percent, Plus, Sparkles, Table2, Users, X } from "lucide-react";
@@ -37,8 +38,8 @@ import {
   type TargetSolution,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { Chip, DataTable, Field, Formula, GhostButton, HowCalculated, InShort, Notice, Segmented, selectClass, type Column } from "./ft-ui";
-import { downloadCsv, formatCompactMoney, fte, hours, money, pct, rate } from "./ft-format";
+import { Chip, DataTable, Field, Formula, HowCalculated, InShort, Notice, Segmented, selectClass, type Column } from "./ft-ui";
+import { sheetMatrix, formatCompactMoney, fte, hours, money, pct, rate } from "./ft-format";
 import LeversCard from "./calculator-levers";
 import TargetCard from "./calculator-target";
 import ScenariosCard, { type CalculatorInputs, type Scenario } from "./calculator-scenarios";
@@ -276,8 +277,8 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
     { id: "margin", label: "Actual margin", align: "right", render: (c) => pct(c.marginPct) },
   ];
 
-  const exportCsv = () => {
-    if (!plan) return;
+  const exportSheet = (): (string | number)[][] => {
+    if (!plan) return [];
     const settings: (string | number | null)[][] = [
       ["Settings", nChanged === 0 ? "Data-based (no changes)" : `${nChanged} changed from the data`],
       ["Team size", levers.fixedFte === null ? "Scales with revenue" : `Fixed at ${fte(levers.fixedFte)} FTE`],
@@ -287,8 +288,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
       ["Onboarding ramp", RAMP_SETTINGS.find((r) => r.id === levers.ramp)?.label ?? levers.ramp],
       ["Year-1 revenue timing", levers.revenueTiming === "even" ? "Even from month 1" : "Ramps with the team"],
     ];
-    downloadCsv(
-      `finance-toolkit-staffing-plan-${agency}-${Math.round(revenue / 1000)}k.csv`,
+    return sheetMatrix(
       ["Role", "Mix", "Data mix", `Cost per hour (${currency})`, `Data cost per hour (${currency})`, ...plan.monthlyHours.map((_, m) => `M${m + 1} hours`), "Year 1 hours", "Run-rate FTE", `Year 1 cost (${currency})`],
       [
         ...plan.roles.map((r) => [r.label, r.share, r.dataShare, r.rate, r.dataRate, ...r.monthlyHours, r.yearHours, r.runRateFte, r.yearCost]),
@@ -574,7 +574,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               title="Staffing plan by role"
               subtitle={`${unit === "fte" ? `FTE (1 FTE = ${fteHours} h/month)` : "Client hours"} · click a role to see how it is staffed and priced`}
               icon={Table2}
-              action={<GhostButton onClick={exportCsv}>Download CSV</GhostButton>}
+              action={<SheetExportButton title="Finance Toolkit — Staffing plan" sheetTitle="Staffing plan" buildMatrix={exportSheet} disabled={!plan} />}
             >
               <DataTable
                 columns={planColumns}

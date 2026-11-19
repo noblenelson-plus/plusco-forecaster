@@ -8,6 +8,7 @@
  * other two tabs — its totals tie back to the source files.
  */
 
+import SheetExportButton from "../dashboard/sheet-export-button";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { BarChart3, Clock, DollarSign, Receipt, RotateCcw, Users } from "lucide-react";
@@ -29,8 +30,8 @@ import {
   type TimeType,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, DataTable, Field, GhostButton, InShort, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
-import { downloadCsv, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
+import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, DataTable, Field, InShort, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
+import { sheetMatrix, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
 
 const GROUPS: { id: PortalGroup; label: string }[] = [
   { id: "client", label: "Client" },
@@ -174,10 +175,8 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
     },
   ];
 
-  const exportCsv = () => {
-    const slug = `${scope.id}-${MODEL.months[from]}-to-${MODEL.months[to]}-by-${group}`;
-    downloadCsv(
-      `finance-toolkit-hours-${slug}.csv`,
+  const exportSheet = (): (string | number)[][] => {
+    return sheetMatrix(
       [groupLabel, ...(group === "client" ? ["Agency · client #"] : []), "Hours", "Share of hours", `Staffing cost (${scope.currency}, ${basis === "base1" ? "Base1" : "Enterprise"})`, "Cost per hour", "Billed value"],
       [
         ...result.rows.map((r) => [
@@ -300,7 +299,7 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
         title={`Hours by ${groupLabel.toLowerCase()}`}
         subtitle={`${result.rows.length} ${result.rows.length === 1 ? "row" : "rows"} · ${scope.label} · ${periodLabel(from, to)}`}
         icon={Clock}
-        action={<GhostButton onClick={exportCsv} disabled={result.rows.length === 0}>Download CSV</GhostButton>}
+        action={<SheetExportButton title="Finance Toolkit — Hours" sheetTitle="Hours" buildMatrix={exportSheet} disabled={result.rows.length === 0} />}
       >
         <DataTable
           columns={columns}

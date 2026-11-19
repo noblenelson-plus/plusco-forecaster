@@ -8,6 +8,7 @@
  * revenue match show hours and cost only, labeled — never a zero margin.
  */
 
+import SheetExportButton from "../dashboard/sheet-export-button";
 import { useMemo, useState } from "react";
 import { CartesianGrid, ReferenceLine, Scatter, ScatterChart, XAxis, YAxis, ZAxis } from "recharts";
 import { AlertTriangle, Clock, DollarSign, Percent, Scale, Search, Table2, TrendingUp } from "lucide-react";
@@ -26,8 +27,8 @@ import {
   type Scope,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, Chip, DataTable, Field, Formula, GhostButton, HowCalculated, InShort, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
-import { downloadCsv, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
+import { COVERAGE_NOTE_BELOW, COVERAGE_WARN_BELOW, Chip, DataTable, Field, Formula, HowCalculated, InShort, MonthRange, Notice, Segmented, type Column } from "./ft-ui";
+import { sheetMatrix, formatCompactMoney, hours, money, pct, rate } from "./ft-format";
 import ClientDetailDrawer from "./client-detail-drawer";
 
 const REV_MONTHS = MODEL.revenueMonthIndices;
@@ -160,9 +161,8 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
     };
   }, [matched]);
 
-  const exportCsv = () => {
-    downloadCsv(
-      `finance-toolkit-profitability-${scope.id}-${MODEL.months[from]}-to-${MODEL.months[to]}.csv`,
+  const exportSheet = (): (string | number)[][] => {
+    return sheetMatrix(
       ["Account", "Agency", "Client #", "Status", `Gross revenue (${scope.currency})`, `Staffing cost (${scope.currency}, ${basis === "base1" ? "Base1" : "Enterprise"})`, "Gross margin", "Margin %", "Revenue per hour", "Client hours", "People", "Cost % of revenue", "Flag", "Hours with cost on file"],
       result.rows.map((r) => [
         r.client.name,
@@ -353,7 +353,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         title="Account league table"
         subtitle={`${scope.label} · ${periodLabel(from, to)} · ${basis === "base1" ? "Base1" : "Enterprise"} cost · click an account for its trend and role mix`}
         icon={Table2}
-        action={<GhostButton onClick={exportCsv}>Download CSV</GhostButton>}
+        action={<SheetExportButton title="Finance Toolkit — Profitability" sheetTitle="Profitability" buildMatrix={exportSheet} />}
       >
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <Segmented

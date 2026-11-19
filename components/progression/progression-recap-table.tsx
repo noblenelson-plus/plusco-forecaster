@@ -7,24 +7,19 @@
  * an icon for that milestone's status (validated / flags to justify / not
  * validated). The selected checkpoint's column is highlighted. The body scrolls
  * inside a fixed height (~18 rows) with a sticky header and client column.
- * Downloadable as CSV.
+ * Exports to Google Sheets.
  *
  * Filtering lives in the page's filter bar (status applies to the checkpoint);
  * this component only renders the rows it is given.
  */
 
 import { useState } from "react";
-import { Download } from "lucide-react";
+import SheetExportButton from "../dashboard/sheet-export-button";
+import type { CellValue } from "../forecaster/table/table-export";
 import { ScopeLine } from "./milestone-tracking-summary";
 import { CONFIRMATION_STEPS } from "../../lib/constants/confirmation-steps";
 import { MILESTONE_STATUS_ORDER, type MilestoneClientRow } from "../../lib/format/milestone-summary";
 import { STATUS_META, StatusIcon } from "./milestone-status";
-
-/** Quote a CSV field when it contains a comma, quote or newline. */
-function csvField(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export default function ProgressionRecapTable({
   rows,
@@ -38,10 +33,11 @@ export default function ProgressionRecapTable({
   scopeNote: string;
 }) {
   // Only the checkpoint picked at the top by default (Adriana); "Show all
-  // milestones" brings back every column. The CSV always has them all.
+  // milestones" brings back every column. The export always has them all.
   const [showAll, setShowAll] = useState(false);
   const steps = showAll ? CONFIRMATION_STEPS : CONFIRMATION_STEPS.filter((s) => s.id === checkpointId);
-  function downloadCsv() {
+  // Google Sheets export (shared, not a downloaded CSV): scope line, blank row, table.
+  function buildSheet(): CellValue[][] {
     const header = ["Client", "GM", "Business Lead", ...CONFIRMATION_STEPS.map((s) => s.label)];
     const body = rows.map((r) => [
       r.clientName,
@@ -49,16 +45,7 @@ export default function ProgressionRecapTable({
       r.bl,
       ...CONFIRMATION_STEPS.map((s) => STATUS_META[r.statusByStep[s.id] ?? "not_validated"].label),
     ]);
-    const csv = [header, ...body].map((row) => row.map(csvField).join(",")).join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `milestones${fileLabel ? `-${fileLabel}` : ""}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return [[scopeNote], [], header, ...body];
   }
 
   return (
@@ -68,7 +55,7 @@ export default function ProgressionRecapTable({
         <ScopeLine note={scopeNote} />
       </div>
       <div className="border border-gray-200 bg-white">
-        {/* Toolbar — count, legend, CSV */}
+        {/* Toolbar — count, legend, Sheets export */}
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-gray-200 px-4 py-2.5">
           <div className="flex items-center gap-4">
             <span className="text-sm font-semibold text-gray-900">
@@ -92,15 +79,12 @@ export default function ProgressionRecapTable({
             />
             Show all milestones
           </label>
-          <button
-            type="button"
-            onClick={downloadCsv}
+          <SheetExportButton
+            title={`Milestones — ${fileLabel ?? ""}`}
+            sheetTitle="Milestones"
+            buildMatrix={buildSheet}
             disabled={rows.length === 0}
-            className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
-          >
-            <Download size={14} />
-            Download CSV
-          </button>
+          />
         </div>
 
         <div className="max-h-[700px] overflow-auto">

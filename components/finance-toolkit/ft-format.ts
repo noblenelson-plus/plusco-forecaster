@@ -39,20 +39,12 @@ export function fte(v: number): string {
   return v.toFixed(1);
 }
 
-/** Builds a CSV (RFC 4180) and triggers a browser download. */
-export function downloadCsv(filename: string, header: string[], rows: (string | number | null)[][]): void {
-  const cell = (v: string | number | null) => {
-    if (v === null) return "";
-    const s = typeof v === "number" ? String(Math.round(v * 100) / 100) : v;
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
-  // BOM so Excel opens accented client names correctly.
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+/**
+ * Header + rows as a Google Sheets matrix (exports go to shared Sheets, not
+ * downloaded CSVs). Numbers rounded to 2 decimals, empty for null.
+ */
+export function sheetMatrix(header: string[], rows: (string | number | null)[][]): (string | number)[][] {
+  const cell = (v: string | number | null) =>
+    v === null ? "" : typeof v === "number" ? Math.round(v * 100) / 100 : v;
+  return [header, ...rows].map((r) => r.map(cell));
 }

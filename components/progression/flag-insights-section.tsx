@@ -182,17 +182,19 @@ function CategoryTable({
       </div>
       <div className="max-h-[480px] overflow-auto">
         <table className="w-full min-w-[960px] table-fixed text-sm">
-          {/* Same column widths in every category table, so they line up. */}
+          {/* Same column widths in every category table, so they line up. The
+              flag name has a fixed width (numbers sit right after it); the
+              justification mix takes the remaining space. */}
           <colgroup>
             {grouped && <col className="w-44" />}
-            <col />
+            <col className={grouped ? "w-52" : "w-[24rem]"} />
             <col className="w-20" />
             <col className="w-16" />
             <col className="w-24" />
             <col className="w-24" />
             <col className="w-24" />
             <col className="w-20" />
-            <col className="w-72" />
+            <col />
           </colgroup>
           <thead className="sticky top-0 z-10 bg-white text-[11px] uppercase tracking-wide text-gray-500">
             <tr className="border-b border-gray-100">

@@ -7,7 +7,7 @@
  * amounts (in the client's currency) and the BL's justification verbatim
  * (context + comment). Follows the page filters (facets + flag category /
  * flag); adds a text search and a Justified / Not justified switch. Scrolls
- * inside ~18 rows; downloadable as CSV.
+ * inside ~18 rows; exports to Google Sheets.
  *
  * The flags saved at the checkpoint (flag_history), plus each flag's previous
  * justification — what the BL wrote for the same flag at an earlier round of
@@ -15,7 +15,9 @@
  */
 
 import { useMemo, useState } from "react";
-import { Download, Search } from "lucide-react";
+import SheetExportButton from "../dashboard/sheet-export-button";
+import type { CellValue } from "../forecaster/table/table-export";
+import { Search } from "lucide-react";
 import {
   flagTypeOf,
   type ClientFlags,
@@ -52,11 +54,6 @@ function subjectOf(flag: StoredFlag): string {
   if (flag.ruleId === "revenue-swing") return "Annual revenue";
   if (flag.subject === "annual") return "Full year";
   return flag.title;
-}
-
-function csvField(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export default function FlagDetailTable({
@@ -123,7 +120,8 @@ export default function FlagDetailTable({
 
   const clientCount = useMemo(() => new Set(rows.map((r) => r.clientName)).size, [rows]);
 
-  function downloadCsv() {
+  // Google Sheets export (shared, not a downloaded CSV): scope line, blank row, table.
+  function buildSheet(): CellValue[][] {
     const header = ["Client", "GM", "Business Lead", "Flag", "On", "Current", "Reference", "Compared with", "Gap", "Currency", "Months", "Status", "Context", "Comment", "Previous justification"];
     const body = rows.map((r) => [
       r.clientName,
@@ -144,16 +142,7 @@ export default function FlagDetailTable({
         ? `${r.previous.rfq}: ${r.previous.context ? flagContextLabel(r.previous.context) : ""}${r.previous.note ? ` — ${r.previous.note}` : ""}`
         : "",
     ]);
-    const csv = [header, ...body].map((row) => row.map(csvField).join(",")).join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `milestone-flags-${year}-${checkpoint.targetRfq}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return [[scopeNote], [], header, ...body];
   }
 
   return (
@@ -206,15 +195,12 @@ export default function FlagDetailTable({
               />
             </label>
           </div>
-          <button
-            type="button"
-            onClick={downloadCsv}
+          <SheetExportButton
+            title={`Milestone flags — ${checkpoint.label} ${year}`}
+            sheetTitle="Flags"
+            buildMatrix={buildSheet}
             disabled={rows.length === 0}
-            className="flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
-          >
-            <Download size={14} />
-            Download CSV
-          </button>
+          />
         </div>
 
         <div className="max-h-[700px] overflow-auto">
