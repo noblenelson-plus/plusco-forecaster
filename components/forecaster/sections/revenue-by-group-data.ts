@@ -1,7 +1,7 @@
 // components/forecaster/sections/revenue-by-group-data.ts
 
 /**
- * Revenue by group (Agency / Agency + Region / Region / GM) for the Revenues
+ * Revenue by group (Agency / Agency-City / Region / GM) for the Revenues
  * tab: rolls the Client Revenue rows (computeClientRevenue — same modes, same
  * revenue-types filter, same scope) up by a client attribute, so GMs can see
  * e.g. "Cossette Media: −$500K vs last year" and which clients drive it. The
@@ -12,11 +12,12 @@ import { CLIENT_GM_PODS } from "../../../lib/constants/client.constants";
 import type { Client } from "../../../lib/types/client.types";
 import type { ClientRevenueRow } from "./client-revenue-data";
 
-export type RevenueGroupBy = "agency" | "agencyRegion" | "region" | "gm";
+export type RevenueGroupBy = "agency" | "agencyCity" | "region" | "gm";
 
 export const REVENUE_GROUP_OPTIONS: { id: RevenueGroupBy; label: string }[] = [
   { id: "agency", label: "Agency" },
-  { id: "agencyRegion", label: "Agency + Region" },
+  // Agency × office city (e.g. "Cossette Media – Toronto") — the BU GMs staff.
+  { id: "agencyCity", label: "Agency-City" },
   { id: "region", label: "Region" },
   { id: "gm", label: "GM" },
 ];
@@ -43,8 +44,8 @@ function groupLabel(c: Client | undefined, by: RevenueGroupBy): string {
   switch (by) {
     case "agency":
       return agency;
-    case "agencyRegion":
-      return `${agency} · ${region}`;
+    case "agencyCity":
+      return `${agency} – ${c.CL_Office || "No office"}`;
     case "region":
       return region;
     case "gm":

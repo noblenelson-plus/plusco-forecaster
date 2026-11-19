@@ -58,7 +58,10 @@ import { statusAt, type MilestoneClientRow } from "../../../lib/format/milestone
 import type { RfqValidationStatus } from "../../../lib/types/forecast-flags.types";
 
 /** The client facets this page offers, in display order. */
-const PAGE_FACETS: FacetKey[] = ["gmPods", "agencies", "regions", "businessLeads"];
+const PAGE_FACETS: FacetKey[] = ["gmPods", "agencies", "regions", "businessLeads", "clients"];
+
+/** "New Business – CM Ont/West" etc.: pipeline placeholders, not clients to chase. */
+const isNewBusinessPlaceholder = (name?: string) => /^new business/i.test((name ?? "").trim());
 
 const gmLabel = (v: string | undefined) =>
   v ? CLIENT_GM_PODS.find((g) => g.value === v)?.label ?? v : "";
@@ -100,7 +103,10 @@ function MilestonesPage() {
   const activeClients = useMemo(
     () =>
       clients.filter(
-        (c) => resolveClientStatus(c, year) === "ACTIVE" && !isTestClient(c.CL_Name)
+        (c) =>
+          resolveClientStatus(c, year) === "ACTIVE" &&
+          !isTestClient(c.CL_Name) &&
+          !isNewBusinessPlaceholder(c.CL_Name)
       ),
     [clients, year]
   );
@@ -118,6 +124,7 @@ function MilestonesPage() {
     agencies: linked.agency,
     regions: linked.region,
     businessLeads: linked.bl,
+    clients: linked.client,
   });
   const pageFacetViews = useMemo(
     () =>
@@ -155,6 +162,7 @@ function MilestonesPage() {
     agency: facetSel("agencies"),
     region: facetSel("regions"),
     bl: facetSel("businessLeads"),
+    client: facetSel("clients"),
     status: statuses,
     flagCategory: flagCategories,
     flag: flagTypeIds,
@@ -187,6 +195,7 @@ function MilestonesPage() {
         gm: gmLabel(c.GM_Pod),
         agency: c.CL_Agency ?? "",
         region: c.CL_Business_Unit_Region ?? "",
+        office: c.CL_Office ?? "",
         bl: c.CL_Business_Lead
           ? usersMap.get(c.CL_Business_Lead) ?? c.CL_Business_Lead
           : "Unassigned",
@@ -231,6 +240,19 @@ function MilestonesPage() {
         : rows.filter((r) => statuses.includes(statusAt(r, checkpoint.id))),
     [rows, statuses, checkpoint.id]
   );
+
+  // Which clients every section covers, said in each section's heading (the
+  // top filters apply to the whole page).
+  const facetScope = pageFacetViews
+    .filter((v) => v.selected.length > 0)
+    .map((v) => {
+      const names = v.selected.map((s) => v.options.find((o) => o.value === s)?.label ?? s);
+      return `${v.label} ${names.length > 2 ? `${names.slice(0, 2).join(", ")} +${names.length - 2}` : names.join(", ")}`;
+    })
+    .join(" · ");
+  const scopeNote = facetScope
+    ? `Filtered: ${facetScope} · ${rows.length} client${rows.length !== 1 ? "s" : ""}`
+    : `All active clients · ${rows.length}`;
 
   const hasActiveFilters =
     hasFacetFilters || statuses.length > 0 || flagCategories.length > 0 || flagTypeIds.length > 0;
@@ -312,11 +334,17 @@ function MilestonesPage() {
           </div>
         ) : (
           <>
-            <MilestoneTrackingSummary rows={rows} checkpoint={checkpoint} statuses={statuses} />
+            <MilestoneTrackingSummary
+              rows={rows}
+              checkpoint={checkpoint}
+              statuses={statuses}
+              scopeNote={scopeNote}
+            />
             <ProgressionRecapTable
               rows={tableRows}
               checkpointId={checkpoint.id}
               fileLabel={String(selectedYear)}
+              scopeNote={scopeNote}
             />
             {checkpointFlags.error ? (
               <div className="border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
@@ -334,6 +362,8 @@ function MilestonesPage() {
                 checkpoint={checkpoint}
                 year={year}
                 missingUsdRate={hasUsdClients && checkpointFlags.usdToCad === undefined}
+                scopeNote={scopeNote}
+                filtered={!!facetScope}
               />
             )}
             {!checkpointFlags.loading && !checkpointFlags.error && (
@@ -342,6 +372,7 @@ function MilestonesPage() {
                 types={selectedFlagTypes}
                 checkpoint={checkpoint}
                 year={year}
+                scopeNote={scopeNote}
               />
             )}
           </>

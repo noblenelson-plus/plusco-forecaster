@@ -137,6 +137,8 @@ export interface ClientFlags {
   gm: string;
   agency: string;
   region: string;
+  /** Office city (Toronto, Montreal…) — the "Agency-City" view. */
+  office?: string;
   /** Business Lead display name (Section 3). */
   bl?: string;
   /** Client currency — amounts are stored in it (Section 3 shows them as is). */
@@ -148,13 +150,13 @@ export interface ClientFlags {
   flags: StoredFlag[];
 }
 
-export type GroupBy = "total" | "gm" | "agency" | "region";
+export type GroupBy = "total" | "gm" | "agency" | "agencyCity";
 
 export const GROUP_BY_OPTIONS: { id: GroupBy; label: string }[] = [
   { id: "total", label: "Total PlusCo" },
   { id: "gm", label: "GM" },
   { id: "agency", label: "Agency" },
-  { id: "region", label: "Region" },
+  { id: "agencyCity", label: "Agency-City" },
 ];
 
 export interface ContextShare {
@@ -183,7 +185,8 @@ export interface FlagTypeStats {
 
 function groupOf(c: ClientFlags, by: GroupBy): string {
   if (by === "total") return "Total PlusCo";
-  const v = by === "gm" ? c.gm : by === "agency" ? c.agency : c.region;
+  if (by === "agencyCity") return `${c.agency || "No agency"} – ${c.office || "No office"}`;
+  const v = by === "gm" ? c.gm : c.agency;
   return v || "—";
 }
 

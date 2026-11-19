@@ -32,6 +32,7 @@ import { FLAG_CONTEXTS } from "../../lib/types/forecast-flags.types";
 import { formatCompactMoney } from "../dashboard/charts/format";
 import { CATEGORICAL_COLORS, NEUTRAL_FILL } from "../dashboard/charts/colors";
 import type { ConfirmationStep } from "../../lib/constants/confirmation-steps";
+import { ScopeLine } from "./milestone-tracking-summary";
 
 const CONTEXT_COLOR: Record<string, string> = Object.fromEntries([
   ...FLAG_CONTEXTS.map((c, i) => [c.value, CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length]]),
@@ -48,7 +49,13 @@ export default function FlagInsightsSection({
   checkpoint,
   year,
   missingUsdRate,
+  scopeNote,
+  filtered,
 }: {
+  /** Which clients the page covers (top filters). */
+  scopeNote: string;
+  /** Top filters active — "Total PlusCo" then reads "Total (filtered)". */
+  filtered: boolean;
   /** Facet-filtered clients with their current flags (CAD multiplier set). */
   clients: ClientFlags[];
   /** Clients in scope (for "% of clients flagged"). */
@@ -78,6 +85,7 @@ export default function FlagInsightsSection({
             Flags at <span className="font-semibold text-gray-900">{checkpoint.label} {year}</span>{" "}
             · amounts in CAD
           </p>
+          <ScopeLine note={scopeNote} />
         </div>
         <div className="flex items-center gap-2 text-xs font-medium text-gray-600">
           View
@@ -92,7 +100,7 @@ export default function FlagInsightsSection({
                   groupBy === g.id ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
                 }`}
               >
-                {g.label}
+                {g.id === "total" && filtered ? "Total (filtered)" : g.label}
               </button>
             ))}
           </div>

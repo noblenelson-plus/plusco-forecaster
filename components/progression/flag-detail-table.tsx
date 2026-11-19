@@ -26,6 +26,7 @@ import { flagComparison, formatMonths } from "../flags/flag-card";
 import { previousJustification, type PreviousJustification } from "../../lib/format/flag-history";
 import { formatMoney, formatSigned } from "../../lib/format/money";
 import type { ConfirmationStep } from "../../lib/constants/confirmation-steps";
+import { ScopeLine } from "./milestone-tracking-summary";
 
 type JustifiedFilter = "all" | "not_justified" | "justified";
 
@@ -63,7 +64,9 @@ export default function FlagDetailTable({
   types,
   checkpoint,
   year,
+  scopeNote,
 }: {
+  scopeNote: string;
   clients: ClientFlags[];
   types: FlagTypeId[];
   checkpoint: ConfirmationStep;
@@ -161,6 +164,7 @@ export default function FlagDetailTable({
           Flags at <span className="font-semibold text-gray-900">{checkpoint.label} {year}</span>{" "}
           with the Business Lead&apos;s justification · amounts in the client&apos;s currency
         </p>
+        <ScopeLine note={scopeNote} />
       </div>
 
       <div className="border border-gray-200 bg-white">
