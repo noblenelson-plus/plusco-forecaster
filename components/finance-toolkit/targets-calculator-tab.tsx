@@ -16,7 +16,22 @@
 
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { Briefcase, CalendarRange, Calculator, DollarSign, HelpCircle, Percent, Plus, Sparkles, Table2, Users, X } from "lucide-react";
+import {
+  Bookmark,
+  Briefcase,
+  CalendarRange,
+  Calculator,
+  Crosshair,
+  DollarSign,
+  HelpCircle,
+  Percent,
+  Plus,
+  SlidersHorizontal,
+  Sparkles,
+  Table2,
+  Users,
+  X,
+} from "lucide-react";
 import StatCard, { type StatVariance } from "../dashboard/charts/stat-card";
 import ChartCard from "../dashboard/charts/chart-card";
 import { NEUTRAL_FILL, PLUS } from "../dashboard/charts/colors";
@@ -37,8 +52,9 @@ import {
   type TargetSolution,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { Chip, DataTable, Field, Formula, GhostButton, HowCalculated, InShort, Notice, Segmented, selectClass, type Column } from "./ft-ui";
-import { downloadCsv, formatCompactMoney, fte, hours, money, pct, rate } from "./ft-format";
+import { Chip, Disclosure, DataTable, Field, Formula, HowCalculated, InShort, Notice, Segmented, selectClass, type Column } from "./ft-ui";
+import { sheetMatrix, formatCompactMoney, fte, hours, money, pct, rate } from "./ft-format";
+import SheetExportButton from "../dashboard/sheet-export-button";
 import LeversCard from "./calculator-levers";
 import TargetCard from "./calculator-target";
 import ScenariosCard, { type CalculatorInputs, type Scenario } from "./calculator-scenarios";
@@ -52,7 +68,20 @@ const AGENCIES = [
 type AgencyId = (typeof AGENCIES)[number]["id"];
 
 /** Plus palette plus darker shades of the same hues, so up to 12 roles stay distinct. */
-const ROLE_COLORS = [PLUS.purple, PLUS.yellow, PLUS.green, PLUS.blue, PLUS.pink, PLUS.red, "#2f2659", "#b38600", "#2e7d31", "#2a9aa6", PLUS.lightPink, PLUS.lightBlue];
+const ROLE_COLORS = [
+  PLUS.purple,
+  PLUS.yellow,
+  PLUS.green,
+  PLUS.blue,
+  PLUS.pink,
+  PLUS.red,
+  "#2f2659",
+  "#b38600",
+  "#2e7d31",
+  "#2a9aa6",
+  PLUS.lightPink,
+  PLUS.lightBlue,
+];
 
 const PRESET_REVENUE = [250_000, 500_000, 1_000_000, 2_500_000, 5_000_000];
 const SLIDER_MIN = Math.log10(50_000);
@@ -91,9 +120,7 @@ function KpiButton({ active, onClick, children }: { active: boolean; onClick: ()
 }
 
 export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: CostBasis; initialAgency: string }) {
-  const [agency, setAgency] = useState<AgencyId>(
-    (AGENCIES.some((a) => a.id === initialAgency) ? initialAgency : "cossette") as AgencyId
-  );
+  const [agency, setAgency] = useState<AgencyId>((AGENCIES.some((a) => a.id === initialAgency) ? initialAgency : "cossette") as AgencyId);
   const [revenue, setRevenue] = useState(1_000_000);
   const [revenueText, setRevenueText] = useState("1,000,000");
   const [auto, setAuto] = useState(true);
@@ -108,7 +135,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
   const suggested = useMemo(() => suggestComparables(candidates, revenue, MAX_COMPARABLES), [candidates, revenue]);
   const chosen: Comparable[] = useMemo(
     () => (auto ? suggested : manual.map((id) => candidates.find((c) => c.client.index === id)).filter((c): c is Comparable => !!c)),
-    [auto, suggested, manual, candidates]
+    [auto, suggested, manual, candidates],
   );
   const dataPlan = useMemo(() => staffingPlan(agency, revenue, chosen, basis), [agency, revenue, chosen, basis]);
 
@@ -190,7 +217,9 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
   };
 
   const toggleWhy = (t: WhyTopic) =>
-    setWhy((cur) => (cur && cur.kind === t.kind && (t.kind === "kpi" ? cur.kind === "kpi" && cur.id === t.id : cur.kind === "role" && cur.key === t.key) ? null : t));
+    setWhy((cur) =>
+      cur && cur.kind === t.kind && (t.kind === "kpi" ? cur.kind === "kpi" && cur.id === t.id : cur.kind === "role" && cur.key === t.key) ? null : t,
+    );
   const kpiActive = (id: KpiId) => why?.kind === "kpi" && why.id === id;
 
   const roleColors = useMemo(() => {
@@ -237,16 +266,14 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
           render: (r) => mark(Math.abs(r.rate - r.dataRate) > 0.005, rate(r.rate)),
           total: rate(plan.blendedRate),
         },
-        ...plan.monthlyHours.map(
-          (_, m): Column<PlanRow> => ({
-            id: `m${m}`,
-            label: `M${m + 1}`,
-            align: "right",
-            className: "text-gray-600",
-            render: (r) => fmtCell(r.monthlyHours[m]),
-            total: fmtCell(plan.monthlyHours[m]),
-          })
-        ),
+        ...plan.monthlyHours.map((_, m): Column<PlanRow> => ({
+          id: `m${m}`,
+          label: `M${m + 1}`,
+          align: "right",
+          className: "text-gray-600",
+          render: (r) => fmtCell(r.monthlyHours[m]),
+          total: fmtCell(plan.monthlyHours[m]),
+        })),
         {
           id: "year",
           label: unit === "fte" ? "Avg FTE" : "Year 1 h",
@@ -266,7 +293,9 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
       render: (c) => (
         <div className="max-w-[280px]">
           <div className="truncate font-medium text-gray-900">{c.client.name}</div>
-          <div className="text-[11px] text-gray-500">#{c.client.number} · active {c.activeMonths} of {REVENUE_WINDOW.months} months</div>
+          <div className="text-[11px] text-gray-500">
+            #{c.client.number} · active {c.activeMonths} of {REVENUE_WINDOW.months} months
+          </div>
         </div>
       ),
     },
@@ -276,8 +305,8 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
     { id: "margin", label: "Actual margin", align: "right", render: (c) => pct(c.marginPct) },
   ];
 
-  const exportCsv = () => {
-    if (!plan) return;
+  const buildSheet = () => {
+    if (!plan) return [];
     const settings: (string | number | null)[][] = [
       ["Settings", nChanged === 0 ? "Data-based (no changes)" : `${nChanged} changed from the data`],
       ["Team size", levers.fixedFte === null ? "Scales with revenue" : `Fixed at ${fte(levers.fixedFte)} FTE`],
@@ -287,9 +316,18 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
       ["Onboarding ramp", RAMP_SETTINGS.find((r) => r.id === levers.ramp)?.label ?? levers.ramp],
       ["Year-1 revenue timing", levers.revenueTiming === "even" ? "Even from month 1" : "Ramps with the team"],
     ];
-    downloadCsv(
-      `finance-toolkit-staffing-plan-${agency}-${Math.round(revenue / 1000)}k.csv`,
-      ["Role", "Mix", "Data mix", `Cost per hour (${currency})`, `Data cost per hour (${currency})`, ...plan.monthlyHours.map((_, m) => `M${m + 1} hours`), "Year 1 hours", "Run-rate FTE", `Year 1 cost (${currency})`],
+    return sheetMatrix(
+      [
+        "Role",
+        "Mix",
+        "Data mix",
+        `Cost per hour (${currency})`,
+        `Data cost per hour (${currency})`,
+        ...plan.monthlyHours.map((_, m) => `M${m + 1} hours`),
+        "Year 1 hours",
+        "Run-rate FTE",
+        `Year 1 cost (${currency})`,
+      ],
       [
         ...plan.roles.map((r) => [r.label, r.share, r.dataShare, r.rate, r.dataRate, ...r.monthlyHours, r.yearHours, r.runRateFte, r.yearCost]),
         ["Total", 1, 1, plan.blendedRate, null, ...plan.monthlyHours, plan.yearHours, plan.runRateFte, plan.yearCost],
@@ -301,7 +339,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
         ["Comparables", chosen.map((c) => c.client.name).join(" | ")],
         ["Cost basis", basis === "base1" ? "Base1" : "Enterprise"],
         ...settings,
-      ]
+      ],
     );
   };
 
@@ -365,73 +403,82 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
           </Field>
         </Card>
 
-        <Card className="gap-3 p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-              <Briefcase size={16} className="text-primary" /> Similar accounts (the benchmark)
+        <Disclosure title="Similar accounts" subtitle={`${chosen.length} ${auto ? "picked automatically" : "chosen by you"}`} icon={Briefcase}>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">The benchmark</span>
+              {auto ? (
+                <Chip tone="dark">
+                  <Sparkles size={10} className="mr-1" /> Picked automatically
+                </Chip>
+              ) : (
+                <button type="button" onClick={() => setAuto(true)} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">
+                  Reset to auto
+                </button>
+              )}
             </div>
-            {auto ? (
-              <Chip tone="dark">
-                <Sparkles size={10} className="mr-1" /> Picked automatically
-              </Chip>
-            ) : (
-              <button type="button" onClick={() => setAuto(true)} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">
-                Reset to auto
+            <p className="text-[11px] leading-snug text-gray-500">
+              {auto
+                ? `The ${MAX_COMPARABLES} ${AGENCIES.find((a) => a.id === agency)!.label} accounts closest in yearly revenue. The plan staffs the new account the way these are staffed today.`
+                : "Your selection: pick 1 to 3 accounts that look most like the prospect. The plan staffs it the way these are staffed today."}
+            </p>
+            <ul className="divide-y divide-gray-100 border border-gray-200">
+              {chosen.length === 0 && <li className="px-3 py-3 text-xs text-gray-500">No comparable selected.</li>}
+              {chosen.map((c) => (
+                <li key={c.client.index} className="flex items-center justify-between gap-2 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-semibold text-gray-900" title={c.client.name}>
+                      {c.client.name}
+                    </div>
+                    <div className="text-[11px] tabular-nums text-gray-500">
+                      {formatCompactMoney(c.annualizedRevenue)}/yr · {c.hoursPerThousand.toFixed(1)} h per $1,000
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeComparable(c.client.index)}
+                    aria-label={`Remove ${c.client.name}`}
+                    className="p-1 text-gray-400 hover:text-gray-900"
+                  >
+                    <X size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {chosen.length < MAX_COMPARABLES && (
+              <div className="flex items-center gap-2">
+                <select
+                  value={adding}
+                  onChange={(e) => e.target.value && addComparable(Number(e.target.value))}
+                  className={`${selectClass} w-full text-xs`}
+                  aria-label="Add a comparable account"
+                >
+                  <option value="">Add an account…</option>
+                  {available.map((c) => (
+                    <option key={c.client.index} value={c.client.index}>
+                      {c.client.name} — {formatCompactMoney(c.annualizedRevenue)}/yr
+                    </option>
+                  ))}
+                </select>
+                <Plus size={14} className="shrink-0 text-gray-400" />
+              </div>
+            )}
+            {auto && (
+              <button type="button" onClick={editComparables} className="self-start text-[11px] font-semibold text-gray-500 hover:text-gray-900">
+                Edit selection
               </button>
             )}
+            <p className="text-[11px] text-gray-400">
+              {candidates.length} eligible accounts: revenue and client hours in {REVENUE_WINDOW.label}, active ≥ 4 months.
+            </p>
           </div>
-          <p className="text-[11px] leading-snug text-gray-500">
-            {auto
-              ? `The ${MAX_COMPARABLES} ${AGENCIES.find((a) => a.id === agency)!.label} accounts closest in yearly revenue. The plan staffs the new account the way these are staffed today.`
-              : "Your selection: pick 1 to 3 accounts that look most like the prospect. The plan staffs it the way these are staffed today."}
-          </p>
-          <ul className="divide-y divide-gray-100 border border-gray-200">
-            {chosen.length === 0 && <li className="px-3 py-3 text-xs text-gray-500">No comparable selected.</li>}
-            {chosen.map((c) => (
-              <li key={c.client.index} className="flex items-center justify-between gap-2 px-3 py-2">
-                <div className="min-w-0">
-                  <div className="truncate text-xs font-semibold text-gray-900" title={c.client.name}>
-                    {c.client.name}
-                  </div>
-                  <div className="text-[11px] tabular-nums text-gray-500">
-                    {formatCompactMoney(c.annualizedRevenue)}/yr · {c.hoursPerThousand.toFixed(1)} h per $1,000
-                  </div>
-                </div>
-                <button type="button" onClick={() => removeComparable(c.client.index)} aria-label={`Remove ${c.client.name}`} className="p-1 text-gray-400 hover:text-gray-900">
-                  <X size={14} />
-                </button>
-              </li>
-            ))}
-          </ul>
-          {chosen.length < MAX_COMPARABLES && (
-            <div className="flex items-center gap-2">
-              <select
-                value={adding}
-                onChange={(e) => e.target.value && addComparable(Number(e.target.value))}
-                className={`${selectClass} w-full text-xs`}
-                aria-label="Add a comparable account"
-              >
-                <option value="">Add an account…</option>
-                {available.map((c) => (
-                  <option key={c.client.index} value={c.client.index}>
-                    {c.client.name} — {formatCompactMoney(c.annualizedRevenue)}/yr
-                  </option>
-                ))}
-              </select>
-              <Plus size={14} className="shrink-0 text-gray-400" />
-            </div>
-          )}
-          {auto && (
-            <button type="button" onClick={editComparables} className="self-start text-[11px] font-semibold text-gray-500 hover:text-gray-900">
-              Edit selection
-            </button>
-          )}
-          <p className="text-[11px] text-gray-400">
-            {candidates.length} eligible accounts: revenue and client hours in {REVENUE_WINDOW.label}, active ≥ 4 months.
-          </p>
-        </Card>
+        </Disclosure>
 
-        {plan && <LeversCard plan={plan} levers={levers} onChange={setLevers} />}
+        {plan && (
+          <Disclosure title="Try a what-if" subtitle="Team size, seniority and more" icon={SlidersHorizontal} defaultOpen={nChanged > 0}>
+            <LeversCard plan={plan} levers={levers} onChange={setLevers} bare />
+          </Disclosure>
+        )}
       </div>
 
       {/* ── Output ── */}
@@ -443,8 +490,8 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
             {nChanged > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-2 bg-yellow-400 px-4 py-2.5 text-xs text-gray-900">
                 <span>
-                  <strong>What-if plan:</strong> {nChanged} setting{nChanged > 1 ? "s" : ""} changed from the data. Changed values are highlighted, and “Why?” marks
-                  each input as data or your setting.
+                  <strong>What-if plan:</strong> {nChanged} setting{nChanged > 1 ? "s" : ""} changed from the data. Changed values are highlighted,
+                  and “Why?” marks each input as data or your setting.
                 </span>
                 <button type="button" onClick={() => setLevers({ ...DEFAULT_LEVERS })} className="font-semibold underline underline-offset-2">
                   Back to the data-based plan
@@ -455,9 +502,9 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
             <InShort>
               A {formatCompactMoney(revenue)}-a-year {AGENCIES.find((a) => a.id === agency)!.label} account would need about{" "}
               <strong>{fte(plan.runRateFte)} full-time people</strong> once fully staffed
-              {plan.rampFactors[0] < 0.95 ? ", built up over the first months" : ""}. First-year staffing would cost {formatCompactMoney(plan.yearCost)},
-              leaving a <strong>{pct(plan.yearMarginPct, 0)}</strong> margin in year 1 and <strong>{pct(plan.runRateMarginPct, 0)}</strong> once the team is
-              fully in place
+              {plan.rampFactors[0] < 0.95 ? ", built up over the first months" : ""}. First-year staffing would cost{" "}
+              {formatCompactMoney(plan.yearCost)}, leaving a <strong>{pct(plan.yearMarginPct, 0)}</strong> margin in year 1 and{" "}
+              <strong>{pct(plan.runRateMarginPct, 0)}</strong> once the team is fully in place
               {plan.yearMarginPct > plan.runRateMarginPct + 0.005 && levers.revenueTiming === "even"
                 ? " (year 1 looks better only because the team is still building up while revenue is assumed to arrive in full)"
                 : ""}
@@ -522,13 +569,12 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                 )}
                 {currency === "USD" && (
                   <p>
-                    MEK US data is thin ({candidates.length} eligible accounts) and part of its hours carry no cost on file — treat this plan as directional.
+                    MEK US data is thin ({candidates.length} eligible accounts) and part of its hours carry no cost on file — treat this plan as
+                    directional.
                   </p>
                 )}
               </Notice>
             )}
-
-            <TargetCard plan={plan} onApply={applyTarget} />
 
             {chart && (
               <ChartCard
@@ -541,13 +587,30 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                       : `from ${plan.ramp.clients} new clients (${plan.ramp.basis})`
                 }`}
                 icon={Users}
-                action={<Segmented size="sm" value={unit} onChange={setUnit} options={[{ id: "hours", label: "Hours" }, { id: "fte", label: "FTE" }]} ariaLabel="Unit" />}
+                action={
+                  <Segmented
+                    size="sm"
+                    value={unit}
+                    onChange={setUnit}
+                    options={[
+                      { id: "hours", label: "Hours" },
+                      { id: "fte", label: "FTE" },
+                    ]}
+                    ariaLabel="Unit"
+                  />
+                }
               >
                 <ChartContainer config={chart.config} className="aspect-auto w-full" style={{ height: 300 }}>
                   <BarChart data={chart.data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={(v) => (unit === "fte" ? Number(v).toFixed(1) : hours(Number(v)))} tickLine={false} axisLine={false} width={48} tick={{ fontSize: 11 }} />
+                    <YAxis
+                      tickFormatter={(v) => (unit === "fte" ? Number(v).toFixed(1) : hours(Number(v)))}
+                      tickLine={false}
+                      axisLine={false}
+                      width={48}
+                      tick={{ fontSize: 11 }}
+                    />
                     <ChartTooltip
                       cursor={{ fillOpacity: 0.4 }}
                       content={
@@ -555,7 +618,9 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                           formatter={(v, name) => (
                             <div className="flex w-full items-center justify-between gap-3">
                               <span className="text-muted-foreground">{chart.config[name as string]?.label}</span>
-                              <span className="font-medium tabular-nums text-foreground">{unit === "fte" ? `${fte(Number(v))} FTE` : `${hours(Number(v))} h`}</span>
+                              <span className="font-medium tabular-nums text-foreground">
+                                {unit === "fte" ? `${fte(Number(v))} FTE` : `${hours(Number(v))} h`}
+                              </span>
                             </div>
                           )}
                         />
@@ -574,7 +639,13 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               title="Staffing plan by role"
               subtitle={`${unit === "fte" ? `FTE (1 FTE = ${fteHours} h/month)` : "Client hours"} · click a role to see how it is staffed and priced`}
               icon={Table2}
-              action={<GhostButton onClick={exportCsv}>Download CSV</GhostButton>}
+              action={
+                <SheetExportButton
+                  title={`Staffing plan · ${AGENCIES.find((a) => a.id === agency)!.label} · ${formatCompactMoney(revenue)} a year`}
+                  sheetTitle="Staffing plan"
+                  buildMatrix={buildSheet}
+                />
+              }
             >
               <DataTable
                 columns={planColumns}
@@ -586,18 +657,30 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               />
             </ChartCard>
 
-            <ScenariosCard current={inputs} currentPlan={plan} basis={basis} maxComparables={MAX_COMPARABLES} onLoad={loadScenario} />
+            <Disclosure title="Hit a target margin" subtitle="Three ways to reach the margin you want" icon={Crosshair}>
+              <TargetCard plan={plan} onApply={applyTarget} bare />
+            </Disclosure>
 
-            <ChartCard title="The similar accounts behind this plan" subtitle={`What they actually earned and used, ${REVENUE_WINDOW.label}`} icon={Briefcase}>
+            <Disclosure title="Save and compare scenarios" subtitle="Keep versions of the plan side by side" icon={Bookmark}>
+              <ScenariosCard current={inputs} currentPlan={plan} basis={basis} maxComparables={MAX_COMPARABLES} onLoad={loadScenario} bare />
+            </Disclosure>
+
+            <Disclosure
+              title="The similar accounts behind this plan"
+              subtitle={`What they earned and used, ${REVENUE_WINDOW.label}`}
+              icon={Briefcase}
+            >
               <DataTable columns={compColumns} rows={chosen} rowKey={(c) => String(c.client.index)} />
-            </ChartCard>
+            </Disclosure>
 
             <HowCalculated>
               <Formula
                 name="Hours per revenue $"
                 formula="Σ comparables’ client hours ÷ Σ comparables’ gross revenue"
                 worked={`${hours(plan.compHours)} h ÷ ${money(plan.compRevenue)} = ${(plan.dataHoursPerDollar * 1000).toFixed(2)} h per $1K (${REVENUE_WINDOW.label})${
-                  levers.fixedFte === null && levers.hoursAdj !== 1 ? ` × ${pct(levers.hoursAdj, 0)} team intensity = ${(plan.hoursPerDollar * 1000).toFixed(2)}` : ""
+                  levers.fixedFte === null && levers.hoursAdj !== 1
+                    ? ` × ${pct(levers.hoursAdj, 0)} team intensity = ${(plan.hoursPerDollar * 1000).toFixed(2)}`
+                    : ""
                 }`}
               />
               <Formula
@@ -616,7 +699,12 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               <Formula
                 name="Onboarding ramp"
                 formula="month m hours ÷ average of months 7–12, median across new clients, smoothed so the ramp never steps back"
-                worked={`Plan: ${plan.rampFactors.slice(0, 6).map((f, i) => `M${i + 1} ${pct(f, 0)}`).join(" · ")} · M7–12 100%${plan.ramp.observed.length ? ` (observed medians: ${plan.ramp.observed.map((f) => pct(f, 0)).join(" · ")})` : ""}`}
+                worked={`Plan: ${plan.rampFactors
+                  .slice(0, 6)
+                  .map((f, i) => `M${i + 1} ${pct(f, 0)}`)
+                  .join(
+                    " · ",
+                  )} · M7–12 100%${plan.ramp.observed.length ? ` (observed medians: ${plan.ramp.observed.map((f) => pct(f, 0)).join(" · ")})` : ""}`}
               />
               <Formula name="Plan hours" formula="run-rate hours × role mix × ramp factor (month m)" />
               <Formula
@@ -624,28 +712,37 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                 formula={`Σ agency cost ÷ Σ hours with a cost on file, by role, ${plan.ratesWindow}; × seniority setting; or your override`}
                 worked={`${basis === "base1" ? "Base1" : "Enterprise"} cost basis · blended ${rate(plan.blendedRate)} / h`}
               />
-              <Formula name="Staffing cost" formula="Σ plan hours × role cost per hour" worked={`Year 1 ${money(plan.yearCost)} · run rate ${money(plan.runRateCost)} / year`} />
+              <Formula
+                name="Staffing cost"
+                formula="Σ plan hours × role cost per hour"
+                worked={`Year 1 ${money(plan.yearCost)} · run rate ${money(plan.runRateCost)} / year`}
+              />
               <Formula
                 name="Margin"
                 formula="(revenue − staffing cost) ÷ revenue"
                 worked={`Year 1: (${money(plan.yearRevenue)} − ${money(plan.yearCost)}) ÷ ${money(plan.yearRevenue)} = ${pct(plan.yearMarginPct)} · run rate = 1 − hours per $ × blended cost per hour = ${pct(plan.runRateMarginPct)}`}
               />
-              <Formula name="FTE" formula="hours ÷ hours per FTE per month" worked={`Run rate ${hours(plan.steadyMonthlyHours)} ÷ ${fteHours} = ${fte(plan.runRateFte)} FTE`} />
+              <Formula
+                name="FTE"
+                formula="hours ÷ hours per FTE per month"
+                worked={`Run rate ${hours(plan.steadyMonthlyHours)} ÷ ${fteHours} = ${fte(plan.runRateFte)} FTE`}
+              />
               <div className="mt-3 space-y-1.5 text-xs text-gray-600">
                 <p>
-                  <strong>Assumptions.</strong> 1 FTE = {DEFAULT_LEVERS.fteHours} client hours a month by default — the data agrees: a full employee-month logs a
-                  median of {MODEL.source.fteMedianClientHours} client hours ({MODEL.source.fteMedianTotalHours} h including time off and internal work).
-                  Year-1 revenue is even from month 1 by default, so the onboarding months (lighter staffing) lift year-1 margin above the run rate; choose
-                  “Ramps with the team” for the conservative view. Comparable revenue is annualized from {REVENUE_WINDOW.label} (× 12 ÷ {REVENUE_WINDOW.months}).
+                  <strong>Assumptions.</strong> 1 FTE = {DEFAULT_LEVERS.fteHours} client hours a month by default — the data agrees: a full
+                  employee-month logs a median of {MODEL.source.fteMedianClientHours} client hours ({MODEL.source.fteMedianTotalHours} h including
+                  time off and internal work). Year-1 revenue is even from month 1 by default, so the onboarding months (lighter staffing) lift year-1
+                  margin above the run rate; choose “Ramps with the team” for the conservative view. Comparable revenue is annualized from{" "}
+                  {REVENUE_WINDOW.label} (× 12 ÷ {REVENUE_WINDOW.months}).
                 </p>
                 <p>
-                  <strong>The ramp.</strong> Measured on clients that started inside the data (first client hour at least one month after their agency’s export
-                  begins, and early enough for 9+ months to be observed) and that settle at 40+ hours a month. Month 1 is usually a partial month. The agency’s
-                  own new clients are used when there are at least 5; otherwise all agencies (the ratios are unitless).
+                  <strong>The ramp.</strong> Measured on clients that started inside the data (first client hour at least one month after their
+                  agency’s export begins, and early enough for 9+ months to be observed) and that settle at 40+ hours a month. Month 1 is usually a
+                  partial month. The agency’s own new clients are used when there are at least 5; otherwise all agencies (the ratios are unitless).
                 </p>
                 <p>
-                  <strong>Not included:</strong> overhead (time off, internal work), non-staff costs, and pass-through media. Staffing cost is direct labour at
-                  Maconomy cost rates.
+                  <strong>Not included:</strong> overhead (time off, internal work), non-staff costs, and pass-through media. Staffing cost is direct
+                  labour at Maconomy cost rates.
                 </p>
               </div>
             </HowCalculated>
