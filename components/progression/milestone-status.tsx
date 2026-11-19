@@ -17,21 +17,21 @@ export const STATUS_META: Record<
 > = {
   validated: {
     label: "Validated",
-    hint: "Validated, and every flag has a reason.",
+    hint: "Done, all flags explained",
     icon: Check,
     chip: "bg-green-500 text-white",
     bar: "bg-green-500",
   },
   failed: {
     label: "Flags to justify",
-    hint: "Validated, but some flags still need a reason and a comment.",
+    hint: "Validated, reasons missing",
     icon: AlertTriangle,
     chip: "bg-yellow-400 text-gray-900",
     bar: "bg-yellow-400",
   },
   not_validated: {
     label: "Not validated",
-    hint: "Validate hasn't been clicked yet for this milestone.",
+    hint: "Not started yet",
     icon: Minus,
     chip: "bg-gray-200 text-gray-500",
     bar: "bg-gray-300",

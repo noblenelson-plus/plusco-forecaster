@@ -70,7 +70,7 @@ export default function MilestoneTrackingSummary({
         <Tile
           label="Active clients"
           value={String(totals.total)}
-          hint="Clients active this year, within the filters."
+          hint="Active this year"
         />
         {MILESTONE_STATUS_ORDER.map((s) => (
           <Tile
