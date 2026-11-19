@@ -6,7 +6,7 @@
  * a query string (unknown values dropped), `buildMilestoneQuery` writes one
  * (empty filters omitted, stable key order).
  *
- *   ?year=2026&checkpoint=rfq3&gm=…&agency=…&region=…&bl=…
+ *   ?year=2026&checkpoint=rfq3&gm=…&agency=…&region=…&bl=…&client=…
  *    &status=failed,not_validated&flagCategory=…&flag=…
  */
 
@@ -22,6 +22,7 @@ export interface MilestoneView {
   agency: string[];
   region: string[];
   bl: string[];
+  client: string[];
   status: RfqValidationStatus[];
   flagCategory: string[];
   flag: string[];
@@ -48,6 +49,7 @@ export function parseMilestoneView(search: string): MilestoneView {
     agency: list(p, "agency"),
     region: list(p, "region"),
     bl: list(p, "bl"),
+    client: list(p, "client"),
     status: list(p, "status").filter((s) => STATUS_IDS.has(s)) as RfqValidationStatus[],
     flagCategory: list(p, "flagCategory").filter((s) => CATEGORY_IDS.has(s)),
     flag: list(p, "flag").filter((s) => TYPE_IDS.has(s)),
@@ -63,6 +65,7 @@ export function buildMilestoneQuery(v: MilestoneView): string {
     ["agency", v.agency],
     ["region", v.region],
     ["bl", v.bl],
+    ["client", v.client],
     ["status", v.status],
     ["flagCategory", v.flagCategory],
     ["flag", v.flag],

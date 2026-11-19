@@ -137,6 +137,8 @@ export interface ClientFlags {
   gm: string;
   agency: string;
   region: string;
+  /** Office city (Toronto, Montreal…) — the "Agency-City" view. */
+  office?: string;
   /** Business Lead display name (Section 3). */
   bl?: string;
   /** Client currency — amounts are stored in it (Section 3 shows them as is). */
@@ -148,13 +150,13 @@ export interface ClientFlags {
   flags: StoredFlag[];
 }
 
-export type GroupBy = "total" | "gm" | "agency" | "region";
+export type GroupBy = "total" | "gm" | "agency" | "agencyCity";
 
 export const GROUP_BY_OPTIONS: { id: GroupBy; label: string }[] = [
   { id: "total", label: "Total PlusCo" },
   { id: "gm", label: "GM" },
   { id: "agency", label: "Agency" },
-  { id: "region", label: "Region" },
+  { id: "agencyCity", label: "Agency-City" },
 ];
 
 export interface ContextShare {
@@ -183,7 +185,8 @@ export interface FlagTypeStats {
 
 function groupOf(c: ClientFlags, by: GroupBy): string {
   if (by === "total") return "Total PlusCo";
-  const v = by === "gm" ? c.gm : by === "agency" ? c.agency : c.region;
+  if (by === "agencyCity") return `${c.agency || "No agency"} – ${c.office || "No office"}`;
+  const v = by === "gm" ? c.gm : c.agency;
   return v || "—";
 }
 
@@ -263,4 +266,63 @@ export function resolveFlagTypes(categories: string[], typeIds: string[]): FlagT
       (categories.length === 0 || categories.includes(t.category)) &&
       (typeIds.length === 0 || typeIds.includes(t.id))
   ).map((t) => t.id);
+}
+
+export interface ContextSummaryRow {
+  context: ContextShare["context"];
+  label: string;
+  flags: number;
+  /** Clients with at least one flag of this reason. */
+  clients: number;
+}
+
+export interface ContextSummary {
+  /** Flags in the category. */
+  totalFlags: number;
+  /** Clients with at least one flag in the category. */
+  totalClients: number;
+  /** Reasons, most used first; "Not justified" last. */
+  rows: ContextSummaryRow[];
+}
+
+/**
+ * Justification reasons across a set of flag types (one category): per reason,
+ * the number of flags and of distinct clients ("% of clients due to Budget
+ * Cuts" — Adriana's ask), over the given clients.
+ */
+export function computeContextSummary(clients: ClientFlags[], types: FlagTypeId[]): ContextSummary {
+  const wanted = new Set(types);
+  const flagsBy = new Map<string, number>();
+  const clientsBy = new Map<string, Set<string>>();
+  const flagged = new Set<string>();
+  let totalFlags = 0;
+  for (const c of clients) {
+    for (const f of c.flags) {
+      const t = flagTypeOf(f);
+      if (!t || !wanted.has(t.id)) continue;
+      const ctx = f.justified && f.context ? f.context : "NOT_JUSTIFIED";
+      totalFlags += 1;
+      flagged.add(c.clientId);
+      flagsBy.set(ctx, (flagsBy.get(ctx) ?? 0) + 1);
+      const set = clientsBy.get(ctx) ?? new Set<string>();
+      set.add(c.clientId);
+      clientsBy.set(ctx, set);
+    }
+  }
+  const rows = [...flagsBy.entries()]
+    .map(([context, flags]) => ({
+      context: context as ContextShare["context"],
+      label:
+        context === "NOT_JUSTIFIED"
+          ? "Not justified"
+          : FLAG_CONTEXTS.find((x) => x.value === context)?.label ?? context,
+      flags,
+      clients: clientsBy.get(context)?.size ?? 0,
+    }))
+    .sort(
+      (a, b) =>
+        Number(a.context === "NOT_JUSTIFIED") - Number(b.context === "NOT_JUSTIFIED") ||
+        b.flags - a.flags
+    );
+  return { totalFlags, totalClients: flagged.size, rows };
 }

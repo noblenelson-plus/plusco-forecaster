@@ -30,7 +30,10 @@ export default function MilestoneTrackingSummary({
   rows,
   checkpoint,
   statuses,
+  scopeNote,
 }: {
+  /** Which clients the page covers (top filters), e.g. "Filtered: Region QC/East · 27 clients". */
+  scopeNote: string;
   /** Active, facet-filtered clients (before the status filter). */
   rows: MilestoneClientRow[];
   checkpoint: ConfirmationStep;
@@ -54,6 +57,7 @@ export default function MilestoneTrackingSummary({
           <p className="text-sm text-gray-500">
             Validation status at <span className="font-semibold text-gray-900">{checkpoint.label}</span>
           </p>
+          <ScopeLine note={scopeNote} />
         </div>
         <p className="flex items-center gap-1.5 text-xs text-gray-500">
           <Info size={13} />
@@ -167,6 +171,14 @@ export default function MilestoneTrackingSummary({
         </div>
       </div>
     </section>
+  );
+}
+
+/** The page's client scope, under a section title — bold when filtered. */
+export function ScopeLine({ note }: { note: string }) {
+  const filtered = note.startsWith("Filtered");
+  return (
+    <p className={`mt-0.5 text-xs ${filtered ? "font-semibold text-gray-900" : "text-gray-500"}`}>{note}</p>
   );
 }
 
