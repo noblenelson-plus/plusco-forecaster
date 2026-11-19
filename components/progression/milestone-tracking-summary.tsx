@@ -67,13 +67,18 @@ export default function MilestoneTrackingSummary({
 
       {/* Totals */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="Active clients" value={String(totals.total)} />
+        <Tile
+          label="Active clients"
+          value={String(totals.total)}
+          hint="Clients active this year, within the filters."
+        />
         {MILESTONE_STATUS_ORDER.map((s) => (
           <Tile
             key={s}
             label={STATUS_META[s].label}
             value={String(totals[s])}
             sub={`${pct(totals[s], totals.total)} of clients`}
+            hint={STATUS_META[s].hint}
             swatch={STATUS_META[s].bar}
           />
         ))}
@@ -186,11 +191,14 @@ function Tile({
   label,
   value,
   sub,
+  hint,
   swatch,
 }: {
   label: string;
   value: string;
   sub?: string;
+  /** What the tile means, in one plain sentence (first-time users). */
+  hint?: string;
   swatch?: string;
 }) {
   return (
@@ -201,6 +209,7 @@ function Tile({
       </div>
       <div className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{value}</div>
       {sub && <div className="text-xs text-gray-500">{sub}</div>}
+      {hint && <div className="mt-1.5 border-t border-gray-100 pt-1.5 text-[11px] text-gray-500">{hint}</div>}
     </div>
   );
 }
