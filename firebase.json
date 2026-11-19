@@ -20,6 +20,6 @@
       "region": "us-central1"
     },
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-    "predeploy": ["node scripts/check-deploy-env.mjs"]
+    "predeploy": ["node scripts/check-deploy-source.mjs", "node scripts/check-deploy-env.mjs"]
   }
 }
