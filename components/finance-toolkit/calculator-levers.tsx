@@ -11,7 +11,6 @@
 
 import { useState } from "react";
 import { ChevronDown, RotateCcw, SlidersHorizontal } from "lucide-react";
-import { Card } from "../ui/card";
 import {
   DEFAULT_LEVERS,
   FTE_HOURS_PER_MONTH,
@@ -22,7 +21,7 @@ import {
   type RampSetting,
   type StaffingPlan,
 } from "../../lib/finance-toolkit/model";
-import { Chip, Field, Segmented, selectClass } from "./ft-ui";
+import { Chip, Field, Segmented, selectClass, CardShell } from "./ft-ui";
 import { fte, pct, rate } from "./ft-format";
 
 /** A number field that keeps what the user is typing, and follows the value when it changes elsewhere. */
@@ -140,7 +139,18 @@ function SliderRow({
   );
 }
 
-export default function LeversCard({ plan, levers, onChange }: { plan: StaffingPlan; levers: PlanLevers; onChange: (l: PlanLevers) => void }) {
+export default function LeversCard({
+  plan,
+  levers,
+  onChange,
+  bare,
+}: {
+  plan: StaffingPlan;
+  levers: PlanLevers;
+  onChange: (l: PlanLevers) => void;
+  /** Inside a Disclosure that already carries the title. */
+  bare?: boolean;
+}) {
   const [rolesOpen, setRolesOpen] = useState(false);
   const advancedChanged =
     levers.ramp !== "data" ||
@@ -153,11 +163,15 @@ export default function LeversCard({ plan, levers, onChange }: { plan: StaffingP
   const mixTotal = plan.roles.reduce((a, r) => a + (levers.mix[r.key] ?? r.dataShare), 0);
 
   return (
-    <Card className="gap-4 p-5">
+    <CardShell bare={bare}>
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-          <SlidersHorizontal size={16} className="text-primary" /> Adjust the plan
-        </div>
+        {bare ? (
+          <p className="text-xs text-gray-500">Change any setting and every figure updates. Changes are highlighted.</p>
+        ) : (
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <SlidersHorizontal size={16} className="text-primary" /> Adjust the plan
+          </div>
+        )}
         {changed > 0 ? (
           <button
             type="button"
@@ -399,6 +413,6 @@ export default function LeversCard({ plan, levers, onChange }: { plan: StaffingP
           </div>
         </>
       )}
-    </Card>
+    </CardShell>
   );
 }

@@ -10,9 +10,9 @@
 
 import { useMemo, useState } from "react";
 import { Crosshair } from "lucide-react";
-import { Card } from "../ui/card";
 import { solveForMargin, type StaffingPlan, type TargetSolution } from "../../lib/finance-toolkit/model";
 import { NumInput } from "./calculator-levers";
+import { CardShell } from "./ft-ui";
 import { formatCompactMoney, fte, pct, rate } from "./ft-format";
 
 function Option({
@@ -60,27 +60,32 @@ const signed = (v: number, fmt: (x: number) => string) => `${v >= 0 ? "+" : "−
 export default function TargetCard({
   plan,
   onApply,
+  bare,
 }: {
   plan: StaffingPlan;
   onApply: (kind: "team" | "rate" | "revenue", solution: TargetSolution) => void;
+  /** Inside a Disclosure that already carries the title. */
+  bare?: boolean;
 }) {
   const [targetPct, setTargetPct] = useState<number | null>(55);
   const solution = useMemo(() => (targetPct === null ? null : solveForMargin(plan, targetPct / 100)), [plan, targetPct]);
   const gap = targetPct === null ? null : plan.runRateMarginPct - targetPct / 100;
 
   return (
-    <Card className="gap-4 p-5">
+    <CardShell bare={bare}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <Crosshair size={16} className="text-primary" /> Hit a target margin
-          </div>
-          <p className="mt-0.5 text-xs text-gray-500">Pick the margin you want once the team is fully staffed. Here are three ways to get there; each keeps the rest of the plan as it is.</p>
+          {!bare && (
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <Crosshair size={16} className="text-primary" /> Hit a target margin
+            </div>
+          )}
+          <p className="mt-0.5 text-xs text-gray-500">
+            Pick the margin you want once the team is fully staffed. Here are three ways to get there; each keeps the rest of the plan as it is.
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-            Target
-          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Target</span>
           <NumInput ariaLabel="Target run-rate margin" value={targetPct} min={-50} max={95} suffix="%" className="w-24" onChange={setTargetPct} />
           {gap !== null && (
             <span className={`px-2 py-1 text-xs font-semibold ${gap >= 0 ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
@@ -119,6 +124,6 @@ export default function TargetCard({
           />
         </div>
       )}
-    </Card>
+    </CardShell>
   );
 }

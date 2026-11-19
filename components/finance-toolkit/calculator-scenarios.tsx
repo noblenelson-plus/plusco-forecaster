@@ -81,12 +81,15 @@ export default function ScenariosCard({
   basis,
   maxComparables,
   onLoad,
+  bare,
 }: {
   current: CalculatorInputs;
   currentPlan: StaffingPlan | null;
   basis: CostBasis;
   maxComparables: number;
   onLoad: (s: Scenario) => void;
+  /** Inside a Disclosure that already carries the title. */
+  bare?: boolean;
 }) {
   const [scenarios, setScenarios] = useState<Scenario[]>(() => (typeof window === "undefined" ? [] : loadScenarios()));
   const [name, setName] = useState("");
@@ -143,7 +146,9 @@ export default function ScenariosCard({
       label: "Run-rate margin",
       render: (c) =>
         c.plan ? (
-          <span className={c.plan.runRateMarginPct === best && columns.length > 1 ? "bg-green-500 px-1.5 py-0.5 text-white" : ""}>{pct(c.plan.runRateMarginPct)}</span>
+          <span className={c.plan.runRateMarginPct === best && columns.length > 1 ? "bg-green-500 px-1.5 py-0.5 text-white" : ""}>
+            {pct(c.plan.runRateMarginPct)}
+          </span>
         ) : (
           "—"
         ),
@@ -167,33 +172,29 @@ export default function ScenariosCard({
     },
   ];
 
-  return (
-    <ChartCard
-      title="Scenarios"
-      subtitle={`Save versions of the plan and compare them side by side (up to ${MAX_SCENARIOS}, kept in this browser)`}
-      icon={Bookmark}
-      action={
-        <div className="flex items-center gap-1.5">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && save()}
-            placeholder={`Scenario ${scenarios.length + 1}`}
-            aria-label="Scenario name"
-            maxLength={40}
-            className="w-36 border border-gray-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-yellow-400"
-          />
-          <button
-            type="button"
-            onClick={save}
-            disabled={scenarios.length >= MAX_SCENARIOS || !currentPlan}
-            className="bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            Save current
-          </button>
-        </div>
-      }
-    >
+  const action = (
+    <div className="flex items-center gap-1.5">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && save()}
+        placeholder={`Scenario ${scenarios.length + 1}`}
+        aria-label="Scenario name"
+        maxLength={40}
+        className="w-36 border border-gray-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-yellow-400"
+      />
+      <button
+        type="button"
+        onClick={save}
+        disabled={scenarios.length >= MAX_SCENARIOS || !currentPlan}
+        className="bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        Save current
+      </button>
+    </div>
+  );
+  const content = (
+    <>
       {scenarios.length === 0 ? (
         <p className="border border-dashed border-gray-200 px-4 py-6 text-center text-xs text-gray-500">
           Try a few versions — e.g. “Base”, “Lean team”, “Senior-heavy” — and save each to compare them here.
@@ -212,7 +213,13 @@ export default function ScenariosCard({
                       </span>
                       {c.scenario && (
                         <>
-                          <button type="button" onClick={() => onLoad(c.scenario!)} title="Load into the calculator" aria-label={`Load ${c.name}`} className="text-gray-400 hover:text-gray-900">
+                          <button
+                            type="button"
+                            onClick={() => onLoad(c.scenario!)}
+                            title="Load into the calculator"
+                            aria-label={`Load ${c.name}`}
+                            className="text-gray-400 hover:text-gray-900"
+                          >
                             <Upload size={12} />
                           </button>
                           <button
@@ -246,6 +253,31 @@ export default function ScenariosCard({
           </table>
         </div>
       )}
+    </>
+  );
+
+  if (bare) {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-gray-500">
+            Save versions of the plan and compare them side by side (up to {MAX_SCENARIOS}, kept in this browser).
+          </p>
+          {action}
+        </div>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <ChartCard
+      title="Scenarios"
+      subtitle={`Save versions of the plan and compare them side by side (up to ${MAX_SCENARIOS}, kept in this browser)`}
+      icon={Bookmark}
+      action={action}
+    >
+      {content}
     </ChartCard>
   );
 }

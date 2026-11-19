@@ -95,8 +95,7 @@ export function InShort({ children }: { children: React.ReactNode }) {
 
 // ─── Month range ─────────────────────────────────────────────────────────────
 
-const selectClass =
-  "border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-400";
+const selectClass = "border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-400";
 
 export function MonthRange({
   months,
@@ -187,6 +186,52 @@ export function Chip({ tone, children, title }: { tone: keyof typeof CHIP_TONES;
   );
 }
 
+// ─── Fold-away section ───────────────────────────────────────────────────────
+
+/** A titled card that starts closed, for detail most readers don't need at a
+ *  glance. The title row says what is inside, so nothing is hidden by surprise. */
+export function Disclosure({
+  title,
+  subtitle,
+  icon: Icon,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: typeof Info;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Card className="gap-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-gray-50"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {Icon && <Icon size={16} className="shrink-0 text-primary" />}
+          <span className="text-sm font-semibold text-gray-900">{title}</span>
+          {subtitle && <span className="truncate text-xs text-gray-500">{subtitle}</span>}
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-gray-500">
+          {open ? "Hide" : "Show"}
+          <ChevronDown size={16} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        </span>
+      </button>
+      {open && <div className="border-t border-gray-200 p-5">{children}</div>}
+    </Card>
+  );
+}
+
+/** A card, or just its contents when it is already inside a Disclosure. */
+export function CardShell({ bare, children }: { bare?: boolean; children: React.ReactNode }) {
+  return bare ? <div className="flex flex-col gap-4">{children}</div> : <Card className="gap-4 p-5">{children}</Card>;
+}
+
 // ─── "How this is calculated" ────────────────────────────────────────────────
 
 export function HowCalculated({ children, title = "How this is calculated" }: { children: React.ReactNode; title?: string }) {
@@ -264,6 +309,12 @@ export interface Column<R> {
   headerTitle?: string;
 }
 
+/** Rows shown before a table scrolls, and the pixel sizes used to cap its height. */
+const DEFAULT_VISIBLE_ROWS = 15;
+const ROW_PX = 37;
+const HEADER_PX = 38;
+const FOOTER_PX = 42;
+
 export function DataTable<R>({
   columns,
   rows,
@@ -271,7 +322,7 @@ export function DataTable<R>({
   defaultSort,
   onRowClick,
   activeKey,
-  maxRows,
+  visibleRows = DEFAULT_VISIBLE_ROWS,
   emptyText = "No data for this selection.",
   footerLabel,
 }: {
@@ -281,13 +332,12 @@ export function DataTable<R>({
   defaultSort?: { id: string; dir: "asc" | "desc" } | null;
   onRowClick?: (r: R) => void;
   activeKey?: string | null;
-  /** Show this many rows with a "Show all" toggle. */
-  maxRows?: number;
+  /** Rows visible before the table scrolls (the header and totals stay put). */
+  visibleRows?: number;
   emptyText?: string;
   footerLabel?: string;
 }) {
   const [sort, setSort] = useState<{ id: string; dir: "asc" | "desc" } | null>(defaultSort ?? null);
-  const [showAll, setShowAll] = useState(false);
 
   const sorted = useMemo(() => {
     if (!sort) return rows;
@@ -305,93 +355,89 @@ export function DataTable<R>({
     });
   }, [rows, columns, sort]);
 
-  const visible = maxRows && !showAll ? sorted.slice(0, maxRows) : sorted;
   const hasFooter = columns.some((c) => c.total !== undefined);
+  const scrolls = rows.length > visibleRows;
+  const maxHeight = HEADER_PX + visibleRows * ROW_PX + (hasFooter ? FOOTER_PX : 0);
 
   const toggle = (c: Column<R>) => {
     if (!c.sort) return;
     setSort((s) =>
-      s?.id !== c.id ? { id: c.id, dir: c.align === "right" ? "desc" : "asc" } : s.dir === "desc" ? { id: c.id, dir: "asc" } : { id: c.id, dir: "desc" }
+      s?.id !== c.id
+        ? { id: c.id, dir: c.align === "right" ? "desc" : "asc" }
+        : s.dir === "desc"
+          ? { id: c.id, dir: "asc" }
+          : { id: c.id, dir: "desc" },
     );
   };
 
   if (rows.length === 0) {
-    return (
-      <div className="flex h-28 items-center justify-center border border-dashed border-gray-200 text-sm text-gray-500">{emptyText}</div>
-    );
+    return <div className="flex h-28 items-center justify-center border border-dashed border-gray-200 text-sm text-gray-500">{emptyText}</div>;
   }
 
   return (
-    <div className="overflow-x-auto border border-gray-200">
-      <table className="w-full text-sm">
-        <thead className="border-b border-gray-200 bg-white text-[11px] uppercase tracking-wide text-gray-500">
-          <tr>
-            {columns.map((c) => {
-              const dir = sort?.id === c.id ? sort.dir : null;
+    <div>
+      <div className="overflow-auto border border-gray-200" style={scrolls ? { maxHeight } : undefined}>
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10 bg-white text-[11px] uppercase tracking-wide text-gray-500 shadow-[inset_0_-1px_0_#e5e7eb]">
+            <tr>
+              {columns.map((c) => {
+                const dir = sort?.id === c.id ? sort.dir : null;
+                return (
+                  <th key={c.id} className={`whitespace-nowrap px-3 py-2.5 font-semibold ${c.className ?? ""}`} title={c.headerTitle}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(c)}
+                      disabled={!c.sort}
+                      className={`flex w-full items-center gap-1 ${c.align === "right" ? "justify-end" : "justify-start"} ${
+                        c.sort ? "hover:text-gray-900" : "cursor-default"
+                      } ${dir ? "text-gray-900" : ""}`}
+                    >
+                      <span>{c.label}</span>
+                      {dir === "asc" ? <ArrowUp size={12} /> : dir === "desc" ? <ArrowDown size={12} /> : null}
+                    </button>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => {
+              const key = rowKey(r);
+              const active = activeKey === key;
               return (
-                <th key={c.id} className={`whitespace-nowrap px-3 py-2.5 font-semibold ${c.className ?? ""}`} title={c.headerTitle}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(c)}
-                    disabled={!c.sort}
-                    className={`flex w-full items-center gap-1 ${c.align === "right" ? "justify-end" : "justify-start"} ${
-                      c.sort ? "hover:text-gray-900" : "cursor-default"
-                    } ${dir ? "text-gray-900" : ""}`}
-                  >
-                    <span>{c.label}</span>
-                    {dir === "asc" ? <ArrowUp size={12} /> : dir === "desc" ? <ArrowDown size={12} /> : null}
-                  </button>
-                </th>
+                <tr
+                  key={key}
+                  onClick={onRowClick ? () => onRowClick(r) : undefined}
+                  className={`border-b border-gray-100 last:border-0 ${onRowClick ? "cursor-pointer hover:bg-gray-50" : ""} ${
+                    active ? "bg-yellow-400 hover:bg-yellow-400" : ""
+                  }`}
+                >
+                  {columns.map((c) => (
+                    <td
+                      key={c.id}
+                      className={`whitespace-nowrap px-3 py-2 ${c.align === "right" ? "text-right tabular-nums" : "text-left"} ${c.className ?? ""}`}
+                    >
+                      {c.render(r)}
+                    </td>
+                  ))}
+                </tr>
               );
             })}
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((r) => {
-            const key = rowKey(r);
-            const active = activeKey === key;
-            return (
-              <tr
-                key={key}
-                onClick={onRowClick ? () => onRowClick(r) : undefined}
-                className={`border-b border-gray-100 last:border-0 ${onRowClick ? "cursor-pointer hover:bg-gray-50" : ""} ${
-                  active ? "bg-yellow-400 hover:bg-yellow-400" : ""
-                }`}
-              >
-                {columns.map((c) => (
-                  <td
-                    key={c.id}
-                    className={`whitespace-nowrap px-3 py-2 ${c.align === "right" ? "text-right tabular-nums" : "text-left"} ${c.className ?? ""}`}
-                  >
-                    {c.render(r)}
+          </tbody>
+          {hasFooter && (
+            <tfoot className="sticky bottom-0 z-10 bg-white shadow-[inset_0_2px_0_#111827]">
+              <tr className="font-semibold text-gray-900">
+                {columns.map((c, i) => (
+                  <td key={c.id} className={`whitespace-nowrap px-3 py-2.5 ${c.align === "right" ? "text-right tabular-nums" : "text-left"}`}>
+                    {c.total ?? (i === 0 ? (footerLabel ?? "Total") : "")}
                   </td>
                 ))}
               </tr>
-            );
-          })}
-        </tbody>
-        {hasFooter && (
-          <tfoot>
-            <tr className="border-t-2 border-gray-900 bg-white font-semibold text-gray-900">
-              {columns.map((c, i) => (
-                <td
-                  key={c.id}
-                  className={`whitespace-nowrap px-3 py-2.5 ${c.align === "right" ? "text-right tabular-nums" : "text-left"}`}
-                >
-                  {c.total ?? (i === 0 ? footerLabel ?? "Total" : "")}
-                </td>
-              ))}
-            </tr>
-          </tfoot>
-        )}
-      </table>
-      {maxRows && sorted.length > maxRows && (
-        <div className="border-t border-gray-200 bg-white px-3 py-2 text-center">
-          <button type="button" onClick={() => setShowAll((s) => !s)} className="text-xs font-semibold text-gray-600 hover:text-gray-900">
-            {showAll ? `Show top ${maxRows}` : `Show all ${sorted.length} rows`}
-          </button>
-        </div>
-      )}
+            </tfoot>
+          )}
+        </table>
+      </div>
+      {scrolls && <p className="mt-1.5 text-[11px] text-gray-500">{sorted.length.toLocaleString("en-CA")} rows · scroll the table to see them all</p>}
     </div>
   );
 }
