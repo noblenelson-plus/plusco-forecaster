@@ -3,7 +3,7 @@
 -- (PCC_Dashboard_NATIVE) per client × partner × month, long format. Read by labs_pacing_wide.
 -- Before 2026-11-20 this view lived only in BigQuery; this file is now its source of truth.
 -- CHANGE (MIQ-SEM, 2026-11-20): MIQ search is its own Labs partner (Adriana). Forecast category
---   'MIQ-SEM' is read, and booked MIQ rows with BUYTYPE SEARCH become 'MIQ-SEM' (before, they were
+--   'MIQ-SEM' is read, and booked MIQ rows with BUYTYPE SEARCH or OTHER become 'MIQ-SEM' (before, they were
 --   in no Labs bucket: MIQ-PROG took only Display / Video).
 CREATE OR REPLACE VIEW `plusco-media-invest-solutions.PCC_Media_Investment.labs_pacing_unified` AS
 WITH cur AS (
@@ -86,9 +86,9 @@ booked_raw AS (
         AND UPPER(PLUSCO_MEDIA_CHANNEL) = 'PRINT'        THEN 'BILLUPS-PRINT'
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ'
         AND UPPER(BUYTYPE) = 'SOCIAL'                    THEN 'MIQ-SOCIAL'
-      -- MIQ-SEM (2026-11-20): MIQ search (ChatGPT, SEM).
+      -- MIQ-SEM (2026-11-20): MIQ search (ChatGPT, SEM), buy type Search or Other.
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ'
-        AND UPPER(BUYTYPE) = 'SEARCH'                    THEN 'MIQ-SEM'
+        AND UPPER(BUYTYPE) IN ('SEARCH', 'OTHER')        THEN 'MIQ-SEM'
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ'
         AND UPPER(BUYTYPE) IN ('DISPLAY','VIDEO','DISPLAY&VIDEO') THEN 'MIQ-PROG'
     END                               AS labs_partner,

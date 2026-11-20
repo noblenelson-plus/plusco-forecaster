@@ -393,8 +393,13 @@ base AS (
     mb.MCPE AS Mediabox_2_0_MCPE,
     mb.campaign AS Mediabox_2_0_Campaign_Name,
     CASE
-      -- MIQ search (ChatGPT, SEM) is its own Labs partner, MIQ-SEM (Adriana, 2026-11-20).
-      WHEN r.v_partner = 'MIQ' THEN CASE r.buytype WHEN 'SOCIAL' THEN 'MIQ-SOCIAL' WHEN 'SEARCH' THEN 'MIQ-SEM' ELSE 'MIQ-PROG' END
+      -- MIQ search (ChatGPT, SEM) is its own Labs partner, MIQ-SEM: buy type Search or Other
+      -- (Adriana, 2026-11-20).
+      WHEN r.v_partner = 'MIQ' THEN CASE
+        WHEN r.buytype = 'SOCIAL' THEN 'MIQ-SOCIAL'
+        WHEN UPPER(r.buytype) IN ('SEARCH', 'OTHER') THEN 'MIQ-SEM'
+        ELSE 'MIQ-PROG'
+      END
       WHEN r.v_partner = 'BILLUPS' THEN IF(r.channel = 'Print', 'BILLUPS-PRINT', 'BILLUPS-OOH')
       WHEN r.v_partner IN ('YAHOO', 'QUANTCAST', 'AMAZON', 'AIM', 'STACKADAPT', 'REDDIT') THEN r.v_partner
     END AS Labs_Partners,
