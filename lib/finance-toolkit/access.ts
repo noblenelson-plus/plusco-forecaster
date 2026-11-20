@@ -9,7 +9,7 @@
  * To open it to more people, add their company email here (lowercase).
  */
 
-export const FINANCE_TOOLKIT_VIEWERS: readonly string[] = ["noble.nelson@pluscompany.com"];
+export const FINANCE_TOOLKIT_VIEWERS: readonly string[] = ["noble.nelson@pluscompany.com", "adriana.novoa@pluscompany.com"];
 
 export function canViewFinanceToolkit(email: string | null | undefined): boolean {
   return !!email && FINANCE_TOOLKIT_VIEWERS.includes(email.trim().toLowerCase());
