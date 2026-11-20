@@ -1,4 +1,9 @@
 -- filepath: bq/KPI_BY_CLIENT_2025_vs_2026.sql
+-- CHANGE (MIQ-SEM, 2026-11-20): MIQ search is its own Labs partner (Adriana). The MIQ Labs
+--   target / booked (labs_target_miq_2026, labs_booked_miq_2026, the monthly lt / lb miq) and the
+--   Labs totals (labs_target_rfq2_2026, labs_booked_mir_2026) add labs_pacing_wide's new
+--   forecast_miq_sem / booked_miq_sem. Prog Labs is unchanged (search is not programmatic).
+--   Rebuild AFTER labs_pacing_unified / labs_pacing_wide are replaced.
 -- CHANGE (monthly breakdown, 2026-11-03): adds monthly_kpis — a JSON string,
 --   one entry per year × month (2025 + 2026) with the client's spend columns
 --   computed with EXACTLY the annual rules above them (same CASEs, minus the
@@ -257,7 +262,7 @@ monthly_labs_pacing AS (
     month_num AS m,
     STRUCT(
       SUM(COALESCE(forecast_billups_ooh,0) + COALESCE(forecast_billups_print,0)) AS billups,
-      SUM(COALESCE(forecast_miq_prog,0)    + COALESCE(forecast_miq_social,0))    AS miq,
+      SUM(COALESCE(forecast_miq_prog,0)    + COALESCE(forecast_miq_social,0) + COALESCE(forecast_miq_sem,0))    AS miq,
       SUM(COALESCE(forecast_amazon,0))     AS amazon,
       SUM(COALESCE(forecast_yahoo,0))      AS yahoo,
       SUM(COALESCE(forecast_quantcast,0))  AS quantcast,
@@ -267,7 +272,7 @@ monthly_labs_pacing AS (
     ) AS lt,
     STRUCT(
       SUM(COALESCE(booked_billups_ooh,0) + COALESCE(booked_billups_print,0)) AS billups,
-      SUM(COALESCE(booked_miq_prog,0)    + COALESCE(booked_miq_social,0))    AS miq,
+      SUM(COALESCE(booked_miq_prog,0)    + COALESCE(booked_miq_social,0) + COALESCE(booked_miq_sem,0))    AS miq,
       SUM(COALESCE(booked_amazon,0))     AS amazon,
       SUM(COALESCE(booked_yahoo,0))      AS yahoo,
       SUM(COALESCE(booked_quantcast,0))  AS quantcast,
@@ -362,8 +367,8 @@ labs_partner_annual AS (
     client_id,
     SUM(COALESCE(forecast_billups_ooh,0) + COALESCE(forecast_billups_print,0)) AS labs_target_billups_2026,
     SUM(COALESCE(booked_billups_ooh,0)   + COALESCE(booked_billups_print,0))   AS labs_booked_billups_2026,
-    SUM(COALESCE(forecast_miq_prog,0)    + COALESCE(forecast_miq_social,0))    AS labs_target_miq_2026,
-    SUM(COALESCE(booked_miq_prog,0)      + COALESCE(booked_miq_social,0))      AS labs_booked_miq_2026,
+    SUM(COALESCE(forecast_miq_prog,0)    + COALESCE(forecast_miq_social,0) + COALESCE(forecast_miq_sem,0))    AS labs_target_miq_2026,
+    SUM(COALESCE(booked_miq_prog,0)      + COALESCE(booked_miq_social,0) + COALESCE(booked_miq_sem,0))      AS labs_booked_miq_2026,
     SUM(COALESCE(forecast_amazon,0))     AS labs_target_amazon_2026,
     SUM(COALESCE(booked_amazon,0))       AS labs_booked_amazon_2026,
     SUM(COALESCE(forecast_yahoo,0))      AS labs_target_yahoo_2026,
@@ -378,14 +383,14 @@ labs_partner_annual AS (
     SUM(COALESCE(booked_stackadapt,0))   AS labs_booked_stackadapt_2026,
     SUM(
       COALESCE(forecast_billups_ooh,0) + COALESCE(forecast_billups_print,0)
-      + COALESCE(forecast_miq_prog,0)  + COALESCE(forecast_miq_social,0)
+      + COALESCE(forecast_miq_prog,0)  + COALESCE(forecast_miq_social,0) + COALESCE(forecast_miq_sem,0)
       + COALESCE(forecast_amazon,0)    + COALESCE(forecast_yahoo,0)
       + COALESCE(forecast_quantcast,0) + COALESCE(forecast_reddit,0)
       + COALESCE(forecast_aim,0)       + COALESCE(forecast_stackadapt,0)
     ) AS labs_target_rfq2_2026,
     SUM(
       COALESCE(booked_billups_ooh,0) + COALESCE(booked_billups_print,0)
-      + COALESCE(booked_miq_prog,0)  + COALESCE(booked_miq_social,0)
+      + COALESCE(booked_miq_prog,0)  + COALESCE(booked_miq_social,0) + COALESCE(booked_miq_sem,0)
       + COALESCE(booked_amazon,0)    + COALESCE(booked_yahoo,0)
       + COALESCE(booked_quantcast,0) + COALESCE(booked_reddit,0)
       + COALESCE(booked_aim,0)       + COALESCE(booked_stackadapt,0)

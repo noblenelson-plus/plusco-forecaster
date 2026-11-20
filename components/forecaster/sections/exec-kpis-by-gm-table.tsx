@@ -48,7 +48,7 @@ type Kind = "money" | "pct" | "delta";
 const LABS_TARGET_RFQ = "RFQ3";
 
 /** Grouped Labs partners for the by-partner sub-section (Billups = OOH+Print,
- *  MIQ = Prog+Social, AIM separate). key → the BQ column suffix. */
+ *  MIQ = Prog+Social+SEM, AIM separate). key → the BQ column suffix. */
 const LABS_PARTNERS: { key: string; name: string; color: string }[] = [
   { key: "billups",    name: "Billups",    color: "#2E7D32" },
   { key: "miq",        name: "MIQ",        color: "#1D9E75" },
