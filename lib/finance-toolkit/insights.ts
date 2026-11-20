@@ -1,59 +1,12 @@
 // filepath: lib/finance-toolkit/insights.ts
 
 /**
- * Finance Toolkit — the "at a glance" reading of Account Profitability: margin
- * bands, the likely reason an account needs a conversation, and the comparison
- * period. Pure functions over ProfitRow (no React, no data download), so every
+ * Finance Toolkit — the "at a glance" reading of Account Profitability: the
+ * likely reason an account needs review, and the comparison period. Pure functions over ProfitRow (no React, no data download), so every
  * label on the page traces back to one rule here.
  */
 
 import type { ProfitRow } from "./model";
-
-// ─── Margin bands ────────────────────────────────────────────────────────────
-
-export type BandId = "strong" | "healthy" | "thin" | "below";
-
-export interface BandDef {
-  id: BandId;
-  label: string;
-  range: string;
-  /** Tailwind background for the bar (Plus palette via the theme). */
-  bar: string;
-  test: (marginPct: number) => boolean;
-}
-
-export const BANDS: BandDef[] = [
-  { id: "strong", label: "Strong", range: "60% or more", bar: "bg-green-500", test: (p) => p >= 0.6 },
-  { id: "healthy", label: "Healthy", range: "40 – 60%", bar: "bg-blue-400", test: (p) => p >= 0.4 && p < 0.6 },
-  { id: "thin", label: "Thin", range: "0 – 40%", bar: "bg-yellow-400", test: (p) => p >= 0 && p < 0.4 },
-  { id: "below", label: "Below cost", range: "under 0%", bar: "bg-red-500", test: (p) => p < 0 },
-];
-
-export interface BandSummary extends BandDef {
-  accounts: number;
-  revenue: number;
-  margin: number;
-  /** Share of the banded accounts' revenue. */
-  revenueShare: number;
-}
-
-/** Groups accounts with positive revenue by margin %. Net-credit periods (no margin %) are left out. */
-export function marginBands(rows: ProfitRow[]): { bands: BandSummary[]; excluded: number } {
-  const withPct = rows.filter((r) => r.status === "matched" && r.marginPct !== null);
-  const total = withPct.reduce((a, r) => a + r.revenue!, 0);
-  const bands = BANDS.map((b) => {
-    const inBand = withPct.filter((r) => b.test(r.marginPct!));
-    const revenue = inBand.reduce((a, r) => a + r.revenue!, 0);
-    return {
-      ...b,
-      accounts: inBand.length,
-      revenue,
-      margin: inBand.reduce((a, r) => a + r.margin!, 0),
-      revenueShare: total > 0 ? revenue / total : 0,
-    };
-  });
-  return { bands, excluded: rows.filter((r) => r.status === "matched" && r.marginPct === null).length };
-}
 
 // ─── Why an account needs a conversation ─────────────────────────────────────
 
