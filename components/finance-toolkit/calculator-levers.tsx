@@ -80,7 +80,7 @@ export function NumInput({
   );
 }
 
-function SliderRow({
+export function SliderRow({
   label,
   value,
   min,

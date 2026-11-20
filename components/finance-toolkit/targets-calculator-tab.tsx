@@ -2,16 +2,18 @@
 "use client";
 
 /**
- * Finance Toolkit · Tab 3 — New Business Targets Calculator. For a prospective
- * client's expected annual gross revenue, recommends a 12-month staffing plan
- * (hours and FTEs by role, month by month) scaled from 1–3 comparable existing
- * accounts: their hours per revenue dollar, their role mix, the agency's cost
- * per hour by role, and the onboarding ramp observed on new clients.
+ * Finance Toolkit · Tab 3 — New Business Calculator. Three plain questions
+ * (agency, expected annual gross revenue, which current clients it is most
+ * like), then the answer in one sentence: the team needed, year-1 cost and
+ * margin. The plan (hours and FTEs by role, month by month) is scaled from 1–3
+ * comparable accounts: their hours per revenue dollar, their role mix, the
+ * agency's cost per hour by role, and the onboarding ramp seen on new clients.
  *
- * On top of the data-based plan: what-if settings (calculator-levers), a
- * target-margin solver (calculator-target), saved scenarios
- * (calculator-scenarios) and a step-by-step "Why this number?" for every
- * headline figure and role (calculator-why).
+ * Below the answer: a visible what-if card (team size, seniority, target
+ * margin via calculator-target), then the staffing chart and table, and
+ * folded away: every setting (calculator-levers), saved scenarios
+ * (calculator-scenarios), the comparables, and the formulas. Each headline
+ * figure and role opens a step-by-step "Why?" (calculator-why).
  */
 
 import { useMemo, useState } from "react";
@@ -20,14 +22,10 @@ import {
   Bookmark,
   Briefcase,
   CalendarRange,
-  Calculator,
-  Crosshair,
   DollarSign,
   HelpCircle,
   Percent,
-  Plus,
   SlidersHorizontal,
-  Sparkles,
   Table2,
   Users,
   X,
@@ -52,10 +50,10 @@ import {
   type TargetSolution,
 } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { Chip, Disclosure, DataTable, Field, Formula, HowCalculated, InShort, Notice, Segmented, selectClass, type Column } from "./ft-ui";
+import { Disclosure, DataTable, Formula, HowCalculated, Notice, Segmented, selectClass, type Column } from "./ft-ui";
 import { sheetMatrix, formatCompactMoney, fte, hours, money, pct, rate } from "./ft-format";
 import SheetExportButton from "../dashboard/sheet-export-button";
-import LeversCard from "./calculator-levers";
+import LeversCard, { SliderRow } from "./calculator-levers";
 import TargetCard from "./calculator-target";
 import ScenariosCard, { type CalculatorInputs, type Scenario } from "./calculator-scenarios";
 import WhyPanel, { type KpiId, type WhyTopic } from "./calculator-why";
@@ -84,8 +82,6 @@ const ROLE_COLORS = [
 ];
 
 const PRESET_REVENUE = [250_000, 500_000, 1_000_000, 2_500_000, 5_000_000];
-const SLIDER_MIN = Math.log10(50_000);
-const SLIDER_MAX = Math.log10(10_000_000);
 const MAX_COMPARABLES = 3;
 
 type Unit = "hours" | "fte";
@@ -96,6 +92,19 @@ function vsData(now: number, data: number, kind: "pts" | "pct", higherIsBetter: 
   if (Math.abs(d) < (kind === "pts" ? 0.05 : 0.0005)) return null;
   const label = kind === "pts" ? `${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(1)} pts` : `${d >= 0 ? "+" : "−"}${(Math.abs(d) * 100).toFixed(0)}%`;
   return { pillLabel: label, isFavorable: higherIsBetter ? d >= 0 : d <= 0 };
+}
+
+/** One numbered question in "Plan a new account". */
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-2.5 flex items-center gap-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-gray-900 text-sm font-bold text-yellow-400">{n}</span>
+        <span className="text-sm font-semibold text-gray-900">{title}</span>
+      </div>
+      {children}
+    </div>
+  );
 }
 
 /** A KPI tile that opens its "Why this number?" explanation. */
@@ -163,10 +172,6 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
     setRevenueText(clamped.toLocaleString("en-CA"));
   };
 
-  const editComparables = () => {
-    if (auto) setManual(suggested.map((c) => c.client.index));
-    setAuto(false);
-  };
   const removeComparable = (id: number) => {
     const base = auto ? suggested.map((c) => c.client.index) : manual;
     setManual(base.filter((x) => x !== id));
@@ -344,173 +349,148 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
   };
 
   const available = candidates.filter((c) => !chosen.some((x) => x.client.index === c.client.index));
-  const sliderValue = Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, Math.log10(revenue)));
   const changedNote = (now: string, data: string) => (nChanged > 0 && now !== data ? ` · data-based ${data}` : "");
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[340px_1fr]">
-      {/* ── Inputs ── */}
-      <div className="space-y-4">
-        <Card className="gap-4 p-5">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <Calculator size={16} className="text-primary" /> Prospective client
-          </div>
-          <Field label="Agency">
-            <Segmented options={AGENCIES} value={agency} onChange={changeAgency} size="sm" ariaLabel="Agency" />
-          </Field>
-          <Field label={`Expected annual gross revenue (${currency})`}>
-            <div className="flex items-center border border-gray-200 bg-white focus-within:ring-2 focus-within:ring-yellow-400">
-              <span className="pl-3 text-sm text-gray-400">$</span>
-              <input
-                inputMode="numeric"
-                value={revenueText}
-                onChange={(e) => {
-                  setRevenueText(e.target.value);
-                  const n = Number(e.target.value.replace(/[^0-9.]/g, ""));
-                  if (n > 0) setRevenue(Math.min(50_000_000, n));
-                }}
-                onBlur={() => setRevenueValue(revenue)}
-                className="w-full bg-transparent px-2 py-2 text-lg font-bold tabular-nums text-gray-900 focus:outline-none"
-                aria-label="Expected annual gross revenue"
-              />
-            </div>
-            <input
-              type="range"
-              min={SLIDER_MIN}
-              max={SLIDER_MAX}
-              step={0.01}
-              value={sliderValue}
-              onChange={(e) => {
-                const v = Math.pow(10, Number(e.target.value));
-                const step = v >= 1_000_000 ? 50_000 : v >= 200_000 ? 10_000 : 5_000;
-                setRevenueValue(Math.round(v / step) * step);
-              }}
-              className="mt-2 w-full accent-gray-900"
-              aria-label="Revenue slider"
-            />
-            <div className="mt-1 flex flex-wrap gap-1">
-              {PRESET_REVENUE.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setRevenueValue(v)}
-                  className={`px-2 py-0.5 text-[11px] font-semibold ${revenue === v ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-                >
-                  {formatCompactMoney(v)}
-                </button>
-              ))}
-            </div>
-          </Field>
-        </Card>
+    <div className="space-y-5">
+      {/* ── The three questions ── */}
+      <Card className="gap-0 overflow-hidden p-0">
+        <div className="plus-pattern h-1" aria-hidden />
+        <div className="p-6">
+          <h2 className="text-xl font-bold text-gray-900">Plan a new account</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Answer three questions. We build the plan from how we staff similar clients today, using real hours and costs.
+          </p>
+          <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <Step n={1} title="Which agency will run it?">
+              <Segmented options={AGENCIES} value={agency} onChange={changeAgency} ariaLabel="Agency" />
+            </Step>
 
-        <Disclosure title="Similar accounts" subtitle={`${chosen.length} ${auto ? "picked automatically" : "chosen by you"}`} icon={Briefcase}>
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">The benchmark</span>
-              {auto ? (
-                <Chip tone="dark">
-                  <Sparkles size={10} className="mr-1" /> Picked automatically
-                </Chip>
-              ) : (
-                <button type="button" onClick={() => setAuto(true)} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">
-                  Reset to auto
-                </button>
-              )}
-            </div>
-            <p className="text-[11px] leading-snug text-gray-500">
-              {auto
-                ? `The ${MAX_COMPARABLES} ${AGENCIES.find((a) => a.id === agency)!.label} accounts closest in yearly revenue. The plan staffs the new account the way these are staffed today.`
-                : "Your selection: pick 1 to 3 accounts that look most like the prospect. The plan staffs it the way these are staffed today."}
-            </p>
-            <ul className="divide-y divide-gray-100 border border-gray-200">
-              {chosen.length === 0 && <li className="px-3 py-3 text-xs text-gray-500">No comparable selected.</li>}
-              {chosen.map((c) => (
-                <li key={c.client.index} className="flex items-center justify-between gap-2 px-3 py-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-semibold text-gray-900" title={c.client.name}>
-                      {c.client.name}
-                    </div>
-                    <div className="text-[11px] tabular-nums text-gray-500">
-                      {formatCompactMoney(c.annualizedRevenue)}/yr · {c.hoursPerThousand.toFixed(1)} h per $1,000
-                    </div>
-                  </div>
+            <Step n={2} title="How much will the client pay us a year?">
+              <label className="flex items-center border-2 border-gray-900 bg-white focus-within:ring-2 focus-within:ring-yellow-400">
+                <span className="pl-3 text-lg font-semibold text-gray-500">$</span>
+                <input
+                  inputMode="numeric"
+                  value={revenueText}
+                  onChange={(e) => {
+                    setRevenueText(e.target.value);
+                    const n = Number(e.target.value.replace(/[^0-9.]/g, ""));
+                    if (n > 0) setRevenue(Math.min(50_000_000, n));
+                  }}
+                  onFocus={(e) => e.target.select()}
+                  onBlur={() => setRevenueValue(revenue)}
+                  placeholder="Type an amount"
+                  className="w-full min-w-0 bg-transparent px-2 py-2.5 text-xl font-bold tabular-nums text-gray-900 focus:outline-none"
+                  aria-label="Expected annual gross revenue"
+                />
+                <span className="whitespace-nowrap pr-3 text-sm font-semibold text-gray-500">{currency} / year</span>
+              </label>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-gray-500">Or pick:</span>
+                {PRESET_REVENUE.map((v) => (
                   <button
+                    key={v}
                     type="button"
-                    onClick={() => removeComparable(c.client.index)}
-                    aria-label={`Remove ${c.client.name}`}
-                    className="p-1 text-gray-400 hover:text-gray-900"
+                    onClick={() => setRevenueValue(v)}
+                    className={`px-2.5 py-1 text-xs font-semibold ${revenue === v ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
                   >
-                    <X size={14} />
+                    {formatCompactMoney(v)}
                   </button>
-                </li>
-              ))}
-            </ul>
-            {chosen.length < MAX_COMPARABLES && (
-              <div className="flex items-center gap-2">
-                <select
-                  value={adding}
-                  onChange={(e) => e.target.value && addComparable(Number(e.target.value))}
-                  className={`${selectClass} w-full text-xs`}
-                  aria-label="Add a comparable account"
-                >
-                  <option value="">Add an account…</option>
-                  {available.map((c) => (
-                    <option key={c.client.index} value={c.client.index}>
-                      {c.client.name} — {formatCompactMoney(c.annualizedRevenue)}/yr
-                    </option>
-                  ))}
-                </select>
-                <Plus size={14} className="shrink-0 text-gray-400" />
+                ))}
               </div>
-            )}
-            {auto && (
-              <button type="button" onClick={editComparables} className="self-start text-[11px] font-semibold text-gray-500 hover:text-gray-900">
-                Edit selection
-              </button>
-            )}
-            <p className="text-[11px] text-gray-400">
-              {candidates.length} eligible accounts: revenue and client hours in {REVENUE_WINDOW.label}, active ≥ 4 months.
-            </p>
+              <p className="mt-2 text-xs text-gray-500">Gross revenue: the fees and commissions we earn, not the client’s media budget.</p>
+            </Step>
+
+            <Step n={3} title="Which current clients is it most like?">
+              <p className="mb-2 text-xs leading-snug text-gray-500">
+                {auto
+                  ? `We picked the ${chosen.length} closest in size. Swap any of them for a client that works more like the new one.`
+                  : "Your picks (1 to 3). The new account is staffed the way these are staffed today."}
+              </p>
+              <ul className="divide-y divide-gray-100 border border-gray-200">
+                {chosen.length === 0 && <li className="px-3 py-3 text-sm text-gray-500">Add at least one client below.</li>}
+                {chosen.map((c) => (
+                  <li key={c.client.index} className="flex items-center justify-between gap-2 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-gray-900" title={c.client.name}>
+                        {c.client.name}
+                      </div>
+                      <div className="text-xs tabular-nums text-gray-500">about {formatCompactMoney(c.annualizedRevenue)} a year</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeComparable(c.client.index)}
+                      aria-label={`Remove ${c.client.name}`}
+                      title="Remove"
+                      className="p-1 text-gray-400 hover:text-gray-900"
+                    >
+                      <X size={15} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {chosen.length < MAX_COMPARABLES && (
+                  <select
+                    value={adding}
+                    onChange={(e) => e.target.value && addComparable(Number(e.target.value))}
+                    className={`${selectClass} min-w-0 flex-1 text-sm`}
+                    aria-label="Add a similar client"
+                  >
+                    <option value="">+ Add a client…</option>
+                    {available.map((c) => (
+                      <option key={c.client.index} value={c.client.index}>
+                        {c.client.name} — {formatCompactMoney(c.annualizedRevenue)}/yr
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {chosen.length >= MAX_COMPARABLES && <span className="text-xs text-gray-500">Remove one to pick a different client.</span>}
+                {!auto && (
+                  <button type="button" onClick={() => setAuto(true)} className="text-xs font-semibold text-gray-500 hover:text-gray-900">
+                    Use our suggestions
+                  </button>
+                )}
+              </div>
+            </Step>
           </div>
-        </Disclosure>
+        </div>
+      </Card>
 
-        {plan && (
-          <Disclosure title="Try a what-if" subtitle="Team size, seniority and more" icon={SlidersHorizontal} defaultOpen={nChanged > 0}>
-            <LeversCard plan={plan} levers={levers} onChange={setLevers} bare />
-          </Disclosure>
-        )}
-      </div>
+      {/* ── The answer ── */}
+      {!plan || !dataPlan ? (
+        <Card className="items-center justify-center p-16 text-sm text-gray-500">Add at least one similar client in step 3 to build a plan.</Card>
+      ) : (
+        <>
+          {nChanged > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-yellow-400 px-4 py-2.5 text-sm text-gray-900">
+              <span>
+                <strong>What-if plan:</strong> {nChanged} setting{nChanged > 1 ? "s" : ""} changed from the data. Changed values are highlighted.
+              </span>
+              <button type="button" onClick={() => setLevers({ ...DEFAULT_LEVERS })} className="font-semibold underline underline-offset-2">
+                Back to the data-based plan
+              </button>
+            </div>
+          )}
 
-      {/* ── Output ── */}
-      <div className="min-w-0 space-y-5">
-        {!plan || !dataPlan ? (
-          <Card className="items-center justify-center p-16 text-sm text-gray-500">Pick at least one comparable account to build a plan.</Card>
-        ) : (
-          <>
-            {nChanged > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-yellow-400 px-4 py-2.5 text-xs text-gray-900">
-                <span>
-                  <strong>What-if plan:</strong> {nChanged} setting{nChanged > 1 ? "s" : ""} changed from the data. Changed values are highlighted,
-                  and “Why?” marks each input as data or your setting.
-                </span>
-                <button type="button" onClick={() => setLevers({ ...DEFAULT_LEVERS })} className="font-semibold underline underline-offset-2">
-                  Back to the data-based plan
-                </button>
-              </div>
-            )}
-
-            <InShort>
-              A {formatCompactMoney(revenue)}-a-year {AGENCIES.find((a) => a.id === agency)!.label} account would need about{" "}
-              <strong>{fte(plan.runRateFte)} full-time people</strong> once fully staffed
-              {plan.rampFactors[0] < 0.95 ? ", built up over the first months" : ""}. First-year staffing would cost{" "}
-              {formatCompactMoney(plan.yearCost)}, leaving a <strong>{pct(plan.yearMarginPct, 0)}</strong> margin in year 1 and{" "}
-              <strong>{pct(plan.runRateMarginPct, 0)}</strong> once the team is fully in place
+          <Card className="gap-0 p-6">
+            <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">The answer</div>
+            <p className="mt-2 text-2xl font-bold leading-snug text-gray-900">
+              You’ll need about <span className="bg-yellow-400 px-1">{fte(plan.runRateFte)} people</span> on the account. In year one they’ll cost{" "}
+              {formatCompactMoney(plan.yearCost)}, leaving a{" "}
+              <span className={plan.yearMarginPct < 0 ? "bg-red-500 px-1 text-white" : "bg-yellow-400 px-1"}>{pct(plan.yearMarginPct, 0)} margin</span>.
+            </p>
+            <p className="mt-2 text-base leading-relaxed text-gray-600">
+              Once the team is fully in place the margin settles at <strong className="text-gray-900">{pct(plan.runRateMarginPct, 0)}</strong>; the
+              similar clients earn {pct(plan.comparablesMarginPct, 0)} today.
               {plan.yearMarginPct > plan.runRateMarginPct + 0.005 && levers.revenueTiming === "even"
-                ? " (year 1 looks better only because the team is still building up while revenue is assumed to arrive in full)"
-                : ""}
-              . Based on how {chosen.length} similar account{chosen.length === 1 ? " is" : "s are"} staffed today
-              {nChanged > 0 ? `, adjusted by ${nChanged} of your own assumption${nChanged === 1 ? "" : "s"}` : ""}.
-            </InShort>
+                ? " Year one looks better only because the team is still being built up while the full revenue is assumed from month one."
+                : plan.rampFactors[0] < 0.95
+                  ? " The team is built up over the first months, as it was on our recent new clients."
+                  : ""}{" "}
+              Margin here is after team cost only, before overhead.
+            </p>
+          </Card>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
               <KpiButton active={kpiActive("team")} onClick={() => toggleWhy({ kind: "kpi", id: "team" })}>
@@ -575,6 +555,54 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                 )}
               </Notice>
             )}
+
+            {/* ── What-if: the three controls most people want ── */}
+            <Card className="gap-5 p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                    <SlidersHorizontal size={18} className="text-primary" /> Try a what-if
+                  </h3>
+                  <p className="mt-0.5 text-sm text-gray-500">Move a slider and every number above updates.</p>
+                </div>
+                {nChanged > 0 && (
+                  <button type="button" onClick={() => setLevers({ ...DEFAULT_LEVERS })} className="text-sm font-semibold text-gray-500 hover:text-gray-900">
+                    Reset
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <SliderRow
+                  label="Team size"
+                  value={levers.hoursAdj}
+                  min={0.5}
+                  max={1.5}
+                  step={0.01}
+                  onChange={(v) => setLevers({ ...levers, fixedFte: null, hoursAdj: Math.round(v * 100) / 100 })}
+                  left="Smaller team"
+                  right="Bigger team"
+                  display={levers.hoursAdj === 1 ? "Same as similar clients" : `${pct(levers.hoursAdj, 0)} of similar clients`}
+                  changed={levers.hoursAdj !== 1}
+                  onReset={() => setLevers({ ...levers, hoursAdj: 1 })}
+                />
+                <SliderRow
+                  label="Seniority"
+                  value={levers.rateAdj}
+                  min={0.7}
+                  max={1.3}
+                  step={0.01}
+                  onChange={(v) => setLevers({ ...levers, rateAdj: Math.round(v * 100) / 100 })}
+                  left="More junior"
+                  right="More senior"
+                  display={levers.rateAdj === 1 ? "Same as similar clients" : `${pct(levers.rateAdj, 0)} of today’s cost per hour`}
+                  changed={levers.rateAdj !== 1}
+                  onReset={() => setLevers({ ...levers, rateAdj: 1 })}
+                />
+              </div>
+              <div className="border-t border-gray-100 pt-5">
+                <TargetCard plan={plan} onApply={applyTarget} bare />
+              </div>
+            </Card>
 
             {chart && (
               <ChartCard
@@ -657,8 +685,8 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
               />
             </ChartCard>
 
-            <Disclosure title="Hit a target margin" subtitle="Three ways to reach the margin you want" icon={Crosshair}>
-              <TargetCard plan={plan} onApply={applyTarget} bare />
+            <Disclosure title="All settings" subtitle="Fixed team size, onboarding ramp, role-by-role mix and cost per hour" icon={SlidersHorizontal}>
+              <LeversCard plan={plan} levers={levers} onChange={setLevers} bare />
             </Disclosure>
 
             <Disclosure title="Save and compare scenarios" subtitle="Keep versions of the plan side by side" icon={Bookmark}>
@@ -746,9 +774,8 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                 </p>
               </div>
             </HowCalculated>
-          </>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
