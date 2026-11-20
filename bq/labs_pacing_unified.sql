@@ -5,6 +5,9 @@
 -- CHANGE (MIQ-SEM, 2026-11-20): MIQ search is its own Labs partner (Adriana). Forecast category
 --   'MIQ-SEM' is read, and booked MIQ rows with BUYTYPE SEARCH or OTHER become 'MIQ-SEM' (before, they were
 --   in no Labs bucket: MIQ-PROG took only Display / Video).
+-- CHANGE (AIM split, 2026-11-20): booked AIM rows are split by buy type like MIQ (Adriana): Social ->
+--   AIM-SOCIAL, Search / Other -> AIM-SEM, else AIM-PROG. labs_pacing_wide already sums every AIM
+--   variant into forecast_aim / booked_aim, so AIM totals are unchanged.
 CREATE OR REPLACE VIEW `plusco-media-invest-solutions.PCC_Media_Investment.labs_pacing_unified` AS
 WITH cur AS (
   SELECT
@@ -73,7 +76,11 @@ booked_raw AS (
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'AMAZON'        THEN 'AMAZON'
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'QUANTCAST'     THEN 'QUANTCAST'
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'YAHOO'         THEN 'YAHOO'
-      WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'AIM'           THEN 'AIM'
+      WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'AIM'
+        AND UPPER(BUYTYPE) = 'SOCIAL'                    THEN 'AIM-SOCIAL'
+      WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'AIM'
+        AND UPPER(BUYTYPE) IN ('SEARCH', 'OTHER')        THEN 'AIM-SEM'
+      WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'AIM'           THEN 'AIM-PROG'
       -- AIM split (added): booked AIM rows already tagged with the split name.
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'AIM-PROG'      THEN 'AIM-PROG'
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'AIM-SOCIAL'    THEN 'AIM-SOCIAL'

@@ -45,7 +45,7 @@ AS (
       AND PLUSCO_CLIENT_ID IS NOT NULL AND PLUSCO_CLIENT_ID NOT IN ('', '#N/A', 'no match')
       AND IF(axis = 'media',
         PLUSCO_MEDIA_CHANNEL IN ('Digital Direct', 'OOH', 'Print', 'Programmatic', 'Radio', 'SEM', 'Social', 'TV'),
-        Labs_Partners IN ('AMAZON', 'BILLUPS-OOH', 'BILLUPS-PRINT', 'MIQ-PROG', 'MIQ-SEM', 'MIQ-SOCIAL', 'QUANTCAST', 'REDDIT',
+        Labs_Partners IN ('AIM-PROG', 'AIM-SEM', 'AIM-SOCIAL', 'AMAZON', 'BILLUPS-OOH', 'BILLUPS-PRINT', 'MIQ-PROG', 'MIQ-SEM', 'MIQ-SOCIAL', 'QUANTCAST', 'REDDIT',
                           'STACKADAPT', 'YAHOO'))
   ),
   -- The pivots show a month only when it has a line, so an exact 0 is kept and an empty month stays NULL.

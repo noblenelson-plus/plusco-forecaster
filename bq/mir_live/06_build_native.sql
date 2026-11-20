@@ -400,8 +400,15 @@ base AS (
         WHEN UPPER(r.buytype) IN ('SEARCH', 'OTHER') THEN 'MIQ-SEM'
         ELSE 'MIQ-PROG'
       END
+      -- AIM is split like MIQ, matching the Forecaster's AIM-Prog / AIM-Social / AIM-SEM partners
+      -- (Adriana, 2026-11-20).
+      WHEN r.v_partner = 'AIM' THEN CASE
+        WHEN r.buytype = 'SOCIAL' THEN 'AIM-SOCIAL'
+        WHEN UPPER(r.buytype) IN ('SEARCH', 'OTHER') THEN 'AIM-SEM'
+        ELSE 'AIM-PROG'
+      END
       WHEN r.v_partner = 'BILLUPS' THEN IF(r.channel = 'Print', 'BILLUPS-PRINT', 'BILLUPS-OOH')
-      WHEN r.v_partner IN ('YAHOO', 'QUANTCAST', 'AMAZON', 'AIM', 'STACKADAPT', 'REDDIT') THEN r.v_partner
+      WHEN r.v_partner IN ('YAHOO', 'QUANTCAST', 'AMAZON', 'STACKADAPT', 'REDDIT') THEN r.v_partner
     END AS Labs_Partners,
     CAST(r.NET_ORDERED AS FLOAT64) AS NET_ORDERED,
     CAST(IF(r.pc_currency = 'USD', r.NET_ORDERED * 1.3978, r.NET_ORDERED) AS FLOAT64) AS NET_ORDERED_CAD,
