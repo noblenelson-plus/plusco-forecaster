@@ -38,7 +38,7 @@ export default function ClientDetailDrawer({
   to: number;
   basis: CostBasis;
   currency: string;
-  /** Why the account is "worth a conversation", when it is. */
+  /** Why the account needs review, when it does. */
   reason?: ReasonDef | null;
   onClose: () => void;
 }) {
@@ -97,7 +97,7 @@ export default function ClientDetailDrawer({
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
           {reason && (
             <div className={`border-l-4 ${reason.accent} bg-white pl-4`}>
-              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">Why it’s worth a conversation</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">Why it needs review</div>
               <div className="mt-0.5 text-sm font-semibold text-gray-900">{reason.title}</div>
               <p className="mt-0.5 text-sm leading-snug text-gray-600">{reason.explain}</p>
             </div>

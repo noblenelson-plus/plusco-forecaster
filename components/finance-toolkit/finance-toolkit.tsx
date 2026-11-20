@@ -19,10 +19,11 @@ import ProfitabilityTab from "./profitability-tab";
 import TargetsCalculatorTab from "./targets-calculator-tab";
 
 type TabId = "hours" | "profitability" | "calculator";
+// Present first (profitability, time), then the future (new business).
 const TABS: { id: TabId; label: string }[] = [
   { id: "profitability", label: "Account Profitability" },
-  { id: "calculator", label: "New Business Targets Calculator" },
-  { id: "hours", label: "Hours Report Portal" },
+  { id: "hours", label: "Team Time" },
+  { id: "calculator", label: "New Business Calculator" },
 ];
 
 const GUIDE: { id: TabId; icon: typeof PieChart; title: string; question: string; how: string }[] = [
@@ -30,22 +31,22 @@ const GUIDE: { id: TabId; icon: typeof PieChart; title: string; question: string
     id: "profitability",
     icon: PieChart,
     title: "Account Profitability",
-    question: "How much do we keep once we pay the people who serve each account?",
-    how: "The answer is at the top. Below it: the monthly trend, how accounts spread by margin, the biggest contributors, and the few accounts worth a conversation, grouped by the likely reason. Click any account for its trend.",
-  },
-  {
-    id: "calculator",
-    icon: Calculator,
-    title: "New Business Targets Calculator",
-    question: "If we win an account worth $X a year, what team does it need and what margin will we make?",
-    how: "Type the expected revenue. The plan is based on similar accounts we already run. Change any setting to test a what-if, or set a target margin.",
+    question: "Once we pay for our teams’ time, how much is left, and which accounts don’t pay their way?",
+    how: "The answer is at the top. Below it: the monthly trend, the biggest contributors, and the few accounts that need review, grouped by the likely reason. Click any account for its trend. Margins are before overhead.",
   },
   {
     id: "hours",
     icon: Clock,
-    title: "Hours Report Portal",
-    question: "Where does our people’s time go?",
-    how: "Hours and their cost by client, role, month or type of work. Any view exports to Google Sheets.",
+    title: "Team Time",
+    question: "How much of our people’s time goes to clients, and where does the rest go?",
+    how: "The share of hours spent on clients, month by month and by role. Finance can open “Explore the raw hours” to filter and export the timesheet data.",
+  },
+  {
+    id: "calculator",
+    icon: Calculator,
+    title: "New Business Calculator",
+    question: "If we win an account worth $X a year, what team does it need and what margin will we make?",
+    how: "Answer three questions: agency, how much the client will pay a year, and which current clients it is most like. Then move the sliders to test a what-if.",
   },
 ];
 
