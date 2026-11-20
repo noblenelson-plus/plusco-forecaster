@@ -39,14 +39,16 @@ import {
  * A MediaBox publisher's partner family, upper case — the counterpart of the
  * MIR partner name: "Billups - Cineplex" → BILLUPS, "Media IQ (MIQ)" → MIQ,
  * "Cossette Programmatic Yahoo DSP" → YAHOO, "All Inclusive Marketing (AIM) -
- * Affiliate" → AIM. Anything else is the publisher itself, upper case.
+ * Guaranteed KPI" → AIM. Anything else is the publisher itself, upper case.
+ * AIM's "Affiliate" publisher is NOT AIM Labs spend (Adriana, 2026-11-20), so it
+ * stays its own family and counts as ordinary media.
  */
 export function publisherFamily(publisher: string): string {
   const p = publisher.trim().toLowerCase();
   if (p.startsWith("billups")) return "BILLUPS";
   if (p === "meta") return "META";
   if (/\bmiq\b/.test(p) || p.includes("media iq")) return "MIQ";
-  if (p.includes("all inclusive marketing") || /\baim\b/.test(p)) return "AIM";
+  if ((p.includes("all inclusive marketing") || /\baim\b/.test(p)) && !p.includes("affiliate")) return "AIM";
   for (const f of ["amazon", "yahoo", "quantcast", "reddit", "stackadapt"]) {
     if (p.includes(f)) return f.toUpperCase();
   }
