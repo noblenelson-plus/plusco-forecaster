@@ -35,13 +35,13 @@ function Option({
   return (
     <div className="flex flex-col justify-between gap-3 border border-gray-200 bg-white p-4">
       <div>
-        <div className="text-xs font-semibold text-gray-900">{title}</div>
+        <div className="text-sm font-semibold text-gray-900">{title}</div>
         <div className="mt-2 flex items-baseline gap-2">
           <span className="text-xl font-bold tabular-nums text-gray-900">{needed}</span>
-          <span className="text-xs tabular-nums text-gray-500">now {now}</span>
+          <span className="text-sm tabular-nums text-gray-500">now {now}</span>
         </div>
-        <div className="text-xs font-semibold tabular-nums text-gray-700">{delta}</div>
-        <p className="mt-1.5 text-[11px] leading-snug text-gray-500">{explain}</p>
+        <div className="text-sm font-semibold tabular-nums text-gray-700">{delta}</div>
+        <p className="mt-1.5 text-sm leading-snug text-gray-600">{explain}</p>
       </div>
       <button
         type="button"
@@ -80,12 +80,12 @@ export default function TargetCard({
               <Crosshair size={16} className="text-primary" /> Hit a target margin
             </div>
           )}
-          <p className="mt-0.5 text-xs text-gray-500">
+          <p className="mt-0.5 text-sm text-gray-600">
             Pick the margin you want once the team is fully staffed. Here are three ways to get there; each keeps the rest of the plan as it is.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Target</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">Target margin</span>
           <NumInput ariaLabel="Target run-rate margin" value={targetPct} min={-50} max={95} suffix="%" className="w-24" onChange={setTargetPct} />
           {gap !== null && (
             <span className={`px-2 py-1 text-xs font-semibold ${gap >= 0 ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>

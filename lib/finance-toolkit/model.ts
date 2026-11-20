@@ -427,7 +427,11 @@ export interface ProfitResult {
   totals: ProfitTotals;
 }
 
-export function profitability(scope: Scope, from: number, to: number, basis: CostBasis): ProfitResult {
+/**
+ * `only`: when set, just these accounts (the page's Client / BU-region / GM
+ * filters). Overhead stays scope-wide: it is not booked to any account.
+ */
+export function profitability(scope: Scope, from: number, to: number, basis: CostBasis, only: Set<number> | null = null): ProfitResult {
   const hours = new Map<number, number>();
   const cost = new Map<number, number>();
   const costed = new Map<number, number>();
@@ -442,6 +446,7 @@ export function profitability(scope: Scope, from: number, to: number, basis: Cos
       overheadCost += costOf(f, basis);
       continue;
     }
+    if (only && !only.has(f.client)) continue;
     hours.set(f.client, (hours.get(f.client) ?? 0) + f.hours);
     cost.set(f.client, (cost.get(f.client) ?? 0) + costOf(f, basis));
     costed.set(f.client, (costed.get(f.client) ?? 0) + f.costedHours);
@@ -449,6 +454,7 @@ export function profitability(scope: Scope, from: number, to: number, basis: Cos
   const revenue = new Map<number, number>();
   for (const [client, byMonth] of revenueByClientMonth) {
     if (!inScope(scope, clients[client])) continue;
+    if (only && !only.has(client)) continue;
     let sum = 0;
     for (const [month, amount] of byMonth) if (month >= from && month <= to) sum += amount;
     if (sum !== 0) revenue.set(client, sum);

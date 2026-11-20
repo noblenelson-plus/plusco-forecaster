@@ -110,12 +110,12 @@ export function SliderRow({
   return (
     <div className={disabled ? "opacity-40" : ""}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">{label}</span>
         <span className="flex items-center gap-1.5">
-          <span className={`text-xs font-bold tabular-nums ${changed ? "text-gray-900" : "text-gray-500"}`}>{display}</span>
+          <span className={`text-sm font-bold tabular-nums ${changed ? "text-gray-900" : "text-gray-600"}`}>{display}</span>
           {changed && !disabled && (
             <button type="button" onClick={onReset} aria-label={`Reset ${label}`} className="text-gray-400 hover:text-gray-900">
-              <RotateCcw size={11} />
+              <RotateCcw size={13} />
             </button>
           )}
         </span>
@@ -131,7 +131,7 @@ export function SliderRow({
         className="mt-1 w-full accent-gray-900"
         aria-label={label}
       />
-      <div className="flex justify-between text-[10px] text-gray-400">
+      <div className="flex justify-between text-sm font-medium text-gray-600">
         <span>{left}</span>
         <span>{right}</span>
       </div>
