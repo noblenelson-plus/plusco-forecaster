@@ -17,7 +17,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
 import {
   Bookmark,
   Briefcase,
@@ -241,6 +241,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
     const data = plan.monthlyHours.map((_, m) => {
       const row: Record<string, number | string> = { month: `M${m + 1}` };
       plan.roles.forEach((r) => (row[`r${r.key}`] = unit === "fte" ? r.monthlyHours[m] / fteHours : r.monthlyHours[m]));
+      row.total = unit === "fte" ? plan.monthlyHours[m] / fteHours : plan.monthlyHours[m];
       return row;
     });
     return { config, data };
@@ -629,7 +630,7 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                 }
               >
                 <ChartContainer config={chart.config} className="aspect-auto w-full" style={{ height: 300 }}>
-                  <BarChart data={chart.data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                  <BarChart data={chart.data} margin={{ top: 24, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
                     <YAxis
@@ -655,8 +656,19 @@ export default function TargetsCalculatorTab({ basis, initialAgency }: { basis: 
                       }
                     />
                     <ChartLegend content={<ChartLegendContent />} />
-                    {plan.roles.map((r) => (
-                      <Bar key={r.key} dataKey={`r${r.key}`} stackId="plan" fill={`var(--color-r${r.key})`} isAnimationActive={false} />
+                    {plan.roles.map((r, i) => (
+                      <Bar key={r.key} dataKey={`r${r.key}`} stackId="plan" fill={`var(--color-r${r.key})`} isAnimationActive={false}>
+                        {i === plan.roles.length - 1 && (
+                          <LabelList
+                            dataKey="total"
+                            position="top"
+                            fill="#111827"
+                            fontSize={12}
+                            fontWeight={700}
+                            formatter={(v: unknown) => (typeof v === "number" ? (unit === "fte" ? fte(v) : hours(v)) : "")}
+                          />
+                        )}
+                      </Bar>
                     ))}
                   </BarChart>
                 </ChartContainer>

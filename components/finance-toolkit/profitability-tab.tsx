@@ -7,7 +7,7 @@
  *
  *   1. the answer in one sentence, with the few numbers behind it
  *   2. three headline tiles (vs the previous period when there is one)
- *   3. the month-by-month trend
+ *   3. the month-by-month trend (labelled bars) next to the top accounts
  *   4. where the margin comes from (top accounts) next to the accounts worth a
  *      conversation, grouped by the likely reason so each one reads as a next step
  *   5. detail on demand: the full account table and the formulas
@@ -19,11 +19,10 @@
  */
 
 import { useMemo, useState } from "react";
-import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
 import {
   ArrowDownRight,
   ArrowUpRight,
-  ChevronDown,
   ChevronRight,
   LineChart,
   MessageCircle,
@@ -101,10 +100,12 @@ const REASON_CHIP: Record<ReasonId, { label: string; tone: "loss" | "over" | "ne
 };
 
 const trendConfig: ChartConfig = {
-  cost: { label: "Staffing cost", color: PLUS.purple },
+  cost: { label: "Team cost", color: PLUS.purple },
   kept: { label: "Margin after team cost", color: PLUS.green },
-  marginPct: { label: "Margin %", color: PLUS.black },
 };
+
+/** Compact money for a bar label; blank for small values that would not fit. */
+const compactLabel = (v: unknown) => (typeof v === "number" && v >= 50_000 ? formatCompactMoney(v) : "");
 
 /** "−$261K" for a negative amount (formatCompactMoney takes the absolute value). */
 const negCompact = (v: number) => `−${formatCompactMoney(Math.abs(v))}`;
@@ -191,65 +192,57 @@ function SectionTitle({ icon: Icon, title, subtitle }: { icon: typeof Trophy; ti
   );
 }
 
-/** One reason group in "Needs review": a one-line summary (the why and
- *  who), opening to its accounts. Starts closed so the card reads as reasons. */
+/** Top stripe colour per reason (explicit classes so Tailwind keeps them). */
+const REASON_STRIPE: Record<ReasonId, string> = {
+  "time-over-fee": "bg-red-500",
+  "little-billed": "bg-red-500",
+  new: "bg-blue-400",
+  cause: "bg-gray-400",
+  "low-return": "bg-yellow-400",
+};
+
+/** One reason group in "Needs review": a card with the why, then every account
+ *  (open by default so leads read it at a glance; long groups show 6 first). */
 function ReasonBlock({ group, onOpen }: { group: ReasonGroup; onOpen: (r: ProfitRow) => void }) {
-  const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
-  const LIMIT = 5;
+  const LIMIT = 6;
   const shown = all ? group.rows : group.rows.slice(0, LIMIT);
-  const names = group.rows.map((r) => r.client.name).join(", ");
   return (
-    <div className={`border-l-4 ${group.accent}`}>
-      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="block w-full py-1 pl-4 text-left hover:bg-gray-50">
-        <span className="flex items-baseline justify-between gap-3">
-          <span className="text-sm font-semibold text-gray-900">
-            {group.title} <span className="font-normal text-gray-500">· {group.rows.length}</span>
-          </span>
-          <span className="flex shrink-0 items-center gap-1 text-sm font-semibold tabular-nums text-gray-900">
-            {group.margin < 0 ? money(group.margin) : `${money(group.margin)} kept`}
-            <ChevronDown size={15} className={`text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
-          </span>
+    <div className="mb-4 flex break-inside-avoid flex-col border border-gray-200 bg-white p-4">
+      <div className={`-mx-4 -mt-4 mb-3 h-1 ${REASON_STRIPE[group.id]}`} aria-hidden />
+      <div className="flex items-baseline justify-between gap-3">
+        <h4 className="text-sm font-semibold text-gray-900">
+          {group.title} <span className="font-normal text-gray-500">· {group.rows.length}</span>
+        </h4>
+        <span className="shrink-0 text-sm font-bold tabular-nums text-gray-900">
+          {group.margin < 0 ? money(group.margin) : `${money(group.margin)} kept`}
         </span>
-        <span className="mt-0.5 block text-[13px] leading-snug text-gray-600">{group.explain}</span>
-        {!open && (
-          <span className="mt-1 block truncate text-xs text-gray-500" title={names}>
-            {names}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="pl-4">
-          <ul className="mt-1 divide-y divide-gray-100">
-            {shown.map((r) => (
-              <li key={r.client.index}>
-                <button
-                  type="button"
-                  onClick={() => onOpen(r)}
-                  className="group flex w-full items-center justify-between gap-3 py-1.5 text-left hover:bg-gray-50"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-gray-900" title={r.client.name}>
-                      {r.client.name}
-                    </span>
-                    <span className="block text-xs tabular-nums text-gray-500">
-                      {money(r.revenue)} billed · {money(r.cost)} of team time · {hours(r.hours)} h
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1 text-sm font-semibold tabular-nums text-gray-900">
-                    {money(r.margin)}
-                    <ChevronRight size={14} className="text-gray-300 group-hover:text-gray-900" />
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          {group.rows.length > LIMIT && (
-            <button type="button" onClick={() => setAll((v) => !v)} className="mt-1 text-xs font-semibold text-gray-500 hover:text-gray-900">
-              {all ? "Show fewer" : `Show all ${group.rows.length}`}
+      </div>
+      <p className="mt-1 text-[13px] leading-snug text-gray-600">{group.explain}</p>
+      <ul className="mt-2 divide-y divide-gray-100">
+        {shown.map((r) => (
+          <li key={r.client.index}>
+            <button type="button" onClick={() => onOpen(r)} className="group flex w-full items-center justify-between gap-3 py-1.5 text-left hover:bg-gray-50">
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-gray-900" title={r.client.name}>
+                  {r.client.name}
+                </span>
+                <span className="block text-xs tabular-nums text-gray-500">
+                  {money(r.revenue)} billed · {money(r.cost)} of team time · {hours(r.hours)} h
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1 text-sm font-semibold tabular-nums text-gray-900">
+                {money(r.margin)}
+                <ChevronRight size={14} className="text-gray-300 group-hover:text-gray-900" />
+              </span>
             </button>
-          )}
-        </div>
+          </li>
+        ))}
+      </ul>
+      {group.rows.length > LIMIT && (
+        <button type="button" onClick={() => setAll((v) => !v)} className="mt-2 self-start text-xs font-semibold text-gray-500 hover:text-gray-900">
+          {all ? "Show fewer" : `Show all ${group.rows.length}`}
+        </button>
       )}
     </div>
   );
@@ -259,7 +252,7 @@ const signed = (good: boolean, text: string) => `${good ? "+" : "−"}${text}`;
 
 // ─── The tab ─────────────────────────────────────────────────────────────────
 
-export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis: CostBasis }) {
+export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope: Scope; basis: CostBasis; clientFilter: Set<number> | null }) {
   const [preset, setPreset] = useState<Preset>("ytd");
   const [from, setFrom] = useState(R0);
   const [to, setTo] = useState(REVENUE_WINDOW.to);
@@ -267,14 +260,14 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  const result = useMemo(() => profitability(scope, from, to, basis), [scope, from, to, basis]);
+  const result = useMemo(() => profitability(scope, from, to, basis, clientFilter), [scope, from, to, basis, clientFilter]);
   const { totals } = result;
   const prevRange = previousPeriod(from, to, R0);
   const prevFrom = prevRange?.[0] ?? null;
   const prevTo = prevRange?.[1] ?? null;
   const prev = useMemo(
-    () => (prevFrom !== null && prevTo !== null ? profitability(scope, prevFrom, prevTo, basis) : null),
-    [scope, basis, prevFrom, prevTo],
+    () => (prevFrom !== null && prevTo !== null ? profitability(scope, prevFrom, prevTo, basis, clientFilter) : null),
+    [scope, basis, prevFrom, prevTo, clientFilter],
   );
 
   const { matched, unmatched, flagged } = useMemo(() => {
@@ -362,7 +355,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
     }
   };
 
-  const who = scope.id === "canada" ? "Across our Canadian agencies" : `At ${scope.label}`;
+  const who = clientFilter ? "For the selected accounts" : scope.id === "canada" ? "Across our Canadian agencies" : `At ${scope.label}`;
   const cur = scope.currency === "USD" ? " (USD)" : "";
 
   // ─── Full table (detail on demand) ─────────────────────────────────────────
@@ -502,6 +495,9 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
     margin: Math.round(t.margin),
     revenue: Math.round(t.revenue),
     marginPct: t.marginPct === null ? null : Math.round(t.marginPct * 1000) / 10,
+    // Margin label sits on top of the green segment, or on the purple one in a month with nothing kept.
+    pctOnKept: t.marginPct !== null && t.margin > 0 ? Math.round(t.marginPct * 100) : null,
+    pctOnCost: t.marginPct !== null && t.margin <= 0 ? Math.round(t.marginPct * 100) : null,
   }));
 
   const coverageMissing = totals.costCoverage !== null ? 1 - totals.costCoverage : 0;
@@ -620,44 +616,28 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
         />
       </div>
 
-      {/* 3 · Trend + spread */}
-      <div>
-        <Card className="gap-0 p-5">
+      {/* 3 · Trend + where the margin comes from */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <Card className="gap-0 p-5 xl:col-span-2">
           <SectionTitle
             icon={LineChart}
             title="Month by month"
             subtitle={
               best && worst ? (
                 <>
-                  Best month {monthLabel(best.month)} ({pct(best.marginPct, 0)}) · weakest {monthLabel(worst.month)} ({pct(worst.marginPct, 0)})
+                  Each bar is the month’s revenue: team cost (purple) and what we kept (green); the label on top is the margin. Best month{" "}
+                  {monthLabel(best.month)} ({pct(best.marginPct, 0)}) · weakest {monthLabel(worst.month)} ({pct(worst.marginPct, 0)})
                 </>
               ) : (
-                "Each bar is the month’s revenue: what the team cost, and what we kept"
+                "Each bar is the month’s revenue: team cost (purple) and what we kept (green); the label on top is the margin"
               )
             }
           />
-          <ChartContainer config={trendConfig} className="aspect-auto w-full" style={{ height: 260 }}>
-            <ComposedChart data={trendData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+          <ChartContainer config={trendConfig} className="aspect-auto w-full" style={{ height: 300 }}>
+            <BarChart data={trendData} margin={{ top: 24, right: 4, left: 0, bottom: 0 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 12 }} />
-              <YAxis
-                yAxisId="money"
-                tickFormatter={(v) => formatCompactMoney(Number(v))}
-                tickLine={false}
-                axisLine={false}
-                width={56}
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis
-                yAxisId="pct"
-                orientation="right"
-                domain={[0, 100]}
-                tickFormatter={(v) => `${v}%`}
-                tickLine={false}
-                axisLine={false}
-                width={40}
-                tick={{ fontSize: 12 }}
-              />
+              <YAxis tickFormatter={(v) => formatCompactMoney(Number(v))} tickLine={false} axisLine={false} width={56} tick={{ fontSize: 12 }} />
               <ChartTooltip
                 content={({ active, payload }) => {
                   const p = active && payload?.[0]?.payload;
@@ -666,7 +646,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
                     <div className="border border-gray-200 bg-white px-3 py-2 text-xs shadow-xl">
                       <div className="mb-1 font-semibold text-gray-900">{p.month}</div>
                       <div className="tabular-nums text-gray-600">Revenue {money(p.revenue)}</div>
-                      <div className="tabular-nums text-gray-600">Staffing cost {money(p.cost)}</div>
+                      <div className="tabular-nums text-gray-600">Team cost {money(p.cost)}</div>
                       <div className="font-semibold tabular-nums text-gray-900">
                         Kept {money(p.margin)}
                         {p.marginPct !== null ? ` · ${p.marginPct.toFixed(1)}%` : ""}
@@ -676,33 +656,24 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
                 }}
               />
               <ChartLegend content={<ChartLegendContent />} />
-              <Bar yAxisId="money" dataKey="cost" stackId="rev" fill="var(--color-cost)" maxBarSize={64} isAnimationActive={false} />
-              <Bar yAxisId="money" dataKey="kept" stackId="rev" fill="var(--color-kept)" maxBarSize={64} isAnimationActive={false} />
-              <Line
-                yAxisId="pct"
-                dataKey="marginPct"
-                stroke="var(--color-marginPct)"
-                strokeWidth={2}
-                dot={{ r: 3 }}
-                connectNulls
-                isAnimationActive={false}
-              />
-            </ComposedChart>
+              <Bar dataKey="cost" stackId="rev" fill="var(--color-cost)" maxBarSize={72} isAnimationActive={false}>
+                <LabelList dataKey="cost" position="center" fill="#ffffff" fontSize={11} formatter={(v: unknown) => compactLabel(v)} />
+                <LabelList dataKey="pctOnCost" position="top" fill="#b91c1c" fontSize={12} fontWeight={700} formatter={(v: unknown) => (typeof v === "number" ? `${v < 0 ? "−" : ""}${Math.abs(v)}%` : "")} />
+              </Bar>
+              <Bar dataKey="kept" stackId="rev" fill="var(--color-kept)" maxBarSize={72} isAnimationActive={false}>
+                <LabelList dataKey="kept" position="center" fill="#ffffff" fontSize={11} formatter={(v: unknown) => compactLabel(v)} />
+                <LabelList dataKey="pctOnKept" position="top" fill="#111827" fontSize={12} fontWeight={700} formatter={(v: unknown) => (typeof v === "number" ? `${v < 0 ? "−" : ""}${Math.abs(v)}%` : "")} />
+              </Bar>
+            </BarChart>
           </ChartContainer>
         </Card>
 
-      </div>
-
-      {/* 4 · Where the margin comes from / needs review */}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Card className="gap-0 p-5">
           <SectionTitle
             icon={Trophy}
             title="Where the margin comes from"
             subtitle={
-              topShare !== null
-                ? `These ${top.length} accounts deliver ${pct(topShare, 0)} of what we kept`
-                : "Accounts that keep the most after staffing"
+              topShare !== null ? `These ${top.length} accounts deliver ${pct(topShare, 0)} of what we kept` : "Accounts that keep the most after team cost"
             }
           />
           {top.length === 0 ? (
@@ -724,12 +695,7 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
                       </span>
                     </div>
                     <div className="ml-6 mt-1 h-2 bg-gray-100">
-                      <div
-                        className="h-full bg-green-500"
-                        style={{
-                          width: `${(r.margin! / top[0].margin!) * 100}%`,
-                        }}
-                      />
+                      <div className="h-full bg-green-500" style={{ width: `${(r.margin! / top[0].margin!) * 100}%` }} />
                     </div>
                   </button>
                 </li>
@@ -738,35 +704,34 @@ export default function ProfitabilityTab({ scope, basis }: { scope: Scope; basis
           )}
           <p className="mt-4 text-xs text-gray-500">Click any account for its month-by-month trend and team mix.</p>
         </Card>
-
-        <Card className="gap-0 p-5">
-          <SectionTitle
-            icon={MessageCircle}
-            title="Needs review"
-            subtitle={
-              flagged.length === 0
-                ? "Every account with real activity earns more than it costs"
-                : `${flagged.length} account${flagged.length === 1 ? "" : "s"}, grouped by the likely reason${
-                    flaggedLoss < 0 && totals.margin > 0
-                      ? ` · ${negCompact(flaggedLoss)} in total, ${pct(-flaggedLoss / totals.margin, 1)} of what we kept`
-                      : ""
-                  }`
-            }
-          />
-          {groups.length === 0 ? (
-            <p className="py-10 text-center text-sm text-gray-500">Nothing to discuss in this period.</p>
-          ) : (
-            <div className="space-y-5">
-              {groups.map((g) => (
-                <ReasonBlock key={g.id} group={g} onOpen={setSelected} />
-              ))}
-            </div>
-          )}
-        </Card>
       </div>
 
+      {/* 4 · Needs review — every group open, side by side */}
+      <Card className="gap-0 p-5">
+        <SectionTitle
+          icon={MessageCircle}
+          title="Needs review"
+          subtitle={
+            flagged.length === 0
+              ? "Every account with real activity earns more than it costs"
+              : `${flagged.length} account${flagged.length === 1 ? "" : "s"}, grouped by the likely reason, biggest impact first${
+                  flaggedLoss < 0 && totals.margin > 0 ? ` · ${negCompact(flaggedLoss)} in total, ${pct(-flaggedLoss / totals.margin, 1)} of what we kept` : ""
+                }`
+          }
+        />
+        {groups.length === 0 ? (
+          <p className="py-10 text-center text-sm text-gray-500">Nothing to review in this period.</p>
+        ) : (
+          <div className="columns-1 gap-4 md:columns-2 2xl:columns-3">
+            {groups.map((g) => (
+              <ReasonBlock key={g.id} group={g} onOpen={setSelected} />
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* 5 · Detail on demand */}
-      <Disclosure title="All accounts" subtitle={`${matched.length} accounts · search, sort and export to Google Sheets`} icon={Table2}>
+      <Disclosure title="All accounts" subtitle={`${matched.length} accounts · search, sort and export to Google Sheets`} icon={Table2} defaultOpen>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <Segmented
             size="sm"

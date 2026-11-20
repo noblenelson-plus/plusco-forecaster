@@ -2,8 +2,8 @@
 "use client";
 
 /**
- * Finance Toolkit · Team Time — "How much of our people's time goes to
- * clients, and where does the rest go?"
+ * Finance Toolkit · Hours Report Portal — "How much of our people's time goes
+ * to clients, and where does the rest go?"
  *
  *   1. the answer in one sentence (client work share of all hours logged)
  *   2. three tiles: client work share, client time as full-time people, time
@@ -11,15 +11,17 @@
  *   3. where the time went month by month (client / internal / time off)
  *   4. client time by role: the roles with the most hours and how much of their
  *      time goes to clients
- *   5. folded away: "Explore the raw hours" — Finance's filterable view of the
- *      Maconomy hours (clients, roles, time type, any grouping) with the Sheets
- *      export; its totals tie back to the source files
+ *   5. "Explore the raw hours" (open) — the filterable view of the Maconomy
+ *      hours (roles, time type, any grouping) with the Sheets export; its
+ *      totals tie back to the source files
  *
- * The period applies to the whole tab; the filters only to the explorer.
+ * The period applies to the whole tab. The page's Client / BU-region / GM
+ * filters apply to the explorer only: internal time and time off are not
+ * booked to clients, so the time split above always covers everyone.
  */
 
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
 import { BarChart3, Search, ShieldCheck, Users } from "lucide-react";
 import { Card } from "../ui/card";
 import { PLUS } from "../dashboard/charts/colors";
@@ -29,7 +31,6 @@ import {
   FTE_HOURS_PER_MONTH,
   MODEL,
   TIME_TYPES,
-  inScope,
   monthLabel,
   periodLabel,
   portal,
@@ -98,11 +99,10 @@ function Tile({ label, value, context }: { label: string; value: string; context
 
 const ROLES_SHOWN = 12;
 
-export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: CostBasis }) {
+export default function HoursPortalTab({ scope, basis, clientFilter }: { scope: Scope; basis: CostBasis; clientFilter: Set<number> | null }) {
   const [preset, setPreset] = useState<Preset>("last12");
   const [from, setFrom] = useState(PRESETS[0].range![0]);
   const [to, setTo] = useState(PRESETS[0].range![1]);
-  const [clientSel, setClientSel] = useState<string[]>([]);
   const [roleSel, setRoleSel] = useState<string[]>([]);
   const [timeSel, setTimeSel] = useState<string[]>([]);
   const [group, setGroup] = useState<PortalGroup>("client");
@@ -145,6 +145,7 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
     client: Math.round(m.client),
     internal: Math.round(m.internal),
     timeoff: Math.round(m.timeoff),
+    clientPct: m.client + m.internal + m.timeoff > 0 ? Math.round((m.client / (m.client + m.internal + m.timeoff)) * 100) : null,
   }));
   const monthlyShare = overview.monthly.filter((m) => m.client + m.internal + m.timeoff > 0).map((m) => ({ m, share: m.client / (m.client + m.internal + m.timeoff) }));
   const best = monthlyShare.length >= 3 ? monthlyShare.reduce((a, x) => (x.share > a.share ? x : a)) : null;
@@ -154,25 +155,15 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
 
   // ─── Explorer (filters) ────────────────────────────────────────────────────
 
-  const clientOptions = useMemo(
-    () =>
-      MODEL.clients
-        .filter((c) => inScope(scope, c) && c.match !== "revenue-only")
-        .map((c) => ({ value: String(c.index), label: `${c.name}${scope.agencyIds.length > 1 ? ` · ${c.agencyName}` : ""}` }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    [scope],
-  );
   const roleOptions = useMemo(() => MODEL.roles.map((r, i) => ({ value: String(i), label: r })).sort((a, b) => a.label.localeCompare(b.label)), []);
   const timeOptions = TIME_TYPES.map((t) => ({ value: t.id, label: t.label }));
-  // Drop client picks that left the scope.
-  const validClients = useMemo(() => clientSel.filter((v) => clientOptions.some((o) => o.value === v)), [clientSel, clientOptions]);
 
   const result = useMemo(
     () =>
       portal(
         {
           scope,
-          clients: validClients.length ? new Set(validClients.map(Number)) : null,
+          clients: clientFilter,
           roles: roleSel.length ? new Set(roleSel.map(Number)) : null,
           times: new Set<TimeType>(timeSel.length ? (timeSel as TimeType[]) : TIME_TYPES.map((t) => t.id)),
           from,
@@ -181,10 +172,10 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
         group,
         basis,
       ),
-    [scope, validClients, roleSel, timeSel, from, to, group, basis],
+    [scope, clientFilter, roleSel, timeSel, from, to, group, basis],
   );
   const { totals } = result;
-  const filtered = validClients.length + roleSel.length + timeSel.length > 0;
+  const filtered = roleSel.length + timeSel.length > 0;
 
   const groupLabel = GROUPS.find((g) => g.id === group)!.label;
   const columns: Column<PortalRow>[] = [
@@ -310,6 +301,15 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
         </div>
       </Card>
 
+      {clientFilter && (
+        <Notice tone="info">
+          <p>
+            Your client filters apply to <strong>Explore the raw hours</strong> at the bottom. The time split above covers everyone, because internal time
+            and time off aren’t booked to clients.
+          </p>
+        </Notice>
+      )}
+
       {coverage !== null && coverage < COVERAGE_WARN_BELOW && (
         <Notice tone="warn">
           <p>
@@ -342,13 +342,13 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
             <h3 className="text-base font-semibold text-gray-900">Where the time went, month by month</h3>
             <p className="mt-0.5 text-sm text-gray-500">
               {best && worst
-                ? `Most client-focused month ${monthLabel(best.m.month)} (${pct(best.share, 0)}) · least ${monthLabel(worst.m.month)} (${pct(worst.share, 0)})`
+                ? `Purple = client work, with its share of all hours on top. Most client-focused month ${monthLabel(best.m.month)} (${pct(best.share, 0)}) · least ${monthLabel(worst.m.month)} (${pct(worst.share, 0)})`
                 : "Hours logged each month, by type of work"}
             </p>
           </div>
         </div>
         <ChartContainer config={chartConfig} className="aspect-auto w-full" style={{ height: 260 }}>
-          <BarChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+          <BarChart data={chartData} margin={{ top: 24, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 12 }} />
             <YAxis tickFormatter={(v) => `${Math.round(Number(v) / 1000)}K h`} tickLine={false} axisLine={false} width={52} tick={{ fontSize: 12 }} />
@@ -367,7 +367,14 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
             />
             <ChartLegend content={<ChartLegendContent />} />
             {(["client", "internal", "timeoff"] as const).map((k) => (
-              <Bar key={k} dataKey={k} stackId="h" fill={`var(--color-${k})`} maxBarSize={56} isAnimationActive={false} />
+              <Bar key={k} dataKey={k} stackId="h" fill={`var(--color-${k})`} maxBarSize={56} isAnimationActive={false}>
+                {k === "client" && (
+                  <LabelList dataKey="client" position="center" fill="#ffffff" fontSize={11} formatter={(v: unknown) => (typeof v === "number" && v > 0 ? `${Math.round(v / 1000)}K h` : "")} />
+                )}
+                {k === "timeoff" && (
+                  <LabelList dataKey="clientPct" position="top" fill="#111827" fontSize={12} fontWeight={700} formatter={(v: unknown) => (typeof v === "number" ? `${v}%` : "")} />
+                )}
+              </Bar>
             ))}
           </BarChart>
         </ChartContainer>
@@ -390,7 +397,7 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
           <>
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5 md:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
               <span className="hidden text-xs text-gray-500 md:block">Role</span>
-              <span className="hidden text-xs text-gray-500 md:block">Hours logged · purple = client work</span>
+              <span className="hidden text-xs text-gray-500 md:block">Hours logged · purple = on clients, grey = internal & time off</span>
               <span className="text-right text-xs text-gray-500 md:col-auto">On clients</span>
               {shownRoles.map((r) => {
                 const share = r.hours ? r.client / r.hours : 0;
@@ -399,11 +406,12 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
                     <span className="truncate text-sm font-medium text-gray-900" title={r.label}>
                       {r.label}
                     </span>
-                    <div className="hidden h-3 bg-gray-100 md:block" title={`${hours(r.client)} of ${hours(r.hours)} hours on clients`}>
-                      <div className="flex h-full" style={{ width: `${(r.hours / maxRoleHours) * 100}%` }}>
+                    <div className="hidden items-center gap-2 md:flex" title={`${hours(r.client)} of ${hours(r.hours)} hours on clients`}>
+                      <div className="flex h-3.5 min-w-0" style={{ width: `calc((100% - 5rem) * ${r.hours / maxRoleHours})` }}>
                         <div className="h-full bg-purple-600" style={{ width: `${share * 100}%` }} />
                         <div className="h-full flex-1 bg-gray-300" />
                       </div>
+                      <span className="shrink-0 text-xs tabular-nums text-gray-600">{hours(r.hours)} h</span>
                     </div>
                     <span className="text-right text-sm font-semibold tabular-nums text-gray-900">{pct(share, 0)}</span>
                   </div>
@@ -420,11 +428,10 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
       </Card>
 
       {/* 5 · Explorer (Finance) */}
-      <Disclosure title="Explore the raw hours" subtitle="Filter by client, role or type of work, group any way, export to Google Sheets" icon={Search}>
+      <Disclosure title="Explore the raw hours" subtitle="Filter by role or type of work, group any way, export to Google Sheets" icon={Search} defaultOpen>
         <div className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3">
           <Field label="Filters">
             <div className="flex flex-wrap gap-2">
-              <MultiSelectDropdown label="Clients" options={clientOptions} selectedValues={validClients} onChange={setClientSel} searchable />
               <MultiSelectDropdown label="Roles" options={roleOptions} selectedValues={roleSel} onChange={setRoleSel} searchable />
               <MultiSelectDropdown label="Time type" options={timeOptions} selectedValues={timeSel} onChange={setTimeSel} />
             </div>
@@ -436,7 +443,6 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
             <button
               type="button"
               onClick={() => {
-                setClientSel([]);
                 setRoleSel([]);
                 setTimeSel([]);
               }}
@@ -457,7 +463,8 @@ export default function HoursPortalTab({ scope, basis }: { scope: Scope; basis: 
         <p className="mb-3 text-xs text-gray-600">
           {hours(totals.hours)} hours · {formatCompactMoney(totals.cost)} at Maconomy cost rates ({rate(totals.costPerHour)} an hour) ·{" "}
           {periodLabel(from, to)}
-          {filtered ? " · with your filters" : ""}
+          {clientFilter ? ` · ${clientFilter.size} selected account${clientFilter.size === 1 ? "" : "s"}` : ""}
+          {filtered ? " · with your role / time filters" : ""}
           {result.people !== null ? ` · ${result.people} people on client work` : ""}
         </p>
         <DataTable columns={columns} rows={result.rows} rowKey={(r) => r.key} defaultSort={group === "month" ? null : { id: "hours", dir: "desc" }} />

@@ -3,15 +3,21 @@
 
 /**
  * Finance Toolkit — the page body: one slim context bar (agency, how fresh the
- * data is, and a "How to read this page" guide that opens on demand), then
- * three sub-tabs. Opens on Account Profitability, the question leadership asks
+ * data is, and a "How to read this page" guide that opens on demand), a
+ * Client / BU-region / GM filter row (accounts linked to Forecaster clients by
+ * GAIA number, client-links.ts), then three sub-tabs. Opens on Account Profitability, the question leadership asks
  * first; each tab leads with its own answer, so the guide starts closed.
  */
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Calculator, ChevronDown, Clock, PieChart, ShieldCheck } from "lucide-react";
 import SubTabBar from "../forecaster/sub-tab-bar";
-import { MODEL, REVENUE_WINDOW, SCOPES, monthLabel, type Scope } from "../../lib/finance-toolkit/model";
+import MultiSelectDropdown from "../_shared/multi-select-dropdown";
+import { useUserProfile } from "../../lib/hooks/use-user-profile";
+import { fetchAccessibleClients } from "../../lib/services/assignment-service";
+import { CLIENT_GM_PODS, CLIENT_REGIONS } from "../../lib/constants/client.constants";
+import { NOT_LINKED, buildClientLinks, type ClientLink } from "../../lib/finance-toolkit/client-links";
+import { MODEL, REVENUE_WINDOW, SCOPES, inScope, monthLabel, type Scope } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
 import { Field, InfoTip, Segmented } from "./ft-ui";
 import HoursPortalTab from "./hours-portal-tab";
@@ -22,7 +28,7 @@ type TabId = "hours" | "profitability" | "calculator";
 // Present first (profitability, time), then the future (new business).
 const TABS: { id: TabId; label: string }[] = [
   { id: "profitability", label: "Account Profitability" },
-  { id: "hours", label: "Team Time" },
+  { id: "hours", label: "Hours Report Portal" },
   { id: "calculator", label: "New Business Calculator" },
 ];
 
@@ -37,9 +43,9 @@ const GUIDE: { id: TabId; icon: typeof PieChart; title: string; question: string
   {
     id: "hours",
     icon: Clock,
-    title: "Team Time",
+    title: "Hours Report Portal",
     question: "How much of our people’s time goes to clients, and where does the rest go?",
-    how: "The share of hours spent on clients, month by month and by role. Finance can open “Explore the raw hours” to filter and export the timesheet data.",
+    how: "The share of hours spent on clients, month by month and by role. Below, the raw hours by client, role, month or type of work, with a Google Sheets export.",
   },
   {
     id: "calculator",
@@ -63,6 +69,59 @@ export default function FinanceToolkit() {
   const [basis, setBasis] = useState<CostBasis>("base1");
   const [showGuide, setShowGuide] = useState(false);
   const scope: Scope = SCOPES.find((s) => s.id === scopeId)!;
+
+  // Forecaster clients → BU-region / GM pod for each Maconomy account (GAIA number).
+  const { profile, isAdmin } = useUserProfile();
+  const [links, setLinks] = useState<Map<string, ClientLink> | null>(null);
+  useEffect(() => {
+    if (!profile) return;
+    let cancelled = false;
+    fetchAccessibleClients(profile, isAdmin)
+      .then((clients) => !cancelled && setLinks(buildClientLinks(clients)))
+      .catch(() => !cancelled && setLinks(new Map()));
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, isAdmin]);
+
+  const [clientSel, setClientSel] = useState<string[]>([]);
+  const [regionSel, setRegionSel] = useState<string[]>([]);
+  const [gmSel, setGmSel] = useState<string[]>([]);
+  const accounts = useMemo(
+    () => MODEL.clients.filter((c) => !c.internal && inScope(scope, c) && (c.firstMonth >= 0 || c.match === "revenue-only")),
+    [scope],
+  );
+  const clientOptions = useMemo(
+    () =>
+      accounts
+        .map((c) => ({ value: String(c.index), label: `${c.name}${scope.agencyIds.length > 1 ? ` · ${c.agencyName}` : ""}` }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [accounts, scope],
+  );
+  const regionOptions = [...CLIENT_REGIONS.map((r) => ({ value: r.value as string, label: r.label as string })), { value: NOT_LINKED, label: "Not in Forecaster" }];
+  const gmOptions = [...CLIENT_GM_PODS.map((g) => ({ value: g.value as string, label: g.label as string })), { value: NOT_LINKED, label: "Not in Forecaster" }];
+  const validClients = clientSel.filter((v) => clientOptions.some((o) => o.value === v));
+  const filterOn = validClients.length + regionSel.length + gmSel.length > 0;
+  /** The accounts passing every filter, or null when no filter is set. */
+  const clientFilter = useMemo(() => {
+    if (!filterOn) return null;
+    const picked = new Set(validClients.map(Number));
+    const set = new Set<number>();
+    for (const c of accounts) {
+      if (picked.size && !picked.has(c.index)) continue;
+      const link = links?.get(c.number);
+      if (regionSel.length && !regionSel.includes(link?.region || NOT_LINKED)) continue;
+      if (gmSel.length && !gmSel.includes(link?.gmPod || NOT_LINKED)) continue;
+      set.add(c.index);
+    }
+    return set;
+  }, [filterOn, validClients, regionSel, gmSel, accounts, links]);
+  const linkedCount = links ? accounts.filter((c) => links.has(c.number)).length : null;
+  const clearFilters = () => {
+    setClientSel([]);
+    setRegionSel([]);
+    setGmSel([]);
+  };
 
   return (
     <div className="space-y-5 p-6">
@@ -100,6 +159,31 @@ export default function FinanceToolkit() {
         </div>
       </div>
 
+      {tab !== "calculator" && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Filter</span>
+          <MultiSelectDropdown label="Clients" options={clientOptions} selectedValues={validClients} onChange={setClientSel} searchable />
+          <MultiSelectDropdown label="BU-region" options={regionOptions} selectedValues={regionSel} onChange={setRegionSel} />
+          <MultiSelectDropdown label="GM" options={gmOptions} selectedValues={gmSel} onChange={setGmSel} />
+          {filterOn && (
+            <>
+              <span className="text-sm text-gray-600">
+                <strong className="text-gray-900">{clientFilter?.size ?? 0}</strong> account{clientFilter?.size === 1 ? "" : "s"} selected
+              </span>
+              <button type="button" onClick={clearFilters} className="text-sm font-semibold text-gray-500 hover:text-gray-900">
+                Clear
+              </button>
+            </>
+          )}
+          {linkedCount !== null && (
+            <InfoTip
+              text={`BU-region and GM come from the Forecaster client that lists the account’s Maconomy number as a GAIA number (${linkedCount} of ${accounts.length} accounts here). Accounts with no Forecaster client show as “Not in Forecaster”.`}
+              align="left"
+            />
+          )}
+        </div>
+      )}
+
       {showGuide && (
         <div className="border border-gray-200 bg-white">
           <div className="grid grid-cols-1 divide-y divide-gray-100 md:grid-cols-3 md:divide-x md:divide-y-0">
@@ -131,8 +215,8 @@ export default function FinanceToolkit() {
 
       <SubTabBar tabs={TABS} active={tab} onSelect={setTab} />
 
-      {tab === "hours" && <HoursPortalTab scope={scope} basis={basis} />}
-      {tab === "profitability" && <ProfitabilityTab scope={scope} basis={basis} />}
+      {tab === "hours" && <HoursPortalTab scope={scope} basis={basis} clientFilter={clientFilter} />}
+      {tab === "profitability" && <ProfitabilityTab scope={scope} basis={basis} clientFilter={clientFilter} />}
       {tab === "calculator" && <TargetsCalculatorTab basis={basis} initialAgency={scope.agencyIds.length === 1 ? scope.agencyIds[0] : "cossette"} />}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
