@@ -539,6 +539,40 @@ export function profitability(scope: Scope, from: number, to: number, basis: Cos
   };
 }
 
+export interface TrendPoint {
+  month: number;
+  revenue: number;
+  cost: number;
+  margin: number;
+  marginPct: number | null;
+}
+
+/**
+ * Month-by-month revenue, staffing cost and margin for a fixed set of accounts
+ * (the period's matched accounts), so the months add up to the period totals.
+ */
+export function profitabilityTrend(clientIds: Iterable<number>, from: number, to: number, basis: CostBasis): TrendPoint[] {
+  const ids = new Set(clientIds);
+  const cost = new Map<number, number>();
+  for (const f of facts) {
+    if (f.time !== "client" || f.month < from || f.month > to || !ids.has(f.client)) continue;
+    cost.set(f.month, (cost.get(f.month) ?? 0) + costOf(f, basis));
+  }
+  const revenue = new Map<number, number>();
+  for (const id of ids) {
+    const byMonth = revenueByClientMonth.get(id);
+    if (!byMonth) continue;
+    for (const [month, amount] of byMonth) if (month >= from && month <= to) revenue.set(month, (revenue.get(month) ?? 0) + amount);
+  }
+  const out: TrendPoint[] = [];
+  for (let m = from; m <= to; m++) {
+    const r = revenue.get(m) ?? 0;
+    const k = cost.get(m) ?? 0;
+    out.push({ month: m, revenue: r, cost: k, margin: r - k, marginPct: r > 0 ? (r - k) / r : null });
+  }
+  return out;
+}
+
 export interface ClientDetail {
   monthly: { month: number; revenue: number | null; cost: number; hours: number; people: number }[];
   roles: { role: number; label: string; hours: number; cost: number; share: number }[];

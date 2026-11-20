@@ -14,6 +14,7 @@ import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartToo
 import { PLUS } from "../dashboard/charts/colors";
 import { clientDetail, monthLabel, periodLabel, type ProfitRow } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
+import type { ReasonDef } from "../../lib/finance-toolkit/insights";
 import { COVERAGE_NOTE_BELOW, Chip } from "./ft-ui";
 import { formatCompactMoney, hours, money, pct, rate } from "./ft-format";
 
@@ -29,6 +30,7 @@ export default function ClientDetailDrawer({
   to,
   basis,
   currency,
+  reason,
   onClose,
 }: {
   row: ProfitRow;
@@ -36,6 +38,8 @@ export default function ClientDetailDrawer({
   to: number;
   basis: CostBasis;
   currency: string;
+  /** Why the account is "worth a conversation", when it is. */
+  reason?: ReasonDef | null;
   onClose: () => void;
 }) {
   const detail = useMemo(() => clientDetail(row.client.index, from, to, basis), [row.client.index, from, to, basis]);
@@ -82,7 +86,7 @@ export default function ClientDetailDrawer({
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {row.flag === "loss" && <Chip tone="loss">Staffing cost exceeds revenue</Chip>}
-            {row.flag === "over-serviced" && <Chip tone="over">Over-serviced</Chip>}
+            {row.flag === "over-serviced" && <Chip tone="over">Low return per hour</Chip>}
             {row.client.match === "name" && <Chip tone="neutral">Revenue matched by name</Chip>}
             {row.costCoverage !== null && row.costCoverage < COVERAGE_NOTE_BELOW && (
               <Chip tone="over">{pct(1 - row.costCoverage, 0)} of hours have no cost on file</Chip>
@@ -91,6 +95,13 @@ export default function ClientDetailDrawer({
         </header>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
+          {reason && (
+            <div className={`border-l-4 ${reason.accent} bg-white pl-4`}>
+              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">Why it’s worth a conversation</div>
+              <div className="mt-0.5 text-sm font-semibold text-gray-900">{reason.title}</div>
+              <p className="mt-0.5 text-sm leading-snug text-gray-600">{reason.explain}</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-px border border-gray-200 bg-gray-200">
             {figures.map((f) => (
               <div key={f.label} className="bg-white px-4 py-3">
