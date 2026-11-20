@@ -4,7 +4,7 @@
  * calculated today, written for a non-engineer reviewer (the media-team lead).
  *
  * It mirrors the BigQuery build SQL in bq/*.sql (plus the labs_pacing_unified /
- * labs_pacing_wide views, which live only in BigQuery) and the app code under
+ * labs_pacing_wide views, bq/labs_pacing_*.sql) and the app code under
  * lib/dashboard/data/* and components/forecaster/*. It is documentation only:
  * nothing here is computed. When a formula, filter, hardcoded value or UI label
  * changes in the SQL or the code, update the matching entry in the same change.
@@ -583,7 +583,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
         where: DEAL_PACING + " → Labs — Target vs Booked by Partner",
         formula: "Sum of the partner's 'media spend target' rows for the selected year",
         details:
-          "Only target rows whose deal type is in the Deal Type filter (default Labs + Labs - BRP). Billups-OOH + Billups-Print roll up to Billups, MIQ-Prog + MIQ-Social to MIQ, AIM-* to AIM.",
+          "Only target rows whose deal type is in the Deal Type filter (default Labs + Labs - BRP). Billups-OOH + Billups-Print roll up to Billups, MIQ-Prog + MIQ-Social + MIQ-SEM to MIQ, AIM-* to AIM.",
         source: "Firestore partner_targets/{year} → components/forecaster/sections/labs-target-vs-booked-data.ts",
         basis: "Targets",
       },
@@ -701,9 +701,9 @@ export const METRIC_GROUPS: MetricGroup[] = [
         where: `${BY_GM} ('Labs Booked to Date (MIR)', '% Target (MIR/RFQ)', 'Labs — by partner')`,
         formula: "Sum of labs_booked_mir_2026 = booked spend of the fixed pacing partners in 2026",
         details:
-          "From the labs_pacing views: Amazon, Quantcast, Yahoo, AIM (all variants), StackAdapt, Reddit, Billups (OOH and Print channels only), MIQ mapped only for buy types Display/Video/Display&Video (MIQ-Prog) and Social (MIQ-Social). No deal-type filter.",
+          "From the labs_pacing views: Amazon, Quantcast, Yahoo, AIM (all variants), StackAdapt, Reddit, Billups (OOH and Print channels only), MIQ mapped only for buy types Display/Video/Display&Video (MIQ-Prog), Social (MIQ-Social) and Search (MIQ-SEM). No deal-type filter.",
         source:
-          "BigQuery labs_pacing_unified → labs_pacing_wide (views, not in the repo) → KPI_BY_CLIENT labs_booked_mir_2026 / labs_booked_{partner}_2026 → components/forecaster/sections/exec-kpis-by-gm-table.tsx",
+          "BigQuery labs_pacing_unified → labs_pacing_wide (views; SQL in bq/labs_pacing_*.sql) → KPI_BY_CLIENT labs_booked_mir_2026 / labs_booked_{partner}_2026 → components/forecaster/sections/exec-kpis-by-gm-table.tsx",
         basis: "MIR (booked)",
         notes:
           "Known difference vs Total LABS Spend: MIQ Audio/Search booked spend is excluded here but included there (Sep 28 MIR: $672,156); this view also counts these partners' non-LABS deal types. The views pin year 2026, RFQ3, USD 1.3978 and the test-client id.",
@@ -739,7 +739,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
         where: BY_GM,
         formula: "Sum of labs_target_rfq2_2026 = RFQ3 2026 Labs forecast of the fixed pacing partners",
         details:
-          "Forecaster labs axis, 2026, RFQ3, categories Amazon, Billups-OOH/Print, MIQ-Prog/Social, Quantcast, Yahoo, AIM (all variants), StackAdapt, Reddit; USD × 1.3978; test/hidden clients excluded.",
+          "Forecaster labs axis, 2026, RFQ3, categories Amazon, Billups-OOH/Print, MIQ-Prog/Social/SEM, Quantcast, Yahoo, AIM (all variants), StackAdapt, Reddit; USD × 1.3978; test/hidden clients excluded.",
         source: "BigQuery labs_pacing_wide → KPI_BY_CLIENT labs_target_rfq2_2026",
         basis: "Forecaster (forecast)",
         notes: "Column named 'rfq2' but holds RFQ3 (pinned in labs_pacing_unified).",

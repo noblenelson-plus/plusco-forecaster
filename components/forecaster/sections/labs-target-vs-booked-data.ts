@@ -20,7 +20,7 @@
  * Roll-up: split admin partners are merged for display and for both target and
  * booked, via a canonical key (lowercase, strip spaces/punctuation, apply the
  * roll-up map). Billups-OOH + Billups-Print → "Billups"; MIQ-Prog + MIQ-Social
- * → "MIQ". AIM is broken out as its own row: its forecaster RFQ splits
+ * + MIQ-SEM → "MIQ". AIM is broken out as its own row: its forecaster RFQ splits
  * (AIM-Prog / AIM-Social / AIM-SEM) roll up to a single "AIM" row, while the
  * PLUSCO side carries one "AIM" target row. E (RFQ target) is aggregated by
  * canonical key (like booked) rather than per target row, so those splits
@@ -95,6 +95,7 @@ export const DEFAULT_ROLLUP: Record<string, string> = {
   "Billups-Print": "Billups",
   "MIQ-Prog": "MIQ",
   "MIQ-Social": "MIQ",
+  "MIQ-SEM": "MIQ",
   // AIM is its OWN row (broken out of MIQ). partner_targets carries a single
   // "AIM" PLUSCO target row, while the forecaster splits its RFQ target across
   // AIM-Prog / AIM-Social / AIM-SEM -- each split name maps to the "AIM" display

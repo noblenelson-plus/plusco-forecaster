@@ -31,6 +31,8 @@ export const PARTNER_COLS: {
   { key: "billups", label: "Billups", names: ["billups-ooh", "billups-print"] },
   { key: "miqProg", label: "MIQ-Prog", names: ["miq-prog"] },
   { key: "miqSocial", label: "MIQ-Social", names: ["miq-social"] },
+  // MIQ search (ChatGPT, SEM) — Labs partner since 2026-11-20 (Adriana).
+  { key: "miqSem", label: "MIQ-SEM", names: ["miq-sem"] },
   { key: "amazon", label: "Amazon", names: ["amazon"] },
   { key: "yahoo", label: "Yahoo", names: ["yahoo"] },
   { key: "quantcast", label: "Quantcast", names: ["quantcast"] },
@@ -206,7 +208,7 @@ export function computeClientTable(
     // PROG_LABS_KEYS must match PROG_LABS in labs-kpis.ts.
     const PROG_LABS_KEYS = ["miq-prog", "quantcast", "yahoo", "amazon", "aim-prog", "stackadapt"];
     const DIGITAL_LABS_KEYS = [
-      "miq-prog", "miq-social", "amazon", "yahoo", "quantcast", "reddit",
+      "miq-prog", "miq-social", "miq-sem", "amazon", "yahoo", "quantcast", "reddit",
       "stackadapt", "aim-prog", "aim-social", "aim-sem",
     ];
     const progLabsSpend = PROG_LABS_KEYS.reduce((a, k) => a + (lp?.get(k) ?? 0), 0);
