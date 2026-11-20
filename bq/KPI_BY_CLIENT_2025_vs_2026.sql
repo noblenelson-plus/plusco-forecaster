@@ -1,4 +1,7 @@
 -- filepath: bq/KPI_BY_CLIENT_2025_vs_2026.sql
+-- CHANGE (AIM Prog Labs = MIQ rule, 2026-11-20): AIM counts in prog_labs only for buy types Display /
+--   Video / Display&Video, like MIQ (Adriana). Before, every AIM row on the Programmatic channel counted,
+--   including AIM Social and Search ($99K in 2026). Nothing else changes.
 -- CHANGE (MIQ-SEM, 2026-11-20): MIQ search is its own Labs partner (Adriana). The MIQ Labs
 --   target / booked (labs_target_miq_2026, labs_booked_miq_2026, the monthly lt / lb miq) and the
 --   Labs totals (labs_target_rfq2_2026, labs_booked_mir_2026) add labs_pacing_wide's new
@@ -109,8 +112,8 @@ client_spend AS (
       WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC'
         AND PLUSCO_YEAR = '2026'
         AND (
-          UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM', 'AIM-PROG', 'STACKADAPT')
-          OR (UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ' AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
+          UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM-PROG', 'STACKADAPT')
+          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
         )
       THEN NET_ORDERED_CAD ELSE 0
     END) AS prog_labs_2026,
@@ -118,8 +121,8 @@ client_spend AS (
       WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC'
         AND PLUSCO_YEAR = '2025'
         AND (
-          UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM', 'AIM-PROG', 'STACKADAPT')
-          OR (UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ' AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
+          UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM-PROG', 'STACKADAPT')
+          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
         )
       THEN NET_ORDERED_CAD ELSE 0
     END) AS prog_labs_2025,
@@ -212,8 +215,8 @@ monthly_spend AS (
     SUM(CASE
       WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC'
         AND (
-          UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM', 'AIM-PROG', 'STACKADAPT')
-          OR (UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ' AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
+          UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM-PROG', 'STACKADAPT')
+          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
         )
       THEN NET_ORDERED_CAD ELSE 0 END)                      AS prog_labs,
     SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC' AND COALESCE(PLUSCO_2026_DEALS, '#N/A') != '#N/A' THEN NET_ORDERED_CAD ELSE 0 END) AS prog_deal,

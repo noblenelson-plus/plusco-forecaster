@@ -355,7 +355,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
         where: `${STRATEGY_PAGE} (Achieve Labs Targets); ${BY_CLIENT}`,
         formula: "Programmatic Labs spend ÷ Programmatic spend (2026)",
         details:
-          "Programmatic = channel PROGRAMMATIC. Prog Labs = programmatic rows with partner Yahoo, Amazon, Quantcast, AIM, AIM-PROG or StackAdapt, or MIQ with buy type Display / Video / Display&Video. No deal-type filter.",
+          "Programmatic = channel PROGRAMMATIC. Prog Labs = programmatic rows with partner Yahoo, Amazon, Quantcast, AIM-PROG or StackAdapt, or MIQ / AIM with buy type Display / Video / Display&Video. No deal-type filter.",
         source: `${KPI_SRC} (prog_labs_spend_2026, prog_spend_2026)`,
         basis: "MIR (booked)",
         notes: "Partner list is hardcoded in the SQL. AIM-Social / AIM-SEM are intentionally not counted.",
