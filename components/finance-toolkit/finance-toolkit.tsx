@@ -2,18 +2,18 @@
 "use client";
 
 /**
- * Finance Toolkit — the page body: a context bar (agency + cost rates, shared
- * by every tab, plus where the numbers come from), a short "how to use this
- * page" guide for first-time readers, and three sub-tabs. Opens on Account
- * Profitability, the question leadership asks first.
+ * Finance Toolkit — the page body: one slim context bar (agency, how fresh the
+ * data is, and a "How to read this page" guide that opens on demand), then
+ * three sub-tabs. Opens on Account Profitability, the question leadership asks
+ * first; each tab leads with its own answer, so the guide starts closed.
  */
 
 import { useState } from "react";
-import { BookOpen, Calculator, Clock, PieChart, ShieldCheck, X } from "lucide-react";
+import { BookOpen, Calculator, ChevronDown, Clock, PieChart, ShieldCheck } from "lucide-react";
 import SubTabBar from "../forecaster/sub-tab-bar";
-import { MODEL, REVENUE_WINDOW, SCOPES, type Scope } from "../../lib/finance-toolkit/model";
+import { MODEL, REVENUE_WINDOW, SCOPES, monthLabel, type Scope } from "../../lib/finance-toolkit/model";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
-import { Field, Segmented } from "./ft-ui";
+import { Field, InfoTip, Segmented } from "./ft-ui";
 import HoursPortalTab from "./hours-portal-tab";
 import ProfitabilityTab from "./profitability-tab";
 import TargetsCalculatorTab from "./targets-calculator-tab";
@@ -30,8 +30,8 @@ const GUIDE: { id: TabId; icon: typeof PieChart; title: string; question: string
     id: "profitability",
     icon: PieChart,
     title: "Account Profitability",
-    question: "Which accounts make money once we pay the people who serve them?",
-    how: "Revenue minus staffing cost for every account. Accounts that cost more than they earn are listed first. Click one to see its month-by-month trend.",
+    question: "How much do we keep once we pay the people who serve each account?",
+    how: "The answer is at the top. Below it: the monthly trend, how accounts spread by margin, the biggest contributors, and the few accounts worth a conversation, grouped by the likely reason. Click any account for its trend.",
   },
   {
     id: "calculator",
@@ -54,101 +54,79 @@ const BASES: { id: CostBasis; label: string }[] = [
   { id: "enterprise", label: "Enterprise" },
 ];
 
-const GUIDE_KEY = "ft-guide-dismissed-v1";
-
-const fmtMonth = (ym: string) => {
-  const [y, m] = ym.split("-");
-  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-CA", { month: "short", year: "numeric" });
-};
 const dataDate = new Date(MODEL.generatedAt).toLocaleDateString("en-CA", { month: "long", day: "numeric", year: "numeric" });
 
 export default function FinanceToolkit() {
   const [tab, setTab] = useState<TabId>("profitability");
   const [scopeId, setScopeId] = useState(SCOPES[0].id);
   const [basis, setBasis] = useState<CostBasis>("base1");
-  const [showGuide, setShowGuide] = useState(() => {
-    try {
-      return window.localStorage.getItem(GUIDE_KEY) !== "1";
-    } catch {
-      return true;
-    }
-  });
+  const [showGuide, setShowGuide] = useState(false);
   const scope: Scope = SCOPES.find((s) => s.id === scopeId)!;
-
-  const closeGuide = () => {
-    setShowGuide(false);
-    try {
-      window.localStorage.setItem(GUIDE_KEY, "1");
-    } catch {
-      // Storage unavailable: the guide simply shows again next visit.
-    }
-  };
 
   return (
     <div className="space-y-5 p-6">
-      {showGuide ? (
-        <div className="border border-gray-200 bg-white">
-          <div className="flex items-center justify-between gap-3 bg-gray-900 px-5 py-3 text-white">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <BookOpen size={16} className="text-yellow-400" /> How to use this page
-            </div>
-            <button
-              type="button"
-              onClick={closeGuide}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-gray-300 hover:text-white"
-            >
-              Got it <X size={14} />
-            </button>
-          </div>
-          <div className="grid grid-cols-1 divide-y divide-gray-100 md:grid-cols-3 md:divide-x md:divide-y-0">
-            {GUIDE.map((g) => (
-              <button key={g.id} type="button" onClick={() => setTab(g.id)} className="px-5 py-4 text-left hover:bg-gray-50">
-                <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                  <g.icon size={15} className="text-primary" /> {g.title}
-                </div>
-                <p className="mt-1.5 text-sm font-medium leading-snug text-gray-800">{g.question}</p>
-                <p className="mt-1 text-xs leading-relaxed text-gray-500">{g.how}</p>
-              </button>
-            ))}
-          </div>
-          <div className="border-t border-gray-100 px-5 py-3 text-xs leading-relaxed text-gray-600">
-            <strong className="text-gray-900">Can I trust these numbers?</strong> Hours and revenue come straight from Finance’s systems and add up to
-            Finance’s own reports to the dollar. Every figure can be traced: open <em>How this is calculated</em> on any tab, or click <em>Why?</em>{" "}
-            on a calculator figure to see each step with the real numbers.
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowGuide(true)}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900"
-        >
-          <BookOpen size={13} /> How to use this page
-        </button>
-      )}
-
       {/* Context bar */}
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border border-gray-200 bg-white px-5 py-4">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         {tab !== "calculator" && (
-          <Field label="Agency" hint="Canadian agencies report in CAD and MEK US in USD. The two currencies are never added together.">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Agency</span>
+            <InfoTip text="Canadian agencies report in CAD and MEK US in USD. The two currencies are never added together." align="left" />
             <Segmented
               ariaLabel="Agency"
               value={scopeId}
               onChange={setScopeId}
-              options={SCOPES.map((s) => ({ id: s.id, label: `${s.label}${s.id === "canada" || s.id === "mek" ? ` (${s.currency})` : ""}` }))}
+              options={SCOPES.map((s) => ({ id: s.id, label: `${s.id === "canada" ? "All Canada" : s.label}${s.id === "mek" ? " (USD)" : ""}` }))}
             />
-          </Field>
+          </div>
         )}
-        <div className="ml-auto flex max-w-md flex-col items-end gap-1 text-right text-[11px] leading-snug text-gray-500">
-          <span className="inline-flex items-center gap-1.5 font-semibold text-gray-700">
-            <ShieldCheck size={13} className="text-green-500" /> Ties to Finance’s reports to the dollar
+        <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600">
+          <span
+            className="inline-flex items-center gap-1.5"
+            title={`Timesheets ${monthLabel(0)} – ${monthLabel(MODEL.months.length - 1)} (${MODEL.source.hoursRows.toLocaleString("en-CA")} entries) · gross revenue ${REVENUE_WINDOW.label} · loaded ${dataDate}`}
+          >
+            <ShieldCheck size={15} className="text-green-500" />
+            Finance data through <strong className="text-gray-900">{monthLabel(REVENUE_WINDOW.to)}</strong>
           </span>
-          <span>
-            Timesheets {fmtMonth(MODEL.months[0])} – {fmtMonth(MODEL.months[MODEL.months.length - 1])} (
-            {MODEL.source.hoursRows.toLocaleString("en-CA")} entries) · gross revenue {REVENUE_WINDOW.label} · loaded {dataDate}
-          </span>
+          <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            aria-expanded={showGuide}
+            className="inline-flex items-center gap-1.5 border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+          >
+            <BookOpen size={14} /> How to read this page
+            <ChevronDown size={14} className={`transition-transform ${showGuide ? "rotate-180" : ""}`} />
+          </button>
         </div>
       </div>
+
+      {showGuide && (
+        <div className="border border-gray-200 bg-white">
+          <div className="grid grid-cols-1 divide-y divide-gray-100 md:grid-cols-3 md:divide-x md:divide-y-0">
+            {GUIDE.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => {
+                  setTab(g.id);
+                  setShowGuide(false);
+                }}
+                className="px-5 py-4 text-left hover:bg-gray-50"
+              >
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                  <g.icon size={15} className="text-primary" /> {g.title}
+                </div>
+                <p className="mt-1.5 text-sm font-medium leading-snug text-gray-800">{g.question}</p>
+                <p className="mt-1 text-sm leading-relaxed text-gray-500">{g.how}</p>
+              </button>
+            ))}
+          </div>
+          <div className="border-t border-gray-100 px-5 py-3 text-sm leading-relaxed text-gray-600">
+            <strong className="text-gray-900">Can I trust these numbers?</strong> Hours and revenue come straight from Finance’s systems and add up to
+            Finance’s own reports to the dollar. Every figure can be traced: open <em>How this is calculated</em> at the bottom of any tab, or click{" "}
+            <em>Why?</em> on a calculator figure to see each step with the real numbers.
+          </div>
+        </div>
+      )}
 
       <SubTabBar tabs={TABS} active={tab} onSelect={setTab} />
 
@@ -157,9 +135,9 @@ export default function FinanceToolkit() {
       {tab === "calculator" && <TargetsCalculatorTab basis={basis} initialAgency={scope.agencyIds.length === 1 ? scope.agencyIds[0] : "cossette"} />}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
-        <p className="max-w-3xl text-[11px] text-gray-400">
-          Built from Finance’s Maconomy timesheets and gross revenue reports. Staffing cost is the cost of the hours people logged to each account; it
-          does not include overhead, non-staff costs or pass-through media.
+        <p className="max-w-3xl text-xs text-gray-500">
+          Built from Finance’s Maconomy timesheets and gross revenue reports, loaded {dataDate}. Staffing cost is the cost of the hours people logged
+          to each account; it does not include overhead, non-staff costs or pass-through media.
         </p>
         <Field
           label="Cost rates (for Finance)"

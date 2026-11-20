@@ -85,7 +85,7 @@ export default function FinanceToolkitPage() {
         title="Finance Toolkit"
         description="Where our time goes, what each account earns after staffing, and how to staff new business."
         actions={
-          <span className="bg-gray-900 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-yellow-400">Sample · In progress</span>
+          <span className="bg-gray-900 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-yellow-400">Preview</span>
         }
       />
       {state.status === "loading" && <Spinner label="Loading Finance Toolkit…" />}
