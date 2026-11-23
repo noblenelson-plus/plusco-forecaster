@@ -6,8 +6,8 @@
  * to clients, and where does the rest go?"
  *
  *   1. the answer in one sentence (client work share of all hours logged)
- *   2. three tiles: client work share, client time as full-time people, time
- *      not spent on clients
+ *   2. four tiles: client work share, client time as full-time people (and the
+ *      people who logged it), what client time cost us, time not on clients
  *   3. where the time went month by month (client / internal / time off)
  *   4. client time by role: the roles with the most hours and how much of their
  *      time goes to clients
@@ -64,7 +64,13 @@ const PRESETS: { id: Preset; label: string; range?: [number, number] }[] = [
   { id: "last12", label: "Last 12 months", range: [Math.max(MODEL.firstFullMonth, LAST - 11), LAST] },
   { id: "ytd", label: `${LAST_YEAR} so far`, range: [YEAR_START(LAST_YEAR), LAST] },
   ...(YEAR_START(PREV_YEAR) >= 0
-    ? [{ id: "prev" as const, label: PREV_YEAR, range: [Math.max(MODEL.firstFullMonth, YEAR_START(PREV_YEAR)), YEAR_START(LAST_YEAR) - 1] as [number, number] }]
+    ? [
+        {
+          id: "prev" as const,
+          label: PREV_YEAR,
+          range: [Math.max(MODEL.firstFullMonth, YEAR_START(PREV_YEAR)), YEAR_START(LAST_YEAR) - 1] as [number, number],
+        },
+      ]
     : []),
   { id: "custom", label: "Custom" },
 ];
@@ -147,7 +153,9 @@ export default function HoursPortalTab({ scope, basis, clientFilter }: { scope: 
     timeoff: Math.round(m.timeoff),
     clientPct: m.client + m.internal + m.timeoff > 0 ? Math.round((m.client / (m.client + m.internal + m.timeoff)) * 100) : null,
   }));
-  const monthlyShare = overview.monthly.filter((m) => m.client + m.internal + m.timeoff > 0).map((m) => ({ m, share: m.client / (m.client + m.internal + m.timeoff) }));
+  const monthlyShare = overview.monthly
+    .filter((m) => m.client + m.internal + m.timeoff > 0)
+    .map((m) => ({ m, share: m.client / (m.client + m.internal + m.timeoff) }));
   const best = monthlyShare.length >= 3 ? monthlyShare.reduce((a, x) => (x.share > a.share ? x : a)) : null;
   const worst = monthlyShare.length >= 3 ? monthlyShare.reduce((a, x) => (x.share < a.share ? x : a)) : null;
 
@@ -304,8 +312,8 @@ export default function HoursPortalTab({ scope, basis, clientFilter }: { scope: 
       {clientFilter && (
         <Notice tone="info">
           <p>
-            Your client filters apply to <strong>Explore the raw hours</strong> at the bottom. The time split above covers everyone, because internal time
-            and time off aren’t booked to clients.
+            Your client filters apply to <strong>Explore the raw hours</strong> at the bottom. The time split above covers everyone, because internal
+            time and time off aren’t booked to clients.
           </p>
         </Notice>
       )}
@@ -313,19 +321,32 @@ export default function HoursPortalTab({ scope, basis, clientFilter }: { scope: 
       {coverage !== null && coverage < COVERAGE_WARN_BELOW && (
         <Notice tone="warn">
           <p>
-            <strong>{pct(1 - coverage)} of these hours carry no cost in Maconomy</strong> (employees without a cost rate on file), so time costs on this
-            tab are understated.
+            <strong>{pct(1 - coverage)} of these hours carry no cost in Maconomy</strong> (employees without a cost rate on file), so time costs on
+            this tab are understated.
           </p>
         </Notice>
       )}
 
       {/* 2 · Tiles */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Tile label="Time on client work" value={`${clientPct}%`} context={`${hours(clientHours)} hours on client accounts`} />
         <Tile
           label="Client work in people"
           value={Math.round(clientFte).toLocaleString("en-CA")}
-          context={`full-time people’s worth of client hours each month`}
+          context={
+            clientByRole.people
+              ? `full-time people’s worth of client hours each month · ${clientByRole.people.toLocaleString("en-CA")} people logged client time`
+              : "full-time people’s worth of client hours each month"
+          }
+        />
+        <Tile
+          label={`Cost of client time (${scope.currency})`}
+          value={formatCompactMoney(clientByRole.totals.cost)}
+          context={
+            <>
+              {rate(clientByRole.totals.costPerHour)} an hour at Maconomy cost rates · {formatCompactMoney(clientByRole.totals.billed)} at rate card
+            </>
+          }
         />
         <Tile
           label="Time not on clients"
@@ -369,10 +390,23 @@ export default function HoursPortalTab({ scope, basis, clientFilter }: { scope: 
             {(["client", "internal", "timeoff"] as const).map((k) => (
               <Bar key={k} dataKey={k} stackId="h" fill={`var(--color-${k})`} maxBarSize={56} isAnimationActive={false}>
                 {k === "client" && (
-                  <LabelList dataKey="client" position="center" fill="#ffffff" fontSize={11} formatter={(v: unknown) => (typeof v === "number" && v > 0 ? `${Math.round(v / 1000)}K h` : "")} />
+                  <LabelList
+                    dataKey="client"
+                    position="center"
+                    fill="#ffffff"
+                    fontSize={11}
+                    formatter={(v: unknown) => (typeof v === "number" && v > 0 ? `${Math.round(v / 1000)}K h` : "")}
+                  />
                 )}
                 {k === "timeoff" && (
-                  <LabelList dataKey="clientPct" position="top" fill="#111827" fontSize={12} fontWeight={700} formatter={(v: unknown) => (typeof v === "number" ? `${v}%` : "")} />
+                  <LabelList
+                    dataKey="clientPct"
+                    position="top"
+                    fill="#111827"
+                    fontSize={12}
+                    fontWeight={700}
+                    formatter={(v: unknown) => (typeof v === "number" ? `${v}%` : "")}
+                  />
                 )}
               </Bar>
             ))}
@@ -386,9 +420,7 @@ export default function HoursPortalTab({ scope, basis, clientFilter }: { scope: 
           <Users size={18} className="mt-0.5 shrink-0 text-primary" />
           <div>
             <h3 className="text-base font-semibold text-gray-900">Client time by role</h3>
-            <p className="mt-0.5 text-sm text-gray-500">
-              The roles that log the most hours, and how much of their time goes to clients.
-            </p>
+            <p className="mt-0.5 text-sm text-gray-500">The roles that log the most hours, and how much of their time goes to clients.</p>
           </div>
         </div>
         {roles.length === 0 ? (
@@ -428,7 +460,12 @@ export default function HoursPortalTab({ scope, basis, clientFilter }: { scope: 
       </Card>
 
       {/* 5 · Explorer (Finance) */}
-      <Disclosure title="Explore the raw hours" subtitle="Filter by role or type of work, group any way, export to Google Sheets" icon={Search} defaultOpen>
+      <Disclosure
+        title="Explore the raw hours"
+        subtitle="Filter by role or type of work, group any way, export to Google Sheets"
+        icon={Search}
+        defaultOpen
+      >
         <div className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3">
           <Field label="Filters">
             <div className="flex flex-wrap gap-2">
