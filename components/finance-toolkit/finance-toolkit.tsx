@@ -5,12 +5,12 @@
  * Finance Toolkit — the page body: one slim context bar (agency, how fresh the
  * data is, and a "How to read this page" guide that opens on demand), a
  * Client / BU-region / GM filter row (accounts linked to Forecaster clients by
- * GAIA number, client-links.ts), then three sub-tabs. Opens on Account Profitability, the question leadership asks
+ * GAIA number, client-links.ts), then four sub-tabs. Opens on Account Profitability, the question leadership asks
  * first; each tab leads with its own answer, so the guide starts closed.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Calculator, ChevronDown, Clock, PieChart, ShieldCheck } from "lucide-react";
+import { BookOpen, Calculator, ChevronDown, Clock, PieChart, ShieldCheck, Users } from "lucide-react";
 import SubTabBar from "../forecaster/sub-tab-bar";
 import MultiSelectDropdown from "../_shared/multi-select-dropdown";
 import { useUserProfile } from "../../lib/hooks/use-user-profile";
@@ -22,13 +22,15 @@ import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types"
 import { Field, InfoTip, Segmented } from "./ft-ui";
 import HoursPortalTab from "./hours-portal-tab";
 import ProfitabilityTab from "./profitability-tab";
+import StaffingTab from "./staffing-tab";
 import TargetsCalculatorTab from "./targets-calculator-tab";
 
-type TabId = "hours" | "profitability" | "calculator";
-// Present first (profitability, time), then the future (new business).
+type TabId = "hours" | "profitability" | "staffing" | "calculator";
+// Present first (profitability, time, staffing), then the future (new business).
 const TABS: { id: TabId; label: string }[] = [
   { id: "profitability", label: "Account Profitability" },
   { id: "hours", label: "Hours Report Portal" },
+  { id: "staffing", label: "Staffing" },
   { id: "calculator", label: "New Business Calculator" },
 ];
 
@@ -46,6 +48,13 @@ const GUIDE: { id: TabId; icon: typeof PieChart; title: string; question: string
     title: "Hours Report Portal",
     question: "How much of our people’s time goes to clients, and where does the rest go?",
     how: "The share of hours spent on clients, month by month and by role. Below, the raw hours by client, role, month or type of work, with a Google Sheets export.",
+  },
+  {
+    id: "staffing",
+    icon: Users,
+    title: "Staffing",
+    question: "How much media does each person manage, and which GM pods are stretched?",
+    how: "Media spend from MediaOcean against the hours logged on each client over the same 12 months, by GM pod and client, with each client’s campaign complexity from MediaBox. Role groups are provisional.",
   },
   {
     id: "calculator",
@@ -98,8 +107,14 @@ export default function FinanceToolkit() {
         .sort((a, b) => a.label.localeCompare(b.label)),
     [accounts, scope],
   );
-  const regionOptions = [...CLIENT_REGIONS.map((r) => ({ value: r.value as string, label: r.label as string })), { value: NOT_LINKED, label: "Not in Forecaster" }];
-  const gmOptions = [...CLIENT_GM_PODS.map((g) => ({ value: g.value as string, label: g.label as string })), { value: NOT_LINKED, label: "Not in Forecaster" }];
+  const regionOptions = [
+    ...CLIENT_REGIONS.map((r) => ({ value: r.value as string, label: r.label as string })),
+    { value: NOT_LINKED, label: "Not in Forecaster" },
+  ];
+  const gmOptions = [
+    ...CLIENT_GM_PODS.map((g) => ({ value: g.value as string, label: g.label as string })),
+    { value: NOT_LINKED, label: "Not in Forecaster" },
+  ];
   const validClients = clientSel.filter((v) => clientOptions.some((o) => o.value === v));
   const filterOn = validClients.length + regionSel.length + gmSel.length > 0;
   /** The accounts passing every filter, or null when no filter is set. */
@@ -116,6 +131,8 @@ export default function FinanceToolkit() {
     }
     return set;
   }, [filterOn, validClients, regionSel, gmSel, accounts, links]);
+  /** Accounts picked in the Clients dropdown (Staffing filters by client, so region / GM apply to its own rows). */
+  const pickedAccounts = useMemo(() => (validClients.length ? new Set(validClients.map(Number)) : null), [validClients]);
   const linkedCount = links ? accounts.filter((c) => links.has(c.number)).length : null;
   const clearFilters = () => {
     setClientSel([]);
@@ -127,7 +144,7 @@ export default function FinanceToolkit() {
     <div className="space-y-5 p-6">
       {/* Context bar */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        {tab !== "calculator" && (
+        {tab !== "calculator" && tab !== "staffing" && (
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Agency</span>
             <InfoTip text="Canadian agencies report in CAD and MEK US in USD. The two currencies are never added together." align="left" />
@@ -186,7 +203,7 @@ export default function FinanceToolkit() {
 
       {showGuide && (
         <div className="border border-gray-200 bg-white">
-          <div className="grid grid-cols-1 divide-y divide-gray-100 md:grid-cols-3 md:divide-x md:divide-y-0">
+          <div className="grid grid-cols-1 divide-y divide-gray-100 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
             {GUIDE.map((g) => (
               <button
                 key={g.id}
@@ -217,6 +234,7 @@ export default function FinanceToolkit() {
 
       {tab === "hours" && <HoursPortalTab scope={scope} basis={basis} clientFilter={clientFilter} />}
       {tab === "profitability" && <ProfitabilityTab scope={scope} basis={basis} clientFilter={clientFilter} />}
+      {tab === "staffing" && <StaffingTab picked={pickedAccounts} regions={regionSel} gms={gmSel} />}
       {tab === "calculator" && <TargetsCalculatorTab basis={basis} initialAgency={scope.agencyIds.length === 1 ? scope.agencyIds[0] : "cossette"} />}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">

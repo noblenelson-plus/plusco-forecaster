@@ -1075,3 +1075,30 @@ export function solveForMargin(plan: StaffingPlan, target: number): TargetSoluti
 }
 
 export const REVENUE_WINDOW = { from: REV_FROM, to: REV_TO, months: REV_MONTHS, label: periodLabel(REV_FROM, REV_TO) };
+
+// ─── Staffing tab ────────────────────────────────────────────────────────────
+
+export interface ClientWork {
+  /** Client-work hours by role index over the window. */
+  byRole: number[];
+  /** Client-work hours by month index (only months with hours). */
+  byMonth: Map<number, number>;
+  hours: number;
+}
+
+/** Client-work hours per Maconomy account over [from, to], by role and month. */
+export function clientWorkIndex(from: number, to: number): Map<number, ClientWork> {
+  const out = new Map<number, ClientWork>();
+  for (const f of facts) {
+    if (f.time !== "client" || f.month < from || f.month > to) continue;
+    let w = out.get(f.client);
+    if (!w) out.set(f.client, (w = { byRole: new Array(MODEL.roles.length).fill(0), byMonth: new Map(), hours: 0 }));
+    w.byRole[f.role] += f.hours;
+    w.byMonth.set(f.month, (w.byMonth.get(f.month) ?? 0) + f.hours);
+    w.hours += f.hours;
+  }
+  return out;
+}
+
+/** Distinct people on client work for the given accounts over [from, to]. */
+export const peopleOn = (clientIdx: Iterable<number>, from: number, to: number) => headcount(clientIdx, from, to);
