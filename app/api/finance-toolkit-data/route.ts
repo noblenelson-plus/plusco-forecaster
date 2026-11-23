@@ -2,7 +2,7 @@
 
 /**
  * Serves the Finance Toolkit dataset (client revenue, staffing cost and
- * margins) to the people listed in lib/finance-toolkit/access.ts, and nobody
+ * margins, plus media investment and complexity for the Staffing tab) to the people listed in lib/finance-toolkit/access.ts, and nobody
  * else. The dataset lives in lib/server/ and is only imported here, so it is
  * never part of a browser bundle or a static Hosting file.
  *
@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/server/report-access";
 import { FINANCE_TOOLKIT_DATA } from "@/lib/server/finance-toolkit-data";
+import { STAFFING_DATA } from "@/lib/server/staffing-data";
 import { canViewFinanceToolkit } from "@/lib/finance-toolkit/access";
 
 export const runtime = "nodejs";
@@ -38,5 +39,5 @@ export async function GET(req: Request) {
   if (!caller) return reply(401, "Invalid or expired sign-in token.");
   if (!caller.emailVerified || !canViewFinanceToolkit(caller.email)) return reply(403, "Not available for this account.");
 
-  return NextResponse.json(FINANCE_TOOLKIT_DATA, { headers: NO_STORE });
+  return NextResponse.json({ ...FINANCE_TOOLKIT_DATA, staffing: STAFFING_DATA }, { headers: NO_STORE });
 }
