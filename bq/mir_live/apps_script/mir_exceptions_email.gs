@@ -55,9 +55,24 @@ function send_(force) {
              ELSE CONCAT(IF(f.sure, 'Auto-filled: ', 'Auto-filled, to confirm (yellow): '),
                IFNULL(JSON_VALUE(f.row_json, '$.forecaster_client_name'), 'client left blank'))
            END AS suggestion,
-           CAST(e.first_seen AS STRING) AS first_seen, e.is_new, CAST(e.as_of AS STRING) AS as_of
+           CAST(e.first_seen AS STRING) AS first_seen, e.is_new, CAST(e.as_of AS STRING) AS as_of,
+           COALESCE(p.rep, mo.rep, IF(COALESCE(p.rep_code, mo.rep_code) = '000', 'No rep (000)', NULL)) AS pay_rep
     FROM \`${PROJECT_ID}.MIR_Live.exceptions\` e
     LEFT JOIN \`${PROJECT_ID}.MIR_Live.fill_suggestions\` f ON f.kind = e.kind AND f.code = e.code
+    -- Pay rep (vendors): the MIR's, else MediaOcean's vendor master (spot code 'CHME-AM' is 'CHMEA' there).
+    LEFT JOIN (
+      SELECT VENDOR_CODE AS code, ANY_VALUE(MEDIA_CODE) AS media,
+        APPROX_TOP_COUNT(NULLIF(NULLIF(PAYREP, 'N/A*'), 'no match'), 1)[SAFE_OFFSET(0)].value AS rep,
+        APPROX_TOP_COUNT(NULLIF(NULLIF(PAYREP_CODE, 'N/A*'), 'no match'), 1)[SAFE_OFFSET(0)].value AS rep_code
+      FROM \`${PROJECT_ID}.MIR_Live.MIR_NATIVE\` GROUP BY 1
+    ) p ON e.kind = 'vendor' AND p.code = e.code
+    LEFT JOIN (
+      SELECT COLLATE(media_code, '') AS media, LTRIM(COLLATE(vendor_code, ''), '0') AS code,
+        ANY_VALUE(NULLIF(NULLIF(TRIM(COLLATE(paying_rep_name, '')), ''), 'n/a')) AS rep,
+        ANY_VALUE(COLLATE(paying_rep_code, '')) AS rep_code
+      FROM \`mediaocean-data.L2_Media.master_vendor\` GROUP BY 1, 2
+    ) mo ON e.kind = 'vendor' AND mo.media = p.media
+      AND mo.code = LTRIM(REGEXP_REPLACE(e.code, r'^(\\w+)-(\\w)\\w*$', r'\\1\\2'), '0')
     ORDER BY e.kind, e.issue, ABS(e.cad_2025) + ABS(e.cad_2026) + ABS(e.cad_2027) DESC`);
   const isMonday = new Date().getDay() === 1;
   const fresh = rows.filter(r => r.is_new === 'true' && r.code !== 'NETWORK GROUPS');
@@ -249,11 +264,11 @@ function section_(title, rows) {
     const list = rows.filter(r => r.kind === kind);
     if (!list.length) continue;
     html += `<table cellpadding="4" style="border-collapse:collapse;font-size:12px;margin-bottom:10px">
-      <tr style="background:#222;color:#fff"><th align="left">${kind === 'client' ? 'Client' : 'Vendor'}</th><th align="left">Issue</th>
+      <tr style="background:#222;color:#fff">${kind === 'vendor' ? '<th align="left">Pay rep</th>' : ''}<th align="left">${kind === 'client' ? 'Client' : 'Vendor'}</th><th align="left">Issue</th>
       <th align="left">Agency</th><th>Media</th><th align="right">2025</th><th align="right">2026</th><th align="right">2027</th>
       <th align="left">Example</th><th align="left">Suggestion</th></tr>`;
     list.forEach((r, i) => {
-      html += `<tr style="background:${i % 2 ? '#f4f4f4' : '#fff'}"><td><b>${esc_(r.code)}</b> ${esc_(r.name)}</td><td>${esc_(r.issue)}</td>
+      html += `<tr style="background:${i % 2 ? '#f4f4f4' : '#fff'}">${kind === 'vendor' ? `<td>${esc_(r.pay_rep)}</td>` : ''}<td><b>${esc_(r.code)}</b> ${esc_(r.name)}</td><td>${esc_(r.issue)}</td>
         <td>${esc_(r.agency)}</td><td align="center">${esc_(r.media)}</td><td align="right">${money_(r.cad_2025)}</td>
         <td align="right">${money_(r.cad_2026)}</td><td align="right">${money_(r.cad_2027)}</td>
         <td>${esc_(r.sample_estimate)}</td><td>${esc_(r.suggestion)}</td></tr>`;
