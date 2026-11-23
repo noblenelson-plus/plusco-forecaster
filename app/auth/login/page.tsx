@@ -8,6 +8,7 @@ import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { Zap, Sparkles, LayoutDashboard, Hand } from "lucide-react";
 import { useAuth } from "../../../lib/auth-context";
 import PlusLogo from "../../../components/_shared/plus-logo";
+import { RETURN_TO_PARAM, safeReturnTo } from "../../../lib/format/return-to";
 
 // Initial forecast curve — the climb continues forever once mounted.
 const INITIAL_SERIES = Array.from({ length: 18 }, (_, i) => ({
@@ -99,7 +100,11 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (!loading && user) router.replace("/");
+    // Return to the page that sent them here (?next=), else the dashboard.
+    if (!loading && user) {
+      const next = new URLSearchParams(window.location.search).get(RETURN_TO_PARAM);
+      router.replace(safeReturnTo(next));
+    }
   }, [user, loading, router]);
 
   async function handleGoogleSignIn() {
