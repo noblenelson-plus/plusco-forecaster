@@ -118,6 +118,8 @@ export interface FtStaffingClient {
   /** "YYYY-MM" of the first month with spend in the window. */
   firstMonth: string | null;
   channels: FtChannelSpendTuple[];
+  /** Spend CAD per month of `FtStaffingData.spendMonths` (every month of the hours data). */
+  monthlySpend: number[];
   mcpeCount: number;
   estimateCount: number;
   vendorCount: number;
@@ -132,6 +134,8 @@ export interface FtStaffingData {
   /** "YYYY-MM" window, aligned with the last 12 months of the hours data. */
   from: string;
   to: string;
+  /** "YYYY-MM" for `monthlySpend`: the same months as the hours data. */
+  spendMonths: string[];
   clients: FtStaffingClient[];
   /** MediaOcean spend in the window on clients that are not in the Forecaster (left out). */
   spendNotInForecaster: number;

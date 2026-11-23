@@ -19,13 +19,7 @@
  */
 
 import { getFinanceToolkitData } from "./data-holder";
-import type {
-  AgencyCurrency,
-  CostBasis,
-  FtFactTuple,
-  FtMatchStatus,
-  FtTimeClass,
-} from "./finance-toolkit.types";
+import type { AgencyCurrency, CostBasis, FtFactTuple, FtMatchStatus, FtTimeClass } from "./finance-toolkit.types";
 
 // Downloaded by the page (admin/finance-toolkit) before this module loads.
 const DATA = getFinanceToolkitData();
@@ -167,7 +161,10 @@ const AGENCY_DATA_START: Record<string, number> = (() => {
   for (const [a, arr] of byAgency) {
     const sorted = [...arr].sort((x, y) => x - y);
     const median = sorted[Math.floor(sorted.length / 2)];
-    out[a] = Math.max(0, arr.findIndex((h) => h >= median * DATA_START_SHARE));
+    out[a] = Math.max(
+      0,
+      arr.findIndex((h) => h >= median * DATA_START_SHARE),
+    );
   }
   return out;
 })();
@@ -190,8 +187,7 @@ export const MODEL = {
   firstFullMonth: FIRST_FULL_MONTH,
 };
 
-export const costOf = (f: { costBase1: number; costEnterprise: number }, basis: CostBasis) =>
-  basis === "base1" ? f.costBase1 : f.costEnterprise;
+export const costOf = (f: { costBase1: number; costEnterprise: number }, basis: CostBasis) => (basis === "base1" ? f.costBase1 : f.costEnterprise);
 
 /** Safe ratio: null when the denominator is 0. */
 export const ratio = (num: number, den: number): number | null => (den === 0 ? null : num / den);
@@ -527,7 +523,11 @@ export function profitability(scope: Scope, from: number, to: number, basis: Cos
       revenuePerHour: portfolioRevPerHour,
       costPerHour: ratio(matchedCost, matchedHours),
       costPctRevenue: ratio(matchedCost, matchedRevenue),
-      people: headcount(matched.map((r) => r.client.index), from, to),
+      people: headcount(
+        matched.map((r) => r.client.index),
+        from,
+        to,
+      ),
       revenueOnly: revenueOnlyRows.reduce((a, r) => a + r.revenue!, 0),
       revenueOnlyAccounts: revenueOnlyRows.length,
       unmatchedHours: unmatchedRows.reduce((a, r) => a + r.hours, 0),
@@ -539,7 +539,7 @@ export function profitability(scope: Scope, from: number, to: number, basis: Cos
       lossMaking: matched.filter((r) => r.flag === "loss").length,
       costCoverage: ratio(
         matched.reduce((a, r) => a + (costed.get(r.client.index) ?? 0), 0),
-        matchedHours
+        matchedHours,
       ),
     },
   };
@@ -891,7 +891,7 @@ export function staffingPlan(
   annualRevenue: number,
   comparables: Comparable[],
   basis: CostBasis,
-  levers: PlanLevers = DEFAULT_LEVERS
+  levers: PlanLevers = DEFAULT_LEVERS,
 ): StaffingPlan | null {
   if (comparables.length === 0 || annualRevenue <= 0) return null;
   const compIds = new Set(comparables.map((c) => c.client.index));
@@ -959,7 +959,14 @@ export function staffingPlan(
     }
   }
   if (otherShare > 0) {
-    base.push({ key: "other", label: "Other roles", share: otherShare, rate: otherCostWeight / otherShare, rateHours: otherRateHours, members: otherMembers });
+    base.push({
+      key: "other",
+      label: "Other roles",
+      share: otherShare,
+      rate: otherCostWeight / otherShare,
+      rateHours: otherRateHours,
+      members: otherMembers,
+    });
   }
 
   const weights = base.map((r) => Math.max(0, levers.mix[r.key] ?? r.share));
@@ -1102,3 +1109,15 @@ export function clientWorkIndex(from: number, to: number): Map<number, ClientWor
 
 /** Distinct people on client work for the given accounts over [from, to]. */
 export const peopleOn = (clientIdx: Iterable<number>, from: number, to: number) => headcount(clientIdx, from, to);
+
+/** Gross revenue and client-work hours of the given accounts over [from, to]. */
+export function accountTotals(accounts: number[], from: number, to: number): { revenue: number; hours: number } {
+  const set = new Set(accounts);
+  let revenue = 0;
+  for (const c of set) {
+    for (const [m, v] of revenueByClientMonth.get(c) ?? []) if (m >= from && m <= to) revenue += v;
+  }
+  let hrs = 0;
+  for (const f of facts) if (f.time === "client" && set.has(f.client) && f.month >= from && f.month <= to) hrs += f.hours;
+  return { revenue, hours: hrs };
+}

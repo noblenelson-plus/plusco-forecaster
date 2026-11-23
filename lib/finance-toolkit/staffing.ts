@@ -60,6 +60,18 @@ for (const c of MODEL.clients) {
   accountsByNumber.set(c.number, list);
 }
 
+/** Forecaster client → its linked Maconomy accounts (any agency). */
+const accountsOfClient = new Map<string, number[]>(
+  (STAFFING?.clients ?? []).map((c) => [c.id, [...new Set(c.gaia.flatMap((n) => accountsByNumber.get(n) ?? []))]]),
+);
+
+/** How many Forecaster clients share each account (a GAIA number listed on
+ *  two clients). A shared account's hours are split evenly between them, so
+ *  totals never count an hour twice. */
+const sharers = new Map<number, number>();
+for (const list of accountsOfClient.values()) for (const i of list) sharers.set(i, (sharers.get(i) ?? 0) + 1);
+const shareOf = (account: number) => 1 / (sharers.get(account) ?? 1);
+
 const emptyGroups = () => Object.fromEntries(ROLE_GROUPS.map((g) => [g, 0])) as Record<RoleGroup, number>;
 const emptyLevels = () => Object.fromEntries(SENIORITY.map((l) => [l, 0])) as Record<Seniority, number>;
 
@@ -143,7 +155,7 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
   const rows: StaffingRow[] = [];
   const noHours: FtStaffingClient[] = [];
   for (const client of STAFFING.clients) {
-    const accounts = [...new Set(client.gaia.flatMap((n) => accountsByNumber.get(n) ?? []))];
+    const accounts = accountsOfClient.get(client.id) ?? [];
     if (!include(client, accounts)) continue;
 
     const byGroup = emptyGroups();
@@ -153,12 +165,13 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
     for (const i of accounts) {
       const w = work.get(i);
       if (!w) continue;
-      hours += w.hours;
+      const share = shareOf(i);
+      hours += w.hours * share;
       for (const m of w.byMonth.keys()) months.add(m);
       w.byRole.forEach((h, role) => {
         if (!h) return;
-        byGroup[GROUP_OF[role]] += h;
-        byLevel[LEVEL_OF[role]] += h;
+        byGroup[GROUP_OF[role]] += h * share;
+        byLevel[LEVEL_OF[role]] += h * share;
       });
     }
     if (hours === 0) {
@@ -167,6 +180,16 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
     }
 
     const fteYears = hours / FTE_YEAR_HOURS;
+    // A new client's team is often in place before its spend ramps up; its
+    // spend per FTE counts only the hours from its first month of spend.
+    let hoursForRatio = hours;
+    if (client.isNew && client.firstMonth) {
+      const first = monthIndex(client.firstMonth);
+      hoursForRatio = 0;
+      for (const i of accounts) {
+        for (const [m, h] of work.get(i)?.byMonth ?? []) if (m >= first) hoursForRatio += h * shareOf(i);
+      }
+    }
     const linked = client.spend * client.mediaboxShare;
     const wellLinked = client.mediaboxShare >= MIN_MEDIABOX_SHARE && client.complexity !== null;
     rows.push({
@@ -177,7 +200,7 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
       teamFte: months.size ? hours / (FTE_HOURS_PER_MONTH * months.size) : null,
       fteYears,
       people: peopleOn(accounts, from, to),
-      spendPerFte: ratio(client.spend, fteYears),
+      spendPerFte: ratio(client.spend, hoursForRatio / FTE_YEAR_HOURS),
       hoursPerMillion: client.spend > 0 ? hours / (client.spend / 1e6) : null,
       hoursPerCampaign: wellLinked && client.complexity!.campaigns > 0 ? hours / client.complexity!.campaigns : null,
       tacticsPerMillion: wellLinked && linked > 0 ? client.complexity!.tactics / (linked / 1e6) : null,
@@ -247,4 +270,27 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
       byLevel,
     },
   };
+}
+
+// ─── Media spend for Account Profitability ───────────────────────────────────
+
+const SPEND_MONTH_INDEX = (STAFFING?.spendMonths ?? []).map(monthIndex);
+
+/** The Forecaster client(s) whose GAIA numbers include this Maconomy account. */
+export function forecasterClientsOf(account: number): FtStaffingClient[] {
+  if (!STAFFING) return [];
+  return STAFFING.clients.filter((c) => (accountsOfClient.get(c.id) ?? []).includes(account));
+}
+
+/** A client's linked Maconomy accounts (any agency). */
+export const accountsOf = (client: FtStaffingClient): number[] => accountsOfClient.get(client.id) ?? [];
+
+/** MediaOcean spend (CAD) of a client over fact months [from, to]. */
+export function spendBetween(client: FtStaffingClient, from: number, to: number): number {
+  let total = 0;
+  client.monthlySpend.forEach((v, i) => {
+    const m = SPEND_MONTH_INDEX[i];
+    if (m >= from && m <= to) total += v;
+  });
+  return total;
 }
