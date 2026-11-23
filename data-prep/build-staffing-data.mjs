@@ -80,6 +80,8 @@ const numOrNull = (v) => (v === null || v === undefined ? null : Number(v));
 
 const inv = await bq(`SELECT * FROM ${FT}.staffing_investment('${from}', '${to}')`);
 const cx = await bq(`SELECT * FROM ${FT}.staffing_complexity('${from}', '${to}') WHERE channel = 'All channels'`);
+const campaignCx = await bq(`SELECT * FROM ${FT}.staffing_campaign_complexity('${from}', '${to}')`);
+const campaignCxById = new Map(campaignCx.map((r) => [r.client_id, r]));
 const monthlyRows = await bq(`
   SELECT PLUSCO_CLIENT_ID AS client_id, MONTH AS month, ROUND(SUM(NET_ORDERED_CAD)) AS spend
   FROM \`plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE\`
@@ -114,6 +116,7 @@ for (const r of inv) {
     continue;
   }
   const c = cxById.get(r.client_id);
+  const cc = campaignCxById.get(r.client_id);
   clients.push({
     id: r.client_id,
     name: r.client_name ?? r.client_id,
@@ -132,6 +135,16 @@ for (const r of inv) {
     estimateCount: num(r.estimate_count),
     vendorCount: num(r.vendor_count),
     mediaboxShare: num(r.pct_spend_in_mediabox),
+    campaignComplexity: cc
+      ? {
+          campaigns: num(cc.campaigns),
+          campaignsMcpe: num(cc.campaigns_mcpe),
+          avgMediaTypes: num(cc.avg_media_types_per_campaign),
+          avgPublishers: num(cc.avg_publishers_per_campaign),
+          avgTactics: num(cc.avg_tactics_per_campaign),
+          tactics: num(cc.tactics),
+        }
+      : null,
     complexity: c
       ? {
           campaigns: num(c.mb_campaigns),
@@ -158,7 +171,7 @@ const kept = clients.reduce((a, c) => a + c.spend, 0);
 console.log(
   `Spend ${(totalAll / 1e6).toFixed(1)}M across ${clients.length} Forecaster clients (${(kept / 1e6).toFixed(1)}M); ` +
     `${(spendNotInForecaster / 1e6).toFixed(2)}M on clients not in the Forecaster; ${cx.length} clients with MediaBox complexity; ` +
-    `${clients.filter((c) => c.gaia.length === 0).length} clients without a GAIA number`,
+    `${clients.filter((c) => c.gaia.length === 0).length} clients without a GAIA number; ${clients.filter((c) => c.campaignComplexity).length} with MediaBox campaigns`,
 );
 
 // ─── Write ───────────────────────────────────────────────────────────────────

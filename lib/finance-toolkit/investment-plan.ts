@@ -20,7 +20,7 @@
  */
 
 import { ROLE_GROUPS, SENIORITY, type RoleGroup, type Seniority } from "./roles";
-import { MIN_MEDIABOX_SHARE, staffing, type StaffingRow } from "./staffing";
+import { staffing, type StaffingRow } from "./staffing";
 
 export interface InvestmentInputs {
   /** Annual media investment, CAD. */
@@ -38,7 +38,7 @@ export interface InvestmentMatch {
   /** Annual spend used for matching (new clients scaled to a year). */
   annualSpend: number;
   digitalShare: number;
-  /** MediaBox campaigns scaled to all of the client's spend, when enough is linked. */
+  /** Unique MediaBox campaigns a year (finance_master_mapping), new clients scaled to a year. */
   campaignsPerYear: number | null;
   distance: number;
   /** Team this client's spend per FTE implies for the target investment. */
@@ -68,12 +68,13 @@ export function investmentCandidates(agency: string): InvestmentMatch[] {
     .filter((r) => r.comparable && r.spendPerFte !== null && r.client.spend > 0)
     .map((row) => {
       const c = row.client;
-      const cx = c.complexity;
+      const cx = c.campaignComplexity;
       return {
         row,
         annualSpend: c.isNew ? c.annualizedSpend : c.spend,
         digitalShare: c.digitalSpend / c.spend,
-        campaignsPerYear: cx && c.mediaboxShare >= MIN_MEDIABOX_SHARE ? cx.campaigns / c.mediaboxShare : null,
+        // Unique MediaBox campaigns in the 12 months; a new client is scaled to a year like its spend.
+        campaignsPerYear: cx && cx.campaigns > 0 ? cx.campaigns * (c.isNew && c.spend > 0 ? c.annualizedSpend / c.spend : 1) : null,
         distance: 0,
         fteForInvestment: 0,
       };

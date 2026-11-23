@@ -9,8 +9,10 @@
  *   2. four tiles
  *   3. GM pods side by side, each against the average, with complexity
  *   4. the team mix by provisional role group and seniority
- *   5. every client (open), with a detail panel and a Sheets export
- *   6. the formulas
+ *   5. what explains the hours: the complexity analysis (staffing-method.tsx)
+ *   6. every client (open), with a detail panel and a Sheets export
+ *   7. how we got here: sources, steps, decisions, check-by-hand (staffing-method.tsx)
+ *   8. the formulas
  *
  * Spend comes from MediaOcean, hours from Maconomy, over the same 12 months;
  * complexity from MediaBox (lib/finance-toolkit/staffing.ts). Role groups are
@@ -21,12 +23,13 @@ import { useMemo, useState } from "react";
 import { Layers, ShieldCheck, Table2, Users, X } from "lucide-react";
 import { Card } from "../ui/card";
 import { NOT_LINKED } from "../../lib/finance-toolkit/client-links";
-import { FTE_HOURS_PER_MONTH } from "../../lib/finance-toolkit/model";
+import { FTE_HOURS_PER_MONTH, MODEL } from "../../lib/finance-toolkit/model";
+import { analyzeComplexity } from "../../lib/finance-toolkit/complexity-model";
+import { ComplexityFindings, MethodPanel } from "./staffing-method";
 import { ROLE_GROUPS, SENIORITY } from "../../lib/finance-toolkit/roles";
 import {
   FTE_YEAR_HOURS,
   MIN_HOURS,
-  MIN_MEDIABOX_SHARE,
   MIN_SPEND,
   POD_HIGH,
   POD_LOW,
@@ -149,15 +152,27 @@ function PodBar({ pod, max, average }: { pod: PodRow; max: number; average: numb
       <div className="mt-1 text-xs tabular-nums text-gray-500">
         {pod.clients} client{pod.clients === 1 ? "" : "s"} · {formatCompactMoney(pod.spend)} of media · {pod.fteYears.toFixed(1)} FTE ·{" "}
         {pct(pod.digitalShare, 0)} digital
-        {pod.tacticsPerMillion !== null && ` · ${pod.tacticsPerMillion.toFixed(0)} MediaBox tactics per $1M`}
+        {pod.campaignsPerMillion !== null && ` · ${pod.campaignsPerMillion.toFixed(1)} MediaBox campaigns per $1M`}
       </div>
     </li>
   );
 }
 
-function ClientPanel({ row, onClose, median }: { row: StaffingRow; onClose: () => void; median: number | null }) {
+function ClientPanel({
+  row,
+  onClose,
+  median,
+  expected,
+}: {
+  row: StaffingRow;
+  onClose: () => void;
+  median: number | null;
+  /** Expected hours per $1M for this client's size, digital share and campaigns (complexity model). */
+  expected: number | null;
+}) {
   const c = row.client;
   const cx = c.complexity;
+  const cc = c.campaignComplexity;
   const figures: { label: string; value: string; sub?: string }[] = [
     {
       label: "Media spend",
@@ -171,7 +186,10 @@ function ClientPanel({ row, onClose, median }: { row: StaffingRow; onClose: () =
     {
       label: "Hours per $1M",
       value: row.hoursPerMillion === null ? "—" : hours(row.hoursPerMillion),
-      sub: row.hoursPerCampaign === null ? undefined : `${hours(row.hoursPerCampaign)} h per MediaBox campaign`,
+      sub:
+        expected !== null && row.hoursPerMillion !== null
+          ? `Expected for this size, mix and campaigns: ${hours(expected)} (${row.hoursPerMillion >= expected ? "+" : "−"}${pct(Math.abs(row.hoursPerMillion / expected - 1), 0)})`
+          : undefined,
     },
   ];
   return (
@@ -236,18 +254,57 @@ function ClientPanel({ row, onClose, median }: { row: StaffingRow; onClose: () =
           </section>
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-gray-900">Campaign complexity (MediaBox)</h3>
+            <h3 className="text-sm font-semibold text-gray-900">Campaign complexity</h3>
+            <p className="mb-2 text-xs text-gray-500">
+              MediaBox campaigns with plan months in the period (Reports › MediaBox Planner Data, both MediaBox versions). BigQuery:
+              Finance_Toolkit.staffing_campaigns
+            </p>
+            {cc ? (
+              <div className="grid grid-cols-3 gap-px border border-gray-200 bg-gray-200 text-sm">
+                {(
+                  [
+                    ["Campaigns", cc.campaigns.toLocaleString("en-CA")],
+                    ["Campaigns per $1M", row.campaignsPerMillion === null ? "—" : row.campaignsPerMillion.toFixed(1)],
+                    ["Hours per campaign", row.hoursPerCampaign === null ? "—" : hours(row.hoursPerCampaign)],
+                    ["Media types per campaign", cc.avgMediaTypes.toFixed(1)],
+                    ["Publishers per campaign", cc.avgPublishers.toFixed(1)],
+                    ["Tactics per campaign", cc.avgTactics.toFixed(1)],
+                  ] as [string, string][]
+                ).map(([k, v]) => (
+                  <div key={k} className="bg-white px-3 py-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{k}</div>
+                    <div className="text-lg font-bold tabular-nums text-gray-900">{v}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No MediaBox campaign for this client in this period.</p>
+            )}
+            {cc && (
+              <p className="mt-2 text-xs text-gray-500">
+                {cc.campaignsMcpe} of {cc.campaigns} campaigns carry a MediaOcean MCPE · {pct(c.mediaboxShare, 0)} of this client’s MediaOcean spend
+                is on an MCPE found in MediaBox
+              </p>
+            )}
+          </section>
+
+          <section>
+            <h3 className="text-sm font-semibold text-gray-900">More planning detail</h3>
+            <p className="mb-2 text-xs text-gray-500">
+              From MediaBox’s planning table (mediabox_3.planning), on tactics whose billing ID matches a MediaOcean MCPE. Shown for context; not used
+              in any figure above.
+            </p>
             {cx ? (
               <>
                 <div className="grid grid-cols-3 gap-px border border-gray-200 bg-gray-200 text-sm">
                   {(
                     [
-                      ["Campaigns", cx.campaigns],
-                      ["Tactics", cx.tactics],
-                      ["Publishers", cx.publishers],
                       ["Audiences", cx.audiences],
                       ["Markets", cx.markets],
+                      ["Languages", cx.languages],
                       ["Lines of business", cx.linesOfBusiness],
+                      ["Funnel stages (of 3)", cx.funnelStages],
+                      ["Publishers", cx.publishers],
                     ] as [string, number][]
                   ).map(([k, v]) => (
                     <div key={k} className="bg-white px-3 py-2">
@@ -257,12 +314,12 @@ function ClientPanel({ row, onClose, median }: { row: StaffingRow; onClose: () =
                   ))}
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
-                  {cx.funnelStages} of 3 funnel stages · {pct(cx.brandKpiShare, 0)} of tactics on brand KPIs · covers {pct(c.mediaboxShare, 0)} of
-                  this client’s spend (MediaOcean estimates matched to MediaBox by MCPE)
+                  {pct(cx.brandKpiShare, 0)} of tactics on brand KPIs. Audiences, markets and languages are distinct free-text entries; funnel stages
+                  come from keywords in the objective field and still need a check with the digital team.
                 </p>
               </>
             ) : (
-              <p className="text-sm text-gray-500">No MediaBox campaign is linked to this client’s MediaOcean estimates in this period.</p>
+              <p className="text-sm text-gray-500">No MediaBox planning row is linked to this client’s MediaOcean estimates in this period.</p>
             )}
           </section>
         </div>
@@ -286,6 +343,11 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
       ),
     [agency, picked, regions, gms],
   );
+  // The complexity model is always fitted on every client (not the filtered view), so "expected" doesn't move with filters.
+  const analysis = useMemo(() => {
+    const all = staffing(() => true);
+    return all ? analyzeComplexity(all.rows) : null;
+  }, []);
 
   if (!STAFFING || !result) {
     return (
@@ -302,6 +364,11 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
   const podMax = Math.max(1, ...pods.map((p) => p.spendPerFte ?? 0));
   const flaggedPods = pods.filter((p) => p.vsAverage !== null && (p.vsAverage >= POD_HIGH || p.vsAverage <= POD_LOW));
   const filtered = agency !== "all" || picked !== null || regions.length > 0 || gms.length > 0;
+  /** Actual hours per $1M ÷ expected − 1 (complexity model), or null. */
+  const vsExpected = (r: StaffingRow): number | null => {
+    const e = analysis?.expected.get(r.client.id);
+    return e && r.hoursPerMillion ? r.hoursPerMillion / e - 1 : null;
+  };
 
   const columns: Column<StaffingRow>[] = [
     {
@@ -368,26 +435,58 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
       render: (r) => (r.hoursPerMillion === null ? "—" : hours(r.hoursPerMillion)),
     },
     {
+      id: "vsExpected",
+      label: "vs expected",
+      align: "right",
+      sort: (r) => vsExpected(r),
+      render: (r) => {
+        const v = vsExpected(r);
+        if (v === null) return "—";
+        return (
+          <span className={v >= 0.5 ? "font-semibold text-red-700" : v <= -1 / 3 ? "font-semibold text-green-700" : ""}>
+            {v >= 0 ? "+" : "−"}
+            {pct(Math.abs(v), 0)}
+          </span>
+        );
+      },
+      headerTitle: "Hours per $1M against what clients of the same size, digital share and campaigns per $1M usually take",
+    },
+    {
       id: "campaigns",
       label: "Campaigns",
       align: "right",
-      sort: (r) => r.client.complexity?.campaigns ?? null,
-      render: (r) => r.client.complexity?.campaigns ?? "—",
-      headerTitle: "MediaBox campaigns linked to this client’s MediaOcean estimates",
+      sort: (r) => r.client.campaignComplexity?.campaigns ?? null,
+      render: (r) => r.client.campaignComplexity?.campaigns ?? "—",
+      headerTitle: "Unique MediaBox campaigns in the period (Reports › MediaBox Planner Data)",
     },
     {
-      id: "tactics",
-      label: "Tactics",
+      id: "cpm",
+      label: "Campaigns per $1M",
       align: "right",
-      sort: (r) => r.client.complexity?.tactics ?? null,
-      render: (r) => r.client.complexity?.tactics ?? "—",
+      sort: (r) => r.campaignsPerMillion,
+      render: (r) => (r.campaignsPerMillion === null ? "—" : r.campaignsPerMillion.toFixed(1)),
+      headerTitle: "Campaigns ÷ media spend in $M: many small campaigns take more hours per dollar",
     },
     {
-      id: "audiences",
-      label: "Audiences",
+      id: "tpc",
+      label: "Tactics / campaign",
       align: "right",
-      sort: (r) => r.client.complexity?.audiences ?? null,
-      render: (r) => r.client.complexity?.audiences ?? "—",
+      sort: (r) => r.client.campaignComplexity?.avgTactics ?? null,
+      render: (r) => r.client.campaignComplexity?.avgTactics.toFixed(1) ?? "—",
+    },
+    {
+      id: "ppc",
+      label: "Publishers / campaign",
+      align: "right",
+      sort: (r) => r.client.campaignComplexity?.avgPublishers ?? null,
+      render: (r) => r.client.campaignComplexity?.avgPublishers.toFixed(1) ?? "—",
+    },
+    {
+      id: "mtpc",
+      label: "Media types / campaign",
+      align: "right",
+      sort: (r) => r.client.campaignComplexity?.avgMediaTypes ?? null,
+      render: (r) => r.client.campaignComplexity?.avgMediaTypes.toFixed(1) ?? "—",
     },
     {
       id: "hpc",
@@ -395,15 +494,14 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
       align: "right",
       sort: (r) => r.hoursPerCampaign,
       render: (r) => (r.hoursPerCampaign === null ? "—" : hours(r.hoursPerCampaign)),
-      headerTitle: `Shown when at least ${pct(MIN_MEDIABOX_SHARE, 0)} of the client’s spend is linked to MediaBox`,
     },
     {
       id: "mb",
-      label: "In MediaBox",
+      label: "MCPE in MediaBox",
       align: "right",
       sort: (r) => r.client.mediaboxShare,
-      render: (r) => <span className={r.client.mediaboxShare < MIN_MEDIABOX_SHARE ? "text-gray-400" : ""}>{pct(r.client.mediaboxShare, 0)}</span>,
-      headerTitle: "Share of the client’s MediaOcean spend matched to a MediaBox campaign (MCPE)",
+      render: (r) => <span className="text-gray-500">{pct(r.client.mediaboxShare, 0)}</span>,
+      headerTitle: "Share of the client’s MediaOcean spend whose MCPE is found in MediaBox",
     },
   ];
 
@@ -423,16 +521,22 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
         "People",
         "Spend per FTE (CAD)",
         "Hours per $1M",
+        "Expected hours per $1M (size, digital, campaigns)",
         "MediaBox campaigns",
-        "MediaBox tactics",
-        "Publishers",
-        "Audiences",
-        "Markets",
-        "Funnel stages",
+        "Campaigns per $1M",
+        "Avg media types per campaign",
+        "Avg publishers per campaign",
+        "Avg tactics per campaign",
+        "Campaigns with an MCPE",
         "Hours per campaign",
-        "Share of spend in MediaBox",
+        "Share of spend with an MCPE in MediaBox",
         "MCPEs",
         "Vendors",
+        "Maconomy accounts (agency · client number)",
+        "Forecaster GAIA numbers",
+        "Forecaster client id",
+        "Period",
+        "In the averages",
         ...ROLE_GROUPS.map((g) => `Hours: ${g}`),
         ...SENIORITY.map((l) => `Hours: ${l}`),
       ],
@@ -450,16 +554,22 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
         r.people,
         r.spendPerFte,
         r.hoursPerMillion,
-        r.client.complexity?.campaigns ?? null,
-        r.client.complexity?.tactics ?? null,
-        r.client.complexity?.publishers ?? null,
-        r.client.complexity?.audiences ?? null,
-        r.client.complexity?.markets ?? null,
-        r.client.complexity?.funnelStages ?? null,
+        analysis?.expected.get(r.client.id) ?? null,
+        r.client.campaignComplexity?.campaigns ?? null,
+        r.campaignsPerMillion,
+        r.client.campaignComplexity?.avgMediaTypes ?? null,
+        r.client.campaignComplexity?.avgPublishers ?? null,
+        r.client.campaignComplexity?.avgTactics ?? null,
+        r.client.campaignComplexity?.campaignsMcpe ?? null,
         r.hoursPerCampaign,
         r.client.mediaboxShare,
         r.client.mcpeCount,
         r.client.vendorCount,
+        r.accounts.map((i) => `${MODEL.clients[i].agencyName} · ${MODEL.clients[i].number}`).join(", "),
+        r.client.gaia.join(", "),
+        r.client.id,
+        period,
+        r.comparable ? "Yes" : "No",
         ...ROLE_GROUPS.map((g) => r.byGroup[g]),
         ...SENIORITY.map((l) => r.byLevel[l]),
       ]),
@@ -564,7 +674,10 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
         </Card>
       </div>
 
-      {/* 5 · Every client */}
+      {/* 5 · What explains the hours (complexity) */}
+      <ComplexityFindings analysis={analysis} />
+
+      {/* 6 · Every client */}
       <Disclosure
         title="All clients"
         subtitle={`${rows.length} clients with spend and timesheets · click one for its channels, team and complexity · export to Google Sheets`}
@@ -596,6 +709,8 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
         )}
       </Disclosure>
 
+      <MethodPanel />
+
       <HowCalculated>
         <Formula
           name="Media spend"
@@ -623,11 +738,13 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
         />
         <Formula
           name="Complexity"
-          formula="MediaBox tactics active in the window whose billing ID matches one of the client’s MediaOcean MCPEs: campaigns, tactics, publishers, audiences, markets, funnel stages (keyword mapping of the objective)"
+          formula="unique MediaBox campaigns in the period (Reports › MediaBox Planner Data); per campaign, distinct media types, publishers and tactics, averaged over the client’s campaigns"
         />
+        <Formula name="Campaigns per $1M" formula="campaigns ÷ (media spend ÷ 1,000,000)" />
+        <Formula name="Hours per campaign" formula="client hours ÷ campaigns" />
         <Formula
-          name="Hours per campaign"
-          formula={`client hours ÷ linked MediaBox campaigns, shown only when at least ${pct(MIN_MEDIABOX_SHARE, 0)} of the client’s spend is in MediaBox`}
+          name="vs expected"
+          formula="client hours per $1M ÷ the hours per $1M expected for its size, digital share and campaigns per $1M (What explains the hours) − 1"
         />
         <Formula
           name="Pod flag"
@@ -644,7 +761,14 @@ export default function StaffingTab({ picked, regions, gms }: { picked: Set<numb
         </div>
       </HowCalculated>
 
-      {selected && <ClientPanel row={selected} median={totals.medianClientSpendPerFte} onClose={() => setSelectedId(null)} />}
+      {selected && (
+        <ClientPanel
+          row={selected}
+          median={totals.medianClientSpendPerFte}
+          expected={analysis?.expected.get(selected.client.id) ?? null}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
     </div>
   );
 }

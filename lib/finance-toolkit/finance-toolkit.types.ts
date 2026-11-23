@@ -100,6 +100,23 @@ export interface FtComplexity {
   brandKpiShare: number | null;
 }
 
+/**
+ * Campaign complexity from PCC_Media_Investment.finance_master_mapping (the
+ * table behind Reports › MediaBox Planner Data), per Adriana's proposed logic:
+ * unique campaigns, then per-campaign averages. BigQuery:
+ * Finance_Toolkit.staffing_campaign_complexity(from, to).
+ */
+export interface FtCampaignComplexity {
+  /** Unique MediaBox campaigns with plan months in the window (v1 and v2). */
+  campaigns: number;
+  /** Of those, campaigns with a tactic whose billing ID is a MediaOcean MCPE. */
+  campaignsMcpe: number;
+  avgMediaTypes: number;
+  avgPublishers: number;
+  avgTactics: number;
+  tactics: number;
+}
+
 /** One Forecaster client with MediaOcean spend in the staffing window. */
 export interface FtStaffingClient {
   /** Forecaster client id (CL_ID). */
@@ -125,6 +142,9 @@ export interface FtStaffingClient {
   vendorCount: number;
   /** Share of spend whose MCPE matches a MediaBox campaign (0–1). */
   mediaboxShare: number;
+  /** Campaign complexity (finance_master_mapping): the measure used in the model. */
+  campaignComplexity: FtCampaignComplexity | null;
+  /** Extra planning details (mediabox_3.planning: audiences, markets, funnel), on MCPE-linked tactics. */
   complexity: FtComplexity | null;
 }
 
