@@ -87,9 +87,10 @@ export interface StaffingRow {
   people: number;
   spendPerFte: number | null;
   hoursPerMillion: number | null;
-  /** Only when enough spend is linked to MediaBox (MIN_MEDIABOX_SHARE). */
+  /** Client hours ÷ unique MediaBox campaigns (finance_master_mapping), when it has any. */
   hoursPerCampaign: number | null;
-  tacticsPerMillion: number | null;
+  /** Unique MediaBox campaigns per $1M of media: the complexity measure that explains hours. */
+  campaignsPerMillion: number | null;
   byGroup: Record<RoleGroup, number>;
   byLevel: Record<Seniority, number>;
   /** Big enough to count in averages and pods. */
@@ -105,8 +106,8 @@ export interface PodRow {
   spendPerFte: number | null;
   /** Pod spend per FTE ÷ overall spend per FTE. */
   vsAverage: number | null;
-  /** Tactics per $1M of MediaBox-linked spend, over the pod's well-linked clients. */
-  tacticsPerMillion: number | null;
+  /** MediaBox campaigns per $1M of media, over the pod's clients with campaigns. */
+  campaignsPerMillion: number | null;
   digitalShare: number | null;
 }
 
@@ -190,8 +191,7 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
         for (const [m, h] of work.get(i)?.byMonth ?? []) if (m >= first) hoursForRatio += h * shareOf(i);
       }
     }
-    const linked = client.spend * client.mediaboxShare;
-    const wellLinked = client.mediaboxShare >= MIN_MEDIABOX_SHARE && client.complexity !== null;
+    const campaigns = client.campaignComplexity?.campaigns ?? 0;
     rows.push({
       client,
       accounts,
@@ -202,8 +202,8 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
       people: peopleOn(accounts, from, to),
       spendPerFte: ratio(client.spend, hoursForRatio / FTE_YEAR_HOURS),
       hoursPerMillion: client.spend > 0 ? hours / (client.spend / 1e6) : null,
-      hoursPerCampaign: wellLinked && client.complexity!.campaigns > 0 ? hours / client.complexity!.campaigns : null,
-      tacticsPerMillion: wellLinked && linked > 0 ? client.complexity!.tactics / (linked / 1e6) : null,
+      hoursPerCampaign: campaigns > 0 ? hours / campaigns : null,
+      campaignsPerMillion: campaigns > 0 && client.spend > 0 ? campaigns / (client.spend / 1e6) : null,
       byGroup,
       byLevel,
       comparable: hours >= MIN_HOURS && client.spend >= MIN_SPEND,
@@ -230,9 +230,9 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
     const pSpend = rs.reduce((a, r) => a + r.client.spend, 0);
     const pHours = rs.reduce((a, r) => a + r.hours, 0);
     const spf = ratio(pSpend, pHours / FTE_YEAR_HOURS);
-    const linkedRows = rs.filter((r) => r.tacticsPerMillion !== null);
-    const linkedSpend = linkedRows.reduce((a, r) => a + r.client.spend * r.client.mediaboxShare, 0);
-    const linkedTactics = linkedRows.reduce((a, r) => a + r.client.complexity!.tactics, 0);
+    const withCampaigns = rs.filter((r) => r.campaignsPerMillion !== null);
+    const cmpSpend = withCampaigns.reduce((a, r) => a + r.client.spend, 0);
+    const cmpCount = withCampaigns.reduce((a, r) => a + r.client.campaignComplexity!.campaigns, 0);
     return {
       pod,
       clients: rs.length,
@@ -241,7 +241,7 @@ export function staffing(include: StaffingFilter): StaffingResult | null {
       fteYears: pHours / FTE_YEAR_HOURS,
       spendPerFte: spf,
       vsAverage: spf !== null && overall ? spf / overall : null,
-      tacticsPerMillion: linkedSpend > 0 ? linkedTactics / (linkedSpend / 1e6) : null,
+      campaignsPerMillion: cmpSpend > 0 ? cmpCount / (cmpSpend / 1e6) : null,
       digitalShare: ratio(
         rs.reduce((a, r) => a + r.client.digitalSpend, 0),
         pSpend,

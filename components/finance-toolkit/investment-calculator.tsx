@@ -155,7 +155,7 @@ export default function InvestmentCalculator() {
       align: "right",
       sort: (m) => m.campaignsPerYear,
       render: (m) => (m.campaignsPerYear === null ? "—" : Math.round(m.campaignsPerYear)),
-      headerTitle: "MediaBox campaigns, scaled to all of the client’s spend (shown when at least half is in MediaBox)",
+      headerTitle: "Unique MediaBox campaigns in the 12 months (Reports › MediaBox Planner Data); a new client is scaled to a year",
     },
     {
       id: "team",
@@ -269,7 +269,9 @@ export default function InvestmentCalculator() {
                 onChange={(e) => setCampaignsText(e.target.value)}
                 className="w-full border border-gray-300 bg-white px-3 py-2 text-lg font-semibold tabular-nums text-gray-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
               />
-              <p className="mt-2 text-xs text-gray-500">Used to pick similar clients when they have enough campaigns in MediaBox.</p>
+              <p className="mt-2 text-xs text-gray-500">
+                Used to pick similar clients. Campaigns per $1M is the one complexity measure that explains extra hours (see the Staffing tab).
+              </p>
             </Step>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-gray-100 pt-4">
