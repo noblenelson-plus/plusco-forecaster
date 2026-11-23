@@ -35,8 +35,11 @@ import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { formatMoney, formatSigned } from "../../lib/format/money";
 import {
   FLAG_CONTEXTS,
+  OTHER_MIN_WORDS,
   flagDrift,
+  isFlagJustified,
   isJustifiableRule,
+  otherNoteTooShort,
   type FlagContext,
   type StoredFlag,
 } from "../../lib/types/forecast-flags.types";
@@ -144,7 +147,7 @@ export default function FlagCard({
   const justified = flag.justified && !correctable;
   const drift = flagDrift(flag);
   const dirty = context !== storedContext || note !== storedNote;
-  const wouldJustify = !!context && !!note.trim();
+  const wouldJustify = isFlagJustified({ context: context || undefined, note });
 
   const save = async () => {
     if (savingRef.current) return;
@@ -168,6 +171,9 @@ export default function FlagCard({
   // Half-filled: the BL started but the flag still doesn't count as justified.
   const missingContext = !context && !!note.trim();
   const missingNote = !!context && !note.trim();
+  // "Other" needs a full sentence, not "adj" or "huh".
+  const shortOtherNote = otherNoteTooShort(context, note);
+  const contextHint = FLAG_CONTEXTS.find((c) => c.value === context)?.hint;
   // Latest save + readiness, read by the timer / unmount flush (no stale closures).
   const saveRef = useRef(save);
   const readyRef = useRef(autosaveReady);
@@ -369,6 +375,7 @@ export default function FlagCard({
             </option>
           ))}
         </select>
+        {contextHint && <p className="mt-1 text-[11px] text-gray-500">{contextHint}</p>}
 
         <label className="mt-2 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
           Comment
@@ -380,15 +387,17 @@ export default function FlagCard({
           rows={2}
           placeholder="Explain this variance…"
           className={`mt-1 w-full resize-y border bg-white px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-900 focus:outline-none ${
-            missingNote ? "border-2 border-red-500" : "border-gray-200"
+            missingNote || shortOtherNote ? "border-2 border-red-500" : "border-gray-200"
           }`}
         />
 
-        {(missingContext || missingNote) && (
+        {(missingContext || missingNote || shortOtherNote) && (
           <p className="mt-2 bg-red-500 px-2.5 py-1.5 text-[12px] font-medium text-white">
             {missingContext
               ? "Pick a context — this flag isn't justified until you do."
-              : "Add a comment — this flag isn't justified until you do."}
+              : missingNote
+                ? "Add a comment — this flag isn't justified until you do."
+                : `For "Other", explain the change in a full sentence (at least ${OTHER_MIN_WORDS} words).`}
           </p>
         )}
 

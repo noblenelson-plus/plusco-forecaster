@@ -6,17 +6,18 @@
  * selected Year, for GMs and MDs:
  *
  *   Filters    Checkpoint (one milestone, defaults to the latest one due),
- *              GM Pod / Agency / Region / Business Lead, and the status at the
- *              checkpoint (multi-select). Always limited to the clients ACTIVE
- *              in the selected year (resolveClientStatus), test clients
- *              excluded — no status/tier filter.
- *   Section 1  Milestone tracking — status totals, breakdown by GM, clients
- *              left to validate (milestone-tracking-summary.tsx).
- *   Table      Every milestone per client (progression-recap-table.tsx).
+ *              GM Pod / Agency / Region / Business Lead / Client. Always
+ *              limited to the clients ACTIVE in the selected year
+ *              (resolveClientStatus), test clients excluded — no status/tier
+ *              filter.
+ *   Section 1  Milestone tracking — status totals, breakdown by GM, and
+ *              Milestones by client with its own status chips (multi-select,
+ *              opens on the clients left to validate) (milestone-tracking-summary.tsx).
  *   Section 2  Insights by flag type — the flags saved at the checkpoint
- *              (flag_history) by type / category, overall or by GM / Agency / Region
- *              (flag-insights-section.tsx). The flag filters (category, flag)
- *              only narrow this section and Section 3.
+ *              (flag_history) by type / category, overall or by GM / Agency / Region,
+ *              Media / Labs types broken down by media type / partner
+ *              (flag-insights-section.tsx). The flag filters (category, flag,
+ *              media type / partner) only narrow this section and Section 3.
  *   Section 3  Flags by client — every current flag with its justification
  *              verbatim (flag-detail-table.tsx).
  *
@@ -31,19 +32,27 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { buildMilestoneQuery, parseMilestoneView } from "../../../lib/format/milestone-url";
+import {
+  buildMilestoneQuery,
+  DEFAULT_TABLE_STATUSES,
+  parseMilestoneView,
+} from "../../../lib/format/milestone-url";
 import { Loader2, ClipboardCheck, MousePointerClick } from "lucide-react";
 import ForecastSelectors from "../../../components/_shared/forecast-selectors";
 import MilestoneFilters from "../../../components/progression/milestone-filters";
 import MilestoneTrackingSummary from "../../../components/progression/milestone-tracking-summary";
-import ProgressionRecapTable from "../../../components/progression/progression-recap-table";
 import MilestoneBatchRunner from "../../../components/progression/milestone-batch-runner";
 import FlagInsightsSection from "../../../components/progression/flag-insights-section";
 import FlagDetailTable from "../../../components/progression/flag-detail-table";
 import { useFlagHistory } from "../../../lib/hooks/use-flag-history";
 import { useRfqVariance } from "../../../lib/hooks/use-rfq-variance";
 import { computeRfqVariance } from "../../../lib/format/rfq-variance";
-import { resolveFlagTypes, type ClientFlags } from "../../../lib/format/flag-insights";
+import {
+  computeOnOptions,
+  flagOnKey,
+  resolveFlagTypes,
+  type ClientFlags,
+} from "../../../lib/format/flag-insights";
 import { useAccessibleClients } from "../../../lib/hooks/use-accessible-clients";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import { useAccess } from "../../../lib/hooks/use-access";
@@ -56,7 +65,7 @@ import { filterWritableClients } from "../../../lib/services/assignment-service"
 import { isTestClient, resolveClientStatus } from "../../../lib/format/client";
 import { CLIENT_GM_PODS } from "../../../lib/constants/client.constants";
 import { defaultCheckpointStep, stepById } from "../../../lib/constants/confirmation-steps";
-import { statusAt, type MilestoneClientRow } from "../../../lib/format/milestone-summary";
+import type { MilestoneClientRow } from "../../../lib/format/milestone-summary";
 import type { RfqValidationStatus } from "../../../lib/types/forecast-flags.types";
 
 /** The client facets this page offers, in display order. */
@@ -150,6 +159,7 @@ function MilestonesPage() {
   const [statuses, setStatuses] = useState<RfqValidationStatus[]>(linked.status);
   const [flagCategories, setFlagCategories] = useState<string[]>(linked.flagCategory);
   const [flagTypeIds, setFlagTypeIds] = useState<string[]>(linked.flag);
+  const [onKeys, setOnKeys] = useState<string[]>(linked.on);
   const selectedFlagTypes = useMemo(
     () => resolveFlagTypes(flagCategories, flagTypeIds),
     [flagCategories, flagTypeIds]
@@ -168,6 +178,7 @@ function MilestonesPage() {
     status: statuses,
     flagCategory: flagCategories,
     flag: flagTypeIds,
+    on: onKeys,
   });
   useEffect(() => {
     if (!selectedYear) return; // the year effect hasn't landed yet
@@ -211,6 +222,18 @@ function MilestonesPage() {
       })),
     [filteredClients, checkpointFlags, usersMap, checkpoint.id]
   );
+
+  // "Media type / Partner" filter: its options follow the selected flag types;
+  // the flag sections only get the flags on the picked media types / partners.
+  const onOptions = useMemo(
+    () => computeOnOptions(clientFlags, selectedFlagTypes),
+    [clientFlags, selectedFlagTypes]
+  );
+  const shownClientFlags = useMemo<ClientFlags[]>(() => {
+    if (onKeys.length === 0) return clientFlags;
+    const picked = new Set(onKeys);
+    return clientFlags.map((c) => ({ ...c, flags: c.flags.filter((f) => picked.has(flagOnKey(f))) }));
+  }, [clientFlags, onKeys]);
 
   // RFQ total variance (above the RFQ Swings table): every compared line of
   // the checkpoint's RFQ vs the previous RFQ, loaded only while a swing flag
@@ -267,15 +290,6 @@ function MilestonesPage() {
     }));
   }, [filteredClients, recap.rows, usersMap]);
 
-  // Status chips narrow the table (status at the checkpoint).
-  const tableRows = useMemo(
-    () =>
-      statuses.length === 0
-        ? rows
-        : rows.filter((r) => statuses.includes(statusAt(r, checkpoint.id))),
-    [rows, statuses, checkpoint.id]
-  );
-
   // Which clients every section covers, said in each section's heading (the
   // top filters apply to the whole page).
   const facetScope = pageFacetViews
@@ -290,12 +304,13 @@ function MilestonesPage() {
     : `All active clients · ${rows.length}`;
 
   const hasActiveFilters =
-    hasFacetFilters || statuses.length > 0 || flagCategories.length > 0 || flagTypeIds.length > 0;
+    hasFacetFilters || flagCategories.length > 0 || flagTypeIds.length > 0 || onKeys.length > 0;
   const resetAll = () => {
     resetFacets();
-    setStatuses([]);
+    setStatuses([...DEFAULT_TABLE_STATUSES]);
     setFlagCategories([]);
     setFlagTypeIds([]);
+    setOnKeys([]);
   };
 
   const contextReady = !!selectedYear;
@@ -328,9 +343,7 @@ function MilestonesPage() {
           checkpointId={checkpoint.id}
           onCheckpointChange={(id) => setPickedCheckpoint({ year, id })}
           facetViews={pageFacetViews}
-          statuses={statuses}
-          onStatusesChange={setStatuses}
-          shownCount={tableRows.length}
+          shownCount={rows.length}
           activeCount={activeClients.length}
           year={selectedYear}
           hasActiveFilters={hasActiveFilters}
@@ -339,6 +352,9 @@ function MilestonesPage() {
           onFlagCategoriesChange={setFlagCategories}
           flagTypes={flagTypeIds}
           onFlagTypesChange={setFlagTypeIds}
+          onOptions={onOptions}
+          on={onKeys}
+          onOnChange={setOnKeys}
         />
       </header>
 
@@ -373,14 +389,9 @@ function MilestonesPage() {
               rows={rows}
               checkpoint={checkpoint}
               statuses={statuses}
+              onStatusesChange={setStatuses}
               scopeNote={scopeNote}
               year={selectedYear}
-            />
-            <ProgressionRecapTable
-              rows={tableRows}
-              checkpointId={checkpoint.id}
-              fileLabel={String(selectedYear)}
-              scopeNote={scopeNote}
             />
             {checkpointFlags.error ? (
               <div className="border border-red-500 bg-red-500 px-4 py-3 text-sm text-white">
@@ -392,7 +403,7 @@ function MilestonesPage() {
               </div>
             ) : (
               <FlagInsightsSection
-                clients={clientFlags}
+                clients={shownClientFlags}
                 activeClientCount={rows.length}
                 types={selectedFlagTypes}
                 checkpoint={checkpoint}
@@ -405,7 +416,7 @@ function MilestonesPage() {
             )}
             {!checkpointFlags.loading && !checkpointFlags.error && (
               <FlagDetailTable
-                clients={clientFlags}
+                clients={shownClientFlags}
                 types={selectedFlagTypes}
                 checkpoint={checkpoint}
                 year={year}

@@ -68,13 +68,17 @@ export function breakdownByGm(rows: MilestoneClientRow[], stepId: string): GmBre
     );
 }
 
-/** Clients not yet validated at the checkpoint (not validated or flags to justify), by GM then name. */
-export function clientsLeftToValidate(
+/**
+ * Clients whose status at the checkpoint is one of `statuses` (none = every
+ * client), by GM then name — the Milestones by client table.
+ */
+export function clientsByStatus(
   rows: MilestoneClientRow[],
-  stepId: string
+  stepId: string,
+  statuses: RfqValidationStatus[]
 ): MilestoneClientRow[] {
   return rows
-    .filter((r) => statusAt(r, stepId) !== "validated")
+    .filter((r) => statuses.length === 0 || statuses.includes(statusAt(r, stepId)))
     .sort((a, b) => a.gm.localeCompare(b.gm) || a.clientName.localeCompare(b.clientName));
 }
 

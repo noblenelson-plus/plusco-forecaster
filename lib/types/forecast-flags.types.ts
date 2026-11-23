@@ -52,21 +52,40 @@ export function isJustifiableRule(ruleId: FlagRuleId): boolean {
 
 // ─── Justification context ─────────────────────────────────────────────────
 
-/** The fixed reasons a user may attach to justify a flag (the dropdown). */
+/**
+ * The fixed reasons a user may attach to justify a flag (the dropdown), with a
+ * one-line hint shown under it. Channel / Partner Reallocation, Plan Finalized
+ * and Billed Direct to Client were added in Nov 2026 (Adriana) from what the
+ * BLs wrote under "Other". OTHER stays last.
+ */
 export const FLAG_CONTEXTS = [
-  { value: "PERFORMANCE_PRICING", label: "Performance / Pricing" },
-  { value: "BUDGET_CUTS", label: "Budget Cuts" },
-  { value: "CANCELLED", label: "Cancelled" },
-  { value: "TIMING_SHIFT", label: "Timing Shift" },
-  { value: "INCOMPLETE_INPUT", label: "Incomplete Input" },
-  { value: "INCREMENTAL_BUDGET", label: "Incremental Budget" },
-  { value: "OTHER", label: "Other" },
+  { value: "PERFORMANCE_PRICING", label: "Performance / Pricing", hint: "Costs came in below or above plan." },
+  { value: "BUDGET_CUTS", label: "Budget Cuts", hint: "The client reduced the budget." },
+  { value: "CANCELLED", label: "Cancelled", hint: "A campaign or event was cancelled." },
+  { value: "TIMING_SHIFT", label: "Timing Shift", hint: "Spend moved to other months." },
+  { value: "INCOMPLETE_INPUT", label: "Incomplete Input", hint: "The earlier input was missing or incomplete." },
+  { value: "INCREMENTAL_BUDGET", label: "Incremental Budget", hint: "New campaign or added budget." },
+  { value: "CHANNEL_REALLOCATION", label: "Channel Reallocation", hint: "Budget moved to another media type. The total stays about the same." },
+  { value: "PARTNER_REALLOCATION", label: "Partner Reallocation", hint: "Budget moved to another partner (e.g. Amazon to MiQ). The total stays about the same." },
+  { value: "PLAN_FINALIZED", label: "Plan Finalized", hint: "An earlier estimate was replaced by the briefed or approved plan." },
+  { value: "BILLED_DIRECT", label: "Billed Direct to Client", hint: "The client pays the vendor directly, so it doesn't go through our billing." },
+  { value: "OTHER", label: "Other", hint: "None of the above. Explain the change in a full sentence." },
 ] as const;
 
 export type FlagContext = (typeof FLAG_CONTEXTS)[number]["value"];
 
 export function flagContextLabel(context: FlagContext): string {
   return FLAG_CONTEXTS.find((c) => c.value === context)?.label ?? context;
+}
+
+/** "Other" needs a note of at least this many words (a full sentence, not "adj"). */
+export const OTHER_MIN_WORDS = 5;
+
+const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+/** True when the context is "Other" and the note is too short to explain it. */
+export function otherNoteTooShort(context: FlagContext | "" | undefined, note: string | undefined): boolean {
+  return context === "OTHER" && !!note?.trim() && wordCount(note) < OTHER_MIN_WORDS;
 }
 
 // ─── Computed flag (rules output, no justification) ──────────────────────────
@@ -140,12 +159,15 @@ export interface StoredFlag extends ComputedFlag {
 
 export type StoredFlagMap = Record<string, StoredFlag>;
 
-/** A flag is justified only with BOTH a context and a non-empty note. */
+/**
+ * A flag is justified only with BOTH a context and a non-empty note — and,
+ * for "Other", a note of at least OTHER_MIN_WORDS words.
+ */
 export function isFlagJustified(input: {
   context?: FlagContext;
   note?: string;
 }): boolean {
-  return !!input.context && !!input.note?.trim();
+  return !!input.context && !!input.note?.trim() && !otherNoteTooShort(input.context, input.note);
 }
 
 /**

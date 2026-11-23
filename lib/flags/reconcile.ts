@@ -65,9 +65,10 @@ export function reconcileFlags(
   for (const c of computed) {
     const prev = existing[c.key];
     if (prev && isJustifiableRule(c.ruleId)) {
-      // Keep the justification, refresh the numbers. `justified` follows the
-      // preserved context + note (unchanged here), so it stays as it was.
-      const justified = isFlagJustified(prev);
+      // Keep the justification, refresh the numbers. A stored `justified` is
+      // kept as is, so a stricter rule added later (the "Other" note length)
+      // only applies when the BL edits the justification, never retroactively.
+      const justified = prev.justified ?? isFlagJustified(prev);
       next[c.key] = {
         ...base(c),
         ...(prev.context ? { context: prev.context } : {}),
