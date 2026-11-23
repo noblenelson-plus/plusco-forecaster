@@ -6,11 +6,12 @@
  * leader seeing it for the first time:
  *
  *   1. the answer in one sentence, with the few numbers behind it
- *   2. three headline tiles (vs the previous period when there is one)
- *   3. the month-by-month trend (labelled bars) next to the top accounts
- *   4. where the margin comes from (top accounts) next to the accounts worth a
- *      conversation, grouped by the likely reason so each one reads as a next step
- *   5. detail on demand: the full account table and the formulas
+ *   2. five headline tiles (vs the previous period when there is one)
+ *   3. every account as a bubble against the break-even line, next to the list
+ *      of accounts that need review
+ *   4. why they need review: the same accounts grouped by the likely reason
+ *   5. the month-by-month trend (labelled bars) next to the top accounts
+ *   6. detail on demand: the full account table and the formulas
  *
  * Gross revenue (Finance's gross revenue reports) is set against staffing cost
  * (Maconomy client hours × cost) per account. Accounts without a revenue match
@@ -19,13 +20,15 @@
  */
 
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, Scatter, ScatterChart, XAxis, YAxis, ZAxis } from "recharts";
 import {
   ArrowDownRight,
   ArrowUpRight,
   ChevronRight,
   LineChart,
+  ListChecks,
   MessageCircle,
+  Scale,
   Search,
   ShieldCheck,
   Table2,
@@ -109,6 +112,22 @@ const compactLabel = (v: unknown) => (typeof v === "number" && v >= 50_000 ? for
 
 /** "−$261K" for a negative amount (formatCompactMoney takes the absolute value). */
 const negCompact = (v: number) => `−${formatCompactMoney(Math.abs(v))}`;
+
+const scatterConfig: ChartConfig = {
+  ok: { label: "Earns more than its team costs", color: PLUS.green },
+  over: { label: "Low return per hour", color: PLUS.yellow },
+  loss: { label: "Costs more than it earns", color: PLUS.red },
+};
+
+/** Power-of-ten axis label: 1000 → "$1K", 1e6 → "$1M". */
+function logTick(v: number): string {
+  if (v >= 1e6) return `$${v / 1e6}M`;
+  if (v >= 1e3) return `$${v / 1e3}K`;
+  return `$${v}`;
+}
+
+/** Bubble label: the first words of the account name, kept short. */
+const shortName = (name: string) => (name.length > 18 ? `${name.slice(0, 16).trimEnd()}…` : name);
 
 function StatusChip({ row, to }: { row: ProfitRow; to: number }) {
   if (row.status === "no-revenue")
@@ -222,7 +241,11 @@ function ReasonBlock({ group, onOpen }: { group: ReasonGroup; onOpen: (r: Profit
       <ul className="mt-2 divide-y divide-gray-100">
         {shown.map((r) => (
           <li key={r.client.index}>
-            <button type="button" onClick={() => onOpen(r)} className="group flex w-full items-center justify-between gap-3 py-1.5 text-left hover:bg-gray-50">
+            <button
+              type="button"
+              onClick={() => onOpen(r)}
+              className="group flex w-full items-center justify-between gap-3 py-1.5 text-left hover:bg-gray-50"
+            >
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium text-gray-900" title={r.client.name}>
                   {r.client.name}
@@ -281,6 +304,44 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
   }, [result]);
 
   const groups = useMemo(() => groupByReason(flagged, to, dataStartOf), [flagged, to]);
+
+  // Bubble chart: every account with both revenue and cost, on log scales (accounts range from $1K to $10M+).
+  // Names are printed on the largest accounts and the biggest losses only, so the labels stay readable.
+  const scatter = useMemo(() => {
+    const byRevenue = [...matched].filter((r) => r.revenue! > 0 && r.cost! > 0).sort((a, b) => b.revenue! - a.revenue!);
+    const named = new Set([
+      ...byRevenue.slice(0, 6).map((r) => r.client.index),
+      ...byRevenue
+        .filter((r) => r.margin! < 0)
+        .sort((a, b) => a.margin! - b.margin!)
+        .slice(0, 4)
+        .map((r) => r.client.index),
+    ]);
+    const pts = byRevenue.map((r) => ({
+      x: r.revenue!,
+      y: r.cost!,
+      z: r.hours,
+      name: r.client.name,
+      label: named.has(r.client.index) ? shortName(r.client.name) : "",
+      flag: r.flag,
+      margin: r.margin,
+      marginPct: r.marginPct,
+      row: r,
+    }));
+    const max = Math.max(1000, ...pts.map((p) => Math.max(p.x, p.y)));
+    const min = Math.max(100, Math.min(...pts.map((p) => Math.min(p.x, p.y)), max));
+    const lo = Math.floor(Math.log10(min));
+    const hi = Math.ceil(Math.log10(max));
+    return {
+      ok: pts.filter((p) => p.flag !== "loss" && p.flag !== "over-serviced"),
+      over: pts.filter((p) => p.flag === "over-serviced"),
+      loss: pts.filter((p) => p.flag === "loss"),
+      count: pts.length,
+      above: pts.filter((p) => p.margin! < 0).length,
+      domain: [Math.pow(10, lo), Math.pow(10, hi)] as [number, number],
+      ticks: Array.from({ length: hi - lo + 1 }, (_, i) => Math.pow(10, lo + i)),
+    };
+  }, [matched]);
   const trend = useMemo(
     () =>
       profitabilityTrend(
@@ -420,6 +481,14 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
       total: view === "all" ? pct(totals.marginPct) : undefined,
     },
     {
+      id: "costPct",
+      label: "Cost % of revenue",
+      align: "right",
+      sort: (r) => r.costPctRevenue,
+      render: (r) => pct(r.costPctRevenue),
+      total: view === "all" ? pct(totals.costPctRevenue) : undefined,
+    },
+    {
       id: "rph",
       label: "Revenue / hour",
       align: "right",
@@ -544,7 +613,8 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
                       <>
                         {" "}
                         Most of it ({negCompact(causeLoss.margin)}) is on{" "}
-                        {causeLoss.rows.length === 1 ? "one foundation or charity" : `${causeLoss.rows.length} foundations and charities`}, likely cause work.
+                        {causeLoss.rows.length === 1 ? "one foundation or charity" : `${causeLoss.rows.length} foundations and charities`}, likely
+                        cause work.
                       </>
                     )}
                   </>
@@ -588,13 +658,22 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
       )}
 
       {/* 2 · Headline tiles */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Tile
           label={`Gross revenue${cur}`}
           value={formatCompactMoney(totals.revenue)}
           context="as booked in Finance’s gross revenue reports"
           delta={deltas?.revenue}
           vsLabel={vsLabel}
+        />
+        <Tile
+          label="Team cost"
+          value={formatCompactMoney(totals.matchedCost)}
+          context={
+            <>
+              <strong className="text-gray-900">{pct(totals.costPctRevenue, 0)}</strong> of revenue · {hours(totals.matchedHours)} h of client work
+            </>
+          }
         />
         <Tile
           label="Margin after team cost"
@@ -614,9 +693,197 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
           delta={deltas?.profitable}
           vsLabel={vsLabel}
         />
+        <Tile
+          label="Revenue per hour worked"
+          value={rate(totals.revenuePerHour)}
+          context={<>vs {rate(totals.costPerHour)} an hour of team time costs us</>}
+          delta={deltas?.rph}
+          vsLabel={vsLabel}
+        />
       </div>
 
-      {/* 3 · Trend + where the margin comes from */}
+      {/* 3 · Every account against break-even, next to the accounts that need review */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <Card className="gap-0 p-5 xl:col-span-2">
+          <SectionTitle
+            icon={Scale}
+            title="Every account: revenue vs team cost"
+            subtitle={
+              scatter.count > 0
+                ? `Each bubble is an account (bigger = more hours). Below the red line it earns more than its team costs; above it, it costs more. ${scatter.count - scatter.above} of ${scatter.count} are below the line.`
+                : "Each bubble is an account (bigger = more hours). Below the red line it earns more than its team costs."
+            }
+          />
+          {scatter.count === 0 ? (
+            <p className="py-16 text-center text-sm text-gray-500">No accounts with both revenue and hours in this period.</p>
+          ) : (
+            <ChartContainer config={scatterConfig} className="aspect-auto w-full" style={{ height: 380 }}>
+              <ScatterChart margin={{ top: 12, right: 24, left: 4, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  type="number"
+                  dataKey="x"
+                  name="Revenue"
+                  scale="log"
+                  domain={scatter.domain}
+                  ticks={scatter.ticks}
+                  allowDataOverflow
+                  tickFormatter={(v) => logTick(Number(v))}
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                  height={40}
+                  label={{ value: "Gross revenue →", position: "insideBottom", offset: -4, fontSize: 12 }}
+                />
+                <YAxis
+                  type="number"
+                  dataKey="y"
+                  name="Team cost"
+                  scale="log"
+                  domain={scatter.domain}
+                  ticks={scatter.ticks}
+                  allowDataOverflow
+                  tickFormatter={(v) => logTick(Number(v))}
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={64}
+                  label={{ value: "Team cost →", angle: -90, position: "insideLeft", offset: 6, fontSize: 12 }}
+                />
+                <ZAxis type="number" dataKey="z" range={[30, 600]} />
+                <ReferenceLine
+                  segment={[
+                    { x: scatter.domain[0], y: scatter.domain[0] },
+                    { x: scatter.domain[1], y: scatter.domain[1] },
+                  ]}
+                  stroke={PLUS.red}
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  ifOverflow="hidden"
+                  label={{ value: "Break-even: cost = revenue", position: "insideTopLeft", fontSize: 12, fontWeight: 700, fill: PLUS.red }}
+                />
+                <ReferenceLine
+                  segment={[
+                    { x: scatter.domain[0], y: scatter.domain[0] * 0.5 },
+                    { x: scatter.domain[1], y: scatter.domain[1] * 0.5 },
+                  ]}
+                  stroke="#94a3b8"
+                  strokeDasharray="2 4"
+                  ifOverflow="hidden"
+                  label={{ value: "50% margin", position: "insideBottomRight", fontSize: 11, fill: "#64748b" }}
+                />
+                <ChartTooltip
+                  cursor={{ strokeDasharray: "3 3" }}
+                  content={({ active, payload }) => {
+                    const p = active && payload?.[0]?.payload;
+                    if (!p) return null;
+                    return (
+                      <div className="border border-gray-200 bg-white px-3 py-2 text-xs shadow-xl">
+                        <div className="mb-1 max-w-[260px] truncate font-semibold text-gray-900">{p.name}</div>
+                        <div className="tabular-nums text-gray-600">Revenue {money(p.x)}</div>
+                        <div className="tabular-nums text-gray-600">Team cost {money(p.y)}</div>
+                        <div className={`font-semibold tabular-nums ${p.margin < 0 ? "text-red-700" : "text-gray-900"}`}>
+                          Kept {money(p.margin)} · {pct(p.marginPct)}
+                        </div>
+                        <div className="tabular-nums text-gray-500">{hours(p.z)} h · click for detail</div>
+                      </div>
+                    );
+                  }}
+                />
+                <ChartLegend content={<ChartLegendContent />} />
+                {(["ok", "over", "loss"] as const).map((k) => (
+                  <Scatter
+                    key={k}
+                    name={scatterConfig[k].label as string}
+                    data={scatter[k]}
+                    fill={`var(--color-${k})`}
+                    fillOpacity={0.8}
+                    stroke={k === "over" ? "#b38600" : "#ffffff"}
+                    strokeWidth={1}
+                    isAnimationActive={false}
+                    onClick={(d: { payload?: { row: ProfitRow } }) => d?.payload?.row && setSelected(d.payload.row)}
+                    className="cursor-pointer"
+                  >
+                    <LabelList dataKey="label" position="right" fill="#111827" fontSize={11} fontWeight={600} />
+                  </Scatter>
+                ))}
+              </ScatterChart>
+            </ChartContainer>
+          )}
+        </Card>
+
+        <Card className="gap-0 p-5">
+          <SectionTitle
+            icon={ListChecks}
+            title="Needs review"
+            subtitle={
+              flagged.length === 0
+                ? "Every account with real activity earns more than it costs"
+                : `${flagged.length} account${flagged.length === 1 ? "" : "s"}, biggest shortfall first${
+                    flaggedLoss < 0 ? ` · ${negCompact(flaggedLoss)} in total` : ""
+                  }`
+            }
+          />
+          {flagged.length === 0 ? (
+            <p className="py-10 text-center text-sm text-gray-500">Nothing to review in this period.</p>
+          ) : (
+            <ul className="-mx-2 max-h-[380px] divide-y divide-gray-100 overflow-y-auto">
+              {flagged.map((r) => (
+                <li key={r.client.index}>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(r)}
+                    className="flex w-full items-center justify-between gap-3 px-2 py-2 text-left hover:bg-gray-50"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-gray-900" title={r.client.name}>
+                        {r.client.name}
+                      </span>
+                      <span className="block text-xs tabular-nums text-gray-500">
+                        {money(r.revenue)} billed · {hours(r.hours)} h
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <StatusChip row={r} to={to} />
+                      <span className={`mt-0.5 block text-sm font-semibold tabular-nums ${r.margin! < 0 ? "text-red-700" : "text-gray-700"}`}>
+                        {money(r.margin)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      {/* 4 · Why they need review — every group open, side by side */}
+      <Card className="gap-0 p-5">
+        <SectionTitle
+          icon={MessageCircle}
+          title="Why they need review"
+          subtitle={
+            flagged.length === 0
+              ? "Every account with real activity earns more than it costs"
+              : `${flagged.length} account${flagged.length === 1 ? "" : "s"}, the same accounts grouped by the likely reason, biggest impact first${
+                  flaggedLoss < 0 && totals.margin > 0
+                    ? ` · ${negCompact(flaggedLoss)} in total, ${pct(-flaggedLoss / totals.margin, 1)} of what we kept`
+                    : ""
+                }`
+          }
+        />
+        {groups.length === 0 ? (
+          <p className="py-10 text-center text-sm text-gray-500">Nothing to review in this period.</p>
+        ) : (
+          <div className="columns-1 gap-4 md:columns-2 2xl:columns-3">
+            {groups.map((g) => (
+              <ReasonBlock key={g.id} group={g} onOpen={setSelected} />
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* 5 · Trend + where the margin comes from */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Card className="gap-0 p-5 xl:col-span-2">
           <SectionTitle
@@ -658,11 +925,25 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
               <ChartLegend content={<ChartLegendContent />} />
               <Bar dataKey="cost" stackId="rev" fill="var(--color-cost)" maxBarSize={72} isAnimationActive={false}>
                 <LabelList dataKey="cost" position="center" fill="#ffffff" fontSize={11} formatter={(v: unknown) => compactLabel(v)} />
-                <LabelList dataKey="pctOnCost" position="top" fill="#b91c1c" fontSize={12} fontWeight={700} formatter={(v: unknown) => (typeof v === "number" ? `${v < 0 ? "−" : ""}${Math.abs(v)}%` : "")} />
+                <LabelList
+                  dataKey="pctOnCost"
+                  position="top"
+                  fill="#b91c1c"
+                  fontSize={12}
+                  fontWeight={700}
+                  formatter={(v: unknown) => (typeof v === "number" ? `${v < 0 ? "−" : ""}${Math.abs(v)}%` : "")}
+                />
               </Bar>
               <Bar dataKey="kept" stackId="rev" fill="var(--color-kept)" maxBarSize={72} isAnimationActive={false}>
                 <LabelList dataKey="kept" position="center" fill="#ffffff" fontSize={11} formatter={(v: unknown) => compactLabel(v)} />
-                <LabelList dataKey="pctOnKept" position="top" fill="#111827" fontSize={12} fontWeight={700} formatter={(v: unknown) => (typeof v === "number" ? `${v < 0 ? "−" : ""}${Math.abs(v)}%` : "")} />
+                <LabelList
+                  dataKey="pctOnKept"
+                  position="top"
+                  fill="#111827"
+                  fontSize={12}
+                  fontWeight={700}
+                  formatter={(v: unknown) => (typeof v === "number" ? `${v < 0 ? "−" : ""}${Math.abs(v)}%` : "")}
+                />
               </Bar>
             </BarChart>
           </ChartContainer>
@@ -673,7 +954,9 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
             icon={Trophy}
             title="Where the margin comes from"
             subtitle={
-              topShare !== null ? `These ${top.length} accounts deliver ${pct(topShare, 0)} of what we kept` : "Accounts that keep the most after team cost"
+              topShare !== null
+                ? `These ${top.length} accounts deliver ${pct(topShare, 0)} of what we kept`
+                : "Accounts that keep the most after team cost"
             }
           />
           {top.length === 0 ? (
@@ -706,31 +989,7 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
         </Card>
       </div>
 
-      {/* 4 · Needs review — every group open, side by side */}
-      <Card className="gap-0 p-5">
-        <SectionTitle
-          icon={MessageCircle}
-          title="Needs review"
-          subtitle={
-            flagged.length === 0
-              ? "Every account with real activity earns more than it costs"
-              : `${flagged.length} account${flagged.length === 1 ? "" : "s"}, grouped by the likely reason, biggest impact first${
-                  flaggedLoss < 0 && totals.margin > 0 ? ` · ${negCompact(flaggedLoss)} in total, ${pct(-flaggedLoss / totals.margin, 1)} of what we kept` : ""
-                }`
-          }
-        />
-        {groups.length === 0 ? (
-          <p className="py-10 text-center text-sm text-gray-500">Nothing to review in this period.</p>
-        ) : (
-          <div className="columns-1 gap-4 md:columns-2 2xl:columns-3">
-            {groups.map((g) => (
-              <ReasonBlock key={g.id} group={g} onOpen={setSelected} />
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* 5 · Detail on demand */}
+      {/* 6 · Detail on demand */}
       <Disclosure title="All accounts" subtitle={`${matched.length} accounts · search, sort and export to Google Sheets`} icon={Table2} defaultOpen>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <Segmented
