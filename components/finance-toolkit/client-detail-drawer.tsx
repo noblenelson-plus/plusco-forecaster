@@ -12,7 +12,8 @@ import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts"
 import { X } from "lucide-react";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "../ui/chart";
 import { PLUS } from "../dashboard/charts/colors";
-import { clientDetail, monthLabel, periodLabel, type ProfitRow } from "../../lib/finance-toolkit/model";
+import { MODEL, accountTotals, clientDetail, monthLabel, periodLabel, type ProfitRow } from "../../lib/finance-toolkit/model";
+import { accountsOf, forecasterClientsOf, spendBetween } from "../../lib/finance-toolkit/staffing";
 import type { CostBasis } from "../../lib/finance-toolkit/finance-toolkit.types";
 import type { ReasonDef } from "../../lib/finance-toolkit/insights";
 import { COVERAGE_NOTE_BELOW, Chip } from "./ft-ui";
@@ -62,7 +63,11 @@ export default function ClientDetailDrawer({
 
   const figures: { label: string; value: string; sub?: string }[] = [
     { label: "Gross revenue", value: row.revenue === null ? "No revenue match" : money(row.revenue) },
-    { label: "Staffing cost", value: row.cost === null ? "No hours" : money(row.cost), sub: row.costPerHour === null ? undefined : `${rate(row.costPerHour)} / hour` },
+    {
+      label: "Staffing cost",
+      value: row.cost === null ? "No hours" : money(row.cost),
+      sub: row.costPerHour === null ? undefined : `${rate(row.costPerHour)} / hour`,
+    },
     { label: "Gross margin", value: row.margin === null ? "—" : money(row.margin), sub: row.marginPct === null ? undefined : pct(row.marginPct) },
     { label: "Client hours", value: hours(row.hours), sub: `${row.people} people · peak ${peakPeople} in a month` },
   ];
@@ -78,7 +83,9 @@ export default function ClientDetailDrawer({
                 {row.client.agencyName} · Client #{row.client.number}
               </div>
               <h2 className="mt-1 text-lg font-bold leading-tight">{row.client.name}</h2>
-              <div className="mt-1 text-xs text-gray-300">{periodLabel(from, to)} · amounts in {currency}</div>
+              <div className="mt-1 text-xs text-gray-300">
+                {periodLabel(from, to)} · amounts in {currency}
+              </div>
             </div>
             <button type="button" onClick={onClose} aria-label="Close" className="p-1 text-gray-300 hover:text-white">
               <X size={18} />
@@ -112,14 +119,31 @@ export default function ClientDetailDrawer({
             ))}
           </div>
 
+          <MediaManaged row={row} from={from} to={to} />
+
           <section>
             <h3 className="mb-2 text-sm font-semibold text-gray-900">Revenue vs staffing cost by month</h3>
             <ChartContainer config={config} className="aspect-auto w-full" style={{ height: 240 }}>
               <ComposedChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="money" tickFormatter={(v) => formatCompactMoney(Number(v))} tickLine={false} axisLine={false} width={52} tick={{ fontSize: 11 }} />
-                <YAxis yAxisId="pct" orientation="right" tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} width={40} tick={{ fontSize: 11 }} />
+                <YAxis
+                  yAxisId="money"
+                  tickFormatter={(v) => formatCompactMoney(Number(v))}
+                  tickLine={false}
+                  axisLine={false}
+                  width={52}
+                  tick={{ fontSize: 11 }}
+                />
+                <YAxis
+                  yAxisId="pct"
+                  orientation="right"
+                  tickFormatter={(v) => `${v}%`}
+                  tickLine={false}
+                  axisLine={false}
+                  width={40}
+                  tick={{ fontSize: 11 }}
+                />
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
@@ -135,7 +159,15 @@ export default function ClientDetailDrawer({
                 <ChartLegend content={<ChartLegendContent />} />
                 <Bar yAxisId="money" dataKey="revenue" fill="var(--color-revenue)" isAnimationActive={false} />
                 <Bar yAxisId="money" dataKey="cost" fill="var(--color-cost)" isAnimationActive={false} />
-                <Line yAxisId="pct" dataKey="margin" stroke="var(--color-margin)" strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
+                <Line
+                  yAxisId="pct"
+                  dataKey="margin"
+                  stroke="var(--color-margin)"
+                  strokeWidth={2}
+                  dot={{ r: 2.5 }}
+                  connectNulls
+                  isAnimationActive={false}
+                />
               </ComposedChart>
             </ChartContainer>
           </section>
@@ -195,5 +227,55 @@ export default function ClientDetailDrawer({
         </div>
       </aside>
     </div>
+  );
+}
+
+/**
+ * Media managed for the account's Forecaster client: MediaOcean spend over the
+ * same months, set against the revenue and client hours of all that client's
+ * accounts in the same currency. Shown at client level because most large
+ * clients have an account in more than one agency, so a per-account spend
+ * figure would double-count.
+ */
+function MediaManaged({ row, from, to }: { row: ProfitRow; from: number; to: number }) {
+  const owners = forecasterClientsOf(row.client.index);
+  if (owners.length === 0) return null;
+  const client = owners[0];
+  const accounts = accountsOf(client).filter((i) => MODEL.clients[i].currency === row.client.currency);
+  const spend = spendBetween(client, from, to);
+  const { revenue, hours: hrs } = accountTotals(accounts, from, to);
+  const sameCurrency = row.client.currency === "CAD";
+  const agencies = [...new Set(accounts.map((i) => MODEL.clients[i].agencyName))];
+  const figures: { label: string; value: string; sub?: string }[] = [
+    { label: "Media spend (CAD)", value: spend ? money(spend) : "—", sub: "MediaOcean, net ordered" },
+    {
+      label: "Revenue as % of spend",
+      value: sameCurrency && spend > 0 ? pct(revenue / spend, 1) : "—",
+      sub: sameCurrency ? `${money(revenue)} of gross revenue` : "Revenue in USD, spend in CAD: not compared",
+    },
+    { label: "Hours per $1M of media", value: spend > 0 ? hours(hrs / (spend / 1e6)) : "—", sub: `${hours(hrs)} client hours` },
+  ];
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-gray-900">Media managed for {client.name}</h3>
+      <p className="mb-2 text-xs text-gray-500">
+        Forecaster client, {periodLabel(from, to)} · all its {row.client.currency} accounts
+        {agencies.length > 1 ? ` (${agencies.join(" and ")})` : ""}
+        {owners.length > 1 ? ` · this account is also listed on ${owners.length - 1} other Forecaster client${owners.length > 2 ? "s" : ""}` : ""}
+      </p>
+      {spend === 0 ? (
+        <p className="text-sm text-gray-500">No MediaOcean spend for this client in this period.</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-px border border-gray-200 bg-gray-200">
+          {figures.map((f) => (
+            <div key={f.label} className="bg-white px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{f.label}</div>
+              <div className="mt-1 text-lg font-bold tabular-nums text-gray-900">{f.value}</div>
+              {f.sub && <div className="text-[11px] text-gray-500">{f.sub}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

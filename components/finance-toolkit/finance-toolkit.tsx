@@ -23,6 +23,7 @@ import { Field, InfoTip, Segmented } from "./ft-ui";
 import HoursPortalTab from "./hours-portal-tab";
 import ProfitabilityTab from "./profitability-tab";
 import StaffingTab from "./staffing-tab";
+import InvestmentCalculator from "./investment-calculator";
 import TargetsCalculatorTab from "./targets-calculator-tab";
 
 type TabId = "hours" | "profitability" | "staffing" | "calculator";
@@ -60,8 +61,8 @@ const GUIDE: { id: TabId; icon: typeof PieChart; title: string; question: string
     id: "calculator",
     icon: Calculator,
     title: "New Business Calculator",
-    question: "If we win an account worth $X a year, what team does it need and what margin will we make?",
-    how: "Answer three questions: agency, how much the client will pay a year, and which current clients it is most like. Then move the sliders to test a what-if.",
+    question: "If we win an account, what team does it need, and what margin will we make?",
+    how: "Start from the client fee (agency, fee, similar clients, then what-if sliders) or from the media investment (investment, digital share, campaigns): either way the team comes from what similar current clients actually use.",
   },
 ];
 
@@ -77,6 +78,7 @@ export default function FinanceToolkit() {
   const [scopeId, setScopeId] = useState(SCOPES[0].id);
   const [basis, setBasis] = useState<CostBasis>("base1");
   const [showGuide, setShowGuide] = useState(false);
+  const [calcMode, setCalcMode] = useState<"revenue" | "investment">("revenue");
   const scope: Scope = SCOPES.find((s) => s.id === scopeId)!;
 
   // Forecaster clients → BU-region / GM pod for each Maconomy account (GAIA number).
@@ -96,16 +98,18 @@ export default function FinanceToolkit() {
   const [clientSel, setClientSel] = useState<string[]>([]);
   const [regionSel, setRegionSel] = useState<string[]>([]);
   const [gmSel, setGmSel] = useState<string[]>([]);
+  // Staffing has its own agency switch and counts every agency, so its client list does too.
+  const allAgencies = tab === "staffing";
   const accounts = useMemo(
-    () => MODEL.clients.filter((c) => !c.internal && inScope(scope, c) && (c.firstMonth >= 0 || c.match === "revenue-only")),
-    [scope],
+    () => MODEL.clients.filter((c) => !c.internal && (allAgencies || inScope(scope, c)) && (c.firstMonth >= 0 || c.match === "revenue-only")),
+    [scope, allAgencies],
   );
   const clientOptions = useMemo(
     () =>
       accounts
-        .map((c) => ({ value: String(c.index), label: `${c.name}${scope.agencyIds.length > 1 ? ` · ${c.agencyName}` : ""}` }))
+        .map((c) => ({ value: String(c.index), label: `${c.name}${allAgencies || scope.agencyIds.length > 1 ? ` · ${c.agencyName}` : ""}` }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [accounts, scope],
+    [accounts, scope, allAgencies],
   );
   const regionOptions = [
     ...CLIENT_REGIONS.map((r) => ({ value: r.value as string, label: r.label as string })),
@@ -235,7 +239,27 @@ export default function FinanceToolkit() {
       {tab === "hours" && <HoursPortalTab scope={scope} basis={basis} clientFilter={clientFilter} />}
       {tab === "profitability" && <ProfitabilityTab scope={scope} basis={basis} clientFilter={clientFilter} />}
       {tab === "staffing" && <StaffingTab picked={pickedAccounts} regions={regionSel} gms={gmSel} />}
-      {tab === "calculator" && <TargetsCalculatorTab basis={basis} initialAgency={scope.agencyIds.length === 1 ? scope.agencyIds[0] : "cossette"} />}
+      {tab === "calculator" && (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Start from</span>
+            <Segmented
+              ariaLabel="Start from"
+              value={calcMode}
+              onChange={setCalcMode}
+              options={[
+                { id: "revenue", label: "The client fee (revenue)" },
+                { id: "investment", label: "The media investment" },
+              ]}
+            />
+          </div>
+          {calcMode === "revenue" ? (
+            <TargetsCalculatorTab basis={basis} initialAgency={scope.agencyIds.length === 1 ? scope.agencyIds[0] : "cossette"} />
+          ) : (
+            <InvestmentCalculator />
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
         <p className="max-w-3xl text-xs text-gray-500">
