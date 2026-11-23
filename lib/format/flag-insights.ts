@@ -35,7 +35,8 @@ export const FLAG_CATEGORIES: { id: FlagCategoryId; label: string }[] = [
 
 export type FlagTypeId =
   | "labs_error"
-  | "under_forecasting"
+  | "under_forecasting_media"
+  | "under_forecasting_labs"
   | "swing_revenue"
   | "swing_media"
   | "swing_labs"
@@ -50,6 +51,8 @@ export interface FlagTypeDef {
   threshold: string;
   /** How to read the $ (what "up" and "down" mean for this type). */
   amountNote: string;
+  /** Media / Labs types: what the per-"On" breakdown lists (media types or partners). */
+  breakdown?: "Media type" | "Partner";
 }
 
 const k = (n: number) => `$${Math.round(n / 1000)}K`;
@@ -63,11 +66,20 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     amountNote: "Labs above media",
   },
   {
-    id: "under_forecasting",
+    id: "under_forecasting_media",
     category: "forecast_qa",
-    label: "Under-forecasting",
-    threshold: `MediaOcean bookings ${k(BL_MEDIAOCEAN_THRESHOLD)}+ above the BL forecast (full year), per media type / Labs partner`,
+    label: "Under-forecasting — Media",
+    threshold: `MediaOcean bookings ${k(BL_MEDIAOCEAN_THRESHOLD)}+ above the BL forecast (full year), per media type`,
     amountNote: "Booked above forecast",
+    breakdown: "Media type",
+  },
+  {
+    id: "under_forecasting_labs",
+    category: "forecast_qa",
+    label: "Under-forecasting — Labs",
+    threshold: `MediaOcean bookings ${k(BL_MEDIAOCEAN_THRESHOLD)}+ above the BL forecast (full year), per Labs partner`,
+    amountNote: "Booked above forecast",
+    breakdown: "Partner",
   },
   {
     id: "swing_revenue",
@@ -82,6 +94,7 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     label: "RFQ swing — Media",
     threshold: `Annual media ±${k(MEDIA_LABS_SWING_THRESHOLD)} vs the previous RFQ, per media type`,
     amountNote: "vs previous RFQ",
+    breakdown: "Media type",
   },
   {
     id: "swing_labs",
@@ -89,6 +102,7 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     label: "RFQ swing — Labs",
     threshold: `Annual Labs ±${k(MEDIA_LABS_SWING_THRESHOLD)} vs the previous RFQ, per partner`,
     amountNote: "vs previous RFQ",
+    breakdown: "Partner",
   },
   {
     id: "pacing_labs",
@@ -96,6 +110,7 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     label: "Labs pacing YTD",
     threshold: `Booked ${Math.round(UNDER_TARGET_RELATIVE * 100)}% or ${k(UNDER_TARGET_ABSOLUTE)}+ under the forecast over the milestone's months, per partner`,
     amountNote: "Booked vs forecast",
+    breakdown: "Partner",
   },
   {
     id: "pacing_media",
@@ -103,8 +118,14 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     label: "Media pacing YTD",
     threshold: `Booked ${Math.round(UNDER_TARGET_RELATIVE * 100)}% or ${k(UNDER_TARGET_ABSOLUTE)}+ under the forecast over the milestone's months, per media type`,
     amountNote: "Booked vs forecast",
+    breakdown: "Media type",
   },
 ];
+
+/** Flag type ids before Under-forecasting was split into Media / Labs (old links). */
+export const LEGACY_FLAG_TYPE_IDS: Record<string, FlagTypeId[]> = {
+  under_forecasting: ["under_forecasting_media", "under_forecasting_labs"],
+};
 
 /**
  * Every persisted flag rule → its report flag type. A Record over FlagRuleId,
@@ -113,8 +134,8 @@ export const FLAG_TYPES: FlagTypeDef[] = [
  */
 export const FLAG_TYPE_BY_RULE: Record<FlagRuleId, FlagTypeId> = {
   "labs-over-media": "labs_error",
-  "mediaocean-over-media": "under_forecasting",
-  "mediaocean-over-labs": "under_forecasting",
+  "mediaocean-over-media": "under_forecasting_media",
+  "mediaocean-over-labs": "under_forecasting_labs",
   "revenue-swing": "swing_revenue",
   "media-swing": "swing_media",
   "labs-swing": "swing_labs",
@@ -128,6 +149,60 @@ const TYPE_BY_ID = new Map<FlagTypeId, FlagTypeDef>(FLAG_TYPES.map((t) => [t.id,
 export function flagTypeOf(flag: Pick<StoredFlag, "ruleId">): FlagTypeDef | undefined {
   const id = FLAG_TYPE_BY_RULE[flag.ruleId];
   return id ? TYPE_BY_ID.get(id) : undefined;
+}
+
+const LABS_RULES = new Set<FlagRuleId>(["mediaocean-over-labs", "labs-swing", "labs-under-target"]);
+
+/**
+ * What a flag is "on" — its media type, Labs partner, or annual revenue (the
+ * "On" column of Flags by client). Labs partner titles drop their media type
+ * ("Yahoo (Programmatic)" → "Yahoo"); flags stored before the per-media-type
+ * split ("annual") read "Full year".
+ */
+export function flagOnLabel(flag: Pick<StoredFlag, "ruleId" | "subject" | "title">): string {
+  if (flag.ruleId === "revenue-swing") return "Annual revenue";
+  if (flag.subject === "annual") return "Full year";
+  if (LABS_RULES.has(flag.ruleId)) return flag.title.replace(/\s*\([^)]*\)\s*$/, "");
+  return flag.title;
+}
+
+type OnKind = "Media type" | "Partner" | "Revenue";
+
+function onKindOf(flag: Pick<StoredFlag, "ruleId" | "axis">): OnKind {
+  if (flag.ruleId === "revenue-swing" || flag.axis === "revenue") return "Revenue";
+  return LABS_RULES.has(flag.ruleId) ? "Partner" : "Media type";
+}
+
+/** Stable key of a flag's "On" value — what the On filter selects. */
+export function flagOnKey(flag: Pick<StoredFlag, "ruleId" | "subject" | "title" | "axis">): string {
+  return `${onKindOf(flag)}:${flagOnLabel(flag)}`;
+}
+
+/**
+ * The "On" filter options: every media type, partner and revenue line flagged
+ * among the given clients (limited to `types`), media types first, then
+ * partners, then revenue — each labelled with its kind.
+ */
+export function computeOnOptions(
+  clients: { flags: StoredFlag[] }[],
+  types: FlagTypeId[]
+): { value: string; label: string }[] {
+  const wanted = new Set(types);
+  const seen = new Map<string, { kind: OnKind; name: string }>();
+  for (const c of clients) {
+    for (const f of c.flags) {
+      const t = flagTypeOf(f);
+      if (!t || !wanted.has(t.id)) continue;
+      const key = flagOnKey(f);
+      if (!seen.has(key)) seen.set(key, { kind: onKindOf(f), name: flagOnLabel(f) });
+    }
+  }
+  const kindOrder: Record<OnKind, number> = { "Media type": 0, Partner: 1, Revenue: 2 };
+  return [...seen.entries()]
+    .sort(
+      ([, a], [, b]) => kindOrder[a.kind] - kindOrder[b.kind] || a.name.localeCompare(b.name)
+    )
+    .map(([value, { kind, name }]) => ({ value, label: `${kind}: ${name}` }));
 }
 
 /** One client's flags for the checkpoint's RFQ, with what grouping needs. */
@@ -165,14 +240,10 @@ export interface ContextShare {
   flags: number;
 }
 
-export interface FlagTypeStats {
-  type: FlagTypeDef;
-  /** Group label ("Total PlusCo" when not grouped). */
-  group: string;
+/** The numbers of one row: a flag type, or one media type / partner under it. */
+export interface FlagRowStats {
   flags: number;
   clients: number;
-  /** Clients in scope in this group (flagged or not) — the base for "% of clients". */
-  groupClients: number;
   /** Sum of positive deltas, CAD. */
   up: number;
   /** Sum of negative deltas, CAD (≤ 0). */
@@ -181,6 +252,72 @@ export interface FlagTypeStats {
   justified: number;
   /** Justification mix, most used first; unjustified flags last. */
   contexts: ContextShare[];
+}
+
+/** One media type / partner under a Media or Labs flag type row. */
+export interface FlagOnStats extends FlagRowStats {
+  /** Media type or partner name. */
+  label: string;
+}
+
+export interface FlagTypeStats extends FlagRowStats {
+  type: FlagTypeDef;
+  /** Group label ("Total PlusCo" when not grouped). */
+  group: string;
+  /** Clients in scope in this group (flagged or not) — the base for "% of clients". */
+  groupClients: number;
+  /** Media / Labs types: the same numbers per media type or partner, largest net gap first. */
+  byOn: FlagOnStats[];
+}
+
+/** Running totals of one row while flags are added. */
+interface RowAcc {
+  flags: number;
+  clientSet: Set<string>;
+  up: number;
+  down: number;
+  net: number;
+  justified: number;
+  ctx: Map<string, number>;
+}
+
+const newRowAcc = (): RowAcc => ({ flags: 0, clientSet: new Set(), up: 0, down: 0, net: 0, justified: 0, ctx: new Map() });
+
+function addToRow(r: RowAcc, clientId: string, delta: number, ctx: string) {
+  r.flags += 1;
+  r.clientSet.add(clientId);
+  if (delta >= 0) r.up += delta;
+  else r.down += delta;
+  r.net += delta;
+  if (ctx !== "NOT_JUSTIFIED") r.justified += 1;
+  r.ctx.set(ctx, (r.ctx.get(ctx) ?? 0) + 1);
+}
+
+const contextLabel = (context: string) =>
+  context === "NOT_JUSTIFIED"
+    ? "Not justified"
+    : FLAG_CONTEXTS.find((x) => x.value === context)?.label ?? context;
+
+function finishRow(r: RowAcc): FlagRowStats {
+  return {
+    flags: r.flags,
+    clients: r.clientSet.size,
+    up: r.up,
+    down: r.down,
+    net: r.net,
+    justified: r.justified,
+    contexts: [...r.ctx.entries()]
+      .map(([context, flags]) => ({
+        context: context as ContextShare["context"],
+        label: contextLabel(context),
+        flags,
+      }))
+      .sort(
+        (a, b) =>
+          Number(a.context === "NOT_JUSTIFIED") - Number(b.context === "NOT_JUSTIFIED") ||
+          b.flags - a.flags
+      ),
+  };
 }
 
 function groupOf(c: ClientFlags, by: GroupBy): string {
@@ -206,7 +343,10 @@ export function computeFlagInsights(
     const g = groupOf(c, by);
     groupSize.set(g, (groupSize.get(g) ?? 0) + 1);
   }
-  const acc = new Map<string, FlagTypeStats & { clientSet: Set<string>; ctx: Map<string, number> }>();
+  const acc = new Map<
+    string,
+    { type: FlagTypeDef; group: string; row: RowAcc; byOn: Map<string, RowAcc> }
+  >();
 
   for (const c of clients) {
     const group = groupOf(c, by);
@@ -216,40 +356,34 @@ export function computeFlagInsights(
       const key = `${group}\u0000${type.id}`;
       let s = acc.get(key);
       if (!s) {
-        s = { type, group, flags: 0, clients: 0, groupClients: groupSize.get(group) ?? 0, up: 0, down: 0, net: 0, justified: 0, contexts: [], clientSet: new Set(), ctx: new Map() };
+        s = { type, group, row: newRowAcc(), byOn: new Map() };
         acc.set(key, s);
       }
       const d = (f.delta ?? 0) * c.toCad;
-      s.flags += 1;
-      s.clientSet.add(c.clientId);
-      if (d >= 0) s.up += d;
-      else s.down += d;
-      s.net += d;
       const ctx = f.justified && f.context ? f.context : "NOT_JUSTIFIED";
-      if (ctx !== "NOT_JUSTIFIED") s.justified += 1;
-      s.ctx.set(ctx, (s.ctx.get(ctx) ?? 0) + 1);
+      addToRow(s.row, c.clientId, d, ctx);
+      if (type.breakdown) {
+        const on = flagOnLabel(f);
+        let o = s.byOn.get(on);
+        if (!o) {
+          o = newRowAcc();
+          s.byOn.set(on, o);
+        }
+        addToRow(o, c.clientId, d, ctx);
+      }
     }
   }
 
   const typeOrder = new Map(FLAG_TYPES.map((t, i) => [t.id, i]));
   return [...acc.values()]
-    .map(({ clientSet, ctx, ...s }) => ({
-      ...s,
-      clients: clientSet.size,
-      contexts: [...ctx.entries()]
-        .map(([context, flags]) => ({
-          context: context as ContextShare["context"],
-          label:
-            context === "NOT_JUSTIFIED"
-              ? "Not justified"
-              : FLAG_CONTEXTS.find((x) => x.value === context)?.label ?? context,
-          flags,
-        }))
-        .sort(
-          (a, b) =>
-            Number(a.context === "NOT_JUSTIFIED") - Number(b.context === "NOT_JUSTIFIED") ||
-            b.flags - a.flags
-        ),
+    .map((s) => ({
+      type: s.type,
+      group: s.group,
+      groupClients: groupSize.get(s.group) ?? 0,
+      ...finishRow(s.row),
+      byOn: [...s.byOn.entries()]
+        .map(([label, o]) => ({ label, ...finishRow(o) }))
+        .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || a.label.localeCompare(b.label)),
     }))
     .sort(
       (a, b) =>
@@ -312,10 +446,7 @@ export function computeContextSummary(clients: ClientFlags[], types: FlagTypeId[
   const rows = [...flagsBy.entries()]
     .map(([context, flags]) => ({
       context: context as ContextShare["context"],
-      label:
-        context === "NOT_JUSTIFIED"
-          ? "Not justified"
-          : FLAG_CONTEXTS.find((x) => x.value === context)?.label ?? context,
+      label: contextLabel(context),
       flags,
       clients: clientsBy.get(context)?.size ?? 0,
     }))

@@ -4,19 +4,21 @@
 /**
  * Milestones page — Section 1, "Milestone tracking": for the selected
  * checkpoint, the status totals, the breakdown by GM Pod (count per status +
- * a stacked bar) and the list of clients left to validate.
+ * a stacked bar) and "Milestones by client", the clients with their status.
  *
  * The totals and the GM breakdown always show every status (they ARE the
- * distribution); the status chips of the filter bar narrow the list and the
- * table below. Presentational — the page passes the rows in.
+ * distribution). Milestones by client has its own multi-select status chips
+ * (Validated / Flags to justify / Not validated); it opens on the clients left
+ * to validate. Presentational — the page passes the rows and the status
+ * selection in.
  */
 
 import { useMemo } from "react";
-import { Info } from "lucide-react";
+import { Check, Info } from "lucide-react";
 import type { ConfirmationStep } from "../../lib/constants/confirmation-steps";
 import {
   breakdownByGm,
-  clientsLeftToValidate,
+  clientsByStatus,
   countStatuses,
   MILESTONE_STATUS_ORDER,
   pct,
@@ -32,6 +34,7 @@ export default function MilestoneTrackingSummary({
   rows,
   checkpoint,
   statuses,
+  onStatusesChange,
   scopeNote,
   year,
 }: {
@@ -41,24 +44,25 @@ export default function MilestoneTrackingSummary({
   /** Active, facet-filtered clients (before the status filter). */
   rows: MilestoneClientRow[];
   checkpoint: ConfirmationStep;
-  /** Status chips selected in the filter bar (empty = all). */
+  /** Status chips of Milestones by client (empty = every client). */
   statuses: RfqValidationStatus[];
+  onStatusesChange: (s: RfqValidationStatus[]) => void;
 }) {
   const totals = useMemo(() => countStatuses(rows, checkpoint.id), [rows, checkpoint.id]);
   const byGm = useMemo(() => breakdownByGm(rows, checkpoint.id), [rows, checkpoint.id]);
-  const left = useMemo(() => {
-    const list = clientsLeftToValidate(rows, checkpoint.id);
-    return statuses.length === 0
-      ? list
-      : list.filter((r) => statuses.includes(statusAt(r, checkpoint.id)));
-  }, [rows, checkpoint.id, statuses]);
+  const listed = useMemo(
+    () => clientsByStatus(rows, checkpoint.id, statuses),
+    [rows, checkpoint.id, statuses]
+  );
+  const toggleStatus = (s: RfqValidationStatus) =>
+    onStatusesChange(statuses.includes(s) ? statuses.filter((x) => x !== s) : [...statuses, s]);
 
   // Google Sheets export of the list: scope line, blank row, table.
-  const buildLeftSheet = (): CellValue[][] => [
+  const buildListSheet = (): CellValue[][] => [
     [`${scopeNote} · ${checkpoint.label}`],
     [],
     ["Client", "GM", "Business Lead", "Status"],
-    ...left.map((r) => [r.clientName, r.gm, r.bl, STATUS_META[statusAt(r, checkpoint.id)].label]),
+    ...listed.map((r) => [r.clientName, r.gm, r.bl, STATUS_META[statusAt(r, checkpoint.id)].label]),
   ];
 
   return (
@@ -143,23 +147,55 @@ export default function MilestoneTrackingSummary({
           )}
         </div>
 
-        {/* Clients left to validate */}
+        {/* Milestones by client — status chips (multi-select), default = left to validate. */}
         <div className="border border-gray-200 bg-white">
-          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-2.5">
             <h3 className="text-sm font-semibold text-gray-900">
-              Clients left to validate
-              <span className="ml-2 text-xs font-normal text-gray-500 tabular-nums">{left.length}</span>
+              Milestones by client
+              <span className="ml-2 text-xs font-normal text-gray-500 tabular-nums">{listed.length}</span>
             </h3>
             <SheetExportButton
-              title={`Clients left to validate — ${checkpoint.label}${year ? ` ${year}` : ""}`}
-              sheetTitle="Clients left"
-              buildMatrix={buildLeftSheet}
-              disabled={left.length === 0}
+              title={`Milestones by client — ${checkpoint.label}${year ? ` ${year}` : ""}`}
+              sheetTitle="Milestones by client"
+              buildMatrix={buildListSheet}
+              disabled={listed.length === 0}
             />
           </div>
-          {left.length === 0 ? (
+          <div
+            className="flex flex-wrap items-center gap-1.5 border-b border-gray-100 px-4 py-2"
+            role="group"
+            aria-label="Show clients with status"
+          >
+            <span className="text-xs font-medium text-gray-600">Show</span>
+            {MILESTONE_STATUS_ORDER.map((s) => {
+              const on = statuses.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleStatus(s)}
+                  className={`flex items-center gap-1.5 border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    on
+                      ? `${STATUS_META[s].chip} border-gray-900 font-semibold`
+                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {on && <Check size={12} />}
+                  {STATUS_META[s].label}
+                  <span className="tabular-nums opacity-80">{totals[s]}</span>
+                </button>
+              );
+            })}
+            {statuses.length === 0 && <span className="text-[11px] text-gray-400">All clients</span>}
+          </div>
+          {listed.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-gray-400">
-              {totals.total === 0 ? "No clients." : "Every client is validated for this checkpoint."}
+              {totals.total === 0
+                ? "No clients."
+                : statuses.length === 2 && !statuses.includes("validated")
+                  ? "Every client is validated for this checkpoint."
+                  : "No clients with this status."}
             </p>
           ) : (
             <div className="max-h-[360px] overflow-y-auto">
@@ -173,7 +209,7 @@ export default function MilestoneTrackingSummary({
                   </tr>
                 </thead>
                 <tbody>
-                  {left.map((r) => {
+                  {listed.map((r) => {
                     const st = statusAt(r, checkpoint.id);
                     return (
                       <tr key={r.clientId} className="border-b border-gray-100">

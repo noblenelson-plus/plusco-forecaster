@@ -3,13 +3,13 @@
 
 /**
  * Milestones page filter bar: the checkpoint (one milestone, labelled with its
- * due month), the client facets (GM Pod, Agency, Region, Business Lead — same
- * cascading engine as the dashboard) and the status chips. Status applies to
- * the selected checkpoint and is multi-select (e.g. Not validated + Flags to
- * justify together); none selected = every status.
+ * due month) and the client facets (GM Pod, Agency, Region, Business Lead —
+ * same cascading engine as the dashboard). The status chips live on the
+ * Milestones by client table.
  *
- * The flag filters (category + flag type) only narrow the flag sections; the
- * Flag list follows the selected categories.
+ * The flag filters (category, flag type and "On" — the media types / partners
+ * flagged) only narrow the flag sections; the Flag list follows the selected
+ * categories.
  *
  * The page is always limited to the clients active in the selected year, so
  * there is no client-status or tier filter here.
@@ -19,18 +19,13 @@ import { Filter, X } from "lucide-react";
 import MultiSelectDropdown from "../_shared/multi-select-dropdown";
 import type { FacetView } from "../../lib/dashboard/filters/use-dashboard-filters";
 import { CONFIRMATION_STEPS } from "../../lib/constants/confirmation-steps";
-import { MILESTONE_STATUS_ORDER } from "../../lib/format/milestone-summary";
-import type { RfqValidationStatus } from "../../lib/types/forecast-flags.types";
-import { STATUS_META } from "./milestone-status";
 import { FLAG_CATEGORIES, FLAG_TYPES } from "../../lib/format/flag-insights";
 
 interface MilestoneFiltersProps {
   checkpointId: string;
   onCheckpointChange: (stepId: string) => void;
   facetViews: FacetView[];
-  statuses: RfqValidationStatus[];
-  onStatusesChange: (s: RfqValidationStatus[]) => void;
-  /** Active clients in the year after the facets + status filter, and before. */
+  /** Active clients in the year after the facets, and before. */
   shownCount: number;
   activeCount: number;
   year: number | null;
@@ -40,14 +35,16 @@ interface MilestoneFiltersProps {
   onFlagCategoriesChange: (v: string[]) => void;
   flagTypes: string[];
   onFlagTypesChange: (v: string[]) => void;
+  /** "On" filter: media types / partners flagged (flagOnKey values). */
+  onOptions: { value: string; label: string }[];
+  on: string[];
+  onOnChange: (v: string[]) => void;
 }
 
 export default function MilestoneFilters({
   checkpointId,
   onCheckpointChange,
   facetViews,
-  statuses,
-  onStatusesChange,
   shownCount,
   activeCount,
   year,
@@ -57,14 +54,13 @@ export default function MilestoneFilters({
   onFlagCategoriesChange,
   flagTypes,
   onFlagTypesChange,
+  onOptions,
+  on,
+  onOnChange,
 }: MilestoneFiltersProps) {
   const typeOptions = FLAG_TYPES.filter(
     (t) => flagCategories.length === 0 || flagCategories.includes(t.category)
   ).map((t) => ({ value: t.id, label: t.label }));
-  const toggleStatus = (s: RfqValidationStatus) =>
-    onStatusesChange(
-      statuses.includes(s) ? statuses.filter((x) => x !== s) : [...statuses, s]
-    );
 
   return (
     <div className="border-b border-gray-200 bg-white">
@@ -104,31 +100,6 @@ export default function MilestoneFilters({
 
         <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
 
-        {/* Status at the checkpoint — multi-select chips. */}
-        <div className="flex items-center gap-1.5" role="group" aria-label="Status at the checkpoint">
-          <span className="text-xs font-medium text-gray-600">Status</span>
-          {MILESTONE_STATUS_ORDER.map((s) => {
-            const on = statuses.includes(s);
-            return (
-              <button
-                key={s}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggleStatus(s)}
-                className={`border px-2.5 py-1 text-xs font-medium transition-colors ${
-                  on
-                    ? `${STATUS_META[s].chip} border-gray-900 font-semibold`
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {STATUS_META[s].label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="h-7 w-px bg-gray-200" aria-hidden="true" />
-
         {/* Flag filters — narrow the flag sections only. */}
         <MultiSelectDropdown
           label="Flag category"
@@ -149,6 +120,16 @@ export default function MilestoneFilters({
           options={typeOptions}
           selectedValues={flagTypes}
           onChange={onFlagTypesChange}
+        />
+        <MultiSelectDropdown
+          label="Media type / Partner"
+          options={
+            // Keep a picked value listed even when no flag has it any more.
+            [...onOptions, ...on.filter((v) => !onOptions.some((o) => o.value === v)).map((v) => ({ value: v, label: v.replace(":", ": ") }))]
+          }
+          selectedValues={on}
+          onChange={onOnChange}
+          searchable
         />
 
         <div className="ml-auto flex items-center gap-3">

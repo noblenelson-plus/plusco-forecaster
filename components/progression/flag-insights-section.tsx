@@ -7,14 +7,16 @@
  * group × flag type when grouped by GM / Agency / Region: clients flagged,
  * flags, $ up / down / net (CAD), justified share and the justification mix
  * ("% of flags due to Budget Cuts"…). Headers carry each type's threshold;
- * footnotes explain what the amounts cover.
+ * footnotes explain what the amounts cover. Media and Labs types list the
+ * same numbers per media type / partner under their row (open by default in
+ * the Total view, one click away when grouped).
  *
  * Built on the flags saved at the checkpoint (flag_history). Presentational —
  * the page loads the flags.
  */
 
-import { useMemo, useState, type ReactNode } from "react";
-import { Info } from "lucide-react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Info } from "lucide-react";
 import {
   computeContextSummary,
   computeFlagInsights,
@@ -24,13 +26,14 @@ import {
   GROUP_BY_OPTIONS,
   type ClientFlags,
   type ContextShare,
+  type FlagRowStats,
   type FlagTypeId,
   type FlagTypeStats,
   type GroupBy,
 } from "../../lib/format/flag-insights";
-import { FLAG_CONTEXTS } from "../../lib/types/forecast-flags.types";
+import type { FlagContext } from "../../lib/types/forecast-flags.types";
 import { formatCompactMoney } from "../dashboard/charts/format";
-import { CATEGORICAL_COLORS, NEUTRAL_FILL } from "../dashboard/charts/colors";
+import { NEUTRAL_FILL, PLUS } from "../dashboard/charts/colors";
 import type { ConfirmationStep } from "../../lib/constants/confirmation-steps";
 import { ScopeLine } from "./milestone-tracking-summary";
 import RfqVarianceBand from "./rfq-variance-band";
@@ -51,10 +54,21 @@ export interface RfqVarianceView {
   error: string | null;
 }
 
-const CONTEXT_COLOR: Record<string, string> = Object.fromEntries([
-  ...FLAG_CONTEXTS.map((c, i) => [c.value, CATEGORICAL_COLORS[i % CATEGORICAL_COLORS.length]]),
-  ["NOT_JUSTIFIED", NEUTRAL_FILL],
-]);
+/** One fixed color per justification reason (the first seven keep their earlier colors). */
+const CONTEXT_COLOR: Record<FlagContext | "NOT_JUSTIFIED", string> = {
+  PERFORMANCE_PRICING: PLUS.yellow,
+  BUDGET_CUTS: PLUS.purple,
+  CANCELLED: PLUS.green,
+  TIMING_SHIFT: PLUS.blue,
+  INCOMPLETE_INPUT: PLUS.pink,
+  INCREMENTAL_BUDGET: PLUS.red,
+  OTHER: PLUS.lightBlue,
+  CHANNEL_REALLOCATION: PLUS.lightPink,
+  PARTNER_REALLOCATION: PLUS.black,
+  PLAN_FINALIZED: "#6b7280", // gray-500
+  BILLED_DIRECT: "#a8a29e", // stone-400
+  NOT_JUSTIFIED: NEUTRAL_FILL,
+};
 
 const pctOf = (part: number, total: number) =>
   total > 0 ? `${Math.round((part / total) * 100)}%` : "—";
@@ -208,6 +222,15 @@ function CategoryTable({
 }) {
   // Ungrouped: one row per selected type, zero rows included (a type with no
   // flag is a result too). Grouped: only groups that have flags.
+  // Rows whose media type / partner breakdown the user opened or closed.
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setToggled((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const rows: (FlagTypeStats | { type: (typeof FLAG_TYPES)[number]; empty: true })[] = grouped
     ? stats
     : typeIds.map((id) => stats.find((s) => s.type.id === id) ?? { type: FLAG_TYPES.find((t) => t.id === id)!, empty: true as const });
@@ -257,48 +280,55 @@ function CategoryTable({
             ) : (
               rows.map((r) => {
                 const empty = "empty" in r;
-                const s = empty ? null : (r as FlagTypeStats);
+                const st = empty ? null : (r as FlagTypeStats);
+                const rowKey = `${st?.group ?? ""}-${r.type.id}`;
+                const subRows = st && r.type.breakdown ? st.byOn : [];
+                // Total view: breakdown open unless closed; grouped: closed unless opened.
+                const open = subRows.length > 0 && (grouped ? toggled.has(rowKey) : !toggled.has(rowKey));
                 return (
-                  <tr key={`${s?.group ?? ""}-${r.type.id}`} className="border-b border-gray-100 align-top">
-                    {grouped && (
-                      <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{s?.group}</td>
-                    )}
-                    <td className="px-4 py-2">
-                      <div className="font-medium text-gray-900">{r.type.label}</div>
-                      {!grouped && (
-                        <div className="mt-0.5 max-w-md text-[11px] text-gray-500">{r.type.threshold}</div>
+                  <Fragment key={rowKey}>
+                    <tr className="border-b border-gray-100 align-top">
+                      {grouped && (
+                        <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{st?.group}</td>
                       )}
-                    </td>
-                    {s ? (
-                      <>
-                        <td className="px-2 py-2 text-right tabular-nums text-gray-900">
-                          {s.clients}
-                          <div className="text-[11px] text-gray-400">{pctOf(s.clients, s.groupClients || activeClientCount)}</div>
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums text-gray-900">{s.flags}</td>
-                        <td className="px-2 py-2 text-right tabular-nums text-gray-900">
-                          {s.up ? `+${formatCompactMoney(s.up)}` : "—"}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums text-gray-900">
-                          {s.down ? formatCompactMoney(s.down) : "—"}
-                        </td>
-                        <td className="px-2 py-2 text-right font-semibold tabular-nums text-gray-900">
-                          {s.net > 0 ? "+" : ""}
-                          {formatCompactMoney(s.net)}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums text-gray-900">
-                          {r.type.id === "labs_error" ? "n/a" : pctOf(s.justified, s.flags)}
-                        </td>
-                        <td className="px-4 py-2">
-                          <ContextMix contexts={s.contexts} total={s.flags} />
-                        </td>
-                      </>
-                    ) : (
-                      <td colSpan={7} className="px-2 py-2 text-left text-sm text-gray-400">
-                        No flags.
+                      <td className="px-4 py-2">
+                        <div className="font-medium text-gray-900">{r.type.label}</div>
+                        {!grouped && (
+                          <div className="mt-0.5 max-w-md text-[11px] text-gray-500">{r.type.threshold}</div>
+                        )}
+                        {subRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => toggle(rowKey)}
+                            aria-expanded={open}
+                            className="mt-1 flex items-center gap-0.5 text-[11px] font-semibold text-gray-700 hover:text-gray-900"
+                          >
+                            {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                            By {r.type.breakdown!.toLowerCase()} ({subRows.length})
+                          </button>
+                        )}
                       </td>
-                    )}
-                  </tr>
+                      {st ? (
+                        <StatCells
+                          s={st}
+                          clientPct={pctOf(st.clients, st.groupClients || activeClientCount)}
+                          noJustify={r.type.id === "labs_error"}
+                        />
+                      ) : (
+                        <td colSpan={7} className="px-2 py-2 text-left text-sm text-gray-400">
+                          No flags.
+                        </td>
+                      )}
+                    </tr>
+                    {open &&
+                      subRows.map((o) => (
+                        <tr key={`${rowKey}-${o.label}`} className="border-b border-gray-100 bg-gray-50 align-top text-[13px]">
+                          {grouped && <td />}
+                          <td className="py-1.5 pl-9 pr-4 text-gray-700">{o.label}</td>
+                          <StatCells s={o} small />
+                        </tr>
+                      ))}
+                  </Fragment>
                 );
               })
             )}
@@ -335,7 +365,60 @@ function CategoryTable({
   );
 }
 
-function ContextMix({ contexts, total }: { contexts: ContextShare[]; total: number }) {
+/** The number cells of a row: a flag type, or one media type / partner under it. */
+function StatCells({
+  s,
+  clientPct,
+  noJustify,
+  small,
+}: {
+  s: FlagRowStats;
+  /** "% of clients" under the count (flag type rows only). */
+  clientPct?: string;
+  /** Labs error: can't be justified. */
+  noJustify?: boolean;
+  /** Breakdown row: lighter text, shorter legend under the mix. */
+  small?: boolean;
+}) {
+  const tone = small ? "text-gray-700" : "text-gray-900";
+  const py = small ? "py-1.5" : "py-2";
+  return (
+    <>
+      <td className={`px-2 ${py} text-right tabular-nums ${tone}`}>
+        {s.clients}
+        {clientPct && <div className="text-[11px] text-gray-400">{clientPct}</div>}
+      </td>
+      <td className={`px-2 ${py} text-right tabular-nums ${tone}`}>{s.flags}</td>
+      <td className={`px-2 ${py} text-right tabular-nums ${tone}`}>
+        {s.up ? `+${formatCompactMoney(s.up)}` : "—"}
+      </td>
+      <td className={`px-2 ${py} text-right tabular-nums ${tone}`}>
+        {s.down ? formatCompactMoney(s.down) : "—"}
+      </td>
+      <td className={`px-2 ${py} text-right font-semibold tabular-nums ${tone}`}>
+        {s.net > 0 ? "+" : ""}
+        {formatCompactMoney(s.net)}
+      </td>
+      <td className={`px-2 ${py} text-right tabular-nums ${tone}`}>
+        {noJustify ? "n/a" : pctOf(s.justified, s.flags)}
+      </td>
+      <td className={`px-4 ${py}`}>
+        <ContextMix contexts={s.contexts} total={s.flags} compact={small} />
+      </td>
+    </>
+  );
+}
+
+function ContextMix({
+  contexts,
+  total,
+  compact,
+}: {
+  contexts: ContextShare[];
+  total: number;
+  /** Breakdown rows: show only the top reason under the bar. */
+  compact?: boolean;
+}) {
   if (total === 0) return null;
   return (
     <div>
@@ -351,13 +434,15 @@ function ContextMix({ contexts, total }: { contexts: ContextShare[]; total: numb
         ))}
       </div>
       <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-gray-600">
-        {contexts.slice(0, 3).map((c) => (
+        {contexts.slice(0, compact ? 1 : 3).map((c) => (
           <span key={c.context} className="flex items-center gap-1">
             <span className="h-2 w-2" style={{ background: CONTEXT_COLOR[c.context] }} aria-hidden="true" />
             {c.label} {pctOf(c.flags, total)}
           </span>
         ))}
-        {contexts.length > 3 && <span className="text-gray-400">+{contexts.length - 3} more</span>}
+        {contexts.length > (compact ? 1 : 3) && (
+          <span className="text-gray-400">+{contexts.length - (compact ? 1 : 3)} more</span>
+        )}
       </div>
     </div>
   );
