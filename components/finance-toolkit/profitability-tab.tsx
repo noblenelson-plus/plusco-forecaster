@@ -306,17 +306,17 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
   const groups = useMemo(() => groupByReason(flagged, to, dataStartOf), [flagged, to]);
 
   // Bubble chart: every account with both revenue and cost, on log scales (accounts range from $1K to $10M+).
-  // Names are printed on the largest accounts and the biggest losses only, so the labels stay readable.
+  // Names are printed on the biggest shortfalls only (the large profitable accounts sit close together and their
+  // names would overlap); hovering any bubble names it.
   const scatter = useMemo(() => {
     const byRevenue = [...matched].filter((r) => r.revenue! > 0 && r.cost! > 0).sort((a, b) => b.revenue! - a.revenue!);
-    const named = new Set([
-      ...byRevenue.slice(0, 6).map((r) => r.client.index),
-      ...byRevenue
+    const named = new Set(
+      byRevenue
         .filter((r) => r.margin! < 0)
         .sort((a, b) => a.margin! - b.margin!)
-        .slice(0, 4)
+        .slice(0, 5)
         .map((r) => r.client.index),
-    ]);
+    );
     const pts = byRevenue.map((r) => ({
       x: r.revenue!,
       y: r.cost!,
@@ -770,7 +770,6 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
                   stroke="#94a3b8"
                   strokeDasharray="2 4"
                   ifOverflow="hidden"
-                  label={{ value: "50% margin", position: "insideBottomRight", fontSize: 11, fill: "#64748b" }}
                 />
                 <ChartTooltip
                   cursor={{ strokeDasharray: "3 3" }}
@@ -790,7 +789,6 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
                     );
                   }}
                 />
-                <ChartLegend content={<ChartLegendContent />} />
                 {(["ok", "over", "loss"] as const).map((k) => (
                   <Scatter
                     key={k}
@@ -809,6 +807,25 @@ export default function ProfitabilityTab({ scope, basis, clientFilter }: { scope
                 ))}
               </ScatterChart>
             </ChartContainer>
+          )}
+          {scatter.count > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-gray-600">
+              {(["ok", "over", "loss"] as const).map((k) => (
+                <span key={k} className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: scatterConfig[k].color }} aria-hidden />
+                  {scatterConfig[k].label as string}
+                </span>
+              ))}
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-5 border-t-2 border-dashed border-red-500" aria-hidden />
+                Break-even
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-5 border-t-2 border-dotted border-gray-400" aria-hidden />
+                50% margin
+              </span>
+              <span className="text-gray-500">Names shown on the biggest shortfalls · hover any bubble for its name</span>
+            </div>
           )}
         </Card>
 
