@@ -17,10 +17,16 @@
  * per access level, and each person gets the one matching their tabs. Those
  * show real dashboard data, so their file names are not in this code: they
  * come from config/training_videos, readable only after sign-in.
+ *
+ * Shareable links: /how-to?video=<id>&lang=<en|fr> scrolls to that video and
+ * highlights it, in that language (for this visit only — the viewer's saved
+ * choice is untouched). Each card has a "Copy link" button. Signed-out people
+ * come back to the link after sign-in (lib/format/return-to.ts). A link to a
+ * video the person can't see shows a short note instead.
  */
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { PlayCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Check, Link2, PlayCircle } from "lucide-react";
 import { useAccess } from "../../lib/hooks/use-access";
 import { dashboardVideoLevels, seesForecastVideos, type DashboardVideoLevel } from "../../lib/format/training-videos";
 import { fetchDashboardVideoFiles, type DashboardVideoFiles } from "../../lib/services/training-video-service";
@@ -147,17 +153,44 @@ function saveLang(l: Lang): void {
   window.dispatchEvent(new Event(LANG_EVENT));
 }
 
+/** The query string doesn't change while the How to page is open. */
+const subscribeNothing = () => () => {};
+
+/** Query parameters of a shareable video link. */
+const VIDEO_PARAM = "video";
+const LANG_PARAM = "lang";
+
+/** The full shareable URL of one video in one language. */
+function videoLink(id: string, l: Lang): string {
+  const params = new URLSearchParams({ [VIDEO_PARAM]: id, [LANG_PARAM]: l });
+  return `${window.location.origin}/how-to?${params.toString()}`;
+}
+
 export default function TrainingVideos() {
-  const lang = useSyncExternalStore(subscribeLang, readLang, (): Lang => "en");
-  const choose = saveLang;
+  const savedLang = useSyncExternalStore(subscribeLang, readLang, (): Lang => "en");
+  // A link's ?lang= wins for this visit, until the viewer flips the toggle.
+  const [ignoreLinkLang, setIgnoreLinkLang] = useState(false);
+  const choose = (l: Lang) => {
+    setIgnoreLinkLang(true);
+    saveLang(l);
+  };
   const { ctx, hasTeamSpaces, openTabs, loading } = useAccess();
 
   const audience = { isAdmin: ctx.isAdmin, hasTeamSpaces, openTabs };
   const forecast = !loading && seesForecastVideos(audience);
   const levelsKey = loading ? "" : dashboardVideoLevels(audience).join(",");
 
+  // The video a shared link points to, and its language.
+  const search = useSyncExternalStore(subscribeNothing, () => window.location.search, () => "");
+  const linkParams = useMemo(() => new URLSearchParams(search), [search]);
+  const linkedId = linkParams.get(VIDEO_PARAM);
+  const rawLinkLang = linkParams.get(LANG_PARAM);
+  const linkLang: Lang | null = rawLinkLang === "en" || rawLinkLang === "fr" ? rawLinkLang : null;
+  const lang = (!ignoreLinkLang && linkLang) || savedLang;
+
   // The private dashboard files, fetched once the person's levels are known.
   const [files, setFiles] = useState<DashboardVideoFiles>({});
+  const [filesSettled, setFilesSettled] = useState(false);
   useEffect(() => {
     if (!levelsKey) return;
     let cancelled = false;
@@ -165,11 +198,26 @@ export default function TrainingVideos() {
       .then((f) => {
         if (!cancelled) setFiles(f);
       })
-      .catch(() => {}); // not published yet / offline: just no dashboard videos
+      .catch(() => {}) // not published yet / offline: just no dashboard videos
+      .finally(() => {
+        if (!cancelled) setFilesSettled(true);
+      });
     return () => {
       cancelled = true;
     };
   }, [levelsKey]);
+
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  async function copyLink(id: string) {
+    const key = `${id}-${lang}`;
+    try {
+      await navigator.clipboard.writeText(videoLink(id, lang));
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 2000);
+    } catch (err) {
+      console.error("Failed to copy the video link: ", err);
+    }
+  }
 
   const videos: TrainingVideo[] = useMemo(() => {
     const levels = levelsKey ? (levelsKey.split(",") as DashboardVideoLevel[]) : [];
@@ -187,7 +235,21 @@ export default function TrainingVideos() {
     return [...(forecast ? TRAINING_VIDEOS : []), ...dashboard];
   }, [forecast, levelsKey, files]);
 
-  if (videos.length === 0) return null;
+  // Scroll to the linked video once it's on the page (dashboard videos arrive
+  // after a fetch), once per visit.
+  const linkedFound = linkedId != null && videos.some((v) => v.id === linkedId);
+  const scrolledRef = useRef(false);
+  useEffect(() => {
+    if (!linkedFound || scrolledRef.current) return;
+    scrolledRef.current = true;
+    document.getElementById(`video-${linkedId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [linkedFound, linkedId]);
+
+  // Everything this person can see is loaded, and the linked video isn't there.
+  const listSettled = !loading && (!levelsKey || filesSettled);
+  const linkedMissing = linkedId != null && listSettled && !linkedFound;
+
+  if (videos.length === 0 && !linkedMissing) return null;
 
   return (
     <section className="mb-8">
@@ -224,9 +286,23 @@ export default function TrainingVideos() {
         </div>
       </div>
 
+      {linkedMissing && (
+        <p className="mb-4 bg-yellow-400 px-4 py-3 text-sm text-gray-900">
+          {lang === "fr"
+            ? "La vidéo de ce lien n’est pas disponible avec votre accès."
+            : "The video in this link isn’t available with your access."}
+        </p>
+      )}
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {videos.map((v) => (
-          <article key={v.id} className="border border-gray-200 bg-white">
+          <article
+            key={v.id}
+            id={`video-${v.id}`}
+            className={`bg-white ${
+              v.id === linkedId ? "border-2 border-yellow-400" : "border border-gray-200"
+            }`}
+          >
             {/* key={lang}: switching language loads the other file from the start. */}
             <video
               key={`${v.id}-${lang}`}
@@ -242,9 +318,26 @@ export default function TrainingVideos() {
                 <h3 className="font-semibold text-gray-900">{v.title[lang]}</h3>
                 <p className="mt-0.5 text-sm text-gray-500">{v.summary[lang]}</p>
               </div>
-              <span className="flex-shrink-0 bg-gray-900 px-2 py-0.5 text-xs font-semibold tabular-nums text-white">
-                {v.length[lang]}
-              </span>
+              <div className="flex flex-shrink-0 flex-col items-end gap-2">
+                <span className="bg-gray-900 px-2 py-0.5 text-xs font-semibold tabular-nums text-white">
+                  {v.length[lang]}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => copyLink(v.id)}
+                  title={
+                    lang === "fr"
+                      ? "Copier un lien vers cette vidéo (en français), à partager par courriel ou dans une présentation"
+                      : "Copy a link to this video (in English) to share in an email or a deck"
+                  }
+                  className="flex items-center gap-1 border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                >
+                  {copiedKey === `${v.id}-${lang}` ? <Check size={12} /> : <Link2 size={12} />}
+                  {copiedKey === `${v.id}-${lang}`
+                    ? lang === "fr" ? "Lien copié" : "Link copied"
+                    : lang === "fr" ? "Copier le lien" : "Copy link"}
+                </button>
+              </div>
             </div>
           </article>
         ))}

@@ -10,6 +10,7 @@ import { useUserProfile } from "../../lib/hooks/use-user-profile";
 import { AccessProvider, useAccess } from "../../lib/hooks/use-access";
 import Sidebar from "../../components/_shared/sidebar";
 import PlusLogo from "../../components/_shared/plus-logo";
+import { loginUrlFor } from "../../lib/format/return-to";
 // Reachable without a client team: the dashboard (it shows only the tabs the
 // person may open) and the general reference pages. Admin pages guard
 // themselves. Every other route is a team space.
@@ -131,7 +132,8 @@ const toggleCollapsed = () => {
 };
 useEffect(() => {
 if (!authLoading && !user) {
-router.replace("/auth/login");
+// Come back to this page (e.g. a shared video link) after sign-in.
+router.replace(loginUrlFor(window.location.pathname + window.location.search));
 }
 }, [user, authLoading, router]);
 // People with dashboard grants but no client team only reach the dashboard
