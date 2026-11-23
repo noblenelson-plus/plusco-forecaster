@@ -49,7 +49,11 @@ export interface FlagTypeDef {
   label: string;
   /** Threshold in words, for the header / footnote. */
   threshold: string;
-  /** How to read the $ (what "up" and "down" mean for this type). */
+  /**
+   * How to read the amount, in plain words: what is subtracted from what and
+   * what a + or − means. Shown under each category table ("How to read the
+   * amounts").
+   */
   amountNote: string;
   /** Media / Labs types: what the per-"On" breakdown lists (media types or partners). */
   breakdown?: "Media type" | "Partner";
@@ -63,14 +67,14 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     category: "forecast_qa",
     label: "Labs error",
     threshold: "Labs forecast above the media forecast of its media type (full year) — must be corrected, can't be justified",
-    amountNote: "Labs above media",
+    amountNote: "Labs forecast − media forecast of the media type. Always +: the Labs partners add up to more than the media type.",
   },
   {
     id: "under_forecasting_media",
     category: "forecast_qa",
     label: "Under-forecasting — Media",
     threshold: `MediaOcean bookings ${k(BL_MEDIAOCEAN_THRESHOLD)}+ above the BL forecast (full year), per media type`,
-    amountNote: "Booked above forecast",
+    amountNote: "MediaOcean bookings − BL forecast. Always +: more is booked than forecast, so the forecast is too low (under-forecast).",
     breakdown: "Media type",
   },
   {
@@ -78,7 +82,7 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     category: "forecast_qa",
     label: "Under-forecasting — Labs",
     threshold: `MediaOcean bookings ${k(BL_MEDIAOCEAN_THRESHOLD)}+ above the BL forecast (full year), per Labs partner`,
-    amountNote: "Booked above forecast",
+    amountNote: "MediaOcean bookings − BL forecast. Always +: more is booked with the partner than forecast, so the forecast is too low (under-forecast).",
     breakdown: "Partner",
   },
   {
@@ -86,14 +90,14 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     category: "rfq_swings",
     label: "RFQ swing — Revenues",
     threshold: `Annual revenue ±${k(REVENUE_SWING_THRESHOLD)} vs the previous RFQ`,
-    amountNote: "vs previous RFQ",
+    amountNote: "This RFQ − previous RFQ. + = forecast went up, − = forecast went down.",
   },
   {
     id: "swing_media",
     category: "rfq_swings",
     label: "RFQ swing — Media",
     threshold: `Annual media ±${k(MEDIA_LABS_SWING_THRESHOLD)} vs the previous RFQ, per media type`,
-    amountNote: "vs previous RFQ",
+    amountNote: "This RFQ − previous RFQ. + = forecast went up, − = forecast went down.",
     breakdown: "Media type",
   },
   {
@@ -101,7 +105,7 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     category: "rfq_swings",
     label: "RFQ swing — Labs",
     threshold: `Annual Labs ±${k(MEDIA_LABS_SWING_THRESHOLD)} vs the previous RFQ, per partner`,
-    amountNote: "vs previous RFQ",
+    amountNote: "This RFQ − previous RFQ. + = forecast went up, − = forecast went down.",
     breakdown: "Partner",
   },
   {
@@ -109,7 +113,7 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     category: "pacing",
     label: "Labs pacing YTD",
     threshold: `Booked ${Math.round(UNDER_TARGET_RELATIVE * 100)}% or ${k(UNDER_TARGET_ABSOLUTE)}+ under the forecast over the milestone's months, per partner`,
-    amountNote: "Booked vs forecast",
+    amountNote: "MediaOcean bookings − BL forecast over the milestone's months. Always −: less is booked than forecast so far.",
     breakdown: "Partner",
   },
   {
@@ -117,7 +121,7 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     category: "pacing",
     label: "Media pacing YTD",
     threshold: `Booked ${Math.round(UNDER_TARGET_RELATIVE * 100)}% or ${k(UNDER_TARGET_ABSOLUTE)}+ under the forecast over the milestone's months, per media type`,
-    amountNote: "Booked vs forecast",
+    amountNote: "MediaOcean bookings − BL forecast over the milestone's months. Always −: less is booked than forecast so far.",
     breakdown: "Media type",
   },
 ];

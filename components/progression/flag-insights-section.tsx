@@ -164,13 +164,14 @@ export default function FlagInsightsSection({
               ) : null
             }
             footer={
-              cat.id === "rfq_swings" ? (
-                <>
-                  <span className="font-semibold text-gray-700">RFQ swings:</span> the table only counts
-                  the changes that crossed the threshold (the ones that needed a justification). The total
-                  variance above shows the whole change and how much of it is justified.
-                </>
-              ) : null
+              <AmountNotes
+                typeIds={FLAG_TYPES.filter((t) => t.category === cat.id && types.includes(t.id)).map((t) => t.id)}
+                extra={
+                  cat.id === "rfq_swings"
+                    ? "The table only counts the changes that crossed the threshold (the ones that needed a justification). The total variance above shows the whole change and how much of it is justified."
+                    : undefined
+                }
+              />
             }
             summary={computeContextSummary(
               clients,
@@ -362,6 +363,26 @@ function CategoryTable({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * "How to read the amounts" under a category table: per flag type shown, what
+ * the amount subtracts and what its sign means (e.g. why Under-forecasting is
+ * a +). Up / Down / Net all follow it.
+ */
+function AmountNotes({ typeIds, extra }: { typeIds: FlagTypeId[]; extra?: string }) {
+  const shown = FLAG_TYPES.filter((t) => typeIds.includes(t.id));
+  return (
+    <span className="block space-y-0.5">
+      <span className="block font-semibold text-gray-700">How to read the amounts</span>
+      {shown.map((t) => (
+        <span key={t.id} className="block">
+          <span className="font-medium text-gray-700">{t.label}:</span> {t.amountNote}
+        </span>
+      ))}
+      {extra && <span className="block">{extra}</span>}
+    </span>
   );
 }
 
