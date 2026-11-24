@@ -21,6 +21,7 @@ import {
 import { UNDER_TARGET_ABSOLUTE, UNDER_TARGET_RELATIVE } from "../flags/under-target-rules";
 import {
   FLAG_CONTEXTS,
+  shownDelta,
   type FlagContext,
   type FlagRuleId,
   type StoredFlag,
@@ -59,8 +60,6 @@ export interface FlagTypeDef {
   amountNote: string;
   /** Media / Labs types: what the per-"On" breakdown lists (media types or partners). */
   breakdown?: "Media type" | "Partner";
-  /** Shown with the stored delta's sign flipped (Under-forecasting: forecast − bookings). */
-  negate?: boolean;
 }
 
 const k = (n: number) => `$${Math.round(n / 1000)}K`;
@@ -80,7 +79,6 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     threshold: `BL forecast short by ${k(BL_MEDIAOCEAN_THRESHOLD)}+ vs MediaOcean bookings (full year), per media type`,
     amountNote: "BL forecast − MediaOcean bookings. Always −: the forecast is short of what is already booked, by this amount.",
     breakdown: "Media type",
-    negate: true,
   },
   {
     id: "under_forecasting_labs",
@@ -89,7 +87,6 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     threshold: `BL forecast short by ${k(BL_MEDIAOCEAN_THRESHOLD)}+ vs MediaOcean bookings (full year), per Labs partner`,
     amountNote: "BL forecast − MediaOcean bookings. Always −: the forecast is short of what is already booked with the partner, by this amount.",
     breakdown: "Partner",
-    negate: true,
   },
   {
     id: "swing_revenue",
@@ -156,12 +153,11 @@ export const FLAG_TYPE_BY_RULE: Record<FlagRuleId, FlagTypeId> = {
 const TYPE_BY_ID = new Map<FlagTypeId, FlagTypeDef>(FLAG_TYPES.map((t) => [t.id, t]));
 
 /**
- * A flag's amount as the Milestones page shows it: the stored delta, sign
- * flipped for Under-forecasting (BL forecast − MediaOcean, negative).
+ * A flag's amount as shown: the stored delta, sign flipped for Under-forecasting
+ * (BL forecast − MediaOcean, negative) — the app-wide rule in shownDelta.
  */
 export function displayDelta(flag: Pick<StoredFlag, "ruleId" | "delta">): number {
-  const d = flag.delta ?? 0;
-  return flagTypeOf(flag)?.negate ? -d : d;
+  return shownDelta(flag.ruleId, flag.delta);
 }
 
 /** The report flag type of a stored flag (undefined for an unknown rule). */

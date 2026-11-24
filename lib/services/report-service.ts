@@ -54,6 +54,7 @@ import {
   type StoredFlagMap,
   flagContextLabel,
   isJustifiableRule,
+  shownFlagAmounts,
 } from "../types/forecast-flags.types";
 import { computeBlAlerts, qaFlagKey, type BlAlert } from "../flags/bl-alerts";
 import { fetchAxisData, fetchDataEntry } from "./data-entry-service";
@@ -567,9 +568,8 @@ function storedFlagRow(base: (string | number)[], flag: StoredFlag): ReportRow {
       ? flag.breakdown.map((b) => b.label).join(", ")
       : flag.title,
     qa ? "Full year" : "", // Month — swing is annual, under-target spans a window
-    flag.current,
-    flag.reference,
-    flag.delta,
+    // Under-forecast reads as a shortfall (BL forecast, MediaOcean, negative gap).
+    ...(({ current, reference, delta }) => [current, reference, delta])(shownFlagAmounts(flag.ruleId, flag)),
     flag.threshold,
     !isJustifiableRule(flag.ruleId) ? "No — must be corrected" : flag.justified ? "Yes" : "No",
     flag.context ? flagContextLabel(flag.context) : "",
@@ -596,9 +596,9 @@ function blAlertRows(base: (string | number)[], alerts: BlAlert[], stored: Store
         // or one partner (Labs under-forecast).
         r.label ?? r.subject,
         "Full year",
-        r.left, // Current — the yearly amount that is too high
-        r.right, // Reference — the yearly forecast it exceeds
-        r.variance, // Delta — left − right
+        // Current / Reference / Delta — under-forecast reads as a shortfall
+        // (BL forecast, MediaOcean, negative gap); Labs over media as stored.
+        ...(alert.shortfall ? [r.right, r.left, -r.variance] : [r.left, r.right, r.variance]),
         "", // Threshold — n/a
         // Justified — appears at the next validation, to justify (or correct) there.
         alert.justifiable ? "No" : "No — must be corrected",

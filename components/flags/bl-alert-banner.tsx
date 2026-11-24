@@ -71,7 +71,12 @@ export default function BlAlertBanner({
   // Left amount bold (it matches the bold lead of the explanation). The year
   // line also names both amounts and says what the variance means; the month
   // lines below it keep the same order without repeating the names.
-  const amounts = (left: number, right: number, variance: number, labelled = false) => (
+  // Under-forecast reads as a shortfall: BL forecast (right) first, negative gap.
+  const amounts = (rawLeft: number, rawRight: number, rawVariance: number, labelled = false) => {
+    const [left, right, variance] = alert.shortfall
+      ? [rawRight, rawLeft, -rawVariance]
+      : [rawLeft, rawRight, rawVariance];
+    return (
     <>
       <span className="font-semibold">{formatMoney(left)}</span>
       {labelled && <span className={tone.soft}> {alert.leftLabel}</span>}
@@ -84,7 +89,8 @@ export default function BlAlertBanner({
       </span>
       {cur}
     </>
-  );
+    );
+  };
 
   return (
     <div className={`border border-l-4 ${axis.stripe} ${tone.surface} px-4 py-3 text-sm`}>

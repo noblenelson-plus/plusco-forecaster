@@ -19,12 +19,11 @@ import SheetExportButton from "../dashboard/sheet-export-button";
 import type { CellValue } from "../forecaster/table/table-export";
 import { Search } from "lucide-react";
 import {
-  displayDelta,
   flagTypeOf,
   type ClientFlags,
   type FlagTypeId,
 } from "../../lib/format/flag-insights";
-import { flagContextLabel, type StoredFlag } from "../../lib/types/forecast-flags.types";
+import { flagContextLabel, shownFlagAmounts, type StoredFlag } from "../../lib/types/forecast-flags.types";
 import { flagComparison, formatMonths } from "../flags/flag-card";
 import { previousJustification, type PreviousJustification } from "../../lib/format/flag-history";
 import { formatMoney, formatSigned } from "../../lib/format/money";
@@ -90,10 +89,10 @@ export default function FlagDetailTable({
           currency: c.currency ?? "CAD",
           typeLabel: type.label,
           subject: subjectOf(f),
-          comparison: type.negate ? "BL forecast vs MediaOcean" : flagComparison(f).replace(/^·\s*/, ""),
-          shown: type.negate
-            ? { current: f.reference ?? 0, reference: f.current ?? 0, gap: displayDelta(f) }
-            : { current: f.current ?? 0, reference: f.reference ?? 0, gap: f.delta ?? 0 },
+          comparison: flagComparison(f).replace(/^·\s*/, ""),
+          shown: (({ current, reference, delta }) => ({ current, reference, gap: delta }))(
+            shownFlagAmounts(f.ruleId, f)
+          ),
           flag: f,
           justified: !!f.justified,
           correctOnly: type.id === "labs_error",
