@@ -19,6 +19,7 @@ import SheetExportButton from "../dashboard/sheet-export-button";
 import type { CellValue } from "../forecaster/table/table-export";
 import { Search } from "lucide-react";
 import {
+  displayDelta,
   flagTypeOf,
   type ClientFlags,
   type FlagTypeId,
@@ -42,6 +43,8 @@ interface DetailRow {
   /** Channel / partner / "Annual revenue". */
   subject: string;
   comparison: string;
+  /** Amounts as shown: Under-forecasting reads BL forecast vs MediaOcean, gap negative. */
+  shown: { current: number; reference: number; gap: number };
   flag: StoredFlag;
   justified: boolean;
   /** Labs error — can't be justified. */
@@ -87,7 +90,10 @@ export default function FlagDetailTable({
           currency: c.currency ?? "CAD",
           typeLabel: type.label,
           subject: subjectOf(f),
-          comparison: flagComparison(f).replace(/^·\s*/, ""),
+          comparison: type.negate ? "BL forecast vs MediaOcean" : flagComparison(f).replace(/^·\s*/, ""),
+          shown: type.negate
+            ? { current: f.reference ?? 0, reference: f.current ?? 0, gap: displayDelta(f) }
+            : { current: f.current ?? 0, reference: f.reference ?? 0, gap: f.delta ?? 0 },
           flag: f,
           justified: !!f.justified,
           correctOnly: type.id === "labs_error",
@@ -129,10 +135,10 @@ export default function FlagDetailTable({
       r.bl,
       r.typeLabel,
       r.subject,
-      Math.round(r.flag.current ?? 0),
-      Math.round(r.flag.reference ?? 0),
+      Math.round(r.shown.current),
+      Math.round(r.shown.reference),
       r.comparison,
-      Math.round(r.flag.delta ?? 0),
+      Math.round(r.shown.gap),
       r.currency,
       r.flag.analyzedMonths?.length ? formatMonths(r.flag.analyzedMonths) : "",
       r.correctOnly ? "To correct" : r.justified ? "Justified" : "Not justified",
@@ -245,13 +251,13 @@ export default function FlagDetailTable({
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-gray-700 whitespace-nowrap">
-                        {formatMoney(r.flag.current ?? 0)} vs {formatMoney(r.flag.reference ?? 0)}
+                        {formatMoney(r.shown.current)} vs {formatMoney(r.shown.reference)}
                         <div className="text-[11px] text-gray-400">
                           {r.currency} · {r.comparison}
                         </div>
                       </td>
                       <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900 whitespace-nowrap">
-                        {formatSigned(r.flag.delta ?? 0)}
+                        {formatSigned(r.shown.gap)}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span

@@ -8,8 +8,8 @@
  * flags, $ up / down / net (CAD), justified share and the justification mix
  * ("% of flags due to Budget Cuts"…). Headers carry each type's threshold;
  * footnotes explain what the amounts cover. Media and Labs types list the
- * same numbers per media type / partner under their row (open by default in
- * the Total view, one click away when grouped).
+ * same numbers per media type / partner under their row, closed by default so
+ * the totals read at a glance (one click opens a row).
  *
  * Built on the flags saved at the checkpoint (flag_history). Presentational —
  * the page loads the flags.
@@ -223,7 +223,7 @@ function CategoryTable({
 }) {
   // Ungrouped: one row per selected type, zero rows included (a type with no
   // flag is a result too). Grouped: only groups that have flags.
-  // Rows whose media type / partner breakdown the user opened or closed.
+  // Rows whose media type / partner breakdown the user opened.
   const [toggled, setToggled] = useState<Set<string>>(new Set());
   const toggle = (key: string) =>
     setToggled((prev) => {
@@ -284,8 +284,8 @@ function CategoryTable({
                 const st = empty ? null : (r as FlagTypeStats);
                 const rowKey = `${st?.group ?? ""}-${r.type.id}`;
                 const subRows = st && r.type.breakdown ? st.byOn : [];
-                // Total view: breakdown open unless closed; grouped: closed unless opened.
-                const open = subRows.length > 0 && (grouped ? toggled.has(rowKey) : !toggled.has(rowKey));
+                // Breakdown closed by default; a click opens it.
+                const open = subRows.length > 0 && toggled.has(rowKey);
                 return (
                   <Fragment key={rowKey}>
                     <tr className="border-b border-gray-100 align-top">
