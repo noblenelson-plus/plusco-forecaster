@@ -34,7 +34,11 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Check, Link2 } from "lucide-react";
 import { useAccess } from "../../lib/hooks/use-access";
 import { dashboardVideoIds, seesForecastVideos, type DashboardVideoId } from "../../lib/format/training-videos";
-import { fetchDashboardVideoFiles, type DashboardVideoFiles } from "../../lib/services/training-video-service";
+import {
+  fetchPrivateVideoFiles,
+  type PrivateForecastVideoId,
+  type PrivateVideoFiles,
+} from "../../lib/services/training-video-service";
 
 export type Lang = "en" | "fr";
 
@@ -101,6 +105,18 @@ const TRAINING_VIDEOS: TrainingVideo[] = [
     poster: { en: "/training/flags-overview-en.jpg", fr: "/training/flags-overview-fr.jpg" },
   },
 ];
+
+// Forecast videos that show (masked) real data: titles here, files from
+// config/training_videos. Listed after the public ones, in this order.
+const PRIVATE_FORECAST_TEXT: Record<PrivateForecastVideoId, { title: Record<Lang, string>; summary: Record<Lang, string> }> = {
+  milestones: {
+    title: { en: "The Milestones page", fr: "La page Milestones" },
+    summary: {
+      en: "Follow your clients' validation: statuses, Milestones by client, flag insights and every justification.",
+      fr: "Suivez la validation de vos clients : statuts, Milestones by client, analyse des signalements et chaque justification.",
+    },
+  },
+};
 
 // One video per dashboard: titles here, files from config/training_videos.
 const DASHBOARD_VIDEO_TEXT: Record<DashboardVideoId, { title: Record<Lang, string>; summary: Record<Lang, string> }> = {
@@ -232,13 +248,14 @@ export function useTrainingVideos(): TrainingVideosState {
   const linkLang: Lang | null = rawLinkLang === "en" || rawLinkLang === "fr" ? rawLinkLang : null;
   const lang = (!ignoreLinkLang && linkLang) || savedLang;
 
-  // The private dashboard files, fetched once the person's dashboards are known.
-  const [files, setFiles] = useState<DashboardVideoFiles>({});
+  // The private files, fetched once the person's videos are known.
+  const [files, setFiles] = useState<PrivateVideoFiles>({ dashboard: {}, forecast: {} });
   const [filesSettled, setFilesSettled] = useState(false);
+  const needsFiles = forecast || idsKey !== "";
   useEffect(() => {
-    if (!idsKey) return;
+    if (!needsFiles) return;
     let cancelled = false;
-    fetchDashboardVideoFiles()
+    fetchPrivateVideoFiles()
       .then((f) => {
         if (!cancelled) setFiles(f);
       })
@@ -249,12 +266,12 @@ export function useTrainingVideos(): TrainingVideosState {
     return () => {
       cancelled = true;
     };
-  }, [idsKey]);
+  }, [needsFiles]);
 
   const videos: TrainingVideo[] = useMemo(() => {
     const ids = idsKey ? (idsKey.split(",") as DashboardVideoId[]) : [];
     const dashboard = ids.flatMap((id): TrainingVideo[] => {
-      const f = files[id];
+      const f = files.dashboard[id];
       if (!f) return [];
       return [{
         id: `dashboard-${id}`,
@@ -265,12 +282,24 @@ export function useTrainingVideos(): TrainingVideosState {
         poster: { en: f.en.poster, fr: f.fr.poster },
       }];
     });
-    return [...(forecast ? TRAINING_VIDEOS : []), ...dashboard];
+    const privateForecast = (Object.keys(PRIVATE_FORECAST_TEXT) as PrivateForecastVideoId[]).flatMap((id): TrainingVideo[] => {
+      const f = files.forecast[id];
+      if (!f) return [];
+      return [{
+        id,
+        kind: "forecast",
+        ...PRIVATE_FORECAST_TEXT[id],
+        length: { en: f.en.length, fr: f.fr.length },
+        src: { en: f.en.src, fr: f.fr.src },
+        poster: { en: f.en.poster, fr: f.fr.poster },
+      }];
+    });
+    return [...(forecast ? [...TRAINING_VIDEOS, ...privateForecast] : []), ...dashboard];
   }, [forecast, idsKey, files]);
 
   const linkedFound = wantedId != null && videos.some((v) => v.id === wantedId);
   // Everything this person can see is loaded, and the linked video isn't there.
-  const listSettled = !loading && (!idsKey || filesSettled);
+  const listSettled = !loading && (!needsFiles || filesSettled);
   const linkedMissing = wantedId != null && listSettled && !linkedFound;
 
   return { videos, lang, chooseLang, linkedId: linkedFound ? wantedId : null, linkedMissing };

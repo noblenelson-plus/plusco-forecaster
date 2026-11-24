@@ -10,9 +10,10 @@
  * readable after sign-in — says where they are. Written by
  * plusco-training/tools/publish-private.mjs.
  *
- * Shape: { dashboard: { [videoId]: { en: VideoFile, fr: VideoFile } } } — one
- * entry per dashboard (DASHBOARD_VIDEO_IDS). Older per-access-level entries
- * (agency / leads / leadership) may still sit in the doc; they are ignored.
+ * Shape: { dashboard: { [videoId]: { en, fr: VideoFile } }, forecast: { [videoId]: … } }
+ *   dashboard — one entry per dashboard (DASHBOARD_VIDEO_IDS). Older per-access-level
+ *               entries (agency / leads / leadership) may still sit there; ignored.
+ *   forecast  — forecast videos that show (masked) real data: PRIVATE_FORECAST_VIDEO_IDS.
  */
 
 import { doc, getDoc } from "firebase/firestore";
@@ -26,7 +27,16 @@ export interface VideoFile {
   length: string;
 }
 
-export type DashboardVideoFiles = Partial<Record<DashboardVideoId, { en: VideoFile; fr: VideoFile }>>;
+export type VideoPair = { en: VideoFile; fr: VideoFile };
+
+/** Forecast videos whose files are private (they show masked real data). */
+export const PRIVATE_FORECAST_VIDEO_IDS = ["milestones"] as const;
+export type PrivateForecastVideoId = (typeof PRIVATE_FORECAST_VIDEO_IDS)[number];
+
+export interface PrivateVideoFiles {
+  dashboard: Partial<Record<DashboardVideoId, VideoPair>>;
+  forecast: Partial<Record<PrivateForecastVideoId, VideoPair>>;
+}
 
 function asFile(raw: unknown): VideoFile | null {
   if (!raw || typeof raw !== "object") return null;
@@ -35,16 +45,26 @@ function asFile(raw: unknown): VideoFile | null {
   return { src: r.src, poster: r.poster, length: typeof r.length === "string" ? r.length : "" };
 }
 
-/** The dashboard video files by dashboard (empty until published). */
-export async function fetchDashboardVideoFiles(): Promise<DashboardVideoFiles> {
+function asPair(raw: unknown): VideoPair | null {
+  const entry = raw as Record<string, unknown> | undefined;
+  const en = asFile(entry?.en);
+  const fr = asFile(entry?.fr);
+  return en && fr ? { en, fr } : null;
+}
+
+/** The private video files (empty until published). */
+export async function fetchPrivateVideoFiles(): Promise<PrivateVideoFiles> {
   const snap = await getDoc(doc(db, "config", "training_videos"));
   const dashboard = (snap.data()?.dashboard ?? {}) as Record<string, unknown>;
-  const out: DashboardVideoFiles = {};
+  const forecast = (snap.data()?.forecast ?? {}) as Record<string, unknown>;
+  const out: PrivateVideoFiles = { dashboard: {}, forecast: {} };
   for (const id of DASHBOARD_VIDEO_IDS) {
-    const entry = dashboard[id] as Record<string, unknown> | undefined;
-    const en = asFile(entry?.en);
-    const fr = asFile(entry?.fr);
-    if (en && fr) out[id] = { en, fr };
+    const pair = asPair(dashboard[id]);
+    if (pair) out.dashboard[id] = pair;
+  }
+  for (const id of PRIVATE_FORECAST_VIDEO_IDS) {
+    const pair = asPair(forecast[id]);
+    if (pair) out.forecast[id] = pair;
   }
   return out;
 }
