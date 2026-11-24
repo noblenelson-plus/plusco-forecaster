@@ -10,12 +10,14 @@
  * readable after sign-in — says where they are. Written by
  * plusco-training/tools/publish-private.mjs.
  *
- * Shape: { dashboard: { [level]: { en: VideoFile, fr: VideoFile } } }
+ * Shape: { dashboard: { [videoId]: { en: VideoFile, fr: VideoFile } } } — one
+ * entry per dashboard (DASHBOARD_VIDEO_IDS). Older per-access-level entries
+ * (agency / leads / leadership) may still sit in the doc; they are ignored.
  */
 
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import { DASHBOARD_VIDEO_LEVELS, type DashboardVideoLevel } from "../format/training-videos";
+import { DASHBOARD_VIDEO_IDS, type DashboardVideoId } from "../format/training-videos";
 
 export interface VideoFile {
   src: string;
@@ -24,7 +26,7 @@ export interface VideoFile {
   length: string;
 }
 
-export type DashboardVideoFiles = Partial<Record<DashboardVideoLevel, { en: VideoFile; fr: VideoFile }>>;
+export type DashboardVideoFiles = Partial<Record<DashboardVideoId, { en: VideoFile; fr: VideoFile }>>;
 
 function asFile(raw: unknown): VideoFile | null {
   if (!raw || typeof raw !== "object") return null;
@@ -33,16 +35,16 @@ function asFile(raw: unknown): VideoFile | null {
   return { src: r.src, poster: r.poster, length: typeof r.length === "string" ? r.length : "" };
 }
 
-/** The dashboard overview video files by level (empty until published). */
+/** The dashboard video files by dashboard (empty until published). */
 export async function fetchDashboardVideoFiles(): Promise<DashboardVideoFiles> {
   const snap = await getDoc(doc(db, "config", "training_videos"));
   const dashboard = (snap.data()?.dashboard ?? {}) as Record<string, unknown>;
   const out: DashboardVideoFiles = {};
-  for (const level of DASHBOARD_VIDEO_LEVELS) {
-    const entry = dashboard[level] as Record<string, unknown> | undefined;
+  for (const id of DASHBOARD_VIDEO_IDS) {
+    const entry = dashboard[id] as Record<string, unknown> | undefined;
     const en = asFile(entry?.en);
     const fr = asFile(entry?.fr);
-    if (en && fr) out[level] = { en, fr };
+    if (en && fr) out[id] = { en, fr };
   }
   return out;
 }

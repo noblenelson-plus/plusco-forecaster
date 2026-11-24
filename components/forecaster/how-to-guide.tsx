@@ -14,6 +14,10 @@
  * Purely presentational: no data, no Firebase. The only outward interaction is
  * the optional `onJump` callback — the How-to page wires it to navigate to
  * /forecast?tab=… so the guide can send the reader straight to an axis tab.
+ *
+ * The page can add menu groups of its own above the chapters (`extraGroups`,
+ * the "Video tutorials"), rendered by `renderExtra` in the content column, and
+ * may control which item is open (`activeId` / `onSelect`).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -55,9 +59,32 @@ import {
 
 type AxisTab = "media" | "revenue" | "labs";
 
+/** A menu item the page adds (e.g. a training video), shown above the chapters. */
+export interface GuideExtraItem {
+  id: string;
+  label: string;
+  /** Short right-aligned label, e.g. a duration. */
+  meta?: string;
+  icon: typeof BookOpen;
+}
+
+export interface GuideExtraGroup {
+  title: string;
+  items: GuideExtraItem[];
+}
+
 interface HowToGuideProps {
   /** Jump to another forecast tab (wired to the page's tab switcher). */
   onJump?: (tab: AxisTab) => void;
+  /** Menu groups listed above the chapters. */
+  extraGroups?: GuideExtraGroup[];
+  /** Content of an extra item, in the content column. */
+  renderExtra?: (id: string) => React.ReactNode;
+  /** Small label over an extra item's title (like "Chapter 1 of 15"). */
+  extraKicker?: string;
+  /** Controlled open item (a chapter or extra id); falls back to internal state. */
+  activeId?: string;
+  onSelect?: (id: string) => void;
 }
 
 /** Context handed to each chapter body so it can deep-link around. */
@@ -933,11 +960,24 @@ function searchIndex(query: string): SearchHit[] {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-export default function HowToGuide({ onJump }: HowToGuideProps) {
-  const [activeId, setActiveId] = useState(FLAT[0].id);
+export default function HowToGuide({
+  onJump,
+  extraGroups = [],
+  renderExtra,
+  extraKicker = "",
+  activeId: controlledId,
+  onSelect,
+}: HowToGuideProps) {
+  const [ownId, setOwnId] = useState(FLAT[0].id);
+  const activeId = controlledId ?? ownId;
+  const setActiveId = (id: string) => {
+    setOwnId(id);
+    onSelect?.(id);
+  };
   const [query, setQuery] = useState("");
   const topRef = useRef<HTMLDivElement>(null);
 
+  const extra = extraGroups.flatMap((g) => g.items).find((i) => i.id === activeId) ?? null;
   const index = Math.max(0, FLAT.findIndex((c) => c.id === activeId));
   const chapter = FLAT[index];
   const next = index < FLAT.length - 1 ? FLAT[index + 1] : null;
@@ -972,6 +1012,16 @@ export default function HowToGuide({ onJump }: HowToGuideProps) {
               onChange={(e) => go(e.target.value)}
               className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
             >
+              {extraGroups.map((group) => (
+                <optgroup key={group.title} label={group.title}>
+                  {group.items.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.label}
+                      {i.meta ? ` (${i.meta})` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
               {GROUPS.map((group) => (
                 <optgroup key={group.title} label={group.title}>
                   {group.chapters.map((c) => (
@@ -985,6 +1035,21 @@ export default function HowToGuide({ onJump }: HowToGuideProps) {
           )}
         </div>
 
+        {extra ? (
+          <>
+            <div className="mb-5 border-b border-gray-200 pb-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{extraKicker}</p>
+              <h1 className="mt-1 flex items-center gap-2.5 text-2xl font-bold text-gray-900">
+                <span className="flex h-9 w-9 items-center justify-center bg-gray-900 text-yellow-400">
+                  <extra.icon size={18} />
+                </span>
+                {extra.label}
+              </h1>
+            </div>
+            {renderExtra?.(extra.id)}
+          </>
+        ) : (
+        <>
         {/* Chapter header */}
         <div className="mb-5 border-b border-gray-200 pb-4">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
@@ -1020,6 +1085,8 @@ export default function HowToGuide({ onJump }: HowToGuideProps) {
             </button>
           </div>
         )}
+        </>
+        )}
       </div>
 
       {/* ─── Quick navigation panel (right column, desktop) ─── */}
@@ -1034,7 +1101,7 @@ export default function HowToGuide({ onJump }: HowToGuideProps) {
             {query ? (
               <SearchResults hits={hits} onPick={pick} />
             ) : (
-              <GroupedNav activeId={activeId} onPick={go} />
+              <GroupedNav activeId={activeId} onPick={go} extraGroups={extraGroups} />
             )}
           </div>
         </div>
@@ -1128,12 +1195,48 @@ function SearchResults({
 function GroupedNav({
   activeId,
   onPick,
+  extraGroups,
 }: {
   activeId: string;
   onPick: (chapterId: string) => void;
+  extraGroups: GuideExtraGroup[];
 }) {
   return (
     <nav className="space-y-4">
+      {extraGroups.map((group) => (
+        <div key={group.title}>
+          <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+            {group.title}
+          </p>
+          <ul className="space-y-0.5">
+            {group.items.map((i) => {
+              const Icon = i.icon;
+              const active = i.id === activeId;
+              return (
+                <li key={i.id}>
+                  <button
+                    type="button"
+                    onClick={() => onPick(i.id)}
+                    className={`flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors ${
+                      active
+                        ? "bg-yellow-400 text-gray-900"
+                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                    }`}
+                  >
+                    <Icon size={15} className={active ? "flex-shrink-0 text-gray-900" : "flex-shrink-0 text-gray-400"} />
+                    <span className="min-w-0 flex-1 truncate" title={i.label}>{i.label}</span>
+                    {i.meta && (
+                      <span className={`flex-shrink-0 text-[11px] tabular-nums ${active ? "text-gray-900" : "text-gray-400"}`}>
+                        {i.meta}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
       {GROUPS.map((group) => (
         <div key={group.title}>
           <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">

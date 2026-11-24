@@ -7,34 +7,41 @@
  * captions burned in, served from `public/training/` (same origin as the app,
  * so networks that block Firebase Storage still play them).
  *
+ * The videos live in the guide's menu, under "Video tutorials" (Adriana,
+ * 2026-11-24: the grid of players took too much room): `useTrainingVideos`
+ * says which videos the person gets, the guide lists them, and
+ * `TrainingVideoPlayer` plays the one picked in the guide's content column.
+ *
  * The language defaults to the browser's (French → FR) and the viewer's choice
  * is remembered in localStorage (a per-viewer convenience; safe to lose).
  * Add a video by adding an entry to TRAINING_VIDEOS and its files under
  * public/training/ (built in the plusco-training repo folder).
  *
  * Who sees what (lib/format/training-videos.ts): the forecast videos go to
- * people who open the team spaces; the dashboard overview comes in one video
- * per access level, and each person gets the one matching their tabs. Those
- * show real dashboard data, so their file names are not in this code: they
- * come from config/training_videos, readable only after sign-in.
+ * people who open the team spaces; the dashboard has one video per dashboard,
+ * shown to the people who can open that dashboard. Those show real dashboard
+ * data, so their file names are not in this code: they come from
+ * config/training_videos, readable only after sign-in.
  *
- * Shareable links: /how-to?video=<id>&lang=<en|fr> scrolls to that video and
- * highlights it, in that language (for this visit only — the viewer's saved
- * choice is untouched). Each card has a "Copy link" button. Signed-out people
- * come back to the link after sign-in (lib/format/return-to.ts). A link to a
- * video the person can't see shows a short note instead.
+ * Shareable links: /how-to?video=<id>&lang=<en|fr> opens that video, in that
+ * language (for this visit only — the viewer's saved choice is untouched).
+ * Each video has a "Copy link" button. Signed-out people come back to the link
+ * after sign-in (lib/format/return-to.ts). A link to a video the person can't
+ * see shows a short note instead.
  */
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Check, Link2, PlayCircle } from "lucide-react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Check, Link2 } from "lucide-react";
 import { useAccess } from "../../lib/hooks/use-access";
-import { dashboardVideoLevels, seesForecastVideos, type DashboardVideoLevel } from "../../lib/format/training-videos";
+import { dashboardVideoIds, seesForecastVideos, type DashboardVideoId } from "../../lib/format/training-videos";
 import { fetchDashboardVideoFiles, type DashboardVideoFiles } from "../../lib/services/training-video-service";
 
-type Lang = "en" | "fr";
+export type Lang = "en" | "fr";
 
-interface TrainingVideo {
+export interface TrainingVideo {
   id: string;
+  /** "forecast" or "dashboard" — the menu group it's listed under. */
+  kind: "forecast" | "dashboard";
   title: Record<Lang, string>;
   summary: Record<Lang, string>;
   /** Duration label, e.g. "2:33". */
@@ -47,6 +54,7 @@ interface TrainingVideo {
 const TRAINING_VIDEOS: TrainingVideo[] = [
   {
     id: "forecaster-onboarding",
+    kind: "forecast",
     title: { en: "Forecaster onboarding", fr: "Prise en main du Forecaster" },
     summary: {
       en: "Your forecast page, section by section: selectors, tabs, the grid, reference data and more.",
@@ -58,6 +66,7 @@ const TRAINING_VIDEOS: TrainingVideo[] = [
   },
   {
     id: "copy-paste",
+    kind: "forecast",
     title: { en: "Copy and paste", fr: "Copier-coller" },
     summary: {
       en: "Five ways to fill your forecast faster: bookings, another year, one line, Media to Labs, Product.",
@@ -69,6 +78,7 @@ const TRAINING_VIDEOS: TrainingVideo[] = [
   },
   {
     id: "google-sheets",
+    kind: "forecast",
     title: { en: "Working with Google Sheets", fr: "Travailler avec Google Sheets" },
     summary: {
       en: "Export, edit with your team, import back, and start a new RFQ from the previous one.",
@@ -80,6 +90,7 @@ const TRAINING_VIDEOS: TrainingVideo[] = [
   },
   {
     id: "flags-overview",
+    kind: "forecast",
     title: { en: "Overview of automated flags", fr: "Aperçu des signalements automatiques" },
     summary: {
       en: "Validate your forecast, resolve its flags and get your milestone to green.",
@@ -91,29 +102,50 @@ const TRAINING_VIDEOS: TrainingVideo[] = [
   },
 ];
 
-// Dashboard overview: titles here, files from config/training_videos.
-const DASHBOARD_VIDEO_TEXT: Record<DashboardVideoLevel, { title: Record<Lang, string>; summary: Record<Lang, string> }> = {
-  agency: {
-    title: { en: "Dashboard overview", fr: "Aperçu du tableau de bord" },
+// One video per dashboard: titles here, files from config/training_videos.
+const DASHBOARD_VIDEO_TEXT: Record<DashboardVideoId, { title: Record<Lang, string>; summary: Record<Lang, string> }> = {
+  forecaster: {
+    title: { en: "Forecaster Dashboard", fr: "Tableau de bord Forecaster" },
     summary: {
-      en: "Filters, Media Investments, Labs Pacing and Reports.",
-      fr: "Filtres, Media Investments, Labs Pacing et Reports.",
+      en: "Your clients' forecasts: Forecast Summary, Media, Labs, Revenues, Product and the Flags list.",
+      fr: "Les prévisions de vos clients : Forecast Summary, Media, Labs, Revenues, Product et la liste des signalements.",
     },
   },
-  leads: {
-    title: { en: "Dashboard overview for business and digital leads", fr: "Aperçu du tableau de bord : business et digital leads" },
+  "labs-pacing": {
+    title: { en: "Labs Pacing", fr: "Labs Pacing" },
     summary: {
-      en: "Filters, the Forecaster tab, Media Investments, Labs Pacing and Reports.",
-      fr: "Filtres, onglet Forecaster, Media Investments, Labs Pacing et Reports.",
+      en: "MediaOcean bookings against each Labs partner's target, by partner and by client.",
+      fr: "Les réservations MediaOcean par rapport à la cible de chaque partenaire Labs, par partenaire et par client.",
     },
   },
-  leadership: {
-    title: { en: "Dashboard overview for leadership", fr: "Aperçu du tableau de bord : direction" },
+  "exec-kpis": {
+    title: { en: "Exec KPI Dashboard", fr: "Tableau de bord Exec KPI" },
     summary: {
-      en: "Every tab, including Exec KPI and MediaBox Adoption.",
-      fr: "Tous les onglets, y compris Exec KPI et MediaBox Adoption.",
+      en: "Media and Labs KPI goals by GM and client, month pacing, and Deal Pacing.",
+      fr: "Objectifs KPI Média et Labs par DG et par client, rythme par mois, et Deal Pacing.",
     },
   },
+  mediaocean: {
+    title: { en: "Media Investments Report + Raw Data Download", fr: "Media Investments Report + Raw Data Download" },
+    summary: {
+      en: "Booked investment, top partners, KPIs, the MediaBox Planner view and the raw data reports.",
+      fr: "Investissement réservé, principaux partenaires, KPI, vue MediaBox Planner et rapports de données brutes.",
+    },
+  },
+  mediabox: {
+    title: { en: "MediaBox Adoption", fr: "MediaBox Adoption" },
+    summary: {
+      en: "How much of the forecast spend is entered in MediaBox, and the largest gaps.",
+      fr: "La part des dépenses prévues saisie dans MediaBox, et les plus grands écarts.",
+    },
+  },
+};
+
+/** Links shared before the per-dashboard split point to the closest new video. */
+const OLD_VIDEO_IDS: Record<string, string> = {
+  "dashboard-agency": "dashboard-mediaocean",
+  "dashboard-leads": "dashboard-forecaster",
+  "dashboard-leadership": "dashboard-exec-kpis",
 };
 
 // ─── Language preference (external store: localStorage + in-memory fallback) ──
@@ -166,11 +198,22 @@ function videoLink(id: string, l: Lang): string {
   return `${window.location.origin}/how-to?${params.toString()}`;
 }
 
-export default function TrainingVideos() {
+export interface TrainingVideosState {
+  videos: TrainingVideo[];
+  lang: Lang;
+  chooseLang: (l: Lang) => void;
+  /** The video a shared link points to (once it's in the list), else null. */
+  linkedId: string | null;
+  /** A shared link points to a video this person can't see. */
+  linkedMissing: boolean;
+}
+
+/** The videos this person gets, the language, and the shared link's target. */
+export function useTrainingVideos(): TrainingVideosState {
   const savedLang = useSyncExternalStore(subscribeLang, readLang, (): Lang => "en");
   // A link's ?lang= wins for this visit, until the viewer flips the toggle.
   const [ignoreLinkLang, setIgnoreLinkLang] = useState(false);
-  const choose = (l: Lang) => {
+  const chooseLang = (l: Lang) => {
     setIgnoreLinkLang(true);
     saveLang(l);
   };
@@ -178,21 +221,22 @@ export default function TrainingVideos() {
 
   const audience = { isAdmin: ctx.isAdmin, hasTeamSpaces, openTabs };
   const forecast = !loading && seesForecastVideos(audience);
-  const levelsKey = loading ? "" : dashboardVideoLevels(audience).join(",");
+  const idsKey = loading ? "" : dashboardVideoIds(audience).join(",");
 
   // The video a shared link points to, and its language.
   const search = useSyncExternalStore(subscribeNothing, () => window.location.search, () => "");
   const linkParams = useMemo(() => new URLSearchParams(search), [search]);
-  const linkedId = linkParams.get(VIDEO_PARAM);
+  const rawLinkedId = linkParams.get(VIDEO_PARAM);
+  const wantedId = rawLinkedId ? (OLD_VIDEO_IDS[rawLinkedId] ?? rawLinkedId) : null;
   const rawLinkLang = linkParams.get(LANG_PARAM);
   const linkLang: Lang | null = rawLinkLang === "en" || rawLinkLang === "fr" ? rawLinkLang : null;
   const lang = (!ignoreLinkLang && linkLang) || savedLang;
 
-  // The private dashboard files, fetched once the person's levels are known.
+  // The private dashboard files, fetched once the person's dashboards are known.
   const [files, setFiles] = useState<DashboardVideoFiles>({});
   const [filesSettled, setFilesSettled] = useState(false);
   useEffect(() => {
-    if (!levelsKey) return;
+    if (!idsKey) return;
     let cancelled = false;
     fetchDashboardVideoFiles()
       .then((f) => {
@@ -205,143 +249,112 @@ export default function TrainingVideos() {
     return () => {
       cancelled = true;
     };
-  }, [levelsKey]);
-
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  async function copyLink(id: string) {
-    const key = `${id}-${lang}`;
-    try {
-      await navigator.clipboard.writeText(videoLink(id, lang));
-      setCopiedKey(key);
-      setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 2000);
-    } catch (err) {
-      console.error("Failed to copy the video link: ", err);
-    }
-  }
+  }, [idsKey]);
 
   const videos: TrainingVideo[] = useMemo(() => {
-    const levels = levelsKey ? (levelsKey.split(",") as DashboardVideoLevel[]) : [];
-    const dashboard = levels.flatMap((level): TrainingVideo[] => {
-      const f = files[level];
+    const ids = idsKey ? (idsKey.split(",") as DashboardVideoId[]) : [];
+    const dashboard = ids.flatMap((id): TrainingVideo[] => {
+      const f = files[id];
       if (!f) return [];
       return [{
-        id: `dashboard-${level}`,
-        ...DASHBOARD_VIDEO_TEXT[level],
+        id: `dashboard-${id}`,
+        kind: "dashboard",
+        ...DASHBOARD_VIDEO_TEXT[id],
         length: { en: f.en.length, fr: f.fr.length },
         src: { en: f.en.src, fr: f.fr.src },
         poster: { en: f.en.poster, fr: f.fr.poster },
       }];
     });
     return [...(forecast ? TRAINING_VIDEOS : []), ...dashboard];
-  }, [forecast, levelsKey, files]);
+  }, [forecast, idsKey, files]);
 
-  // Scroll to the linked video once it's on the page (dashboard videos arrive
-  // after a fetch), once per visit.
-  const linkedFound = linkedId != null && videos.some((v) => v.id === linkedId);
-  const scrolledRef = useRef(false);
-  useEffect(() => {
-    if (!linkedFound || scrolledRef.current) return;
-    scrolledRef.current = true;
-    document.getElementById(`video-${linkedId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [linkedFound, linkedId]);
-
+  const linkedFound = wantedId != null && videos.some((v) => v.id === wantedId);
   // Everything this person can see is loaded, and the linked video isn't there.
-  const listSettled = !loading && (!levelsKey || filesSettled);
-  const linkedMissing = linkedId != null && listSettled && !linkedFound;
+  const listSettled = !loading && (!idsKey || filesSettled);
+  const linkedMissing = wantedId != null && listSettled && !linkedFound;
 
-  if (videos.length === 0 && !linkedMissing) return null;
+  return { videos, lang, chooseLang, linkedId: linkedFound ? wantedId : null, linkedMissing };
+}
+
+/** The EN / FR switch. */
+export function VideoLangToggle({ lang, onChoose }: { lang: Lang; onChoose: (l: Lang) => void }) {
+  return (
+    <div role="group" aria-label="Video language" className="flex border border-gray-900">
+      {(["en", "fr"] as const).map((l) => (
+        <button
+          key={l}
+          type="button"
+          onClick={() => onChoose(l)}
+          aria-pressed={lang === l}
+          className={`px-3 py-1.5 text-xs font-bold tracking-wide transition-colors ${
+            lang === l ? "bg-gray-900 text-yellow-400" : "bg-white text-gray-700 hover:bg-gray-100"
+          }`}
+        >
+          {l === "en" ? "EN · English" : "FR · Français"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** One video, full width of the guide's content column, with its language switch and link. */
+export function TrainingVideoPlayer({
+  video: v,
+  lang,
+  onChooseLang,
+}: {
+  video: TrainingVideo;
+  lang: Lang;
+  onChooseLang: (l: Lang) => void;
+}) {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const key = `${v.id}-${lang}`;
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(videoLink(v.id, lang));
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 2000);
+    } catch (err) {
+      console.error("Failed to copy the video link: ", err);
+    }
+  }
+  const copied = copiedKey === key;
 
   return (
-    <section className="mb-8">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b-2 border-gray-900 pb-2.5">
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center bg-gray-900 text-yellow-400">
-            <PlayCircle size={18} />
-          </span>
-          <div>
-            <h2 className="text-lg font-bold leading-tight text-gray-900">
-              {lang === "fr" ? "Vidéos de formation" : "Training videos"}
-            </h2>
-            <p className="text-xs text-gray-500">
-              {lang === "fr"
-                ? "Courtes démonstrations narrées, sous-titrées."
-                : "Short narrated walkthroughs, with captions."}
-            </p>
-          </div>
-        </div>
-        <div role="group" aria-label="Video language" className="flex border border-gray-900">
-          {(["en", "fr"] as const).map((l) => (
-            <button
-              key={l}
-              type="button"
-              onClick={() => choose(l)}
-              aria-pressed={lang === l}
-              className={`px-3 py-1.5 text-xs font-bold tracking-wide transition-colors ${
-                lang === l ? "bg-gray-900 text-yellow-400" : "bg-white text-gray-700 hover:bg-gray-100"
-              }`}
-            >
-              {l === "en" ? "EN · English" : "FR · Français"}
-            </button>
-          ))}
-        </div>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[15px] text-gray-700">{v.summary[lang]}</p>
+        <VideoLangToggle lang={lang} onChoose={onChooseLang} />
       </div>
-
-      {linkedMissing && (
-        <p className="mb-4 bg-yellow-400 px-4 py-3 text-sm text-gray-900">
-          {lang === "fr"
-            ? "La vidéo de ce lien n’est pas disponible avec votre accès."
-            : "The video in this link isn’t available with your access."}
-        </p>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {videos.map((v) => (
-          <article
-            key={v.id}
-            id={`video-${v.id}`}
-            className={`bg-white ${
-              v.id === linkedId ? "border-2 border-yellow-400" : "border border-gray-200"
-            }`}
-          >
-            {/* key={lang}: switching language loads the other file from the start. */}
-            <video
-              key={`${v.id}-${lang}`}
-              controls
-              preload="metadata"
-              poster={v.poster[lang]}
-              className="block aspect-video w-full bg-black"
-            >
-              <source src={v.src[lang]} type="video/mp4" />
-            </video>
-            <div className="flex items-start justify-between gap-3 px-4 py-3">
-              <div>
-                <h3 className="font-semibold text-gray-900">{v.title[lang]}</h3>
-                <p className="mt-0.5 text-sm text-gray-500">{v.summary[lang]}</p>
-              </div>
-              <div className="flex flex-shrink-0 flex-col items-end gap-2">
-                <span className="bg-gray-900 px-2 py-0.5 text-xs font-semibold tabular-nums text-white">
-                  {v.length[lang]}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => copyLink(v.id)}
-                  title={
-                    lang === "fr"
-                      ? "Copier un lien vers cette vidéo (en français), à partager par courriel ou dans une présentation"
-                      : "Copy a link to this video (in English) to share in an email or a deck"
-                  }
-                  className="flex items-center gap-1 border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
-                >
-                  {copiedKey === `${v.id}-${lang}` ? <Check size={12} /> : <Link2 size={12} />}
-                  {copiedKey === `${v.id}-${lang}`
-                    ? lang === "fr" ? "Lien copié" : "Link copied"
-                    : lang === "fr" ? "Copier le lien" : "Copy link"}
-                </button>
-              </div>
-            </div>
-          </article>
-        ))}
+      {/* key: switching video or language loads the other file from the start. */}
+      <video
+        key={key}
+        controls
+        preload="metadata"
+        poster={v.poster[lang]}
+        className="block aspect-video w-full bg-black"
+      >
+        <source src={v.src[lang]} type="video/mp4" />
+      </video>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-xs text-gray-500">
+          {lang === "fr" ? "Narration et sous-titres" : "Narrated, with captions"} ·{" "}
+          <span className="font-semibold tabular-nums text-gray-900">{v.length[lang]}</span>
+        </span>
+        <button
+          type="button"
+          onClick={copyLink}
+          title={
+            lang === "fr"
+              ? "Copier un lien vers cette vidéo (en français), à partager par courriel ou dans une présentation"
+              : "Copy a link to this video (in English) to share in an email or a deck"
+          }
+          className="flex items-center gap-1 border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
+        >
+          {copied ? <Check size={12} /> : <Link2 size={12} />}
+          {copied ? (lang === "fr" ? "Lien copié" : "Link copied") : lang === "fr" ? "Copier le lien" : "Copy link"}
+        </button>
       </div>
-    </section>
+    </div>
   );
 }
