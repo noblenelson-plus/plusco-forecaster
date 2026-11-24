@@ -8,7 +8,9 @@
  *
  * Built on the flags saved at the checkpoint (flag_history: each client's last
  * validation of that milestone, kept in step with later justifications).
- * Amounts are each flag's `delta` converted to CAD.
+ * Amounts are each flag's `delta` converted to CAD — except Under-forecasting,
+ * shown as BL forecast − MediaOcean (negative: "our forecast is short by $X",
+ * Adriana 2026-11-24; the stored delta stays MediaOcean − forecast).
  */
 
 import { BL_MEDIAOCEAN_THRESHOLD } from "../flags/bl-alerts";
@@ -57,6 +59,8 @@ export interface FlagTypeDef {
   amountNote: string;
   /** Media / Labs types: what the per-"On" breakdown lists (media types or partners). */
   breakdown?: "Media type" | "Partner";
+  /** Shown with the stored delta's sign flipped (Under-forecasting: forecast − bookings). */
+  negate?: boolean;
 }
 
 const k = (n: number) => `$${Math.round(n / 1000)}K`;
@@ -73,17 +77,19 @@ export const FLAG_TYPES: FlagTypeDef[] = [
     id: "under_forecasting_media",
     category: "forecast_qa",
     label: "Under-forecasting — Media",
-    threshold: `MediaOcean bookings ${k(BL_MEDIAOCEAN_THRESHOLD)}+ above the BL forecast (full year), per media type`,
-    amountNote: "MediaOcean bookings − BL forecast. Always +: more is booked than forecast, so the forecast is too low (under-forecast).",
+    threshold: `BL forecast short by ${k(BL_MEDIAOCEAN_THRESHOLD)}+ vs MediaOcean bookings (full year), per media type`,
+    amountNote: "BL forecast − MediaOcean bookings. Always −: the forecast is short of what is already booked, by this amount.",
     breakdown: "Media type",
+    negate: true,
   },
   {
     id: "under_forecasting_labs",
     category: "forecast_qa",
     label: "Under-forecasting — Labs",
-    threshold: `MediaOcean bookings ${k(BL_MEDIAOCEAN_THRESHOLD)}+ above the BL forecast (full year), per Labs partner`,
-    amountNote: "MediaOcean bookings − BL forecast. Always +: more is booked with the partner than forecast, so the forecast is too low (under-forecast).",
+    threshold: `BL forecast short by ${k(BL_MEDIAOCEAN_THRESHOLD)}+ vs MediaOcean bookings (full year), per Labs partner`,
+    amountNote: "BL forecast − MediaOcean bookings. Always −: the forecast is short of what is already booked with the partner, by this amount.",
     breakdown: "Partner",
+    negate: true,
   },
   {
     id: "swing_revenue",
@@ -148,6 +154,15 @@ export const FLAG_TYPE_BY_RULE: Record<FlagRuleId, FlagTypeId> = {
 };
 
 const TYPE_BY_ID = new Map<FlagTypeId, FlagTypeDef>(FLAG_TYPES.map((t) => [t.id, t]));
+
+/**
+ * A flag's amount as the Milestones page shows it: the stored delta, sign
+ * flipped for Under-forecasting (BL forecast − MediaOcean, negative).
+ */
+export function displayDelta(flag: Pick<StoredFlag, "ruleId" | "delta">): number {
+  const d = flag.delta ?? 0;
+  return flagTypeOf(flag)?.negate ? -d : d;
+}
 
 /** The report flag type of a stored flag (undefined for an unknown rule). */
 export function flagTypeOf(flag: Pick<StoredFlag, "ruleId">): FlagTypeDef | undefined {
@@ -363,7 +378,7 @@ export function computeFlagInsights(
         s = { type, group, row: newRowAcc(), byOn: new Map() };
         acc.set(key, s);
       }
-      const d = (f.delta ?? 0) * c.toCad;
+      const d = displayDelta(f) * c.toCad;
       const ctx = f.justified && f.context ? f.context : "NOT_JUSTIFIED";
       addToRow(s.row, c.clientId, d, ctx);
       if (type.breakdown) {
