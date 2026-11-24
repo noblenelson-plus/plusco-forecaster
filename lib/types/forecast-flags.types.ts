@@ -50,6 +50,46 @@ export function isJustifiableRule(ruleId: FlagRuleId): boolean {
   return !NON_JUSTIFIABLE_RULES.has(ruleId);
 }
 
+// ─── Display convention ──────────────────────────────────────────────────────
+
+/**
+ * Under-forecasting reads as a shortfall everywhere in the app: BL forecast −
+ * MediaOcean bookings, a negative amount ("the forecast is short by $X";
+ * Adriana, 2026-11-24). The stored flag keeps current = MediaOcean, reference =
+ * BL forecast and delta = MediaOcean − forecast — only the display flips, so
+ * thresholds, validation and justifications are unaffected.
+ */
+const SHORTFALL_RULES: ReadonlySet<string> = new Set<FlagRuleId>([
+  "mediaocean-over-media",
+  "mediaocean-over-labs",
+]);
+
+/** Whether a rule's amounts are shown as a shortfall (forecast − bookings). */
+export function isShortfallRule(ruleId: string): boolean {
+  return SHORTFALL_RULES.has(ruleId);
+}
+
+/** A flag amount (delta, or a drift value) as shown: sign flipped for a shortfall rule. */
+export function shownDelta(ruleId: string, delta: number | undefined): number {
+  const d = delta ?? 0;
+  return isShortfallRule(ruleId) ? -d : d;
+}
+
+/**
+ * The amounts of a flag (or of one breakdown line) as shown: for a shortfall
+ * rule the BL forecast comes first and the gap is negative; otherwise as stored.
+ */
+export function shownFlagAmounts(
+  ruleId: string,
+  line: { current?: number; reference?: number; delta?: number }
+): { current: number; reference: number; delta: number } {
+  const current = line.current ?? 0;
+  const reference = line.reference ?? 0;
+  return isShortfallRule(ruleId)
+    ? { current: reference, reference: current, delta: -(line.delta ?? 0) }
+    : { current, reference, delta: line.delta ?? 0 };
+}
+
 // ─── Justification context ─────────────────────────────────────────────────
 
 /**

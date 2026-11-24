@@ -7,7 +7,8 @@
  * counts as justified only with BOTH. Shows the compared amounts, the analyzed
  * months (under-target), the partners behind a Labs-over-media check,
  * and — when the numbers drifted since it was justified — a "justified at $X,
- * now $Y" note. Editable even on a locked RFQ (the justification is an
+ * now $Y" note. Under-forecast amounts read as a shortfall (BL forecast vs
+ * MediaOcean, negative gap — shownFlagAmounts), like everywhere else. Editable even on a locked RFQ (the justification is an
  * annotation, not forecast data).
  *
  * Autosave: every change saves itself ~1.5 s after the last keystroke (and
@@ -40,6 +41,8 @@ import {
   isFlagJustified,
   isJustifiableRule,
   otherNoteTooShort,
+  shownDelta,
+  shownFlagAmounts,
   type FlagContext,
   type StoredFlag,
 } from "../../lib/types/forecast-flags.types";
@@ -85,7 +88,7 @@ export function flagComparison(flag: StoredFlag): string {
       return "· Labs partners vs media forecast";
     case "mediaocean-over-media":
     case "mediaocean-over-labs":
-      return "· MediaOcean vs BL forecast";
+      return "· BL forecast vs MediaOcean";
     default:
       return flag.category === "swing" ? "· prev RFQ" : "· forecast";
   }
@@ -146,6 +149,8 @@ export default function FlagCard({
   const correctable = !isJustifiableRule(flag.ruleId);
   const justified = flag.justified && !correctable;
   const drift = flagDrift(flag);
+  // Amounts as shown (under-forecast: BL forecast first, negative gap).
+  const shown = shownFlagAmounts(flag.ruleId, flag);
   const dirty = context !== storedContext || note !== storedNote;
   const wouldJustify = isFlagJustified({ context: context || undefined, note });
 
@@ -267,13 +272,13 @@ export default function FlagCard({
             </span>
           </div>
           <span className="flex-shrink-0 font-bold tabular-nums">
-            {formatSigned(flag.delta)}
+            {formatSigned(shown.delta)}
           </span>
         </div>
         <p className="mt-1.5 text-[13px] tabular-nums">
-          <span className="font-semibold">{formatMoney(flag.current)}</span>
+          <span className="font-semibold">{formatMoney(shown.current)}</span>
           {" vs "}
-          <span>{formatMoney(flag.reference)}</span>
+          <span>{formatMoney(shown.reference)}</span>
           {currency ? <span className="ml-1 text-gray-600">{currency}</span> : null}
           <span className={`ml-1 ${justified ? "text-gray-400" : "text-gray-600"}`}>
             {flagComparison(flag)}
@@ -297,19 +302,22 @@ export default function FlagCard({
         {flag.ruleId !== "labs-over-media" && flag.breakdown && flag.breakdown.length > 0 && (
           <div className={`mt-1 border-l pl-3 text-[11px] tabular-nums ${justified ? "border-gray-300 text-gray-500" : "border-gray-700 text-gray-800"}`}>
             <p className="font-semibold uppercase tracking-wide">
-              Over forecast by {flag.axis === "labs" ? "partner" : "media type"}
+              Forecast short by {flag.axis === "labs" ? "partner" : "media type"}
             </p>
             <ul className="space-y-0.5">
-              {flag.breakdown.map((b) => (
-                <li key={b.label}>
-                  <span className="font-medium">{b.label}</span>
-                  {" — "}
-                  <span className="font-semibold">{formatMoney(b.current)}</span>
-                  {" vs "}
-                  {formatMoney(b.reference)}
-                  <span className="ml-1 font-semibold">({formatSigned(b.delta)})</span>
-                </li>
-              ))}
+              {flag.breakdown.map((b) => {
+                const line = shownFlagAmounts(flag.ruleId, b);
+                return (
+                  <li key={b.label}>
+                    <span className="font-medium">{b.label}</span>
+                    {" — "}
+                    <span className="font-semibold">{formatMoney(line.current)}</span>
+                    {" vs "}
+                    {formatMoney(line.reference)}
+                    <span className="ml-1 font-semibold">({formatSigned(line.delta)})</span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -327,8 +335,8 @@ export default function FlagCard({
         )}
         {drift.changed && !correctable && (
           <p className="mt-1 text-[11px] font-medium text-gray-700">
-            Justified when it was {formatSigned(drift.fromDelta)} — now{" "}
-            {formatSigned(drift.toDelta)}. Review the justification.
+            Justified when it was {formatSigned(shownDelta(flag.ruleId, drift.fromDelta))} — now{" "}
+            {formatSigned(shownDelta(flag.ruleId, drift.toDelta))}. Review the justification.
           </p>
         )}
       </div>

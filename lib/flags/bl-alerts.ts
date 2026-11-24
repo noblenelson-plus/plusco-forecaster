@@ -120,8 +120,14 @@ export interface BlAlert {
   /** Short names of the two compared amounts (`left` vs `right`). */
   leftLabel: string;
   rightLabel: string;
-  /** What the variance means, shown after it (e.g. "to add to BL"). */
+  /** What the variance means, shown after it (e.g. "short"). */
   varianceLabel: string;
+  /**
+   * Under-forecast: the banner shows each row as a shortfall — BL forecast
+   * (`right`) vs MediaOcean (`left`), negative gap — like the rest of the app
+   * (shownFlagAmounts). The rows themselves keep left = MediaOcean.
+   */
+  shortfall?: boolean;
   rows: BlAlertRow[];
 }
 
@@ -143,23 +149,25 @@ const ALERT_META: Record<BlAlertId, AlertMeta> = {
     title: "QA: UNDER-FORECAST",
     axis: "media",
     justifiable: true,
-    explanationLead: "Booked MediaOcean spend",
+    explanationLead: "BL forecast",
     explanation:
-      " for the year is higher than the BL forecast for these media types: correct your forecast and revalidate, or justify on the Flags page.",
-    leftLabel: "MediaOcean",
-    rightLabel: "BL forecast",
-    varianceLabel: "to add to BL",
+      " for the year is short of the booked MediaOcean spend for these media types: correct your forecast and revalidate, or justify on the Flags page.",
+    leftLabel: "BL forecast",
+    rightLabel: "MediaOcean",
+    varianceLabel: "short",
+    shortfall: true,
   },
   "mediaocean-over-labs": {
     title: "QA: UNDER-FORECAST",
     axis: "labs",
     justifiable: true,
-    explanationLead: "Booked MediaOcean spend",
+    explanationLead: "BL forecast",
     explanation:
-      " for the year is higher than the BL forecast for these Labs partners: correct your forecast and revalidate, or justify on the Flags page.",
-    leftLabel: "MediaOcean",
-    rightLabel: "BL forecast",
-    varianceLabel: "to add to BL",
+      " for the year is short of the booked MediaOcean spend for these Labs partners: correct your forecast and revalidate, or justify on the Flags page.",
+    leftLabel: "BL forecast",
+    rightLabel: "MediaOcean",
+    varianceLabel: "short",
+    shortfall: true,
   },
 };
 

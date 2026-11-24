@@ -21,7 +21,13 @@ import { AXIS_STYLE } from "./axis-style";
 import { flagComparison, flagName, formatMonths } from "./flag-card";
 import type { ScopeFlagsData } from "../../lib/dashboard/data/use-scope-flags";
 import { formatMoney, formatSigned } from "../../lib/format/money";
-import { flagContextLabel, flagDrift, type StoredFlag } from "../../lib/types/forecast-flags.types";
+import {
+  flagContextLabel,
+  flagDrift,
+  shownDelta,
+  shownFlagAmounts,
+  type StoredFlag,
+} from "../../lib/types/forecast-flags.types";
 import type { AxisId } from "../../lib/types/forecaster.types";
 import type { RFQType } from "../../lib/types/rfq.types";
 
@@ -173,6 +179,8 @@ function FlagItem({
   userNameById?: Map<string, string>;
 }) {
   const drift = flagDrift(flag);
+  // Amounts as shown (under-forecast: BL forecast first, negative gap).
+  const shown = shownFlagAmounts(flag.ruleId, flag);
   const byName = flag.justifiedBy ? userNameById?.get(flag.justifiedBy) : undefined;
   const dateLabel = justifiedDate(flag.justifiedAt);
   return (
@@ -191,13 +199,13 @@ function FlagItem({
             )}
             <span>{flagName(flag)}</span>
           </div>
-          <span className="flex-shrink-0 font-bold tabular-nums">{formatSigned(flag.delta)}</span>
+          <span className="flex-shrink-0 font-bold tabular-nums">{formatSigned(shown.delta)}</span>
         </div>
 
         <p className="mt-1.5 text-[13px] tabular-nums">
-          <span className="font-semibold">{formatMoney(flag.current)}</span>
+          <span className="font-semibold">{formatMoney(shown.current)}</span>
           {" vs "}
-          <span>{formatMoney(flag.reference)}</span>
+          <span>{formatMoney(shown.reference)}</span>
           <span className={`ml-1 ${flag.justified ? "text-gray-400" : "text-gray-600"}`}>
             {flagComparison(flag)}
           </span>
@@ -232,7 +240,8 @@ function FlagItem({
 
         {drift.changed && (
           <p className="mt-1 text-[11px] font-medium text-gray-700">
-            Justified when it was {formatSigned(drift.fromDelta)} — now {formatSigned(drift.toDelta)}.
+            Justified when it was {formatSigned(shownDelta(flag.ruleId, drift.fromDelta))} — now{" "}
+            {formatSigned(shownDelta(flag.ruleId, drift.toDelta))}.
           </p>
         )}
       </div>
