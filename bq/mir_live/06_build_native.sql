@@ -292,6 +292,10 @@ tagged AS (
     v.SPOT_MARKET_CODE AS v_spot_market_code, v.SPOT_MARKET_NAME AS v_spot_market_name,
     -- Programmatic & SEM split (search buy type, or SEM / MOTS / SEARCH / SM — not ISM, ASM, OSM — in the product or estimate).
     v.PLUSCO_MEDIA_CHANNEL = 'Programmatic & SEM' AS is_prog_sem,
+    -- MIQ / AIM (partner AIM-KPI G in Key_2026_Deals) are retagged by buy type in the manual MIR.
+    UPPER(TRIM(v.PLUSCO_MEDIA_PARTNER)) IN ('MIQ', 'AIM', 'AIM-KPI G') AS is_miq_aim,
+    -- Vendors tagged "Programmatic & Social & SEM" (MIQ-MEK 35015, AIM 30781) are split by buy type.
+    v.PLUSCO_MEDIA_CHANNEL = 'Programmatic & Social & SEM' AS is_multi,
     l.buytype = 'SEARCH'
       OR REGEXP_CONTAINS(UPPER(CONCAT(l.product_txt, ' | ', l.estimate_txt)), r'SEM|MOTS|SEARCH')
       OR (REGEXP_CONTAINS(UPPER(l.product_txt), r'SM') AND NOT REGEXP_CONTAINS(UPPER(l.product_txt), r'ISM|ASM|OSM'))
@@ -303,10 +307,15 @@ tagged AS (
 ruled AS (
   SELECT
     t.*,
+    -- Manual MIR steps (Noble, 2026-11-25): MIQ / AIM social buys → Social (no programmatic, FOREIGN);
+    -- Programmatic & SEM vendors → SEM (FOREIGN) or Programmatic (HYBRID); "Programmatic & Social & SEM"
+    -- vendors → SEM on a search buy, else Programmatic (Direct/Managed, HYBRID).
     CASE
-      WHEN t.v_partner = 'MIQ' AND t.buytype = 'SOCIAL' THEN 'Social'
+      WHEN t.is_miq_aim AND t.buytype = 'SOCIAL' THEN 'Social'
       WHEN t.is_prog_sem AND t.is_sem THEN 'SEM'
       WHEN t.is_prog_sem THEN 'Programmatic'
+      WHEN t.is_multi AND t.buytype = 'SEARCH' THEN 'SEM'
+      WHEN t.is_multi THEN 'Programmatic'
       -- A Spot station missing from the Vendor Database is still TV or radio: network TV booked on market codes
       -- (TORHN, VANV, HALI…) that no order split resolved would otherwise drop out of the forecast page's TV
       -- (~$2.4M of 2026 on the Oct 27 QA). Partner and the other vendor columns stay empty.
@@ -315,14 +324,17 @@ ruled AS (
       ELSE t.v_channel
     END AS channel,
     CASE
-      WHEN t.v_partner = 'MIQ' AND t.buytype = 'SOCIAL' THEN NULL
+      WHEN t.is_miq_aim AND t.buytype = 'SOCIAL' THEN NULL
       WHEN t.is_prog_sem AND t.is_sem THEN NULL
+      WHEN t.is_multi AND t.buytype = 'SEARCH' THEN NULL
       ELSE t.v_prog
     END AS programmatic,
     CASE
-      WHEN t.v_partner = 'MIQ' AND t.buytype = 'SOCIAL' THEN 'FOREIGN'
+      WHEN t.is_miq_aim AND t.buytype = 'SOCIAL' THEN 'FOREIGN'
       WHEN t.is_prog_sem AND t.is_sem THEN 'FOREIGN'
       WHEN t.is_prog_sem THEN 'HYBRID'
+      WHEN t.is_multi AND t.buytype = 'SEARCH' THEN 'FOREIGN'
+      WHEN t.is_multi THEN 'HYBRID'
       ELSE t.v_local
     END AS local_media
   FROM tagged t
@@ -402,7 +414,7 @@ base AS (
       END
       -- AIM is split like MIQ, matching the Forecaster's AIM-Prog / AIM-Social / AIM-SEM partners
       -- (Adriana, 2026-11-20).
-      WHEN r.v_partner = 'AIM' THEN CASE
+      WHEN r.v_partner IN ('AIM', 'AIM-KPI G') THEN CASE
         WHEN r.buytype = 'SOCIAL' THEN 'AIM-SOCIAL'
         WHEN UPPER(r.buytype) IN ('SEARCH', 'OTHER') THEN 'AIM-SEM'
         ELSE 'AIM-PROG'
