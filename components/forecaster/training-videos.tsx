@@ -112,8 +112,8 @@ const PRIVATE_FORECAST_TEXT: Record<PrivateForecastVideoId, { title: Record<Lang
   milestones: {
     title: { en: "The Milestones page", fr: "La page Milestones" },
     summary: {
-      en: "Follow your clients' validation: statuses, Milestones by client, flag insights and every justification.",
-      fr: "Suivez la validation de vos clients : statuts, Milestones by client, analyse des signalements et chaque justification.",
+      en: "Follow your clients' validation: statuses, Milestones by client, the flag types, flag insights and every justification.",
+      fr: "Suivez la validation de vos clients : statuts, Milestones by client, types de signalements, analyse des signalements et chaque justification.",
     },
   },
 };
