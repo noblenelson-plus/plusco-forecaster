@@ -120,8 +120,10 @@ function writeVendorRow_(sheet, rowNo, v, status) {
   const values = VENDOR_COLS.map(c => (c ? (v[c] === null || v[c] === undefined ? '' : String(v[c])) : ''));
   if (status) values.push(status);
   sheet.getRange(rowNo, 1, 1, values.length).setValues([values]);
-  // K:N: the same Key_2026_Deals lookups as the rows above.
-  const deals = [2, 3, 4, 5].map(k => `=VLOOKUP(O${rowNo},Key_2026_Deals!A:E,${k},FALSE)`);
+  // K:N: the same Key_2026_Deals lookups as the rows above. Vendor Database 2.0 is a fr_CA spreadsheet, where
+  // formula arguments are separated by ';' — written with ',' the cells show #ERROR! instead of the lookup.
+  const sep = String(sheet.getParent().getSpreadsheetLocale()).indexOf('en') === 0 ? ',' : ';';
+  const deals = [2, 3, 4, 5].map(k => `=VLOOKUP(O${rowNo}${sep}Key_2026_Deals!A:E${sep}${k}${sep}FALSE)`);
   sheet.getRange(rowNo, V_DEALS, 1, 4).setFormulas([deals]);
 }
 
