@@ -65,6 +65,7 @@ const SYNCS = [
   "sync-mediaocean-investment-mix.mjs", // MEDIAOCEAN_INVESTMENT_MIX          -> mediaocean_investment_mix
   "sync-social-partner-mix.mjs", // SOCIAL_PARTNER_MIX_2025_vs_2026    -> social_partner_mix
   "sync-local-media-mix.mjs", // PCC_Dashboard_NATIVE               -> local_media_mix
+  "sync-investment-deals-mix.mjs", // PCC_Dashboard_NATIVE               -> investment_deals_mix
   "sync-billing-summary-raw.mjs", // Billing_summary_master             -> Storage reports/billing/*
   "sync-mediabox-planner.mjs", // finance_master_mapping             -> mediabox_planner_mix + reports/mediabox_planner/*
 ];

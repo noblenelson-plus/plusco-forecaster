@@ -443,7 +443,8 @@ function DashboardContent() {
     ? execSub
     : (execSubtabs[0]?.id ?? execSub);
   const showsExecMonths =
-    topTab === "exec-kpis" && (execActiveSub === "summary" || execActiveSub === "local-media");
+    topTab === "exec-kpis" &&
+    ["summary", "local-media", "media-yoy", "pcc-deals", "broadcast"].includes(execActiveSub);
   const [execMonthsPick, setExecMonthsPick] = useState<{ year: number | null; months: number[] } | null>(null);
   const execMonths = useMemo(
     () =>

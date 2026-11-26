@@ -35,6 +35,11 @@ export const EXEC_KPIS_SUBTABS = [
   { id: "labs-pacing", label: "Deal Pacing" },
   { id: "billups", label: "Billups" },
   { id: "local-media", label: "Local Media" },
+  { id: "media-yoy", label: "Media YOY" },
+  { id: "pcc-deals", label: "PCC Deals" },
+  { id: "broadcast", label: "Broadcast" },
+  { id: "programmatic", label: "Programmatic" },
+  { id: "partner-data", label: "Partner Data" },
 ] as const satisfies readonly SubTabDef[];
 export type ExecSubTab = (typeof EXEC_KPIS_SUBTABS)[number]["id"];
 
