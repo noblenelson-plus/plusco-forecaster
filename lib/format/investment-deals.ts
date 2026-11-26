@@ -250,3 +250,66 @@ export function pivot(
 
 export const BROADCAST_CHANNELS = ["TV", "Radio"];
 export const isBroadcast = (r: InvestmentDealsRow) => BROADCAST_CHANNELS.includes(tag(r.PLUSCO_MEDIA_CHANNEL));
+
+// ─── Investment Strategy KPIs (Looker's YOY page band) ───────────────────────
+
+/** Channels that make up "digital" (as in Media Investments). */
+export const DIGITAL_CHANNELS = ["Programmatic", "SEM", "Digital Direct", "Social"];
+/** "Partner Deal" exactly — the Deal / Non-Deal split of the Looker band. */
+export const isPartnerDeal = (r: InvestmentDealsRow) => tag(r.PLUSCO_2026_DEALS).toUpperCase() === "PARTNER DEAL";
+
+/** One year's sums behind the band (every share is sum / sum). */
+export interface StrategySums {
+  total: number;
+  digital: number;
+  labs: number;
+  social: number;
+  redditSocial: number;
+  miqSocial: number;
+  meta: number;
+  metaSocial: number;
+  digitalDirect: number;
+  digitalDirectDeal: number;
+  programmatic: number;
+  programmaticDeal: number;
+  ooh: number;
+  billups: number;
+  billupsOoh: number;
+}
+
+export function strategySums(rows: readonly InvestmentDealsRow[], year: number): StrategySums {
+  const s: StrategySums = {
+    total: 0, digital: 0, labs: 0, social: 0, redditSocial: 0, miqSocial: 0, meta: 0, metaSocial: 0,
+    digitalDirect: 0, digitalDirectDeal: 0, programmatic: 0, programmaticDeal: 0, ooh: 0, billups: 0, billupsOoh: 0,
+  };
+  for (const r of rows) {
+    if (String(r.PLUSCO_YEAR) !== String(year)) continue;
+    const v = net(r);
+    const ch = tag(r.PLUSCO_MEDIA_CHANNEL);
+    const p = tag(r.PLUSCO_MEDIA_PARTNER).toUpperCase();
+    s.total += v;
+    if (DIGITAL_CHANNELS.includes(ch)) s.digital += v;
+    if (isLabsDeal(r)) s.labs += v;
+    if (p === "META") s.meta += v;
+    if (p === "BILLUPS") s.billups += v;
+    if (ch === "Social") {
+      s.social += v;
+      if (p === "REDDIT") s.redditSocial += v;
+      if (p === "MIQ") s.miqSocial += v;
+      if (p === "META") s.metaSocial += v;
+    } else if (ch === "Digital Direct") {
+      s.digitalDirect += v;
+      if (isPartnerDeal(r)) s.digitalDirectDeal += v;
+    } else if (ch === "Programmatic") {
+      s.programmatic += v;
+      if (isPartnerDeal(r)) s.programmaticDeal += v;
+    } else if (ch === "OOH") {
+      s.ooh += v;
+      if (p === "BILLUPS") s.billupsOoh += v;
+    }
+  }
+  return s;
+}
+
+/** Ratio or null when the denominator is 0. */
+export const ratio = (a: number, b: number) => (b ? a / b : null);
