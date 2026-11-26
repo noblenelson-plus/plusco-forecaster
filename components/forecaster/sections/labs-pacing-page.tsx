@@ -13,6 +13,7 @@
 
 import LabsPacingSection from "./labs-pacing-section";
 import LabsTargetVsBookedSection from "./labs-target-vs-booked-section";
+import PartnerTargetSplitSection from "./partner-target-split-section";
 import type { Currency } from "../../../lib/types/client.types";
 
 export default function LabsPacingPage({
@@ -36,6 +37,8 @@ export default function LabsPacingPage({
           usdToCad={usdToCad}
         />
       )}
+      {/* Client-level split of the partner targets, rolled up by agency × region / GM pod / BL / client (Exec KPI only). */}
+      {showGmSections && <PartnerTargetSplitSection scopedClientIds={scopedClientIds} />}
       <LabsPacingSection
         scopedClientIds={scopedClientIds}
         currencyByClient={currencyByClient}
