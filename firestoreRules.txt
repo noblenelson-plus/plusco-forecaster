@@ -334,6 +334,12 @@ service cloud.firestore {
       allow read: if isCompanyUser();
       allow create, update, delete: if isAdmin();
     }
+    // partner_target_splits/{year} — admin overrides of the client split of the
+    // partner targets (Deal Pacing → Targets by client; partner-target-split-service.ts).
+    match /partner_target_splits/{year} {
+      allow read: if isCompanyUser();
+      allow create, update, delete: if isAdmin();
+    }
     // ─── config ────────────────────────────────────────────────────────────────
     // Global app configuration docs: config/dashboard_access (dashboard grants,
     // also read by these rules), config/company_domains, config/flag_validation,
