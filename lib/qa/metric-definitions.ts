@@ -339,7 +339,7 @@ export const METRIC_GROUPS: MetricGroup[] = [
         source: `${KPI_SRC} (labs_2026 / labs_spend_2026, labs_families CTE)`,
         basis: "MIR (booked)",
         notes:
-          "Goal = Exec goal 'Labs spend' (Admin → Labs Targets); hidden on the Media Investments page because it is portfolio-wide. Includes ALL MIQ LABS-tagged buy types (incl. Audio/Search, Sep 28 MIR: $672,156), unlike 'Labs Booked to Date (MIR)' in the Pacing/GM views. MIR has no AIM rows today; if MIR ever tags 'AIM-PROG', it would not match the 'AIM' family and drop out.",
+          "Goal = Exec goal 'Labs spend' (Admin → Labs Targets); hidden on the Media Investments page because it is portfolio-wide. Includes ALL MIQ LABS-tagged buy types (incl. Audio, Nov 25 MIR: $595,071), unlike 'Labs Booked to Date (MIR)' in the Pacing/GM views. A MIR partner matches its family on the name before '-', so 'AIM-KPI G' (the vendor database's name for AIM) counts as AIM.",
       },
       {
         name: "Total LABS Spend — per-partner breakdown",
@@ -701,12 +701,12 @@ export const METRIC_GROUPS: MetricGroup[] = [
         where: `${BY_GM} ('Labs Booked to Date (MIR)', '% Target (MIR/RFQ)', 'Labs — by partner')`,
         formula: "Sum of labs_booked_mir_2026 = booked spend of the fixed pacing partners in 2026",
         details:
-          "From the labs_pacing views: Amazon, Quantcast, Yahoo, AIM (all variants), StackAdapt, Reddit, Billups (OOH and Print channels only), MIQ mapped only for buy types Display/Video/Display&Video (MIQ-Prog), Social (MIQ-Social) and Search (MIQ-SEM). No deal-type filter.",
+          "From the labs_pacing views: Amazon, Quantcast, Yahoo, AIM (AIM or AIM-KPI G, split by buy type into AIM-Prog / AIM-Social / AIM-SEM), StackAdapt, Reddit, Billups (OOH and Print channels only), MIQ mapped only for buy types Display/Video/Display&Video (MIQ-Prog), Social (MIQ-Social) and Search/Other (MIQ-SEM). No deal-type filter.",
         source:
           "BigQuery labs_pacing_unified → labs_pacing_wide (views; SQL in bq/labs_pacing_*.sql) → KPI_BY_CLIENT labs_booked_mir_2026 / labs_booked_{partner}_2026 → components/forecaster/sections/exec-kpis-by-gm-table.tsx",
         basis: "MIR (booked)",
         notes:
-          "Known difference vs Total LABS Spend: MIQ Audio/Search booked spend is excluded here but included there (Sep 28 MIR: $672,156); this view also counts these partners' non-LABS deal types. The views pin year 2026, RFQ3, USD 1.3978 and the test-client id.",
+          "Known difference vs Total LABS Spend: MIQ Audio booked spend is excluded here but included there (Nov 25 MIR: $595,071, the whole gap); this view also counts these partners' non-LABS deal types. The views pin year 2026, RFQ3, USD 1.3978 and the test-client id.",
       },
     ],
   },

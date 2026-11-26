@@ -41,6 +41,11 @@
 --   further change. Rebuild AFTER the two labs_pacing views are replaced.
 -- CHANGE (AIM-KPI G, 2026-11-26): prog-labs also counts partner 'AIM-KPI G' (the vendor database's new
 --   name for AIM) on Display / Video buy types, the same rule as 'AIM'. Nothing else changes.
+-- CHANGE (Labs family match, 2026-11-26): Labs rows now match a configured family on the partner name
+--   before "-" (same rule that defines the families), not the whole name. The vendor database renamed AIM
+--   to 'AIM-KPI G', so 2026 AIM Labs spend ($199,404, deal type Labs) was missing from labs_2026 / Labs
+--   share and the by-partner breakdowns. Only 'AIM-KPI G' is affected (checked against NATIVE); the
+--   breakdowns key it as AIM, like the other families.
 CREATE OR REPLACE TABLE `plusco-media-invest-solutions.PCC_Media_Investment.KPI_BY_CLIENT_2025_vs_2026` AS
 WITH cur AS (
   SELECT
@@ -75,7 +80,7 @@ client_spend AS (
         AND PLUSCO_YEAR = '2026'
         AND UPPER(PLUSCO_MEDIA_CHANNEL) != 'N/A'
         AND UPPER(PLUSCO_MEDIA_PARTNER) != 'MAGNITE'
-        AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
+        AND UPPER(TRIM(SPLIT(PLUSCO_MEDIA_PARTNER, '-')[OFFSET(0)])) IN (SELECT family FROM labs_families)
       THEN NET_ORDERED_CAD ELSE 0
     END) AS labs_2026,
     SUM(CASE
@@ -83,7 +88,7 @@ client_spend AS (
         AND PLUSCO_YEAR = '2025'
         AND UPPER(PLUSCO_MEDIA_CHANNEL) != 'N/A'
         AND UPPER(PLUSCO_MEDIA_PARTNER) != 'MAGNITE'
-        AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
+        AND UPPER(TRIM(SPLIT(PLUSCO_MEDIA_PARTNER, '-')[OFFSET(0)])) IN (SELECT family FROM labs_families)
       THEN NET_ORDERED_CAD ELSE 0
     END) AS labs_2025,
     SUM(CASE
@@ -181,13 +186,13 @@ labs_by_partner AS (
     PLUSCO_CLIENT_ID,
     TO_JSON_STRING(ARRAY_AGG(STRUCT(partner AS p, ROUND(amount, 2) AS v) ORDER BY amount DESC)) AS labs_by_partner_2026
   FROM (
-    SELECT PLUSCO_CLIENT_ID, UPPER(PLUSCO_MEDIA_PARTNER) AS partner, SUM(NET_ORDERED_CAD) AS amount
+    SELECT PLUSCO_CLIENT_ID, UPPER(TRIM(SPLIT(PLUSCO_MEDIA_PARTNER, '-')[OFFSET(0)])) AS partner, SUM(NET_ORDERED_CAD) AS amount
     FROM `plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE`
     WHERE PLUSCO_YEAR = '2026'
       AND UPPER(PLUSCO_MEDIA_CHANNEL) != 'N/A'
       AND UPPER(PLUSCO_DEALS_Type) IN ('LABS', 'LABS - BRP')
       AND UPPER(PLUSCO_MEDIA_PARTNER) != 'MAGNITE'
-      AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
+      AND UPPER(TRIM(SPLIT(PLUSCO_MEDIA_PARTNER, '-')[OFFSET(0)])) IN (SELECT family FROM labs_families)
     GROUP BY 1, 2
   )
   GROUP BY 1
@@ -203,7 +208,7 @@ monthly_spend AS (
     SUM(CASE
       WHEN UPPER(PLUSCO_DEALS_Type) IN ('LABS', 'LABS - BRP')
         AND UPPER(PLUSCO_MEDIA_PARTNER) != 'MAGNITE'
-        AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
+        AND UPPER(TRIM(SPLIT(PLUSCO_MEDIA_PARTNER, '-')[OFFSET(0)])) IN (SELECT family FROM labs_families)
       THEN NET_ORDERED_CAD ELSE 0 END)                      AS labs,
     SUM(CASE
       WHEN UPPER(PLUSCO_MEDIA_CHANNEL) IN ('DIGITAL DIRECT', 'PROGRAMMATIC', 'SEM')
@@ -247,14 +252,14 @@ monthly_labs_by_partner AS (
       PLUSCO_CLIENT_ID,
       SAFE_CAST(PLUSCO_YEAR AS INT64)                       AS y,
       SAFE_CAST(SPLIT(MONTH, '-')[SAFE_OFFSET(1)] AS INT64) AS m,
-      UPPER(PLUSCO_MEDIA_PARTNER)                           AS partner,
+      UPPER(TRIM(SPLIT(PLUSCO_MEDIA_PARTNER, '-')[OFFSET(0)])) AS partner,
       SUM(NET_ORDERED_CAD)                                  AS amount
     FROM `plusco-media-invest-solutions.PCC_Media_Investment.PCC_Dashboard_NATIVE`
     WHERE PLUSCO_YEAR IN ('2025', '2026')
       AND UPPER(PLUSCO_MEDIA_CHANNEL) != 'N/A'
       AND UPPER(PLUSCO_DEALS_Type) IN ('LABS', 'LABS - BRP')
       AND UPPER(PLUSCO_MEDIA_PARTNER) != 'MAGNITE'
-      AND UPPER(PLUSCO_MEDIA_PARTNER) IN (SELECT family FROM labs_families)
+      AND UPPER(TRIM(SPLIT(PLUSCO_MEDIA_PARTNER, '-')[OFFSET(0)])) IN (SELECT family FROM labs_families)
     GROUP BY 1, 2, 3, 4
   )
   GROUP BY 1, 2, 3

@@ -409,7 +409,7 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
       : `Total LABS Spend ${money(labs)} vs Labs booked ${money(booked)} — a ${money(labs - booked)} gap.`,
     note: labsSame
       ? undefined
-      : `Known reason: the pacing views count MIQ only for buy types Display / Video / Social (MIQ Audio / Search are left out of "booked") and don't filter on deal type. Expected until the media team decides the MIQ rule — see Metric Formulas → Labs Booked to Date.`,
+      : `Known reason: the pacing views count MIQ only for buy types Display / Video / Social / Search / Other, so MIQ Audio is left out of "booked", and they don't filter on deal type. Expected until the media team decides the MIQ rule — see Metric Formulas → Labs Booked to Date.`,
   });
 
   const mix2026 = mixByYearNet(input.mixRows, "2026");
