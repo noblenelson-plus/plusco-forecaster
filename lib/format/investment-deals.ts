@@ -58,7 +58,12 @@ export function rowQuarter(r: InvestmentDealsRow): string | null {
 export interface InvestmentScope {
   /** Lowercased Forecaster client names in the dashboard filter scope. */
   clientNames: ReadonlySet<string>;
-  /** Also keep MIR rows of clients that aren't Forecaster clients (no `_clientId`). */
+  /**
+   * No dashboard filter is active: keep every MIR row the tab may read — clients
+   * that aren't Forecaster clients (no `_clientId`) and Forecaster clients outside
+   * the dashboard's client list (hidden / lost clients, common in last year's
+   * data) — so the totals match the full MIR and Looker.
+   */
   includeUnlinked: boolean;
   /** Months kept (1–12); empty = full year. */
   months: readonly number[];
@@ -66,8 +71,8 @@ export interface InvestmentScope {
 
 /**
  * Rows of the given years kept by the dashboard scope (client filter, months).
- * Same client rule as Local Media: Forecaster clients by name; non-Forecaster
- * MIR clients only while no dashboard filter is active, so totals match Looker.
+ * With a dashboard filter active: the scoped Forecaster clients only, by name.
+ * Without: every row (see `includeUnlinked`).
  */
 export function scopeInvestmentRows(
   rows: readonly InvestmentDealsRow[],
@@ -79,7 +84,7 @@ export function scopeInvestmentRows(
   return rows.filter((r) => {
     if (!yearSet.has(String(r.PLUSCO_YEAR))) return false;
     const inClients = scope.clientNames.has(String(r.PLUSCO_CLIENT_NAME ?? "").trim().toLowerCase());
-    if (!inClients && !(scope.includeUnlinked && !r._clientId)) return false;
+    if (!inClients && !scope.includeUnlinked) return false;
     if (monthSet) {
       const m = rowMonth(r);
       if (m === null || !monthSet.has(m)) return false;
