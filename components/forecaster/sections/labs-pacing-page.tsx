@@ -21,12 +21,15 @@ export default function LabsPacingPage({
   currencyByClient,
   usdToCad,
   showGmSections = true,
+  clientFiltered = false,
 }: {
   scopedClientIds: string[];
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
   /** Target vs Booked by Partner + the By GM Pod cards (Exec KPI only). */
   showGmSections?: boolean;
+  /** A dashboard filter narrows the clients: booked follows the filtered clients too. */
+  clientFiltered?: boolean;
 }) {
   return (
     <div className="space-y-8">
@@ -35,6 +38,7 @@ export default function LabsPacingPage({
           scopedClientIds={scopedClientIds}
           currencyByClient={currencyByClient}
           usdToCad={usdToCad}
+          clientFiltered={clientFiltered}
         />
       )}
       {/* Client-level split of the partner targets, rolled up by agency × region / GM pod / BL / client (Exec KPI only). */}

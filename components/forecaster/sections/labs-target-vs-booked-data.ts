@@ -100,11 +100,11 @@ export const DEFAULT_ROLLUP: Record<string, string> = {
   // "AIM" PLUSCO target row, while the forecaster splits its RFQ target across
   // AIM-Prog / AIM-Social / AIM-SEM -- each split name maps to the "AIM" display
   // key so they combine onto that one row instead of folding into MIQ. Booked
-  // (MediaOcean) has no separate AIM figure for now, so AIM's Booked reads "—"
-  // and its % columns read 0%.
+  // (MediaOcean) books AIM as partner "AIM-KPI G", rolled onto the same row.
   "AIM-Prog": "AIM",
   "AIM-Social": "AIM",
   "AIM-SEM": "AIM",
+  "AIM-KPI G": "AIM",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

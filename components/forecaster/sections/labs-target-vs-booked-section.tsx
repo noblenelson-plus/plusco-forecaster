@@ -90,10 +90,13 @@ export default function LabsTargetVsBookedSection({
   scopedClientIds,
   currencyByClient,
   usdToCad,
+  clientFiltered = false,
 }: {
   scopedClientIds: string[];
   currencyByClient: Record<string, Currency>;
   usdToCad?: number;
+  /** A dashboard filter is active: booked + total media follow the filtered clients. */
+  clientFiltered?: boolean;
 }) {
     const { selectedYear, selectedRFQ } = useForecastSelection();
   const { clients } = useReadableClients();
@@ -127,6 +130,7 @@ export default function LabsTargetVsBookedSection({
       gmPodByClient,
       usdToCad,
       dealTypeFilter,
+      clientFiltered,
     });
 
   // Partner options from the full Labs Targets roster (future-proof).
