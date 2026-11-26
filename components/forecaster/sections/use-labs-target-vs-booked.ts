@@ -11,11 +11,11 @@
  *   F (booked)  MediaOcean MIR net per partner     (useMediaoceanInvestmentMix, scoped)
  *   I (total)   MIR total media, channels ≠ N/A    (computeTotalMediaInvestment, inside step 1)
  *
- * Scope: booked (F) and total media (I) are scoped by YEAR + selected MONTHS only
- * (the Time & Context selector) — matching the deck's fixed annual/MTD MIR total.
- * They are NOT client/pod-scoped here; if we later need that, it needs a
- * clientId → PLUSCO_CLIENT_NAME map and is a follow-up. The RFQ2 target (E) IS
- * client-scoped, because it flows through the existing pacing hook.
+ * Scope: booked (F) and total media (I) are scoped by YEAR + selected MONTHS
+ * (the Time & Context selector) — the deck's annual/MTD MIR totals — and, when a
+ * dashboard filter is active (`clientFiltered`), by the filtered clients' MIR
+ * rows (`_clientId`), so they narrow together with the RFQ target (E), which is
+ * client-scoped through the existing pacing hook.
  *
  * Currency: D and MIR F are CAD (the admin target is "CAD"; NET_ORDERED_CAD is
  * CAD). E flows through pacing's currency conversion. View the table in CAD to
@@ -71,7 +71,12 @@ export interface UseLabsTargetVsBookedParams {
   partnerFilter?: string[];
   /** Roll-up map override (raw name → display name). Defaults to Billups/MIQ. */
   rollupMap?: Record<string, string>;
-
+  /**
+   * A dashboard filter narrows the clients: booked (F) and total media (I) then
+   * keep only the MIR rows of `scopedClientIds` (by `_clientId`), like the
+   * forecast column. Without a filter, the whole MIR (the deck's figures).
+   */
+  clientFiltered?: boolean;
 }
 
 export interface UseLabsTargetVsBookedResult extends LabsTargetVsBookedResult {
@@ -114,7 +119,8 @@ export function useLabsTargetVsBooked(
     usdToCad,
     dealTypeFilter,
     partnerFilter,
-       rollupMap,
+    rollupMap,
+    clientFiltered = false,
   } = params;
 
   // 1) Partner targets (A–D + the forecaster flag), one doc per year.
@@ -184,54 +190,44 @@ export function useLabsTargetVsBooked(
 
   const yearStr = year !== null ? String(year) : null;
   const monthsKey = selMonths.join(",");
+  const clientsKey = clientFiltered ? scopedClientIds.join(",") : "";
 
   const mirScoped = useMemo(() => {
     if (yearStr === null) return [];
     const monthSet = new Set(selMonths);
+    // With a dashboard filter, only the filtered clients' MIR rows (otherwise
+    // booked stayed whole-MIR while the forecast column narrowed → e.g. 571%).
+    const clientSet = clientFiltered ? new Set(scopedClientIds) : null;
     return mirAll.filter((r) => {
       if ((r.PLUSCO_YEAR ?? "").toString().trim() !== yearStr) return false;
+      if (clientSet && !clientSet.has(String(r._clientId ?? ""))) return false;
       if (monthSet.size === 0) return true;
-            const m = monthOf(r);
+      const m = monthOf(r);
       return m !== null && monthSet.has(m);
     });
-    // monthsKey stands in for selMonths in deps.
+    // monthsKey / clientsKey stand in for selMonths / scopedClientIds in deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mirAll, yearStr, monthsKey]);
-  
-   // The MIR docs carry PLUSCO_DEALS_Type (the LABS/LABS-BRP deal *type*, distinct
-  // from PLUSCO_2026_DEALS, the "Partner Deal" flag) only if the source table has
-  // it — the mix sync writes every column via SELECT *. Detect its presence so we
-  // can Labs-scope booked, and fall back cleanly if it's missing.
-  const dealTypePresent = useMemo(
-    () =>
-      mirScoped.some(
-        (r) =>
-          typeof r.PLUSCO_DEALS_Type === "string" &&
-          (r.PLUSCO_DEALS_Type as string).trim() !== ""
-      ),
-    [mirScoped]
-  );
+  }, [mirAll, yearStr, monthsKey, clientFiltered, clientsKey]);
 
-  // Booked (F) = MIR net per partner, Labs-scoped exactly like the deck's SQL:
-  // PLUSCO_DEALS_Type IN ('LABS','LABS - BRP'), channel != 'N/A', partner != 'MAGNITE'.
-  // When the column is absent, booked stays unfiltered (dealTypePresent === false
-  // signals the MIR sync needs PLUSCO_DEALS_Type added).
+  // Booked (F) = MIR net per partner (channel != 'N/A', partner != 'MAGNITE').
+  // Which partners count as Labs — and under which deal type — comes from the
+  // Deal Targets roster (computeLabsTargetVsBooked only reads booked for roster
+  // partners of the selected deal types), not from the MIR's own
+  // PLUSCO_DEALS_Type tag: the MIR tags SiriusXM "Labs - PBB" while Deal Targets
+  // has it as Labs, which left its booked at "—" (and a "Labs - PBB" deal-type
+  // filter showed $0 booked for Corus / Quebecor / Netflix).
   const bookedByPartner = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of mirScoped) {
-      if (dealTypePresent) {
-        const dt = String(r.PLUSCO_DEALS_Type ?? "").toUpperCase();
-        if (dt !== "LABS" && dt !== "LABS - BRP") continue;
-        if (String(r.PLUSCO_MEDIA_CHANNEL ?? "").toUpperCase() === "N/A") continue;
-        if (String(r.PLUSCO_MEDIA_PARTNER ?? "").toUpperCase() === "MAGNITE") continue;
-      }
+      if (String(r.PLUSCO_MEDIA_CHANNEL ?? "").toUpperCase() === "N/A") continue;
+      if (String(r.PLUSCO_MEDIA_PARTNER ?? "").toUpperCase() === "MAGNITE") continue;
       const partner = (r.PLUSCO_MEDIA_PARTNER ?? "").toString().trim();
       if (partner === "") continue;
       const net = Number(r.NET_ORDERED_CAD) || 0;
       map.set(partner, (map.get(partner) ?? 0) + net);
     }
     return map;
-  }, [mirScoped, dealTypePresent]);
+  }, [mirScoped]);
 
   // 5) Compose everything through the pure step-1 function.
   const dealTypeKey = (dealTypeFilter ?? []).join("|");

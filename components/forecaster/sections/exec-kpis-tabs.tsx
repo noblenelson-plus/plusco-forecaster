@@ -123,6 +123,7 @@ export default function ExecKpisTabs({
           scopedClientIds={scopedClientIds}
           currencyByClient={currencyByClient}
           usdToCad={usdToCad}
+          clientFiltered={hasActiveFilters}
         />
       )}
 
