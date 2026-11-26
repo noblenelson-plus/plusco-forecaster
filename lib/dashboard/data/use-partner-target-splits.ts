@@ -24,6 +24,7 @@ import { fetchAxisData } from "../../services/data-entry-service";
 import { useReadableClients } from "../../hooks/use-readable-clients";
 import { useInvestmentDealsMix } from "./use-investment-deals-mix";
 import { sumMonthlyMap } from "../../types/common.types";
+import { isTestClient } from "../../format/client";
 import {
   computePartnerSplits,
   partnerKey,
@@ -55,8 +56,13 @@ export function usePartnerTargetSplits(year: number | null): PartnerTargetSplits
   const [rates, setRates] = useState<CurrencyRate[] | null>(null);
   const [overridesState, setOverridesState] = useState<{ year: number; overrides: SplitOverrides } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { clients, loading: clientsLoading } = useReadableClients();
+  const { clients: readable, loading: clientsLoading } = useReadableClients();
   const mix = useInvestmentDealsMix();
+  // Only clients the dashboard shows take a share: readable clients minus test
+  // clients (hidden ones are already left out). Others' MIR lines count as not
+  // attributed, so no part of a target lands on a client nobody sees.
+  const clients = useMemo(() => readable.filter((c) => !isTestClient(c.CL_Name)), [readable]);
+  const shareClientIds = useMemo(() => new Set(clients.map((c) => c.cl_id)), [clients]);
 
   useEffect(() => subscribeToPartnerTargets(setTargetYears, (e) => setError(e.message)), []);
   useEffect(() => subscribeToRFQs(setRfqs, (e) => setError(e.message)), []);
@@ -136,11 +142,11 @@ export function usePartnerTargetSplits(year: number | null): PartnerTargetSplits
       if (!byKey) out.set(y, (byKey = new Map()));
       let byClient = byKey.get(k);
       if (!byClient) byKey.set(k, (byClient = new Map()));
-      const id = r._clientId ?? "";
+      const id = r._clientId && shareClientIds.has(r._clientId) ? r._clientId : "";
       byClient.set(id, (byClient.get(id) ?? 0) + (Number(r.NET_ORDERED_CAD) || 0));
     }
     return out;
-  }, [mix.rows, targetKeys]);
+  }, [mix.rows, targetKeys, shareClientIds]);
 
   const overrides = overridesState && overridesState.year === year ? overridesState.overrides : null;
   const forecast = forecastState && forecastState.key === fetchKey ? forecastState.forecast : null;

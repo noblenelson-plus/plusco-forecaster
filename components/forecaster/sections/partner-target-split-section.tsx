@@ -39,7 +39,7 @@ const GROUPS: { id: GroupBy; label: string }[] = [
 
 const blName = (email: string | undefined) => {
   const e = (email ?? "").trim();
-  if (!e) return "—";
+  if (!e) return "No business lead";
   const local = e.includes("@") ? e.split("@")[0] : e;
   return local
     .split(/[._-]+/)
@@ -50,8 +50,8 @@ const blName = (email: string | undefined) => {
 
 function labelFor(group: GroupBy, c: Client | undefined): string {
   if (!c) return "Not a Forecaster client";
-  if (group === "agencyRegion") return `${c.CL_Agency || "—"} · ${c.CL_Business_Unit_Region || "—"}`;
-  if (group === "gmPod") return c.GM_Pod || "—";
+  if (group === "agencyRegion") return `${c.CL_Agency || "No agency"} · ${c.CL_Business_Unit_Region || "No BU region"}`;
+  if (group === "gmPod") return c.GM_Pod || "No GM pod";
   if (group === "bl") return blName(c.CL_Business_Lead);
   return c.CL_Name;
 }
@@ -192,6 +192,9 @@ export default function PartnerTargetSplitSection({ scopedClientIds }: { scopedC
     const unallocated = shown.reduce((s, p) => s + p.unallocated, 0);
     return { ...t, pace: t.target ? t.booked / t.target : null, unallocated };
   }, [rows, shown]);
+  // No MIR bookings for the year yet (e.g. 2027 before its first MIR pull): show "—", not a red 0%.
+  const noBookings = splits.reduce((s, p) => s + p.booked + p.bookedUnlinked, 0) < 1;
+  const paceOf = (v: number | null) => (noBookings ? null : v);
 
   if (selectedYear == null) return null;
   if (loading) {
@@ -227,15 +230,20 @@ export default function PartnerTargetSplitSection({ scopedClientIds }: { scopedC
           Each Labs partner target (Deal Targets) is split across clients by their share of that partner in the {selectedYear}{" "}
           {round ?? ""} Labs forecast — the latest submitted round, updated automatically when the next round locks. Partners
           not in the Labs forecaster use each client&apos;s share of MIR booked spend ({selectedYear}, else {selectedYear - 1}).
-          Admin-fixed shares win. Booked = MIR booked net (CAD). Shares are computed over all clients you can see; the table
-          follows the dashboard filters.
+          Admin-fixed shares win. Booked = MIR booked net (CAD). Shares are computed over all clients you can see (test clients
+          left out); the table follows the dashboard filters.
         </p>
+        {noBookings && (
+          <p className="mt-1 text-xs font-semibold text-foreground">
+            No {selectedYear} MIR bookings yet — targets are shown; booked and % of target fill in with the first {selectedYear} MIR pull.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">
         <StatCard icon={Target} label="Target (in filters)" value={money(totals.target)} />
         <StatCard icon={Target} label="Booked (MIR)" value={money(totals.booked)} />
-        <StatCard icon={Target} label="% of target" value={pct(totals.pace)} />
+        <StatCard icon={Target} label="% of target" value={pct(paceOf(totals.pace))} />
         <StatCard icon={Target} label="Not split to a client" value={money(totals.unallocated)} sub="Partners with no forecast or MIR basis" />
       </div>
 
@@ -303,7 +311,7 @@ export default function PartnerTargetSplitSection({ scopedClientIds }: { scopedC
                   <td className={NUM}>{r.clients}</td>
                   <td className={NUM}>{money(r.target)}</td>
                   <td className={NUM}>{money(r.booked)}</td>
-                  <td className={`py-2 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(r.pace))}`}>{pct(r.pace)}</td>
+                  <td className={`py-2 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(paceOf(r.pace)))}`}>{pct(paceOf(r.pace))}</td>
                   <td className={NUM}>{money(Math.max(0, r.target - r.booked))}</td>
                 </tr>
               ))}
@@ -313,7 +321,7 @@ export default function PartnerTargetSplitSection({ scopedClientIds }: { scopedC
                 <td className="py-2 text-left" colSpan={2}>Total</td>
                 <td className="py-2 pl-3 text-right tabular-nums">{money(totals.target)}</td>
                 <td className="py-2 pl-3 text-right tabular-nums">{money(totals.booked)}</td>
-                <td className={`py-2 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(totals.pace))}`}>{pct(totals.pace)}</td>
+                <td className={`py-2 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(paceOf(totals.pace)))}`}>{pct(paceOf(totals.pace))}</td>
                 <td className="py-2 pl-3 text-right tabular-nums">{money(Math.max(0, totals.target - totals.booked))}</td>
               </tr>
             </tfoot>
