@@ -28,13 +28,16 @@ import {
   clients as clientLines,
   coverageByDsp,
   dealTypes,
+  facetOptions,
   filterRows,
   monthlyByLocal,
   publishers as publisherLines,
   sumSpend,
+  type ClientFacet,
   type DspCoverage,
   type ProgFilters,
 } from "../../lib/programmatic/aggregate";
+import MultiSelectDropdown from "../_shared/multi-select-dropdown";
 import type { LocalCategory, ProgDsp, ProgrammaticPreviewData } from "../../lib/programmatic/programmatic.types";
 
 const LOCAL_COLORS: Record<LocalCategory, string> = {
@@ -51,6 +54,13 @@ const LOCAL_CHIP: Record<LocalCategory, string> = {
   UNKNOWN: "bg-blue-200 text-gray-900",
   UNMAPPED: "bg-gray-200 text-gray-700",
 };
+/** Client filters, in the order people narrow down: agency → region → GM pod → client. */
+const CLIENT_FACETS: { key: ClientFacet; label: string; plural: string }[] = [
+  { key: "agencies", label: "Agency", plural: "agencies" },
+  { key: "regions", label: "BU Region", plural: "BU regions" },
+  { key: "gms", label: "GM Pod", plural: "GM pods" },
+  { key: "clients", label: "Client", plural: "clients" },
+];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthLabel = (m: string) => `${MONTH_NAMES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
 const money = (v: number) => `$${Math.round(v).toLocaleString("en-CA")}`;
@@ -110,7 +120,10 @@ export default function ProgrammaticPreview({ data }: { data: ProgrammaticPrevie
   const months = data.months.length ? data.months : [...new Set(data.rows.map((r) => r.month))].sort();
   const initial: ProgFilters = {
     dsps: new Set(ALL_DSPS),
-    client: null,
+    agencies: [],
+    regions: [],
+    gms: [],
+    clients: [],
     from: months[0] ?? `${data.year}-01`,
     to: months[months.length - 1] ?? `${data.year}-12`,
   };
@@ -127,8 +140,9 @@ export default function ProgrammaticPreview({ data }: { data: ProgrammaticPrevie
     [data]
   );
 
-  const rows = useMemo(() => filterRows(data.rows, filters), [data.rows, filters]);
-  const mir = useMemo(() => filterRows(data.mir, filters), [data.mir, filters]);
+  const info = useMemo(() => data.clientInfo ?? {}, [data.clientInfo]);
+  const rows = useMemo(() => filterRows(data.rows, filters, info), [data.rows, filters, info]);
+  const mir = useMemo(() => filterRows(data.mir, filters, info), [data.mir, filters, info]);
   const total = sumSpend(rows);
   const booked = mir.reduce((s, m) => s + m.mirCad, 0);
   const local = byLocal(rows);
@@ -143,7 +157,14 @@ export default function ProgrammaticPreview({ data }: { data: ProgrammaticPrevie
   const topPubs = pubs.filter((p) => p.local !== "UNMAPPED").slice(0, 10);
   const allPubs = pubs.filter((p) => !pubQuery || p.publisher.toLowerCase().includes(pubQuery.toLowerCase()) || displayName(p.publisher, p.local !== "UNMAPPED").toLowerCase().includes(pubQuery.toLowerCase()));
   const periodLabel = filters.from === filters.to ? monthLabel(filters.from) : `${monthLabel(filters.from)} – ${monthLabel(filters.to)}`;
-  const isFiltered = filters.client !== null || filters.dsps.size !== ALL_DSPS.length || filters.from !== initial.from || filters.to !== initial.to;
+  const clientFilterOn = CLIENT_FACETS.some(({ key }) => filters[key].length > 0);
+  const isFiltered = clientFilterOn || filters.dsps.size !== ALL_DSPS.length || filters.from !== initial.from || filters.to !== initial.to;
+  // "Cossette Media · Quebec · 3 clients" — what the headline numbers cover.
+  const scopeLabel = CLIENT_FACETS.filter(({ key }) => filters[key].length > 0)
+    .map(({ key, plural }) => (filters[key].length === 1 ? filters[key][0] : `${filters[key].length} ${plural}`))
+    .join(" · ");
+  const toggleClient = (c: string) =>
+    setFilters((f) => ({ ...f, clients: f.clients.includes(c) ? f.clients.filter((x) => x !== c) : [...f.clients, c] }));
 
   const toggleDsp = (d: ProgDsp) =>
     setFilters((f) => {
@@ -158,6 +179,18 @@ export default function ProgrammaticPreview({ data }: { data: ProgrammaticPrevie
     <div className="mx-auto max-w-6xl space-y-8">
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-4 border border-gray-200 bg-white p-4">
+        {CLIENT_FACETS.map(({ key, label, plural }) => (
+          <div key={key}>
+            <span className="mb-1 block text-xs font-semibold text-gray-600">{label}</span>
+            <MultiSelectDropdown
+              label={filters[key].length ? label : `All ${plural}`}
+              options={facetOptions(allClients, filters, info, key).map((v) => ({ value: v, label: v }))}
+              selectedValues={filters[key]}
+              onChange={(values) => setFilters((f) => ({ ...f, [key]: values }))}
+              searchable
+            />
+          </div>
+        ))}
         {(["from", "to"] as const).map((k) => (
           <label key={k} className="text-xs">
             <span className="mb-1 block font-semibold text-gray-600">{k === "from" ? "From" : "To"}</span>
@@ -170,17 +203,6 @@ export default function ProgrammaticPreview({ data }: { data: ProgrammaticPrevie
             </select>
           </label>
         ))}
-        <label className="text-xs">
-          <span className="mb-1 block font-semibold text-gray-600">Client</span>
-          <select className="min-w-56 border border-gray-300 bg-white px-2 py-1.5 text-sm" value={filters.client ?? ""} onChange={(e) => setFilters((f) => ({ ...f, client: e.target.value || null }))}>
-            <option value="">All clients</option>
-            {allClients.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
         <div>
           <span className="mb-1 block text-xs font-semibold text-gray-600">DSPs (click to include / exclude)</span>
           <div className="flex flex-wrap gap-1">
@@ -207,7 +229,7 @@ export default function ProgrammaticPreview({ data }: { data: ProgrammaticPrevie
       <div className="border border-gray-200 bg-white p-6">
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
           {periodLabel}
-          {filters.client ? ` · ${filters.client}` : ""}
+          {scopeLabel ? ` · ${scopeLabel}` : " · All clients"}
         </p>
         <p className="mt-2 text-2xl font-bold leading-snug text-gray-900">
           {formatCompactMoney(total)} spent through programmatic DSPs.{" "}
@@ -390,7 +412,7 @@ export default function ProgrammaticPreview({ data }: { data: ProgrammaticPrevie
         <div className="mt-5 space-y-6">
           <div>
             <h3 className="mb-2 text-sm font-bold text-gray-900">Clients</h3>
-            <p className="mb-2 text-xs text-gray-500">Click a client to filter the whole page.</p>
+            <p className="mb-2 text-xs text-gray-500">Click a client to add it to (or remove it from) the Client filter.</p>
             <div className="max-h-[420px] overflow-auto">
               <table className="w-full min-w-[640px] text-sm">
                 <thead className="sticky top-0 bg-white">
@@ -406,7 +428,7 @@ export default function ProgrammaticPreview({ data }: { data: ProgrammaticPrevie
                   {clientRows.map((c) => {
                     const known = c.spendCad - c.local.UNMAPPED;
                     return (
-                      <tr key={c.client} className="cursor-pointer border-b border-gray-100 hover:bg-gray-50" onClick={() => setFilters((f) => ({ ...f, client: f.client === c.client ? null : c.client }))}>
+                      <tr key={c.client} className="cursor-pointer border-b border-gray-100 hover:bg-gray-50" onClick={() => toggleClient(c.client)}>
                         <td className={`py-1.5 pr-3 ${c.client.startsWith("(unmapped)") ? "italic text-gray-500" : "text-gray-900"}`}>{c.client}</td>
                         <td className="py-1.5 pr-3 text-xs text-gray-600">{c.dsps.join(", ")}</td>
                         <td className="py-1.5 pr-3 text-right tabular-nums">{c.spendCad ? formatCompactMoney(c.spendCad) : "—"}</td>

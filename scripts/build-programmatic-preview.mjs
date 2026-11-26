@@ -559,6 +559,25 @@ await loadTtd();
 await loadYahoo();
 const mir = await loadMir();
 
+// Client → agency / BU region / GM pod, for the page's filters. From MIR: each
+// client's most-booked combination in the year (a client is almost always one).
+async function loadClientInfo() {
+  const [rows] = await bq.query({
+    location: "northamerica-northeast1",
+    query: `
+      SELECT client, agency, region, gm FROM (
+        SELECT PLUSCO_CLIENT_NAME client, IFNULL(NULLIF(AGENCY,'#N/A'),'(none)') agency,
+          IFNULL(NULLIF(BU_REGION,'#N/A'),'(none)') region, IFNULL(NULLIF(GM_POD,'#N/A'),'(none)') gm,
+          ROW_NUMBER() OVER (PARTITION BY PLUSCO_CLIENT_NAME ORDER BY SUM(ABS(NET_ORDERED_CAD)) DESC) rn
+        FROM \`${BQ_PROJECT}.PCC_Media_Investment.PCC_Dashboard_NATIVE\`
+        WHERE PLUSCO_YEAR = '${YEAR}' AND PLUSCO_CLIENT_NAME IS NOT NULL
+        GROUP BY 1, 2, 3, 4)
+      WHERE rn = 1`,
+  });
+  return rows.map((r) => [r.client, r.agency, r.region, r.gm]);
+}
+const clientInfo = await loadClientInfo();
+
 // Keep the biggest unmapped publisher names per DSP; roll the rest up.
 const keepRaw = new Map(
   [...rawUnmapped].map(([dsp, m]) => [dsp, new Set([...m].sort((a, b) => b[1] - a[1]).slice(0, RAW_PUBLISHERS_PER_DSP).map(([k]) => k))])
@@ -606,6 +625,8 @@ const meta = {
   fx: { USD: fx[YEAR].USD },
   mirColumns: ["dsp", "month", "client", "mirCad"],
   mir,
+  clientInfoColumns: ["client", "agency", "region", "gm"],
+  clientInfo,
   docCount: Math.ceil(rows.length / ROWS_PER_DOC),
 };
 fs.writeFileSync(inDir("programmatic_preview.json"), JSON.stringify({ meta, rows }));
@@ -621,6 +642,10 @@ if (WRITE) {
     // Firestore can't store nested arrays: each row is a JSON string.
     await db.doc(`${COLLECTION}/rows_${String(i).padStart(3, "0")}`).set({ rows: chunk.map((r) => JSON.stringify(r)) });
   }
-  await db.doc(`${COLLECTION}/meta`).set({ ...meta, mir: meta.mir.map((r) => JSON.stringify(r)) });
+  await db.doc(`${COLLECTION}/meta`).set({
+    ...meta,
+    mir: meta.mir.map((r) => JSON.stringify(r)),
+    clientInfo: meta.clientInfo.map((r) => JSON.stringify(r)),
+  });
   console.log(`Wrote ${meta.docCount} row docs + meta to ${COLLECTION}.`);
 }

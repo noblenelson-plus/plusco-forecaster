@@ -11,7 +11,12 @@
  * the `programmatic_preview` rule, then deploy rules + hosting.
  */
 
-export const PROGRAMMATIC_PREVIEW_VIEWERS: readonly string[] = ["noble.nelson@pluscompany.com"];
+export const PROGRAMMATIC_PREVIEW_VIEWERS: readonly string[] = [
+  "noble.nelson@pluscompany.com",
+  "adriana.novoa@pluscompany.com",
+  "harshal.walambe@cossettemedia.com",
+  "daniel.jackson@cossettemedia.com",
+];
 
 export function canViewProgrammaticPreview(email: string | null | undefined): boolean {
   return !!email && PROGRAMMATIC_PREVIEW_VIEWERS.includes(email.trim().toLowerCase());
