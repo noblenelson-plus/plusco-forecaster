@@ -79,6 +79,7 @@ export interface HealthInput {
     NET_ORDERED_CAD?: unknown;
     PLUSCO_2026_DEALS?: unknown;
     PLUSCO_MEDIA_CHANNEL?: unknown;
+    PLUSCO_CLIENT_NAME?: unknown;
   }[];
   socialRows: { spend_2025?: unknown; spend_2026?: unknown }[];
   metaSocialDocs: number;
@@ -107,7 +108,7 @@ export const TABLE_SQL: Record<string, string> = {
   [MIX]: "bq/MEDIAOCEAN_INVESTMENT_MIX.sql",
   [SOCIAL]: "bq/SOCIAL_PARTNER_MIX_2025_vs_2026.sql",
   [CHANNEL]: "bq/CHANNEL_MIX_2025_vs_2026.sql",
-  [META]: "its saved query in BigQuery (not in bq/ yet)",
+  [META]: "bq/META_SOCIAL_OUTPUT_2025_vs_2026.sql",
 };
 
 const SYNC_KPI = "sync-kpi-by-client.mjs";
@@ -414,16 +415,28 @@ export function runHealthChecks(input: HealthInput): CheckResult[] {
   const mix2026 = mixByYearNet(input.mixRows, "2026");
   const kpiTotal = input.kpiRows.reduce((a, r) => a + num(r.total_spend_2026), 0);
   const mixSame = sameMoney(mix2026, kpiTotal);
+  // Media Investments counts every MIR line; KPIs count only lines mapped to a Forecaster
+  // client. When the whole gap is MIR spend with no client, nothing is stale: it clears once
+  // those clients are mapped (MO Client Key), so it's a known reason, not a rebuild.
+  const unmapped2026 = input.mixRows
+    .filter((r) => String(r.PLUSCO_YEAR) === "2026" && isBlankClient(r.PLUSCO_CLIENT_NAME))
+    .reduce((a, r) => a + num(r.NET_ORDERED_CAD), 0);
+  const gapIsUnmapped = !mixSame && unmapped2026 !== 0 && sameMoney(mix2026 - unmapped2026, kpiTotal);
+  const mixStatus: CheckStatus = mixSame ? "pass" : gapIsUnmapped ? "warn" : "fail";
   out.push({
     id: "mix-vs-kpi",
     group: "Cross-checks",
     title: "Total media 2026: Media Investments vs KPIs",
-    status: mixSame ? "pass" : "fail",
+    status: mixStatus,
     detail: `Media Investments ${money(mix2026)} · KPIs ${money(kpiTotal)}${
       mixSame ? " — they agree." : ` — differ by ${money(mix2026 - kpiTotal)}.`
     }`,
-    note: mixSame ? undefined : "Both come from NATIVE, so one of them wasn't rebuilt or synced.",
-    fixes: mixSame
+    note: mixSame
+      ? undefined
+      : gapIsUnmapped
+        ? `Known reason: the whole gap is MIR spend with no Forecaster client (${money(unmapped2026)}). Media Investments counts it, KPIs only count mapped clients. It clears once those clients are set up and mapped in MO Client Key; no rebuild needed.`
+        : "Both come from NATIVE, so one of them wasn't rebuilt or synced.",
+    fixes: mixStatus !== "fail"
       ? undefined
       : [
           { kind: "rebuild", table: KPI },
@@ -512,6 +525,12 @@ function labsByPartner(rows: HealthInput["kpiRows"]): Map<string, number> {
     for (const { p, v } of parsePartnerJson(r.labs_by_partner_2026)) out.set(p, (out.get(p) ?? 0) + v);
   }
   return out;
+}
+
+/** A MIR line with no Forecaster client: blank, or the sheet's #N/A lookup miss. */
+function isBlankClient(v: unknown): boolean {
+  const s = String(v ?? "").trim().toUpperCase();
+  return s === "" || s === "#N/A" || s === "N/A" || s === "NULL";
 }
 
 function mixByYearNet(rows: HealthInput["mixRows"], year: string): number {
