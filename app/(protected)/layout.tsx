@@ -11,12 +11,15 @@ import { AccessProvider, useAccess } from "../../lib/hooks/use-access";
 import Sidebar from "../../components/_shared/sidebar";
 import PlusLogo from "../../components/_shared/plus-logo";
 import { loginUrlFor } from "../../lib/format/return-to";
+import { canViewProgrammaticPreview } from "../../lib/programmatic/access";
 // Reachable without a client team: the dashboard (it shows only the tabs the
 // person may open) and the general reference pages. Admin pages guard
 // themselves. Every other route is a team space.
 const NON_TEAM_PATHS = ["/", "/how-to", "/resources"];
 // Reference pages stay reachable even with no access at all.
 const OPEN_PATHS = ["/how-to", "/resources"];
+// The Programmatic (preview) page: its named viewers may have no other access.
+const PROGRAMMATIC_PATH = "/admin/programmatic";
 const startsWithAny = (pathname: string, paths: string[]) =>
 paths.some((p) => (p === "/" ? pathname === "/" : pathname === p || pathname.startsWith(p + "/")));
 function AccessPendingScreen({ revoked = false }: { revoked?: boolean }) {
@@ -69,6 +72,14 @@ return (
       >
         adriana.novoa@pluscompany.com
       </a>
+      {!revoked && canViewProgrammaticPreview(user?.email) && (
+        <Link
+          href={PROGRAMMATIC_PATH}
+          className="mb-8 block w-full px-4 py-2.5 bg-gray-900 text-sm font-medium text-white hover:bg-gray-700 transition-colors"
+        >
+          Open Programmatic
+        </Link>
+      )}
       {!revoked && (
         <p className="-mt-5 mb-8 text-xs text-gray-500">
           Meanwhile, see{" "}
@@ -162,8 +173,11 @@ if (profile?.disabled) {
 return <AccessPendingScreen revoked />;
 }
 // Access gate — signed in, but on no client team and granted no dashboard
-// (and not admin). The reference pages stay reachable.
-if (!access.hasAnyAccess && !startsWithAny(pathname, OPEN_PATHS)) {
+// (and not admin). The reference pages stay reachable, and so does the
+// Programmatic page for its named viewers (the page and its rule check them).
+const programmaticOnly =
+  canViewProgrammaticPreview(user.email) && startsWithAny(pathname, [PROGRAMMATIC_PATH]);
+if (!access.hasAnyAccess && !startsWithAny(pathname, OPEN_PATHS) && !programmaticOnly) {
 return <AccessPendingScreen />;
 }
 if (teamSpaceBlocked) return null;

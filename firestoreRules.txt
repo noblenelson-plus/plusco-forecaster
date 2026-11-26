@@ -590,7 +590,7 @@ service cloud.firestore {
     // publisher / local media (scripts/build-programmatic-preview.mjs). Demo,
     // named viewers only — keep in sync with lib/programmatic/access.ts.
     match /programmatic_preview/{docId} {
-      allow read: if isActive() && myEmail() in ['noble.nelson@pluscompany.com', 'adriana.novoa@pluscompany.com', 'harshal.walambe@cossettemedia.com'];
+      allow read: if isActive() && myEmail() in ['noble.nelson@pluscompany.com', 'adriana.novoa@pluscompany.com', 'harshal.walambe@cossettemedia.com', 'daniel.jackson@cossettemedia.com'];
       allow create, update: if false;
       allow delete: if isAdmin();
     }

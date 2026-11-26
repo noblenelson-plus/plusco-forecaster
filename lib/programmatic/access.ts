@@ -15,6 +15,7 @@ export const PROGRAMMATIC_PREVIEW_VIEWERS: readonly string[] = [
   "noble.nelson@pluscompany.com",
   "adriana.novoa@pluscompany.com",
   "harshal.walambe@cossettemedia.com",
+  "daniel.jackson@cossettemedia.com",
 ];
 
 export function canViewProgrammaticPreview(email: string | null | undefined): boolean {
