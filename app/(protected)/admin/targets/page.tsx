@@ -23,6 +23,7 @@ import {
   Copy,
 } from "lucide-react";
 import { copyTargetsFromYear } from "../../../../lib/format/partner-targets-copy";
+import PartnerTargetSplitSection from "../../../../components/forecaster/sections/partner-target-split-section";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import PageHeader from "../../../../components/_shared/page-header";
 import {
@@ -686,6 +687,16 @@ export default function AdminTargetsPage() {
                   Save {selectedYear}
                 </button>
               </div>
+            </div>
+
+            {/* Client split of the saved targets (same section as Exec KPI → Deal Pacing). */}
+            <div className="border-t border-gray-200 pt-6">
+              {dirty && (
+                <p className="mb-3 text-xs text-gray-500">
+                  The split below uses the saved {selectedYear} targets — save to see your changes in it.
+                </p>
+              )}
+              <PartnerTargetSplitSection year={selectedYear} />
             </div>
           </div>
         )}

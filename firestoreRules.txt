@@ -608,6 +608,14 @@ service cloud.firestore {
       allow create, update: if false;
       allow delete: if isAdmin();
     }
+    // partner_data/{docId} — Exec KPI → Partner Data: partner spend reports vs MIR
+    // (scripts/partner-data/*). Not agency-tagged: admins and anyone granted the
+    // Exec KPI Dashboard; written by the scripts only.
+    match /partner_data/{docId} {
+      allow read: if isAdmin() || (isActive() && grantedTab('exec-kpis'));
+      allow create, update: if false;
+      allow delete: if isAdmin();
+    }
     // meta_social_output — one doc per client; read by the Exec KPI Dashboard
     // only, and not agency-tagged: admins and anyone granted that dashboard.
     match /meta_social_output/{docId} {

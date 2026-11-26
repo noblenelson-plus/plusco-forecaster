@@ -27,7 +27,7 @@ import MediaYoySection from "./investments/media-yoy-section";
 import PccDealsSection from "./investments/pcc-deals-section";
 import BroadcastSection from "./investments/broadcast-section";
 import ProgrammaticSubtab from "./investments/programmatic-subtab";
-import PartnerDataPlaceholder from "./investments/partner-data-placeholder";
+import PartnerDataSection from "./investments/partner-data-section";
 import { useAuth } from "../../../lib/auth-context";
 import { canViewProgrammaticPreview } from "../../../lib/programmatic/access";
 import SubTabBar from "../sub-tab-bar";
@@ -181,7 +181,7 @@ export default function ExecKpisTabs({
 
       {active === "programmatic" && canSeeProgrammatic && <ProgrammaticSubtab />}
 
-      {active === "partner-data" && <PartnerDataPlaceholder />}
+      {active === "partner-data" && <PartnerDataSection />}
     </div>
   );
 }

@@ -172,8 +172,17 @@ function SplitEditor({
   );
 }
 
-export default function PartnerTargetSplitSection({ scopedClientIds }: { scopedClientIds: string[] }) {
-  const { selectedYear } = useForecastSelection();
+export default function PartnerTargetSplitSection({
+  scopedClientIds,
+  year,
+}: {
+  /** Dashboard filter scope; omitted (Deal Targets page) = every client. */
+  scopedClientIds?: string[];
+  /** Year shown; omitted = the dashboard's global Year. */
+  year?: number | null;
+}) {
+  const { selectedYear: globalYear } = useForecastSelection();
+  const selectedYear = year !== undefined ? year : globalYear;
   const { isAdmin } = useUserProfile();
   const { splits, round, clients, overrides, loading, error } = usePartnerTargetSplits(selectedYear);
   const [group, setGroup] = useState<GroupBy>("agencyRegion");
@@ -181,7 +190,7 @@ export default function PartnerTargetSplitSection({ scopedClientIds }: { scopedC
   const [editing, setEditing] = useState<string | null>(null);
 
   const clientsById = useMemo(() => new Map(clients.map((c) => [c.cl_id, c])), [clients]);
-  const scope = useMemo(() => new Set(scopedClientIds), [scopedClientIds]);
+  const scope = useMemo(() => new Set(scopedClientIds ?? clients.map((c) => c.cl_id)), [scopedClientIds, clients]);
   const shown = useMemo(() => (partners.length ? splits.filter((s) => partners.includes(s.partner)) : splits), [splits, partners]);
   const rows = useMemo(
     () => rollupSplits(shown, (id) => labelFor(group, clientsById.get(id)), (id) => scope.has(id)),
