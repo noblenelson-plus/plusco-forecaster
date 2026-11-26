@@ -140,6 +140,7 @@ export default function AdminTargetsPage() {
     if (!draft || !previousYear) return;
     const r = copyTargetsFromYear(draft, previousYear, () => makePartnerRow().id);
     setDraft(r.next);
+    const changed = r.filled.length + r.added.length + r.goalsFilled.length > 0;
     const parts = [
       r.filled.length ? `filled ${r.filled.length} partner target${r.filled.length === 1 ? "" : "s"}` : "",
       r.added.length ? `added ${r.added.length} partner${r.added.length === 1 ? "" : "s"} (${r.added.join(", ")})` : "",
@@ -147,9 +148,9 @@ export default function AdminTargetsPage() {
       r.kept.length ? `kept ${r.kept.length} target${r.kept.length === 1 ? "" : "s"} already set (${r.kept.join(", ")})` : "",
     ].filter(Boolean);
     setCopyNote(
-      parts.length
+      changed
         ? `From ${previousYear.year}: ${parts.join("; ")}. Review, then click Save ${draft.year}.`
-        : `Nothing to copy: every ${draft.year} target is already set.`
+        : `Nothing to copy: every ${draft.year} target and goal is already set — nothing changed.`
     );
   }
 
