@@ -12,9 +12,17 @@ import type { ReactNode } from "react";
 import { Loader2, type LucideIcon } from "lucide-react";
 import type { Matrix, YoyLine } from "../../../../lib/format/investment-deals";
 
-export const money = (v: number) => `${v < 0 ? "−" : ""}$${Math.abs(Math.round(v)).toLocaleString("en-CA")}`;
-export const pct = (v: number | null, digits = 1) =>
-  v === null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v * 100).toFixed(digits)}%`;
+// Sign from the rounded value, so tiny amounts read "$0" / "0.0%" rather than "−$0" / "+0.0%".
+export const money = (v: number) => {
+  const r = Math.round(v);
+  return `${r < 0 ? "−" : ""}$${Math.abs(r).toLocaleString("en-CA")}`;
+};
+export const pct = (v: number | null, digits = 1) => {
+  if (v === null || !Number.isFinite(v)) return "—";
+  const s = Math.abs(v * 100).toFixed(digits);
+  const zero = Number(s) === 0;
+  return `${zero ? "" : v > 0 ? "+" : "−"}${s}%`;
+};
 export const change = (cur: number, prev: number) => (prev ? (cur - prev) / Math.abs(prev) : null);
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

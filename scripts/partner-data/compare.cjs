@@ -141,7 +141,11 @@ async function main() {
 
   // Year-to-date per partner x client (x channel for Billups): month timing differences cancel out.
   const ytdMap = new Map();
+  // Through the last complete month only: the report's last month is still
+  // billing (e.g. PlayOJO's whole Amazon gap was October, not yet in MIR), so it
+  // stays in the monthly detail but not in the year-to-date flags.
   for (const c of detail) {
+    if (c.month >= WINDOW[c.partner].current) continue;
     const k = `${c.partner}\u0000${c.channel}\u0000${c.client}`;
     if (!ytdMap.has(k)) ytdMap.set(k, { partner: c.partner, channel: c.channel, client: c.client, partnerRaw: new Set(), partnerAmt: 0, mirAmt: 0, months: 0, monthsOff: 0 });
     const y = ytdMap.get(k);

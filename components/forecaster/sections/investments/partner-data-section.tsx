@@ -97,7 +97,7 @@ export default function PartnerDataSection() {
             <thead>
               <tr className={HEAD_ROW}>
                 {["Partner", "Period compared", "Partner report", "MIR booked", "Variance $", "Variance %", "Client lines", "Need a look", "Report used"].map((h, i) => (
-                  <th key={h} className={`${TH} ${i < 2 || i === 8 ? "pr-3 text-left" : "pl-3 text-right"}`}>{h}</th>
+                  <th key={h} className={`${TH} ${i < 2 ? "pr-3 text-left" : i === 8 ? "pl-6 text-left" : "pl-3 text-right"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -112,7 +112,7 @@ export default function PartnerDataSection() {
                   <td className={`${NUM} ${varClass(p.report - p.mir)}`}>{pct(variancePct(p.report, p.mir))}</td>
                   <td className={NUM}>{p.lines}</td>
                   <td className={NUM}>{p.flagged}</td>
-                  <td className="py-2 pl-3 text-left text-xs text-muted-foreground">{p.reportUsed}</td>
+                  <td className="py-2 pl-6 text-left text-xs text-muted-foreground">{p.reportUsed}</td>
                 </tr>
               ))}
             </tbody>
@@ -167,7 +167,7 @@ export default function PartnerDataSection() {
             <thead className="sticky top-0 bg-card">
               <tr className={HEAD_ROW}>
                 {["Partner", "MIR client", "Partner report", "MIR booked", "Variance $", "Variance %", "Status", "What it looks like"].map((h, i) => (
-                  <th key={h} className={`${TH} ${i < 2 || i > 5 ? "pr-3 text-left" : "pl-3 text-right"}`}>{h}</th>
+                  <th key={h} className={`${TH} ${i < 2 ? "pr-3 text-left" : i > 5 ? "pl-4 pr-3 text-left" : "pl-3 text-right"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -187,7 +187,7 @@ export default function PartnerDataSection() {
                       <td className={NUM}>{money(x.mirAmt)}</td>
                       <td className={`${NUM} ${varClass(v)}`}>{money(v)}</td>
                       <td className={`${NUM} ${varClass(v)}`}>{pct(variancePct(x.partnerAmt, x.mirAmt))}</td>
-                      <td className="py-2 pr-3 text-left text-xs text-foreground">{x.status}</td>
+                      <td className="py-2 pl-4 pr-3 text-left text-xs text-foreground">{x.status}</td>
                       <td className="py-2 pr-3 text-left text-xs text-muted-foreground">{isMatch(x.status) ? "" : explain(x)}</td>
                     </tr>
                     {open === k && (

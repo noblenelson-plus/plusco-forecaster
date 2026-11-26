@@ -240,7 +240,7 @@ export default function PartnerTargetSplitSection({
           {round ?? ""} Labs forecast — the latest submitted round, updated automatically when the next round locks. Partners
           not in the Labs forecaster use each client&apos;s share of MIR booked spend ({selectedYear}, else {selectedYear - 1}).
           Admin-fixed shares win. Booked = MIR booked net (CAD). Shares are computed over all clients you can see (test clients
-          left out); the table follows the dashboard filters.
+          left out){scopedClientIds ? "; the table follows the dashboard filters" : ""}.
         </p>
         {noBookings && (
           <p className="mt-1 text-xs font-semibold text-foreground">

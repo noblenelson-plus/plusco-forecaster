@@ -8,7 +8,7 @@ const d = JSON.parse(fs.readFileSync("out_detail.json", "utf8"));
 const P = ["QUANTCAST", "AMAZON", "BILLUPS"];
 const NAME = { QUANTCAST: "Quantcast", AMAZON: "Amazon", BILLUPS: "Billups" };
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const per = (p) => `${MON[+d.WINDOW[p].from.slice(5) - 1]}–${MON[+d.WINDOW[p].to.slice(5) - 1]} 2026`;
+const per = (p) => `${MON[+d.WINDOW[p].from.slice(5) - 1]}–${MON[+d.WINDOW[p].current.slice(5) - 2]} 2026`;
 const MONEY = '"$"#,##0;[Red]-"$"#,##0';
 const PCT = '+0.0%;[Red]-0.0%';
 const isMatch = (s) => s.startsWith("Matches");
@@ -73,12 +73,13 @@ for (const x of top) {
 s.addRow([]);
 s.addRow(["Findings worth a look"]).font = { bold: true, size: 12 };
 for (const t of [
-  "• Quantcast / BCLC: MIR has a $75,000 March booking Quantcast never billed ($295,169 booked vs $220,169 billed) — almost all of BCLC's −$74,989 (−7.7%).",
+  "• Quantcast / BCLC: MIR has a $75,000 March booking Quantcast never billed ($295,169 booked vs $220,169 billed) — almost all of BCLC's −$74,989 (−8.5%) Jan–Sep.",
   "• Billups / GreenShield: Billups reports $113,888 for GreenShield; MIR has exactly $113,888 of Billups booked with no client name — a booking missing its client.",
-  "• Amazon / PlayOJO: Amazon delivered $2.42M Jan–Oct vs $2.08M booked (+16%), consistent with PlayOJO over-delivering its Amazon bookings.",
+  "• Amazon / BRP: Amazon reports $47,447 delivered Jan–Sep vs $334,158 booked in MIR (−$286,711, −86%) — booked but not delivered, or delivered under another client name.",
+  "• Timing, not error: each report's last month is still billing and left out of the year-to-date check (e.g. PlayOJO's Amazon spend ties to the dollar Jan–Sep; its October isn't booked in MIR yet).",
 ]) s.addRow([t]);
 s.addRow([]);
-s.addRow(["Notes: 1) Variance = partner report − MIR; flagged when off by more than $1,000 and more than 1%. 2) Year-to-date per client so month-timing differences cancel out; monthly view on 'Monthly detail'. 3) See 'Notes' for what was and wasn't done, and why."]).font = { italic: true, color: { argb: "FF555555" } };
+s.addRow(["Notes: 1) Variance = partner report − MIR; flagged when off by more than $1,000 and more than 1%. 2) Year-to-date per client through each report's last complete month, so month-timing differences cancel out; the still-billing month is on 'Monthly detail'. 3) See 'Notes' for what was and wasn't done, and why."]).font = { italic: true, color: { argb: "FF555555" } };
 s.views = [{ state: "frozen", ySplit: 0 }];
 
 // ── Need a look (YTD) ──────────────────────────────────────────────────────
@@ -149,8 +150,8 @@ sec("How each report is read (decisions taken from the data)");
 line("• Quantcast: 'Billing Amount' (not 'Spend') — MIR matches Billing to the cent (e.g. Novo Nordisk Jan $214,000.00 billed = $214,000.00 in MIR; Spend says $214,081.04).");
 line(`• Quantcast USD client (Pemco): converted at ${d.FX}, the rate MIR itself uses for every USD client in 2025 and 2026 — so currency creates no fake variance. Original USD kept on 'Monthly detail'.`);
 line("• Amazon: 'Monthly by Advertiser' tab; Jan–Sep are delivered, October is delivered + booked (treated as the last, still-billing month), Nov–Dec are booked only and not compared.");
-line("• Billups: 'Client report 2026' (Revenue by insertion month), compared Jan–Jul (report dated Aug 4). Uses Billups' own PLUSCO CLIENT NAME and PLUSCO CHANNEL columns; production cost lines kept in.");
-line("• The last month of each report is labelled 'may still be billing' rather than flagged (e.g. York University and OLG in October).");
+line("• Billups: 'Client report 2026' (Revenue by insertion month), compared Jan–Jun (report dated Aug 4; July is the still-billing month). Uses Billups' own PLUSCO CLIENT NAME and PLUSCO CHANNEL columns; production cost lines kept in.");
+line("• Year-to-date runs through each report's last complete month; the last month (still billing) is shown on 'Monthly detail' but not flagged (e.g. PlayOJO's Amazon October, York University and OLG in October).");
 line("");
 sec("What could not be done yet, and why");
 line("• Index and Magnite (SSPs): not compared. They report gross spend that flows through the DSPs and MIQ, not a direct MIR booking (Index has no MIR line; Magnite $0.9M in MIR vs ~$0.5M/month reported). Next step: compare against the DSP exports' spend by exchange.");
@@ -163,7 +164,7 @@ line("• Forecaster and MediaBox comparisons: not in this demo; same client map
 line("");
 sec("Open questions for Adriana");
 line("1. Billups: is 'Revenue' net (comparable to MIR net ordered)? Should production lines be compared? Billups' months look like insertion months and differ from MIR months (year-to-date ties better than month by month).");
-line("2. Amazon: compare delivered (what the report shows) or billed? Amazon delivered runs above MIR for some clients (e.g. PlayOJO +16%).");
+line("2. Amazon: compare delivered (what the report shows) or billed? Amazon delivered runs below MIR for some clients (e.g. BRP −86% Jan–Sep).");
 line("3. The 'Name not matched' clients (Client mapping tab, top): map them, or confirm they are not ours / not in MIR.");
 line("4. Threshold: is 'more than $1,000 and more than 1%' the right level for a flag?");
 line("");
