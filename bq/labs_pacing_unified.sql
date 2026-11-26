@@ -11,6 +11,9 @@
 -- CHANGE (AIM-KPI G, 2026-11-26): the vendor database renamed partner AIM to 'AIM-KPI G', so booked AIM
 --   rows matched no Labs bucket (AIM booked = $0 while NATIVE had $199,403 in 2026). Both names now map to
 --   the AIM split, like MIR_Live (bq/mir_live/06_build_native.sql).
+-- CHANGE (MIQ Audio, 2026-11-26): booked MIQ rows that aren't Social / Search / Other now go to MIQ-PROG
+--   (before: only Display / Video), matching the MIR's Labs_Partners rule (Noble). Adds MIQ Audio ($595,071,
+--   Nov 25 MIR) to booked; Labs booked then equals Total LABS Spend.
 CREATE OR REPLACE VIEW `plusco-media-invest-solutions.PCC_Media_Investment.labs_pacing_unified` AS
 WITH cur AS (
   SELECT
@@ -99,8 +102,9 @@ booked_raw AS (
       -- MIQ-SEM (2026-11-20): MIQ search (ChatGPT, SEM), buy type Search or Other.
       WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ'
         AND UPPER(BUYTYPE) IN ('SEARCH', 'OTHER')        THEN 'MIQ-SEM'
-      WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ'
-        AND UPPER(BUYTYPE) IN ('DISPLAY','VIDEO','DISPLAY&VIDEO') THEN 'MIQ-PROG'
+      -- MIQ-PROG = every other MIQ buy type (Display, Video, Audio, ...), the MIR's own rule
+      -- (manual LABS formula and MIR_Live): Social -> MIQ-SOCIAL, Search/Other -> MIQ-SEM, rest -> MIQ-PROG.
+      WHEN UPPER(PLUSCO_MEDIA_PARTNER) = 'MIQ'           THEN 'MIQ-PROG'
     END                               AS labs_partner,
     SAFE_CAST(SPLIT(MONTH, '-')[SAFE_OFFSET(1)] AS INT64) AS month_num,
     SAFE_CAST(PLUSCO_YEAR AS INT64)   AS year,
