@@ -156,7 +156,7 @@ export default function BroadcastSection({
             {v.volumeByQuarter.rows.length === 0 ? (
               <Empty>No volume deal spend on TV or Radio.</Empty>
             ) : (
-              <MatrixTable labelHeaders={["Deals category", "Partner"]} matrix={v.volumeByQuarter} />
+              <MatrixTable labelHeaders={["Deals category", "Partner"]} matrix={v.volumeByQuarter} subtotals />
             )}
           </ChartCard>
         </>

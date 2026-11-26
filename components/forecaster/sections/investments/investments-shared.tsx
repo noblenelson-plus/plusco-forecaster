@@ -216,7 +216,32 @@ export function YoyTable({
 }
 
 /** Pivot table: label columns + one column per value + row total. */
-export function MatrixTable({ labelHeaders, matrix }: { labelHeaders: string[]; matrix: Matrix }) {
+export function MatrixTable({
+  labelHeaders,
+  matrix,
+  subtotals = false,
+}: {
+  labelHeaders: string[];
+  matrix: Matrix;
+  /** Add a "Total" line after each group of the first label column (as in Looker). */
+  subtotals?: boolean;
+}) {
+  const subtotalRow = (group: string) => {
+    const lines = matrix.rows.filter((r) => r.label[0] === group);
+    return (
+      <tr key={`${group}|subtotal`} className="border-b border-border bg-gray-100 font-semibold">
+        <td className="py-2 pr-3 text-left text-foreground" colSpan={labelHeaders.length}>
+          {group} total
+        </td>
+        {matrix.columns.map((c) => (
+          <td key={c} className={TOTAL_NUM}>
+            {money(lines.reduce((t, l) => t + (l.cells[c] ?? 0), 0))}
+          </td>
+        ))}
+        <td className={TOTAL_NUM}>{money(lines.reduce((t, l) => t + l.total, 0))}</td>
+      </tr>
+    );
+  };
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -236,7 +261,7 @@ export function MatrixTable({ labelHeaders, matrix }: { labelHeaders: string[]; 
           </tr>
         </thead>
         <tbody>
-          {matrix.rows.map((r, i) => (
+          {matrix.rows.flatMap((r, i) => [
             <tr key={r.label.join("|")} className={ROW}>
               {r.label.map((l, j) => (
                 <td key={j} className={j === r.label.length - 1 ? CELL : MUTED_CELL}>
@@ -249,8 +274,11 @@ export function MatrixTable({ labelHeaders, matrix }: { labelHeaders: string[]; 
                 </td>
               ))}
               <td className={TOTAL_NUM}>{money(r.total)}</td>
-            </tr>
-          ))}
+            </tr>,
+            ...(subtotals && (i === matrix.rows.length - 1 || matrix.rows[i + 1].label[0] !== r.label[0])
+              ? [subtotalRow(r.label[0])]
+              : []),
+          ])}
         </tbody>
         <tfoot>
           <tr className={TOTAL_ROW}>
