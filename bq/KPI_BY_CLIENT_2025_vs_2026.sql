@@ -39,6 +39,8 @@
 --   AIM-Social/AIM-SEM) into that single column -- so labs_target_aim_2026, the
 --   grand total labs_target_rfq2_2026, and every share pick up the AIM $ with no
 --   further change. Rebuild AFTER the two labs_pacing views are replaced.
+-- CHANGE (AIM-KPI G, 2026-11-26): prog-labs also counts partner 'AIM-KPI G' (the vendor database's new
+--   name for AIM) on Display / Video buy types, the same rule as 'AIM'. Nothing else changes.
 CREATE OR REPLACE TABLE `plusco-media-invest-solutions.PCC_Media_Investment.KPI_BY_CLIENT_2025_vs_2026` AS
 WITH cur AS (
   SELECT
@@ -113,7 +115,7 @@ client_spend AS (
         AND PLUSCO_YEAR = '2026'
         AND (
           UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM-PROG', 'STACKADAPT')
-          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
+          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM', 'AIM-KPI G') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
         )
       THEN NET_ORDERED_CAD ELSE 0
     END) AS prog_labs_2026,
@@ -122,7 +124,7 @@ client_spend AS (
         AND PLUSCO_YEAR = '2025'
         AND (
           UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM-PROG', 'STACKADAPT')
-          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
+          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM', 'AIM-KPI G') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
         )
       THEN NET_ORDERED_CAD ELSE 0
     END) AS prog_labs_2025,
@@ -216,7 +218,7 @@ monthly_spend AS (
       WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC'
         AND (
           UPPER(PLUSCO_MEDIA_PARTNER) IN ('YAHOO', 'AMAZON', 'QUANTCAST', 'AIM-PROG', 'STACKADAPT')
-          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
+          OR (UPPER(PLUSCO_MEDIA_PARTNER) IN ('MIQ', 'AIM', 'AIM-KPI G') AND UPPER(BUYTYPE) IN ('DISPLAY', 'VIDEO', 'DISPLAY&VIDEO'))
         )
       THEN NET_ORDERED_CAD ELSE 0 END)                      AS prog_labs,
     SUM(CASE WHEN UPPER(PLUSCO_MEDIA_CHANNEL) = 'PROGRAMMATIC' AND COALESCE(PLUSCO_2026_DEALS, '#N/A') != '#N/A' THEN NET_ORDERED_CAD ELSE 0 END) AS prog_deal,
