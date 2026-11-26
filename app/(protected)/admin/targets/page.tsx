@@ -20,7 +20,9 @@ import {
   AlertCircle,
   Check,
   CalendarPlus,
+  Copy,
 } from "lucide-react";
+import { copyTargetsFromYear } from "../../../../lib/format/partner-targets-copy";
 import { useUserProfile } from "../../../../lib/hooks/use-user-profile";
 import PageHeader from "../../../../components/_shared/page-header";
 import {
@@ -66,6 +68,8 @@ export default function AdminTargetsPage() {
   const [confirmDeleteYear, setConfirmDeleteYear] = useState(false);
 
   const [showAddYear, setShowAddYear] = useState(false);
+  /** Summary of the last "Copy from previous year" (cleared on year change / save). */
+  const [copyNote, setCopyNote] = useState("");
   const [newYear, setNewYear] = useState<number>(new Date().getFullYear());
 
   // Guard — redirect non-admins.
@@ -122,7 +126,32 @@ export default function AdminTargetsPage() {
     }
     setDraft(clone(persisted));
     setBaseline(JSON.stringify(persisted));
+    setCopyNote("");
   }, [persisted]);
+
+  // The year before the selected one, when it has saved targets ("Copy from …").
+  const previousYear = useMemo(
+    () => (selectedYear == null ? undefined : getPartnerTargetsForYear(years, selectedYear - 1)),
+    [years, selectedYear]
+  );
+
+  /** Fill the draft's empty targets / goals from the previous year (Save still required). */
+  function handleCopyFromPrevious() {
+    if (!draft || !previousYear) return;
+    const r = copyTargetsFromYear(draft, previousYear, () => makePartnerRow().id);
+    setDraft(r.next);
+    const parts = [
+      r.filled.length ? `filled ${r.filled.length} partner target${r.filled.length === 1 ? "" : "s"}` : "",
+      r.added.length ? `added ${r.added.length} partner${r.added.length === 1 ? "" : "s"} (${r.added.join(", ")})` : "",
+      r.goalsFilled.length ? `filled ${r.goalsFilled.join(", ")}` : "",
+      r.kept.length ? `kept ${r.kept.length} target${r.kept.length === 1 ? "" : "s"} already set (${r.kept.join(", ")})` : "",
+    ].filter(Boolean);
+    setCopyNote(
+      parts.length
+        ? `From ${previousYear.year}: ${parts.join("; ")}. Review, then click Save ${draft.year}.`
+        : `Nothing to copy: every ${draft.year} target is already set.`
+    );
+  }
 
   const dirty = draft != null && JSON.stringify(draft) !== baseline;
 
@@ -187,6 +216,7 @@ export default function AdminTargetsPage() {
     try {
       await setPartnerTargetsForYear(draft);
       setDraftYears((prev) => prev.filter((y) => y !== draft.year));
+      setCopyNote("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save targets.");
     } finally {
@@ -311,6 +341,24 @@ export default function AdminTargetsPage() {
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Copy the previous year's targets into this one (fills blanks only). */}
+            {previousYear && (
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-gray-200 p-4">
+                <p className="text-sm text-gray-600">
+                  Start {draft.year} from {previousYear.year}: fills every blank or $0 target and goal with its{" "}
+                  {previousYear.year} value. Targets already entered are kept.
+                </p>
+                <button
+                  onClick={handleCopyFromPrevious}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-900 bg-yellow-400 hover:bg-yellow-500 transition-colors"
+                >
+                  <Copy size={14} />
+                  Copy from {previousYear.year}
+                </button>
+                {copyNote && <p className="w-full text-xs text-gray-700">{copyNote}</p>}
+              </div>
+            )}
+
             {/* Year-level target + derived Labs total */}
             <div className="bg-white border border-gray-200 rounded-xl p-5 flex flex-wrap items-end justify-between gap-4">
               <div>
