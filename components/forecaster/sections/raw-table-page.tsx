@@ -27,9 +27,15 @@ import MultiSelectDropdown, {
 import {
   assertSizesFitInSheets,
   exportToNewSheet,
+  exportToNewSheetWithTabs,
   SheetsUnavailableError,
   type CellValue,
 } from "../table/table-export";
+import {
+  buildGlossaryTab,
+  glossaryRowCount,
+  type ReportGlossary,
+} from "../../../lib/format/report-glossary";
 import {
   connect,
   isConnected,
@@ -90,6 +96,11 @@ export interface RawTablePageProps {
   excludeValues?: Record<string, string[]>;
   /** File-name stem for exports. */
   exportTitle: string;
+  /**
+   * Adds a "Glossary" tab to the Google Sheets export: one definition per
+   * exported column, in export order (lib/format/report-glossary.ts).
+   */
+  glossary?: ReportGlossary;
 }
 
 function money(v: unknown): string {
@@ -170,6 +181,7 @@ export default function RawTablePage({
   exportTitle,
   columnLabels,
   excludeValues,
+  glossary,
 }: RawTablePageProps) {
   // `clientIds`: while MediaBox allocations apply, the person's clients — the
   // other agencies' files then come filtered to them (report-file route).
@@ -312,7 +324,10 @@ export default function RawTablePage({
       // Instant size check from the shape alone, so an over-limit export is
       // rejected before the Google popup — nobody should sign in just to be
       // told it's too big.
-      assertSizesFitInSheets([{ rows: matched.length + 1, cols: exportFields.length }]);
+      assertSizesFitInSheets([
+        { rows: matched.length + 1, cols: exportFields.length },
+        ...(glossary ? [{ rows: glossaryRowCount(glossary, exportFields.length), cols: 2 }] : []),
+      ]);
       // Open the connect popup straight from the click (any slow work before
       // it delays the popup and risks the popup blocker).
       if (!isConnected()) await connect();
@@ -321,13 +336,17 @@ export default function RawTablePage({
       const matrix = await buildRawMatrix(table, matched, exportFields, headers, (pct) =>
         setExportStage(`Preparing ${pct}%…`)
       );
-      const url = await exportToNewSheet({
-        title: exportTitle,
-        sheetTitle: title,
-        matrix,
-        onProgress: (done, total) =>
-          setExportStage(total > 1 ? `Uploading ${done}/${total}…` : "Uploading…"),
-      });
+      const onProgress = (done: number, total: number) =>
+        setExportStage(total > 1 ? `Uploading ${done}/${total}…` : "Uploading…");
+      const url = glossary
+        ? await exportToNewSheetWithTabs({
+            title: exportTitle,
+            tabs: [
+              { sheetTitle: title, matrix, onProgress },
+              { sheetTitle: "Glossary", ...buildGlossaryTab(glossary, exportFields, headers) },
+            ],
+          })
+        : await exportToNewSheet({ title: exportTitle, sheetTitle: title, matrix, onProgress });
       setSheetUrl(url);
       // Usually blocked after a long upload (no longer tied to the click), so
       // the "Open sheet" link below is the reliable way in.
