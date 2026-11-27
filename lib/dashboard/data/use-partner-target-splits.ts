@@ -50,6 +50,8 @@ export interface PartnerTargetSplitsResult {
   /** Round picker options: last year's RFQ3 + FINAL, then this year's rounds up to the open one. */
   roundOptions: { id: string; label: string }[];
   /** The chosen round has no Labs forecast entered yet (e.g. a round that hasn't started). */
+  /** MIR pull behind the MIR tab (last year's full-year MIR), e.g. "MIR NOV 25". */
+  mirSource: string | null;
   forecastEmpty: boolean;
   clients: Client[];
   overrides: SplitOverrides;
@@ -102,13 +104,18 @@ export function usePartnerTargetSplits(
     return subscribeToSplitOverrides(year, (overrides) => setOverridesState({ year, overrides }), (e) => setError(e.message));
   }, [year]);
 
-  const targets = useMemo(
-    () =>
-      (targetYears?.find((t) => t.year === year)?.partners ?? []).filter(
-        (p) => p.dealType.startsWith("Labs") && (p.mediaSpendTarget ?? 0) > 0
-      ),
-    [targetYears, year]
-  );
+  // Labs partners with a target; on the MIR tab also the Volume partners (no $
+  // target — % only). A partner listed twice (Media Pulse: Labs + Volume) shows once.
+  const targets = useMemo(() => {
+    const seen = new Set<string>();
+    return (targetYears?.find((t) => t.year === year)?.partners ?? []).filter((p) => {
+      const keep = p.dealType.startsWith("Labs") ? (p.mediaSpendTarget ?? 0) > 0 : mode === "mir" && p.dealType === "Volume";
+      const k = partnerKey(p.partner);
+      if (!keep || !k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [targetYears, year, mode]);
   const targetKeys = useMemo(() => new Set(targets.map((t) => partnerKey(t.partner))), [targets]);
   const defaultRoundId = useMemo(() => {
     const t = rfqs && year != null ? splitRound(rfqs, year) : null;
@@ -198,6 +205,14 @@ export function usePartnerTargetSplits(
     return out;
   }, [mix.rows, targetKeys, shareClientIds]);
 
+  // MIR pull behind the MIR tab's shares (last year's full-year MIR), e.g. "MIR NOV 25".
+  const mirSource = useMemo(() => {
+    if (year == null) return null;
+    const prev = String(year - 1);
+    for (const r of mix.rows) if (String(r.PLUSCO_YEAR) === prev && r.SOURCE) return String(r.SOURCE);
+    return null;
+  }, [mix.rows, year]);
+
   const overrides = overridesState && overridesState.year === year ? overridesState.overrides : null;
   const forecast = forecastState && forecastState.key === fetchKey ? forecastState.forecast : null;
   const loading = !targetYears || !rfqs || !labsPartners || !rates || clientsLoading || mix.loading || !overrides || (!!fetchKey && !forecast);
@@ -225,6 +240,7 @@ export function usePartnerTargetSplits(
     defaultRoundId,
     roundOptions,
     forecastEmpty: !!forecast && forecast.size === 0,
+    mirSource,
     clients,
     overrides: overrides ?? {},
     usdToCad,

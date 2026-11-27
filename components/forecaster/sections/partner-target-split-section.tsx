@@ -58,10 +58,10 @@ function labelFor(group: GroupBy, c: Client | undefined): string {
   return c.CL_Name;
 }
 
-function basisLabel(b: SplitBasis, year: number, round: string | null) {
+function basisLabel(b: SplitBasis, year: number, round: string | null, mirSource?: string | null) {
   if (b === "forecast") return `${round ?? ""} Labs forecast`;
   if (b === "mir") return `MIR booked ${year}`;
-  if (b === "mir-previous") return `MIR booked ${year - 1}`;
+  if (b === "mir-previous") return `MIR ${year - 1} full year${mirSource ? ` (${mirSource})` : ""}`;
   if (b === "ssp") return "SSP — spend runs through the DSPs, not split (admin can set shares)";
   return "No basis — not split";
 }
@@ -198,7 +198,7 @@ export default function PartnerTargetSplitSection({
   const { isAdmin } = useUserProfile();
   const [tab, setTab] = useState<Tab>("forecast");
   const [pickedRound, setPickedRound] = useState<string | null>(null);
-  const { splits, round, roundId, defaultRoundId, roundOptions, forecastEmpty, clients, overrides, loading, error } =
+  const { splits, round, roundId, defaultRoundId, roundOptions, forecastEmpty, mirSource, clients, overrides, loading, error } =
     usePartnerTargetSplits(selectedYear, { mode: tab, round: pickedRound });
   const [showAll, setShowAll] = useState(false);
   const [selected, setSelected] = useState<{ partner: string; group: string } | null>(null);
@@ -249,7 +249,7 @@ export default function PartnerTargetSplitSection({
   const sourceNote =
     tab === "forecast"
       ? `% = the agency's clients' share of each partner in the ${round ?? ""} Labs forecast${roundId === defaultRoundId ? " (latest submitted round)" : ""}.`
-      : `% = the agency's clients' share of each partner's MIR booked spend in ${selectedYear} (${selectedYear - 1} when ${selectedYear} has none yet).`;
+      : `% = the agency's clients' share of each partner in ${mirSource ?? "the latest MIR"} — Mediaocean bookings for the full year ${selectedYear - 1}.`;
 
   return (
     <div data-scroll-section data-scroll-label="Targets by agency" className="space-y-4">
@@ -341,7 +341,7 @@ export default function PartnerTargetSplitSection({
                 {matrix.rows.map(({ split, cells }) => (
                   <tr key={split.key} className={ROW}>
                     <td className="px-3 py-2 text-left font-medium text-foreground">{split.partner}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-foreground">{money(split.target)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-foreground">{split.target > 0 ? money(split.target) : <span className="text-xs text-muted-foreground">no target</span>}</td>
                     {matrix.columns.map((g) => {
                       const cell = cells.get(g.id);
                       const isSel = selected?.partner === split.partner && selected.group === g.id;
@@ -360,7 +360,7 @@ export default function PartnerTargetSplitSection({
                           className={`cursor-pointer px-3 py-2 text-right align-top hover:bg-gray-50 ${isSel ? "bg-yellow-400" : ""}`}
                         >
                           <div className="text-base font-semibold tabular-nums text-foreground">{pct(cell.share)}</div>
-                          <div className="text-[11px] tabular-nums text-muted-foreground">{money(cell.target)} target</div>
+                          {split.target > 0 && <div className="text-[11px] tabular-nums text-muted-foreground">{money(cell.target)} target</div>}
                           {!noBookings && (
                             <div className={`text-[11px] tabular-nums ${ragCell(ragFromPctOfTarget(pace))}`}>{money(cell.booked)} booked</div>
                           )}
@@ -377,7 +377,7 @@ export default function PartnerTargetSplitSection({
               <span className="font-medium text-foreground">%</span>: {sourceNote.replace(/^% = /, "")}{" "}
               {tab === "forecast"
                 ? "Each client's share = its forecast with that partner ÷ all clients' forecast with that partner."
-                : "Each client's share = what it booked with that partner ÷ what all clients booked with that partner (Mediaocean, table PCC_Dashboard_NATIVE)."}{" "}
+                : `Each client's share = what it booked with that partner in ${selectedYear - 1} ÷ what all clients booked with that partner in ${selectedYear - 1} (Mediaocean ${mirSource ?? "MIR"}, table PCC_Dashboard_NATIVE). The full previous year is used so the split doesn't move as ${selectedYear} bookings come in.`}{" "}
               An agency&apos;s % = the sum of its clients&apos; shares.
             </li>
             <li>
@@ -395,6 +395,13 @@ export default function PartnerTargetSplitSection({
               agency + BU region on the Clients page: CM ROC = Cossette Media Ontario + West, CM MTL/QC = Cossette Media QC/East, MEK ROC =
               Mekanism Ontario + West, Jungle QC = Jungle QC/East (Showroom and Mekanism USA under &ldquo;Show all agencies&rdquo;).
             </li>
+            {tab === "mir" && (
+              <li>
+                <span className="font-medium text-foreground">Volume partners</span> (Google, Bell Media, CBC/SRC, CBS, Cogeco, Pelmorex…) have
+                no $ target on the Deal Targets page, so they show the agency % only. Google = Google Ads + Google DV360; CBS = Canadian
+                Broadcast Sales.
+              </li>
+            )}
             {tab === "mir" && (
               <li>
                 <span className="font-medium text-foreground">Thin data</span>: partners with few Mediaocean lines (Media Pulse, Magnite,
@@ -466,6 +473,7 @@ export default function PartnerTargetSplitSection({
                 noBookings={noBookings}
                 year={selectedYear}
                 round={round}
+                mirSource={mirSource}
               />
               <table className="w-full text-sm">
                 <thead>
@@ -484,7 +492,7 @@ export default function PartnerTargetSplitSection({
                     <tr key={s.key} className={ROW}>
                       <td className="py-2 pr-3 text-left text-foreground">{s.partner}</td>
                       <td className={NUM}>{money(s.target)}</td>
-                      <td className="py-2 pl-3 pr-3 text-left text-muted-foreground">{basisLabel(s.basis, selectedYear, round)}</td>
+                      <td className="py-2 pl-3 pr-3 text-left text-muted-foreground">{basisLabel(s.basis, selectedYear, round, mirSource)}</td>
                       <td className={NUM}>{s.clients.filter((c) => c.share > 0).length}</td>
                       <td className={NUM}>{s.overrideTotal ? pct(s.overrideTotal, 1) : "—"}</td>
                       <td className={NUM}>{s.unallocated >= 1 ? money(s.unallocated) : "—"}</td>
@@ -520,6 +528,7 @@ function MoreBreakdowns({
   noBookings,
   year,
   round,
+  mirSource,
 }: {
   splits: PartnerSplit[];
   group: GroupBy;
@@ -529,6 +538,7 @@ function MoreBreakdowns({
   noBookings: boolean;
   year: number;
   round: string | null;
+  mirSource: string | null;
 }) {
   const [partners, setPartners] = useState<string[]>([]);
   const shown = partners.length ? splits.filter((s) => partners.includes(s.partner)) : splits;
@@ -568,7 +578,7 @@ function MoreBreakdowns({
                     .filter((c) => scope.has(c.clientId))
                     .map((c) => {
                       const cl = clientsById.get(c.clientId);
-                      return [s.partner, cl?.CL_Name ?? c.clientId, cl?.CL_Agency ?? "", cl?.CL_Business_Unit_Region ?? "", cl?.GM_Pod ?? "", cl?.CL_Business_Lead ?? "", c.share, c.overridden ? "Yes" : "", Math.round(c.target), Math.round(c.booked), basisLabel(s.basis, year, round)];
+                      return [s.partner, cl?.CL_Name ?? c.clientId, cl?.CL_Agency ?? "", cl?.CL_Business_Unit_Region ?? "", cl?.GM_Pod ?? "", cl?.CL_Business_Lead ?? "", c.share, c.overridden ? "Yes" : "", Math.round(c.target), Math.round(c.booked), basisLabel(s.basis, year, round, mirSource)];
                     })
                 ),
               ],
@@ -597,7 +607,7 @@ function MoreBreakdowns({
                       {cl?.CL_Name ?? c.clientId}
                       {c.overridden && <span className="ml-1 text-[11px] text-muted-foreground">(fixed)</span>}
                     </td>
-                    <td className="py-2 pl-3 pr-3 text-left text-xs text-muted-foreground">{basisLabel(s.basis, year, round)}</td>
+                    <td className="py-2 pl-3 pr-3 text-left text-xs text-muted-foreground">{basisLabel(s.basis, year, round, mirSource)}</td>
                     <td className="py-2 pl-3 pr-3 text-left text-foreground">{s.partner}</td>
                     <td className="py-2 pl-3 text-right font-semibold tabular-nums text-foreground">{pct(c.share, 1)}</td>
                     <td className={NUM}>{money(c.target)}</td>

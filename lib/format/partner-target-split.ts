@@ -26,7 +26,20 @@ import type { RFQ, RFQType } from "../types/rfq.types";
 import { RFQ_TYPE_ORDER } from "../types/rfq.types";
 
 /** Partner key used everywhere: lowercase letters and digits only ("Billups-OOH" → "billupsooh"). */
-export const partnerKey = (s: string | null | undefined) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+export const partnerKey = (s: string | null | undefined) =>
+  String(s ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // "Télé-Quebec" → "telequebec" (= MIR "TELE QUEBEC")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+/** MIR partner names booked under a different Deal Targets name (MIR key → Deal Targets key). */
+const MIR_PARTNER_ALIASES: Record<string, string> = {
+  googleads: "google",
+  googledv360: "google",
+  canadianbroadcastsales: "cbs",
+  cogecomedia: "cogeco",
+};
 
 /**
  * The round client shares follow: the one just before the year's open
@@ -66,6 +79,7 @@ export function targetForMirRow(partner: string | null, channel: string | null, 
   if (p === "billups") k = ch === "print" ? "billupsprint" : "billupsooh";
   else if (p === "miq") k = ch === "social" ? "miqsocial" : ch === "sem" ? "miqsem" : "miqprog";
   else if (p.startsWith("aim")) k = "aim";
+  if (!targetKeys.has(k) && MIR_PARTNER_ALIASES[p] && targetKeys.has(MIR_PARTNER_ALIASES[p])) k = MIR_PARTNER_ALIASES[p];
   return targetKeys.has(k) ? k : null;
 }
 
@@ -89,7 +103,7 @@ export interface SplitInputs {
   /**
    * Where client shares come from:
    *  - "forecast": the Labs forecast only (Forecaster tab; no MIR fallback);
-   *  - "mir": MIR booked share only (MIR tab — every partner, SSPs included);
+   *  - "mir": MIR booked share only, from last year's full-year MIR (MIR tab — every partner, SSPs and Volume deals included);
    *  - "auto" (default): forecast for Labs Forecaster partners, MIR for the rest, SSPs not split.
    */
   mode?: "auto" | "forecast" | "mir";
@@ -148,7 +162,9 @@ export function computePartnerSplits(i: SplitInputs): PartnerSplit[] {
       }
       if (amounts.size) basis = "forecast";
     }
-    if (basis === "none" && mode !== "forecast") {
+    // MIR tab: last year's full-year MIR only (Adriana: the latest 2026 MIR stays
+    // the source going into 2027, even once partial 2027 bookings arrive).
+    if (basis === "none" && mode === "auto") {
       amounts = positive(i.mir.get(y)?.get(key));
       amounts.delete("");
       if (amounts.size) basis = "mir";
