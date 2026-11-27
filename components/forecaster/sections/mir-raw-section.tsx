@@ -10,10 +10,14 @@
  * (`onlyListedColumns`), in this order; the snapshot's other ~40 columns (codes,
  * billing/payment statuses, vendor geography, MediaBox/SPOT matching, …) stay
  * out. Uses the live NATIVE spelling "Labs_Partners".
+ *
+ * The Sheets export adds a "Glossary" tab defining each exported column
+ * (Adriana's MIR glossary, lib/format/report-glossary.ts).
  */
 
 import { Database } from "lucide-react";
 import RawTablePage, { type RawFilterDef } from "./raw-table-page";
+import { MIR_GLOSSARY } from "../../../lib/format/report-glossary";
 
 // Filter bar fields (snapshot column names), in the team's order.
 const FILTERS: RawFilterDef[] = [
@@ -77,6 +81,7 @@ export default function MirRawSection() {
       onlyListedColumns
       moneyFields={MONEY_FIELDS}
       exportTitle="MIR Raw Data"
+      glossary={MIR_GLOSSARY}
     />
   );
 }

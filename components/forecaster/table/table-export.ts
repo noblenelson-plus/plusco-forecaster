@@ -205,6 +205,8 @@ export async function exportToNewSheetWithTabs({
     layout?: SheetLayout;
     /** Create the tab hidden (still readable, e.g. by an import). */
     hidden?: boolean;
+    /** Upload progress for this tab: (requests written, total requests). */
+    onProgress?: (done: number, total: number) => void;
   }[];
 }): Promise<string> {
   if (!isGoogleConfigured()) {
@@ -228,7 +230,7 @@ export async function exportToNewSheetWithTabs({
     })
   );
   for (const tab of tabs) {
-    await writeValues(spreadsheet.spreadsheetId, tab.sheetTitle, tab.matrix);
+    await writeValues(spreadsheet.spreadsheetId, tab.sheetTitle, tab.matrix, tab.onProgress);
     const sheetId = spreadsheet.sheetIdsByTitle[tab.sheetTitle];
     if (tab.dropdowns && sheetId !== undefined) {
       const header = (tab.matrix[0] ?? []).map(String);
