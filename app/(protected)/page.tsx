@@ -44,6 +44,9 @@ import ClientNoteCard from "../../components/forecaster/sections/client-note-car
 import ReportsTabs from "../../components/forecaster/sections/reports-tabs";
 import BillupsSection from "../../components/forecaster/sections/billups-section";
 import ExecKpisTabs from "../../components/forecaster/sections/exec-kpis-tabs";
+import InvestmentsTabs, {
+  INVESTMENTS_MONTHS_SUBTABS,
+} from "../../components/forecaster/sections/investments-tabs";
 import MediaOceanTabs, {
   type MediaOceanSource,
   type MediaOceanSubTab,
@@ -53,10 +56,12 @@ import SubTabBar from "../../components/forecaster/sub-tab-bar";
 import {
   EXEC_KPIS_SUBTABS,
   FORECASTER_SUBTABS,
+  INVESTMENTS_SUBTABS,
   isTabVisible,
   visibleSubtabs,
   type ExecSubTab,
   type ForecasterSubTab,
+  type InvestmentsSubTab,
 } from "../../components/forecaster/dashboard-pages.config";
 import SectionScrollNav from "../../components/_shared/section-scroll-nav";
 import FlagsDrawer from "../../components/flags/flags-drawer";
@@ -442,9 +447,16 @@ function DashboardContent() {
   const execActiveSub = execSubtabs.some((t) => t.id === execSub)
     ? execSub
     : (execSubtabs[0]?.id ?? execSub);
+  // Investments Team Dashboard: same Months filter (one shared selection) on
+  // its MIR pages.
+  const [investmentsSub, setInvestmentsSub] = useState<InvestmentsSubTab>("media-yoy");
+  const investmentsSubtabs = visibleSubtabs("investments", INVESTMENTS_SUBTABS, hiddenPages);
+  const investmentsActiveSub = investmentsSubtabs.some((t) => t.id === investmentsSub)
+    ? investmentsSub
+    : (investmentsSubtabs[0]?.id ?? investmentsSub);
   const showsExecMonths =
-    topTab === "exec-kpis" &&
-    ["summary", "local-media", "media-yoy", "pcc-deals", "broadcast"].includes(execActiveSub);
+    (topTab === "exec-kpis" && ["summary", "local-media"].includes(execActiveSub)) ||
+    (topTab === "investments" && INVESTMENTS_MONTHS_SUBTABS.includes(investmentsActiveSub));
   const [execMonthsPick, setExecMonthsPick] = useState<{ year: number | null; months: number[] } | null>(null);
   const execMonths = useMemo(
     () =>
@@ -791,6 +803,19 @@ function DashboardContent() {
             sub={execActiveSub}
             onSubChange={setExecSub}
             summaryMonths={execMonths}
+            hasActiveFilters={hasActiveFilters}
+          />
+        ) : tab === "investments" ? (
+          <InvestmentsTabs
+            clients={clients}
+            scopedClientIds={scopedClientIds}
+            year={selectedYear ?? new Date().getFullYear()}
+            currencyByClient={currencyByClient}
+            usdToCad={usdToCad}
+            hidden={hiddenPages}
+            sub={investmentsActiveSub}
+            onSubChange={setInvestmentsSub}
+            months={execMonths}
             hasActiveFilters={hasActiveFilters}
           />
         ) : error ? (

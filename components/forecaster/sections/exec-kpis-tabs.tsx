@@ -5,15 +5,16 @@
  * Exec KPI Dashboard — sub-tab container. Splits the (formerly very long) Exec
  * KPIs page into navigable sub-pages so each area reads on its own:
  *   Executive Summary · Investment Strategy KPIs · Meta · Labs Pacing ·
- *   Billups · Local Media · Media YOY · PCC Deals · Broadcast · Programmatic ·
- *   Partner Data (the last five are the Investments Team pages, formerly Looker)
+ *   Billups · Local Media
+ * The Investments Team pages (Media YOY, PCC Deals, Broadcast, Programmatic,
+ * Partner Data) moved to their own tab on 2026-11-27 (investments-tabs.tsx);
+ * Local Media and Deal Pacing are on both dashboards.
  *
  * Summary and Billups take the page's forecast scope (dashboard filters +
  * currency already applied). Investment Strategy KPIs, Meta and Billups are all
  * scoped by the same global scopedClientIds, so one filter bar drives every
  * sub-page. Local Media (MIR local / foreign split) also follows the Year and
- * the Exec Months filter, as do Media YOY, PCC Deals and Broadcast. Programmatic
- * shows only to its named viewers (its data is readable by them only).
+ * the Exec Months filter.
  */
 
 import { useState } from "react";
@@ -23,13 +24,6 @@ import BillupsSection from "./billups-section";
 import MetaSection from "./meta-section";
 import LabsPacingPage from "./labs-pacing-page";
 import LocalMediaSection from "./local-media-section";
-import MediaYoySection from "./investments/media-yoy-section";
-import PccDealsSection from "./investments/pcc-deals-section";
-import BroadcastSection from "./investments/broadcast-section";
-import ProgrammaticSubtab from "./investments/programmatic-subtab";
-import PartnerDataSection from "./investments/partner-data-section";
-import { useAuth } from "../../../lib/auth-context";
-import { canViewProgrammaticPreview } from "../../../lib/programmatic/access";
 import SubTabBar from "../sub-tab-bar";
 import type { Client, Currency } from "../../../lib/types/client.types";
 import type { ScopeForecastData } from "../../../lib/dashboard/data/use-scope-forecast-data";
@@ -75,7 +69,7 @@ export default function ExecKpisTabs({
    */
   sub?: ExecSubTab;
   onSubChange?: (sub: ExecSubTab) => void;
-  /** Media & Labs KPIs, Local Media and the MIR investments pages: the top-bar Months filter (1–12; empty = full year). */
+  /** Media & Labs KPIs and Local Media: the top-bar Months filter (1–12; empty = full year). */
   summaryMonths?: readonly number[];
   /** A dashboard filter narrows the clients (Local Media then leaves out non-Forecaster MIR clients). */
   hasActiveFilters?: boolean;
@@ -86,11 +80,7 @@ export default function ExecKpisTabs({
     setOwnSub(s);
     onSubChange?.(s);
   };
-  const { user } = useAuth();
-  const canSeeProgrammatic = canViewProgrammaticPreview(user?.email);
-  const subtabs = visibleSubtabs("exec-kpis", EXEC_KPIS_SUBTABS, hidden).filter(
-    (t) => t.id !== "programmatic" || canSeeProgrammatic
-  );
+  const subtabs = visibleSubtabs("exec-kpis", EXEC_KPIS_SUBTABS, hidden);
   // If an admin hid the chosen sub-tab, show the first visible one instead.
   const active = subtabs.some((t) => t.id === sub) ? sub : (subtabs[0]?.id ?? sub);
 
@@ -149,39 +139,6 @@ export default function ExecKpisTabs({
         />
       )}
 
-      {active === "media-yoy" && (
-        <MediaYoySection
-          scopedClientIds={scopedClientIds}
-          clients={clients}
-          year={year}
-          months={summaryMonths}
-          includeUnlinked={!hasActiveFilters}
-        />
-      )}
-
-      {active === "pcc-deals" && (
-        <PccDealsSection
-          scopedClientIds={scopedClientIds}
-          clients={clients}
-          year={year}
-          months={summaryMonths}
-          includeUnlinked={!hasActiveFilters}
-        />
-      )}
-
-      {active === "broadcast" && (
-        <BroadcastSection
-          scopedClientIds={scopedClientIds}
-          clients={clients}
-          year={year}
-          months={summaryMonths}
-          includeUnlinked={!hasActiveFilters}
-        />
-      )}
-
-      {active === "programmatic" && canSeeProgrammatic && <ProgrammaticSubtab />}
-
-      {active === "partner-data" && <PartnerDataSection />}
     </div>
   );
 }

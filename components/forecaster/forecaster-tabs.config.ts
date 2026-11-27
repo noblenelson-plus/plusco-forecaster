@@ -3,6 +3,7 @@
 import {
   LayoutDashboard,
   Gauge,
+  Landmark,
   Activity,
   Box,
   Waves,
@@ -13,7 +14,8 @@ import type { GrantableDashboardId } from "../../lib/types/access.types";
 
 // Top-level tabs of the home Dashboard. Order here drives the tab bar
 // left-to-right; the page renders by tab id, not position. Tabs with sub-tabs
-// (Forecaster Dashboard, Exec KPI Dashboard, Media Investments Report, Reports)
+// (Forecaster Dashboard, Exec KPI Dashboard, Investments Team Dashboard, Media
+// Investments Report, Reports)
 // list them in dashboard-pages.config.ts.
 export type ForecasterTab = "forecaster" | GrantableDashboardId;
 
@@ -36,6 +38,7 @@ export const FORECASTER_TABS: {
   { id: "forecaster", label: "Forecaster", icon: LayoutDashboard },
   { id: "labs-pacing", label: "Labs Pacing", icon: Activity },
   { id: "exec-kpis", label: "Exec KPI Dashboard", icon: Gauge },
+  { id: "investments", label: "Investments Team Dashboard", icon: Landmark },
   { id: "mediaocean", label: "Media Investments Report", icon: Waves },
   { id: "mediabox", label: "MediaBox Adoption", icon: Box },
   { id: "reports", label: "Reports (Raw Data Download)", icon: FileText },
