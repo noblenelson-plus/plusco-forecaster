@@ -42,12 +42,15 @@ import type { Client } from "../../types/client.types";
 
 export interface PartnerTargetSplitsResult {
   splits: PartnerSplit[];
-  /** Round the forecast shares come from (the chosen one, else the latest submitted). */
-  round: RFQType | null;
-  /** The latest submitted round (the default). */
-  defaultRound: RFQType | null;
-  /** The year's rounds, in order (for the round picker). */
-  rounds: RFQType[];
+  /** Round the forecast shares come from, e.g. "RFQ3 2026" (the chosen one, else the latest submitted). */
+  round: string | null;
+  /** Id ("2026_RFQ3") of the round in use, and of the default (latest submitted) one. */
+  roundId: string | null;
+  defaultRoundId: string | null;
+  /** Round picker options: last year's RFQ3 + FINAL, then this year's rounds up to the open one. */
+  roundOptions: { id: string; label: string }[];
+  /** The chosen round has no Labs forecast entered yet (e.g. a round that hasn't started). */
+  forecastEmpty: boolean;
   clients: Client[];
   overrides: SplitOverrides;
   usdToCad: number | null;
@@ -60,8 +63,8 @@ export function usePartnerTargetSplits(
   options: {
     /** Share basis (see computePartnerSplits); default "auto". */
     mode?: "auto" | "forecast" | "mir";
-    /** Forecast round to use instead of the latest submitted one. */
-    round?: RFQType | null;
+    /** Forecast round id ("2026_RFQ3") to use instead of the latest submitted one. */
+    round?: string | null;
   } = {}
 ): PartnerTargetSplitsResult {
   const mode = options.mode ?? "auto";
@@ -96,31 +99,43 @@ export function usePartnerTargetSplits(
     [targetYears, year]
   );
   const targetKeys = useMemo(() => new Set(targets.map((t) => partnerKey(t.partner))), [targets]);
-  const defaultRound = useMemo(() => (rfqs && year != null ? splitRound(rfqs, year) : null), [rfqs, year]);
-  const rounds = useMemo(
-    () =>
-      (rfqs ?? [])
-        .filter((r) => r.year === year)
-        .sort((a, b) => RFQ_TYPE_ORDER[a.type] - RFQ_TYPE_ORDER[b.type])
-        .map((r) => r.type),
-    [rfqs, year]
-  );
-  const round = options.round && rounds.includes(options.round) ? options.round : defaultRound;
-  const usdToCad = rates && year != null ? getCurrencyRateForYear(rates, year) ?? null : null;
+  const defaultRoundId = useMemo(() => {
+    const t = rfqs && year != null ? splitRound(rfqs, year) : null;
+    return t ? `${year}_${t}` : null;
+  }, [rfqs, year]);
+  // Picker, consistent with the rest of the app: last year's RFQ3 and FINAL, then
+  // this year's rounds up to the open one (later rounds haven't started).
+  const roundOptions = useMemo(() => {
+    if (!rfqs || year == null) return [];
+    const ofYear = (y: number) => rfqs.filter((r) => r.year === y).sort((a, b) => RFQ_TYPE_ORDER[a.type] - RFQ_TYPE_ORDER[b.type]);
+    const prev = ofYear(year - 1).filter((r) => r.type === "RFQ3" || r.type === "FINAL");
+    const cur = ofYear(year);
+    const open = cur.findIndex((r) => r.status === "UNLOCKED");
+    const curShown = open < 0 ? cur : cur.slice(0, open + 1);
+    return [...prev, ...curShown].map((r) => ({
+      id: `${r.year}_${r.type}`,
+      label: `${r.type} ${r.year}${r.status === "UNLOCKED" ? " (in progress)" : ""}`,
+    }));
+  }, [rfqs, year]);
+  const roundId = options.round && roundOptions.some((o) => o.id === options.round) ? options.round : defaultRoundId;
+  const [roundYearStr, roundType] = (roundId ?? "").split("_") as [string, RFQType | undefined];
+  const roundYear = roundYearStr ? Number(roundYearStr) : null;
+  const round = roundId ? `${roundType} ${roundYear}` : null;
+  const usdToCad = rates && roundYear != null ? getCurrencyRateForYear(rates, roundYear) ?? null : null;
 
-  // Labs partner id → target partner key (year's partners only).
+  // Labs partner id → target partner key (partners of the round's year: ids differ by year).
   const partnerTarget = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of labsPartners ?? []) {
-      if (p.year !== year) continue;
+      if (p.year !== roundYear) continue;
       const k = targetForLabsPartner(p.name, targetKeys);
       if (k) m.set(p.partnerId, k);
     }
     return m;
-  }, [labsPartners, year, targetKeys]);
+  }, [labsPartners, roundYear, targetKeys]);
 
   // Forecast per client × target partner (CAD), fetched per split round.
-  const fetchKey = year != null && round && !clientsLoading && labsPartners && rates ? `${year}|${round}|${clients.map((c) => c.cl_id).join(",")}|${usdToCad}` : "";
+  const fetchKey = roundYear != null && roundType && !clientsLoading && labsPartners && rates ? `${roundId}|${clients.map((c) => c.cl_id).join(",")}|${usdToCad}` : "";
   const [forecastState, setForecastState] = useState<{ key: string; forecast: Map<string, Map<string, number>> } | null>(null);
   useEffect(() => {
     if (!fetchKey) return;
@@ -130,7 +145,7 @@ export function usePartnerTargetSplits(
         const out = new Map<string, Map<string, number>>();
         await Promise.all(
           clients.map(async (c) => {
-            const labs = await fetchAxisData(c.cl_id, year!, round!, "labs");
+            const labs = await fetchAxisData(c.cl_id, roundYear!, roundType!, "labs");
             const factor = c.CL_Currency === "USD" ? usdToCad ?? 1 : 1;
             const byPartner = new Map<string, number>();
             for (const bucket of labs.buckets) {
@@ -192,5 +207,17 @@ export function usePartnerTargetSplits(
     [year, loading, targets, forecast, mir, overrides, mode]
   );
 
-  return { splits, round, defaultRound, rounds, clients, overrides: overrides ?? {}, usdToCad, loading, error: error ?? mix.error };
+  return {
+    splits,
+    round,
+    roundId,
+    defaultRoundId,
+    roundOptions,
+    forecastEmpty: !!forecast && forecast.size === 0,
+    clients,
+    overrides: overrides ?? {},
+    usdToCad,
+    loading,
+    error: error ?? mix.error,
+  };
 }
