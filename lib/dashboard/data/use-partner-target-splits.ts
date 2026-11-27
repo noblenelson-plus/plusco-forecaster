@@ -24,7 +24,7 @@ import { fetchAxisData } from "../../services/data-entry-service";
 import { useReadableClients } from "../../hooks/use-readable-clients";
 import { useInvestmentDealsMix } from "./use-investment-deals-mix";
 import { sumMonthlyMap } from "../../types/common.types";
-import { isTestClient } from "../../format/client";
+import { isTestClient, resolveClientStatus } from "../../format/client";
 import {
   computePartnerSplits,
   partnerKey,
@@ -76,10 +76,21 @@ export function usePartnerTargetSplits(
   const [error, setError] = useState<string | null>(null);
   const { clients: readable, loading: clientsLoading } = useReadableClients();
   const mix = useInvestmentDealsMix();
-  // Only clients the dashboard shows take a share: readable clients minus test
-  // clients (hidden ones are already left out). Others' MIR lines count as not
-  // attributed, so no part of a target lands on a client nobody sees.
-  const clients = useMemo(() => readable.filter((c) => !isTestClient(c.CL_Name)), [readable]);
+  // Only clients the dashboard shows and that are still clients in the target
+  // year take a share: readable clients minus test clients (hidden ones are
+  // already left out) minus clients Lost / Inactive that year (else last year's
+  // MIR would hand e.g. Little Caesars a 2027 target). Others' MIR lines count as
+  // not attributed, so the target is spread over the remaining clients.
+  const clients = useMemo(
+    () =>
+      readable.filter((c) => {
+        if (isTestClient(c.CL_Name)) return false;
+        if (year == null) return true;
+        const status = resolveClientStatus(c, year);
+        return status !== "LOSS" && status !== "INACTIVE";
+      }),
+    [readable, year]
+  );
   const shareClientIds = useMemo(() => new Set(clients.map((c) => c.cl_id)), [clients]);
 
   useEffect(() => subscribeToPartnerTargets(setTargetYears, (e) => setError(e.message)), []);

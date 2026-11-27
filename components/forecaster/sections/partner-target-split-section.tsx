@@ -378,7 +378,7 @@ export default function PartnerTargetSplitSection({
               ? `No ${selectedYear} MIR bookings yet — booked appears with the first ${selectedYear} MIR pull.`
               : "Booked = MIR booked net (CAD); green = 90%+ of the agency's target, yellow 70–89%, red below 70%."}
             {tab === "mir" ? " Magnite and Index (SSPs) have few direct MIR lines, so their split rests on very little data." : ""}
-            {" "}Admin-fixed shares apply in both tabs.
+            {" "}Clients lost or inactive in {selectedYear} are left out. Admin-fixed shares apply in both tabs.
           </p>
 
           {/* Drill-down: the clients behind one cell */}
