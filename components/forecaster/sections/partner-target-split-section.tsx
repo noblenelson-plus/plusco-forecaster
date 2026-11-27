@@ -2,42 +2,39 @@
 "use client";
 
 /**
- * "Partner targets by agency" (Exec KPI → Deal Pacing and the Deal Targets page).
- * Each Labs partner target (Deal Targets) is split across clients
- * (lib/format/partner-target-split.ts) and shown as a partner × agency-column
- * matrix (lib/format/agency-groups.ts: CM ROC, MEK ROC, CM MTL/QC, Jungle QC;
- * Showroom ON / MEK USA behind "Show all agencies"): each cell = the agency's %
- * of the partner, its $ target and MIR booked. Two tabs: Forecaster partners
- * (shares from a Labs forecast round, latest submitted by default) and All
- * partners (shares from MIR booked). Click a cell → that agency's clients.
- * GM pod / BL / client roll-ups, the per-partner split and the admin
- * overrides (partner_target_splits/{year}) sit behind "More breakdowns".
+ * "Partner targets by agency" (Exec KPI → Deal Pacing, Investments → PCC Deals
+ * and the Deal Targets page). Each partner target (Deal Targets) is split
+ * across clients (lib/format/partner-target-split.ts) and shown in two steps:
+ *
+ *  1. Partner × agency matrix (lib/format/agency-groups.ts: CM ROC, MEK ROC,
+ *     CM MTL/QC, Jungle QC; Showroom ON / MEK USA behind "Show all agencies"):
+ *     each cell = the agency's % of the partner, its $ target and MIR booked.
+ *  2. Client breakdown: pick a partner → every client's % and $ target, grouped
+ *     by agency (default), GM pod or business lead, with subtotals. Clicking a
+ *     matrix cell picks that partner and jumps to the agency's group.
+ *
+ * Two tabs: Forecaster partners (shares from a Labs forecast round, latest
+ * submitted by default) and All partners (shares from last year's full MIR).
+ * Filters (agency, BU region, GM pod, business lead) apply to both steps; the
+ * % stays out of the partner's whole target. Admins adjust fixed shares
+ * (partner_target_splits/{year}) under "Adjust splits", hidden for others.
  */
 
 import { useMemo, useState } from "react";
-import { Loader2, Target, Pencil, X, Save, RotateCcw } from "lucide-react";
-import ChartCard from "../../dashboard/charts/chart-card";
+import { Loader2, Target, Pencil, X, Save, RotateCcw, Users } from "lucide-react";
 import SheetExportButton from "../../dashboard/sheet-export-button";
 import MultiSelectDropdown from "../../_shared/multi-select-dropdown";
 import { useForecastSelection } from "../../../lib/stores/forecast-selection.store";
 import { useUserProfile } from "../../../lib/hooks/use-user-profile";
 import { usePartnerTargetSplits } from "../../../lib/dashboard/data/use-partner-target-splits";
 import { saveSplitOverrides } from "../../../lib/services/partner-target-split-service";
-import { rollupSplits, type PartnerSplit, type SplitBasis } from "../../../lib/format/partner-target-split";
+import type { PartnerSplit, SplitBasis } from "../../../lib/format/partner-target-split";
 import { ragFromPctOfTarget, ragCell } from "./exec-rag";
 import type { Client } from "../../../lib/types/client.types";
 import { AGENCY_GROUPS, agencyGroupOf } from "../../../lib/format/agency-groups";
 
 const money = (v: number) => `${v < 0 ? "−" : ""}$${Math.abs(Math.round(v)).toLocaleString("en-CA")}`;
 const pct = (v: number | null, d = 0) => (v == null || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(d)}%`);
-
-type GroupBy = "agencyRegion" | "gmPod" | "bl" | "client";
-const GROUPS: { id: GroupBy; label: string }[] = [
-  { id: "agencyRegion", label: "Agency × BU region" },
-  { id: "gmPod", label: "GM pod" },
-  { id: "bl", label: "Business lead" },
-  { id: "client", label: "Client" },
-];
 
 const blName = (email: string | undefined) => {
   const e = (email ?? "").trim();
@@ -49,14 +46,6 @@ const blName = (email: string | undefined) => {
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(" ");
 };
-
-function labelFor(group: GroupBy, c: Client | undefined): string {
-  if (!c) return "Not a Forecaster client";
-  if (group === "agencyRegion") return `${c.CL_Agency || "No agency"} · ${c.CL_Business_Unit_Region || "No BU region"}`;
-  if (group === "gmPod") return c.GM_Pod || "No GM pod";
-  if (group === "bl") return blName(c.CL_Business_Lead);
-  return c.CL_Name;
-}
 
 function basisLabel(b: SplitBasis, year: number, round: string | null, mirSource?: string | null) {
   if (b === "forecast") return `${round ?? ""} Labs forecast`;
@@ -70,7 +59,6 @@ const TH = "py-2 font-medium";
 const HEAD = "border-b border-border text-xs uppercase tracking-wider text-muted-foreground";
 const ROW = "border-b border-border/60";
 const NUM = "py-2 pl-3 text-right tabular-nums text-muted-foreground";
-const TOT = "border-t-2 border-border font-semibold";
 
 /** Admin editor: fix a client's share of one partner; the rest follows the automatic shares. */
 function SplitEditor({
@@ -174,8 +162,13 @@ function SplitEditor({
   );
 }
 
-
 type Tab = "forecast" | "mir";
+type ListBy = "agency" | "gmPod" | "bl";
+const LIST_BY: { id: ListBy; label: string }[] = [
+  { id: "agency", label: "Agency" },
+  { id: "gmPod", label: "GM pod" },
+  { id: "bl", label: "Business lead" },
+];
 
 /** One partner × agency-column cell. */
 interface Cell {
@@ -183,6 +176,17 @@ interface Cell {
   target: number;
   booked: number;
 }
+
+interface Filters {
+  agencies: string[];
+  regions: string[];
+  gmPods: string[];
+  bls: string[];
+}
+const NO_FILTERS: Filters = { agencies: [], regions: [], gmPods: [], bls: [] };
+
+const groupLabel = (id: string) => AGENCY_GROUPS.find((g) => g.id === id)?.label ?? id;
+const groupDomId = (id: string) => `pts-group-${id.replace(/[^a-z0-9]+/gi, "-")}`;
 
 export default function PartnerTargetSplitSection({
   scopedClientIds,
@@ -201,19 +205,48 @@ export default function PartnerTargetSplitSection({
   const { splits, round, roundId, defaultRoundId, roundOptions, forecastEmpty, mirSource, clients, overrides, loading, error } =
     usePartnerTargetSplits(selectedYear, { mode: tab, round: pickedRound });
   const [showAll, setShowAll] = useState(false);
-  const [selected, setSelected] = useState<{ partner: string; group: string } | null>(null);
-  const [group, setGroup] = useState<GroupBy>("client");
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [pickedPartner, setPickedPartner] = useState<string | null>(null);
+  const [focusGroup, setFocusGroup] = useState<string | null>(null);
+  const [listBy, setListBy] = useState<ListBy>("agency");
   const [editing, setEditing] = useState<string | null>(null);
 
   const clientsById = useMemo(() => new Map(clients.map((c) => [c.cl_id, c])), [clients]);
-  const scope = useMemo(() => new Set(scopedClientIds ?? clients.map((c) => c.cl_id)), [scopedClientIds, clients]);
   const groupOf = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of clients) m.set(c.cl_id, agencyGroupOf(c.CL_Agency, c.CL_Business_Unit_Region));
     return (id: string) => m.get(id) ?? "other";
   }, [clients]);
 
-  // Partner × agency-column cells (clients in the dashboard filters only).
+  // Clients in the dashboard filters (if any) and the section's own filters.
+  const base = useMemo(() => (scopedClientIds ? clients.filter((c) => scopedClientIds.includes(c.cl_id)) : clients), [scopedClientIds, clients]);
+  const scope = useMemo(() => {
+    const ok = (list: string[], v: string) => list.length === 0 || list.includes(v);
+    return new Set(
+      base
+        .filter(
+          (c) =>
+            ok(filters.agencies, c.CL_Agency || "") &&
+            ok(filters.regions, c.CL_Business_Unit_Region || "") &&
+            ok(filters.gmPods, c.GM_Pod || "") &&
+            ok(filters.bls, c.CL_Business_Lead || "")
+        )
+        .map((c) => c.cl_id)
+    );
+  }, [base, filters]);
+  const filterOptions = useMemo(() => {
+    const opts = (vals: (string | undefined)[], label: (v: string) => string = (v) => v) =>
+      [...new Set(vals.map((v) => v || "").filter(Boolean))].sort((a, b) => label(a).localeCompare(label(b))).map((v) => ({ value: v, label: label(v) }));
+    return {
+      agencies: opts(base.map((c) => c.CL_Agency)),
+      regions: opts(base.map((c) => c.CL_Business_Unit_Region)),
+      gmPods: opts(base.map((c) => c.GM_Pod)),
+      bls: opts(base.map((c) => c.CL_Business_Lead), blName),
+    };
+  }, [base]);
+  const filtered = Object.values(filters).some((l) => l.length > 0);
+
+  // Partner × agency-column cells (clients in scope only).
   const matrix = useMemo(() => {
     const rows = splits.map((s) => {
       const cells = new Map<string, Cell>();
@@ -239,17 +272,19 @@ export default function PartnerTargetSplitSection({
   if (error) return <div className="bg-red-500 px-4 py-3 text-sm text-white">Couldn&apos;t load the client targets: {error}</div>;
 
   const editSplit = splits.find((s) => s.key === editing) ?? null;
-  const selectedSplit = selected ? splits.find((s) => s.partner === selected.partner) ?? null : null;
-  const selectedClients = selectedSplit
-    ? selectedSplit.clients
-        .filter((c) => scope.has(c.clientId) && groupOf(c.clientId) === selected!.group && (c.share > 0 || c.booked !== 0))
-        .sort((a, b) => b.target - a.target || b.booked - a.booked)
-    : [];
-  const groupLabel = (id: string) => AGENCY_GROUPS.find((g) => g.id === id)?.label ?? id;
-  const sourceNote =
+  const partnerSplit = splits.find((s) => s.partner === pickedPartner) ?? splits[0] ?? null;
+  const shownGroups = new Set(matrix.columns.map((g) => g.id));
+  const sourceText =
     tab === "forecast"
-      ? `% = the agency's clients' share of each partner in the ${round ?? ""} Labs forecast${roundId === defaultRoundId ? " (latest submitted round)" : ""}.`
-      : `% = the agency's clients' share of each partner in ${mirSource ?? "the latest MIR"} — Mediaocean bookings for the full year ${selectedYear - 1}.`;
+      ? `the ${round ?? ""} Labs forecast${roundId === defaultRoundId ? " (latest submitted round)" : ""}`
+      : `${mirSource ?? "the latest MIR"} — Mediaocean bookings for the full year ${selectedYear - 1}`;
+
+  const pickCell = (partner: string, group: string) => {
+    setPickedPartner(partner);
+    setListBy("agency");
+    setFocusGroup(group);
+    setTimeout(() => document.getElementById(groupDomId(group))?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
 
   return (
     <div data-scroll-section data-scroll-label="Targets by agency" className="space-y-4">
@@ -260,7 +295,7 @@ export default function PartnerTargetSplitSection({
           <span className="text-xs font-medium text-muted-foreground">· {selectedYear}</span>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          How much of each partner&apos;s target each agency has to spend. Click a cell to see that agency&apos;s clients.
+          How much of each partner&apos;s target each agency has to spend. Click a cell to see that agency&apos;s clients below.
         </p>
       </div>
 
@@ -278,7 +313,7 @@ export default function PartnerTargetSplitSection({
               type="button"
               onClick={() => {
                 setTab(id);
-                setSelected(null);
+                setFocusGroup(null);
               }}
               className={`px-3 py-1.5 text-xs font-medium ${tab === id ? "bg-gray-900 text-white" : "text-foreground hover:bg-gray-100"}`}
             >
@@ -308,6 +343,20 @@ export default function PartnerTargetSplitSection({
         </label>
       </div>
 
+      {/* Filters (both tables) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Filter</span>
+        <MultiSelectDropdown label="Agency" options={filterOptions.agencies} selectedValues={filters.agencies} onChange={(v) => setFilters((f) => ({ ...f, agencies: v }))} />
+        <MultiSelectDropdown label="BU region" options={filterOptions.regions} selectedValues={filters.regions} onChange={(v) => setFilters((f) => ({ ...f, regions: v }))} />
+        <MultiSelectDropdown label="GM pod" options={filterOptions.gmPods} selectedValues={filters.gmPods} onChange={(v) => setFilters((f) => ({ ...f, gmPods: v }))} searchable />
+        <MultiSelectDropdown label="Business lead" options={filterOptions.bls} selectedValues={filters.bls} onChange={(v) => setFilters((f) => ({ ...f, bls: v }))} searchable />
+        {filtered && (
+          <button type="button" onClick={() => setFilters(NO_FILTERS)} className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
+            <X size={12} /> Clear filters
+          </button>
+        )}
+      </div>
+
       {loading ? (
         <div className="flex h-40 items-center justify-center gap-2 text-muted-foreground">
           <Loader2 size={18} className="animate-spin" /> <span className="text-sm">Splitting partner targets…</span>
@@ -323,7 +372,7 @@ export default function PartnerTargetSplitSection({
         </div>
       ) : (
         <>
-          {/* Partner × agency matrix */}
+          {/* 1. Partner × agency matrix */}
           <div className="overflow-x-auto border border-border bg-card">
             <table className="w-full text-sm">
               <thead>
@@ -344,7 +393,7 @@ export default function PartnerTargetSplitSection({
                     <td className="px-3 py-2 text-right tabular-nums text-foreground">{split.target > 0 ? money(split.target) : <span className="text-xs text-muted-foreground">no target</span>}</td>
                     {matrix.columns.map((g) => {
                       const cell = cells.get(g.id);
-                      const isSel = selected?.partner === split.partner && selected.group === g.id;
+                      const isSel = partnerSplit?.partner === split.partner && focusGroup === g.id;
                       if (!cell || (cell.share < 0.0005 && Math.round(cell.booked) === 0)) {
                         return (
                           <td key={g.id} className="px-3 py-2 text-right text-muted-foreground">
@@ -356,7 +405,8 @@ export default function PartnerTargetSplitSection({
                       return (
                         <td
                           key={g.id}
-                          onClick={() => setSelected(isSel ? null : { partner: split.partner, group: g.id })}
+                          onClick={() => pickCell(split.partner, g.id)}
+                          title={`See ${g.label}'s clients for ${split.partner}`}
                           className={`cursor-pointer px-3 py-2 text-right align-top hover:bg-gray-50 ${isSel ? "bg-yellow-400" : ""}`}
                         >
                           <div className="text-base font-semibold tabular-nums text-foreground">{pct(cell.share)}</div>
@@ -372,295 +422,317 @@ export default function PartnerTargetSplitSection({
               </tbody>
             </table>
           </div>
+
+          {/* 2. Client breakdown of one partner */}
+          {partnerSplit && (
+            <ClientBreakdown
+              split={partnerSplit}
+              partners={splits}
+              onPickPartner={(p) => {
+                setPickedPartner(p);
+                setFocusGroup(null);
+              }}
+              listBy={listBy}
+              setListBy={setListBy}
+              focusGroup={focusGroup}
+              clientsById={clientsById}
+              inScope={(id) => scope.has(id)}
+              groupOf={groupOf}
+              shownGroups={shownGroups}
+              noBookings={noBookings}
+              exportTabs={() => [
+                {
+                  sheetTitle: "Client x partner",
+                  matrix: [
+                    ["Client", "Based on", "Partner", "% share of partner", "Target", "Booked (MIR)", "BU region", "Business lead", "Agency", "Agency column", "GM pod", "Fixed by admin"],
+                    ...splits.flatMap((s) =>
+                      s.clients
+                        .filter((c) => scope.has(c.clientId) && (c.share > 0 || Math.round(c.booked) !== 0))
+                        .map((c) => {
+                          const cl = clientsById.get(c.clientId);
+                          return [
+                            cl?.CL_Name ?? c.clientId,
+                            basisLabel(s.basis, selectedYear, round, mirSource),
+                            s.partner,
+                            c.share,
+                            Math.round(c.target),
+                            Math.round(c.booked),
+                            cl?.CL_Business_Unit_Region ?? "",
+                            blName(cl?.CL_Business_Lead),
+                            cl?.CL_Agency ?? "",
+                            groupLabel(groupOf(c.clientId)),
+                            cl?.GM_Pod ?? "",
+                            c.overridden ? "Yes" : "",
+                          ];
+                        })
+                    ),
+                  ],
+                },
+              ]}
+              exportTitle={`Partner targets by client ${selectedYear}`}
+            />
+          )}
+
+          {/* Footnotes */}
           <ol className="list-decimal space-y-0.5 pl-5 text-xs text-muted-foreground">
             <li>
-              <span className="font-medium text-foreground">%</span>: {sourceNote.replace(/^% = /, "")}{" "}
+              <span className="font-medium text-foreground">% and Target</span>: each client&apos;s share of a partner in {sourceText}
               {tab === "forecast"
-                ? "Each client's share = its forecast with that partner ÷ all clients' forecast with that partner."
-                : `Each client's share = what it booked with that partner in ${selectedYear - 1} ÷ what all clients booked with that partner in ${selectedYear - 1} (Mediaocean ${mirSource ?? "MIR"}, table PCC_Dashboard_NATIVE). The full previous year is used so the split doesn't move as ${selectedYear} bookings come in.`}{" "}
-              An agency&apos;s % = the sum of its clients&apos; shares.
-            </li>
-            <li>
-              <span className="font-medium text-foreground">Target</span> = the partner&apos;s target (Deal Targets page) × the agency&apos;s %.
+                ? " (its forecast with that partner ÷ all clients' forecast with that partner)"
+                : ` (what it booked with that partner in ${selectedYear - 1} ÷ what all clients booked with it; the full previous year is used so the split doesn't move as ${selectedYear} bookings come in)`}
+              . Target = the partner&apos;s target on the Deal Targets page × that %. An agency, GM pod or business lead = the sum of its clients.
             </li>
             <li>
               <span className="font-medium text-foreground">Booked</span>:{" "}
               {noBookings
                 ? `no ${selectedYear} Mediaocean bookings yet — it appears with the first ${selectedYear} MIR pull.`
-                : `Mediaocean booked net (CAD) for ${selectedYear}; green = 90%+ of the agency's target, yellow 70–89%, red below 70%.`}
+                : `Mediaocean booked net (CAD) for ${selectedYear}; green = 90%+ of target, yellow 70–89%, red below 70%.`}
             </li>
             <li>
-              <span className="font-medium text-foreground">Who&apos;s included</span>: clients active in {selectedYear} (Lost / Inactive
-              clients, test and hidden clients are left out — their share goes to the others). Agency columns use each client&apos;s
-              agency + BU region on the Clients page: CM ROC = Cossette Media Ontario + West, CM MTL/QC = Cossette Media QC/East, MEK ROC =
-              Mekanism Ontario + West, Jungle QC = Jungle QC/East (Showroom and Mekanism USA under &ldquo;Show all agencies&rdquo;).
+              <span className="font-medium text-foreground">Who&apos;s included</span>: clients active in {selectedYear} (Lost / Inactive,
+              test and hidden clients are left out — their share goes to the others). CM ROC = Cossette Media Ontario + West, CM MTL/QC =
+              Cossette Media QC/East, MEK ROC = Mekanism Ontario + West, Jungle QC = Jungle QC/East; Showroom and Mekanism USA under
+              &ldquo;Show all agencies&rdquo;.
+              {filtered && " Filters keep only the matching clients; the % is still out of the partner's whole target, so a column no longer adds to 100%."}
             </li>
             {tab === "mir" && (
               <li>
-                <span className="font-medium text-foreground">Volume partners</span> (Google, Bell Media, CBC/SRC, CBS, Cogeco, Pelmorex…) have
-                no $ target on the Deal Targets page, so they show the agency % only. Google = Google Ads + Google DV360; CBS = Canadian
-                Broadcast Sales.
+                <span className="font-medium text-foreground">Volume partners</span> (Google, Bell Media, CBS, Pelmorex…) have no $ target, so
+                they show the % only. Google = Google Ads + DV360; CBS = Canadian Broadcast Sales. Partners with few Mediaocean lines (Media
+                Pulse, Magnite, Trader Interactive, Index) can land 100% on one agency — read those with care.
               </li>
             )}
-            {tab === "mir" && (
-              <li>
-                <span className="font-medium text-foreground">Thin data</span>: partners with few Mediaocean lines (Media Pulse, Magnite,
-                Trader Interactive, Index) can land 100% on one agency — read those with care.
-              </li>
-            )}
-            <li>
-              <span className="font-medium text-foreground">Fixed shares</span>: an admin can fix a client&apos;s % per partner (Edit
-              split, below); it applies in both tabs and the rest is spread over the other clients.
-            </li>
           </ol>
 
-          {/* Drill-down: the clients behind one cell */}
-          {selected && selectedSplit && (
-            <ChartCard
-              title={`${selectedSplit.partner} — ${groupLabel(selected.group)} clients`}
-              subtitle={`Each client's share of the ${money(selectedSplit.target)} ${selectedSplit.partner} target`}
-              icon={Target}
-              action={
-                <button type="button" onClick={() => setSelected(null)} className="p-1 text-muted-foreground hover:text-foreground" aria-label="Close">
-                  <X size={14} />
-                </button>
-              }
-            >
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className={HEAD}>
-                    <th className={`${TH} pr-3 text-left`}>Client</th>
-                    <th className={`${TH} pl-3 text-right`}>Share</th>
-                    <th className={`${TH} pl-3 text-right`}>Target</th>
-                    {!noBookings && <th className={`${TH} pl-3 text-right`}>Booked</th>}
-                    {!noBookings && <th className={`${TH} pl-3 text-right`}>% of target</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedClients.map((c) => {
-                    const pace = c.target > 0 ? c.booked / c.target : null;
-                    return (
-                      <tr key={c.clientId} className={ROW}>
-                        <td className="py-2 pr-3 text-left text-foreground">
-                          {clientsById.get(c.clientId)?.CL_Name ?? c.clientId}
-                          {c.overridden && <span className="ml-1 text-[11px] text-muted-foreground">(fixed by admin)</span>}
-                        </td>
-                        <td className={NUM}>{pct(c.share, 1)}</td>
-                        <td className={NUM}>{money(c.target)}</td>
-                        {!noBookings && <td className={NUM}>{money(c.booked)}</td>}
-                        {!noBookings && (
-                          <td className={`py-2 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(pace))}`}>{pct(pace)}</td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {selectedClients.length === 0 && <p className="py-3 text-sm text-muted-foreground">No clients with a share here.</p>}
-            </ChartCard>
-          )}
-
-          {/* Secondary: other roll-ups, the split per partner (admin edit), export */}
-          <details className="border border-border bg-card p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-foreground">Client breakdown (client × partner), GM pod, business lead and split settings</summary>
-            <div className="mt-4 space-y-4">
-              <MoreBreakdowns
-                splits={splits}
-                group={group}
-                setGroup={setGroup}
-                clientsById={clientsById}
-                scope={scope}
-                noBookings={noBookings}
-                year={selectedYear}
-                round={round}
-                mirSource={mirSource}
-              />
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className={HEAD}>
-                    <th className={`${TH} pr-3 text-left`}>Partner</th>
-                    <th className={`${TH} pl-3 text-right`}>Target</th>
-                    <th className={`${TH} pl-3 pr-3 text-left`}>Split by</th>
-                    <th className={`${TH} pl-3 text-right`}>Clients</th>
-                    <th className={`${TH} pl-3 text-right`}>Fixed by admin</th>
-                    <th className={`${TH} pl-3 text-right`}>Not split</th>
-                    {isAdmin && <th className={`${TH} pl-3 text-right`} />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {splits.map((s) => (
-                    <tr key={s.key} className={ROW}>
-                      <td className="py-2 pr-3 text-left text-foreground">{s.partner}</td>
-                      <td className={NUM}>{money(s.target)}</td>
-                      <td className="py-2 pl-3 pr-3 text-left text-muted-foreground">{basisLabel(s.basis, selectedYear, round, mirSource)}</td>
-                      <td className={NUM}>{s.clients.filter((c) => c.share > 0).length}</td>
-                      <td className={NUM}>{s.overrideTotal ? pct(s.overrideTotal, 1) : "—"}</td>
-                      <td className={NUM}>{s.unallocated >= 1 ? money(s.unallocated) : "—"}</td>
-                      {isAdmin && (
+          {/* Admin only: how each partner is split + fixed shares */}
+          {isAdmin && (
+            <details className="border border-border bg-card p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-foreground">Adjust splits (admins only)</summary>
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-muted-foreground">
+                  Where each partner&apos;s split comes from. &ldquo;Edit split&rdquo; fixes a client&apos;s %; it applies in both tabs and the
+                  rest is spread over the other clients.
+                </p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className={HEAD}>
+                      <th className={`${TH} pr-3 text-left`}>Partner</th>
+                      <th className={`${TH} pl-3 text-right`}>Target</th>
+                      <th className={`${TH} pl-3 pr-3 text-left`}>Split by</th>
+                      <th className={`${TH} pl-3 text-right`}>Clients</th>
+                      <th className={`${TH} pl-3 text-right`}>Fixed by admin</th>
+                      <th className={`${TH} pl-3 text-right`}>Not split</th>
+                      <th className={`${TH} pl-3 text-right`} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {splits.map((s) => (
+                      <tr key={s.key} className={ROW}>
+                        <td className="py-2 pr-3 text-left text-foreground">{s.partner}</td>
+                        <td className={NUM}>{money(s.target)}</td>
+                        <td className="py-2 pl-3 pr-3 text-left text-muted-foreground">{basisLabel(s.basis, selectedYear, round, mirSource)}</td>
+                        <td className={NUM}>{s.clients.filter((c) => c.share > 0).length}</td>
+                        <td className={NUM}>{s.overrideTotal ? pct(s.overrideTotal, 1) : "—"}</td>
+                        <td className={NUM}>{s.unallocated >= 1 ? money(s.unallocated) : "—"}</td>
                         <td className="py-2 pl-3 text-right">
                           <button type="button" onClick={() => setEditing(s.key)} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
                             <Pencil size={12} /> Edit split
                           </button>
                         </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {editSplit && isAdmin && (
-                <SplitEditor key={editSplit.key} split={editSplit} clientsById={clientsById} year={selectedYear} allOverrides={overrides} onClose={() => setEditing(null)} />
-              )}
-            </div>
-          </details>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {editSplit && (
+                  <SplitEditor key={editSplit.key} split={editSplit} clientsById={clientsById} year={selectedYear} allOverrides={overrides} onClose={() => setEditing(null)} />
+                )}
+              </div>
+            </details>
+          )}
         </>
       )}
     </div>
   );
 }
 
-/** GM pod / business lead / client roll-up with export (kept behind "More breakdowns"). */
-function MoreBreakdowns({
-  splits,
-  group,
-  setGroup,
+/**
+ * Step 2: one partner's target broken down by client, grouped by agency column
+ * (default), GM pod or business lead, with a subtotal per group.
+ */
+function ClientBreakdown({
+  split,
+  partners,
+  onPickPartner,
+  listBy,
+  setListBy,
+  focusGroup,
   clientsById,
-  scope,
+  inScope,
+  groupOf,
+  shownGroups,
   noBookings,
-  year,
-  round,
-  mirSource,
+  exportTabs,
+  exportTitle,
 }: {
-  splits: PartnerSplit[];
-  group: GroupBy;
-  setGroup: (g: GroupBy) => void;
+  split: PartnerSplit;
+  partners: PartnerSplit[];
+  onPickPartner: (p: string) => void;
+  listBy: ListBy;
+  setListBy: (l: ListBy) => void;
+  focusGroup: string | null;
   clientsById: Map<string, Client>;
-  scope: ReadonlySet<string>;
+  inScope: (id: string) => boolean;
+  groupOf: (id: string) => string;
+  shownGroups: ReadonlySet<string>;
   noBookings: boolean;
-  year: number;
-  round: string | null;
-  mirSource: string | null;
+  exportTabs: () => { sheetTitle: string; matrix: (string | number)[][] }[];
+  exportTitle: string;
 }) {
-  const [partners, setPartners] = useState<string[]>([]);
-  const shown = partners.length ? splits.filter((s) => partners.includes(s.partner)) : splits;
-  const rows = rollupSplits(shown, (id) => labelFor(group, clientsById.get(id)), (id) => scope.has(id));
-  const groupLabel = GROUPS.find((g) => g.id === group)!.label;
-  const totals = rows.reduce((a, r) => ({ target: a.target + r.target, booked: a.booked + r.booked }), { target: 0, booked: 0 });
-  const paceOf = (target: number, booked: number) => (noBookings || !target ? null : booked / target);
-  // Client view (the investments team's sheet): one row per client × partner.
-  const clientLines = shown
-    .flatMap((s) => s.clients.filter((c) => scope.has(c.clientId) && (c.share > 0 || Math.round(c.booked) !== 0)).map((c) => ({ s, c })))
-    .sort((a, b) => a.s.partner.localeCompare(b.s.partner) || b.c.share - a.c.share);
+  const lines = split.clients.filter(
+    (c) => inScope(c.clientId) && (c.share > 0 || Math.round(c.booked) !== 0) && (listBy !== "agency" || shownGroups.has(groupOf(c.clientId)))
+  );
+  const keyOf = (id: string) => {
+    const cl = clientsById.get(id);
+    if (listBy === "agency") return groupOf(id);
+    if (listBy === "gmPod") return cl?.GM_Pod || "No GM pod";
+    return blName(cl?.CL_Business_Lead);
+  };
+  const byGroup = new Map<string, typeof lines>();
+  for (const c of lines) {
+    const k = keyOf(c.clientId);
+    byGroup.set(k, [...(byGroup.get(k) ?? []), c]);
+  }
+  const sum = (ls: typeof lines) => ls.reduce((a, c) => ({ share: a.share + c.share, target: a.target + c.target, booked: a.booked + c.booked }), { share: 0, target: 0, booked: 0 });
+  const groups = [...byGroup.entries()]
+    .map(([k, ls]) => ({ key: k, label: listBy === "agency" ? groupLabel(k) : k, lines: [...ls].sort((a, b) => b.share - a.share || b.booked - a.booked), total: sum(ls) }))
+    .sort((a, b) =>
+      listBy === "agency"
+        ? AGENCY_GROUPS.findIndex((g) => g.id === a.key) - AGENCY_GROUPS.findIndex((g) => g.id === b.key)
+        : b.total.share - a.total.share
+    );
+  const total = sum(lines);
+  const hasTarget = split.target > 0;
+  const showBooked = !noBookings;
+  const pace = (t: number, b: number) => (showBooked && t > 0 ? b / t : null);
+  const cols = 5 + (hasTarget ? 1 : 0) + (showBooked ? 2 : 0);
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex border border-gray-300">
-          {(["client", "gmPod", "bl"] as GroupBy[]).map((id) => GROUPS.find((g) => g.id === id)!).map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => setGroup(g.id)}
-              className={`px-3 py-1.5 text-xs font-medium ${group === g.id ? "bg-gray-900 text-white" : "text-foreground hover:bg-gray-100"}`}
-            >
-              {g.label}
-            </button>
-          ))}
+    <div className="space-y-3 border border-border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <Users size={16} className="text-primary" />
+            <h3 className="text-base font-semibold text-foreground">Client breakdown</h3>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">Pick a partner: each client&apos;s share of its target, grouped by {LIST_BY.find((l) => l.id === listBy)!.label.toLowerCase()}.</p>
         </div>
-        <MultiSelectDropdown label="Partner" options={splits.map((s) => ({ value: s.partner, label: s.partner }))} selectedValues={partners} onChange={setPartners} />
-        <SheetExportButton
-          title={`Partner targets by client ${year}`}
-          buildTabs={() => [
-            {
-              sheetTitle: "Client x partner",
-              matrix: [
-                ["Partner", "Client", "Agency", "BU region", "GM pod", "Business lead", "Share", "Fixed by admin", "Target", "Booked (MIR)", "Basis"],
-                ...shown.flatMap((s) =>
-                  s.clients
-                    .filter((c) => scope.has(c.clientId))
-                    .map((c) => {
-                      const cl = clientsById.get(c.clientId);
-                      return [s.partner, cl?.CL_Name ?? c.clientId, cl?.CL_Agency ?? "", cl?.CL_Business_Unit_Region ?? "", cl?.GM_Pod ?? "", cl?.CL_Business_Lead ?? "", c.share, c.overridden ? "Yes" : "", Math.round(c.target), Math.round(c.booked), basisLabel(s.basis, year, round, mirSource)];
-                    })
-                ),
-              ],
-            },
-          ]}
-        />
+        <SheetExportButton title={exportTitle} buildTabs={exportTabs} />
       </div>
-      {group === "client" ? (
-        <div className="max-h-[480px] overflow-auto">
+
+      {/* Partner picker */}
+      <div className="flex flex-wrap gap-1.5">
+        {partners.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            onClick={() => onPickPartner(p.partner)}
+            className={`border px-2.5 py-1 text-xs font-medium ${p.key === split.key ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300 text-foreground hover:bg-gray-100"}`}
+          >
+            {p.partner}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+        <p className="text-sm text-foreground">
+          <span className="font-semibold">{split.partner}</span>
+          {hasTarget ? <> · {money(split.target)} target</> : <span className="text-muted-foreground"> · no $ target (% only)</span>}
+          <span className="text-muted-foreground"> · {lines.length} clients</span>
+        </p>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          Group by
+          <div className="flex border border-gray-300">
+            {LIST_BY.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => setListBy(l.id)}
+                className={`px-2.5 py-1 text-xs font-medium ${listBy === l.id ? "bg-gray-900 text-white" : "text-foreground hover:bg-gray-100"}`}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {lines.length === 0 ? (
+        <p className="py-3 text-sm text-muted-foreground">No clients with a share of {split.partner} in these filters.</p>
+      ) : (
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-card">
+            <thead>
               <tr className={HEAD}>
-                {["Client", "Based on", "Partner", "% share of partner", "Target", "Booked (MIR)", "BU region", "Business lead", "Agency", "GM pod"].map((h, i) => (
-                  <th key={h} className={`${TH} ${i >= 3 && i <= 5 ? "pl-3 text-right" : "pl-3 pr-3 text-left"}`}>
-                    {h}
-                  </th>
-                ))}
+                <th className={`${TH} pr-3 text-left`}>Client</th>
+                <th className={`${TH} pl-3 text-right`}>% of {split.partner}</th>
+                {hasTarget && <th className={`${TH} pl-3 text-right`}>Target</th>}
+                {showBooked && <th className={`${TH} pl-3 text-right`}>Booked</th>}
+                {showBooked && <th className={`${TH} pl-3 text-right`}>% of target</th>}
+                <th className={`${TH} pl-4 text-left`}>BU region</th>
+                <th className={`${TH} pl-3 text-left`}>Business lead</th>
+                <th className={`${TH} pl-3 text-left`}>{listBy === "gmPod" ? "Agency" : "GM pod"}</th>
               </tr>
             </thead>
-            <tbody>
-              {clientLines.map(({ s, c }) => {
-                const cl = clientsById.get(c.clientId);
-                return (
-                  <tr key={`${s.key}|${c.clientId}`} className={ROW}>
-                    <td className="py-2 pl-3 pr-3 text-left text-foreground">
-                      {cl?.CL_Name ?? c.clientId}
-                      {c.overridden && <span className="ml-1 text-[11px] text-muted-foreground">(fixed)</span>}
+            {groups.map((g) => (
+              <tbody key={g.key} id={listBy === "agency" ? groupDomId(g.key) : undefined} className="scroll-mt-24">
+                <tr className={`border-t-2 border-gray-900 ${listBy === "agency" && focusGroup === g.key ? "bg-yellow-400" : ""}`}>
+                  <td className="py-2 pr-3 text-left font-semibold text-foreground">
+                    {g.label} <span className="text-xs font-normal text-muted-foreground">· {g.lines.length} client{g.lines.length === 1 ? "" : "s"}</span>
+                  </td>
+                  <td className="py-2 pl-3 text-right font-semibold tabular-nums text-foreground">{pct(g.total.share, 1)}</td>
+                  {hasTarget && <td className="py-2 pl-3 text-right font-semibold tabular-nums text-foreground">{money(g.total.target)}</td>}
+                  {showBooked && <td className="py-2 pl-3 text-right font-semibold tabular-nums text-foreground">{money(g.total.booked)}</td>}
+                  {showBooked && (
+                    <td className={`py-2 pl-3 text-right font-semibold tabular-nums ${ragCell(ragFromPctOfTarget(pace(g.total.target, g.total.booked)))}`}>
+                      {pct(pace(g.total.target, g.total.booked))}
                     </td>
-                    <td className="py-2 pl-3 pr-3 text-left text-xs text-muted-foreground">{basisLabel(s.basis, year, round, mirSource)}</td>
-                    <td className="py-2 pl-3 pr-3 text-left text-foreground">{s.partner}</td>
-                    <td className="py-2 pl-3 text-right font-semibold tabular-nums text-foreground">{pct(c.share, 1)}</td>
-                    <td className={NUM}>{money(c.target)}</td>
-                    <td className={NUM}>{noBookings ? "—" : money(c.booked)}</td>
-                    <td className="py-2 pl-3 pr-3 text-left text-muted-foreground">{cl?.CL_Business_Unit_Region || "—"}</td>
-                    <td className="py-2 pl-3 pr-3 text-left text-muted-foreground">{blName(cl?.CL_Business_Lead)}</td>
-                    <td className="py-2 pl-3 pr-3 text-left text-muted-foreground">{cl?.CL_Agency || "—"}</td>
-                    <td className="py-2 pl-3 pr-3 text-left text-muted-foreground">{cl?.GM_Pod || "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {clientLines.length === 0 && <p className="py-3 text-sm text-muted-foreground">No client shares to show.</p>}
-          <p className="mt-2 text-xs text-muted-foreground">
-            % share of partner = the client&apos;s share of that partner&apos;s whole target (all agencies together); Target = partner
-            target × that %. &ldquo;Based on&rdquo; = where the % comes from (a forecast round, or Mediaocean bookings). (fixed) = set by
-            an admin.
-          </p>
-        </div>
-      ) : (
-      <div className="max-h-[420px] overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-card">
-            <tr className={HEAD}>
-              <th className={`${TH} pr-3 text-left`}>{groupLabel}</th>
-              <th className={`${TH} pl-3 text-right`}>Target</th>
-              <th className={`${TH} pl-3 text-right`}>Booked (MIR)</th>
-              <th className={`${TH} pl-3 text-right`}>% of target</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.label} className={ROW}>
-                <td className="py-2 pr-3 text-left text-foreground">{r.label}</td>
-                <td className={NUM}>{money(r.target)}</td>
-                <td className={NUM}>{noBookings ? "—" : money(r.booked)}</td>
-                <td className={`py-2 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(paceOf(r.target, r.booked)))}`}>{pct(paceOf(r.target, r.booked))}</td>
-              </tr>
+                  )}
+                  <td colSpan={3} />
+                </tr>
+                {g.lines.map((c) => {
+                  const cl = clientsById.get(c.clientId);
+                  return (
+                    <tr key={c.clientId} className={ROW}>
+                      <td className="py-1.5 pl-4 pr-3 text-left text-foreground">
+                        {cl?.CL_Name ?? c.clientId}
+                        {c.overridden && <span className="ml-1 text-[11px] text-muted-foreground">(fixed by admin)</span>}
+                      </td>
+                      <td className="py-1.5 pl-3 text-right tabular-nums text-foreground">{pct(c.share, 1)}</td>
+                      {hasTarget && <td className="py-1.5 pl-3 text-right tabular-nums text-muted-foreground">{money(c.target)}</td>}
+                      {showBooked && <td className="py-1.5 pl-3 text-right tabular-nums text-muted-foreground">{money(c.booked)}</td>}
+                      {showBooked && (
+                        <td className={`py-1.5 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(pace(c.target, c.booked)))}`}>{pct(pace(c.target, c.booked))}</td>
+                      )}
+                      <td className="py-1.5 pl-4 text-left text-muted-foreground">{cl?.CL_Business_Unit_Region || "—"}</td>
+                      <td className="py-1.5 pl-3 text-left text-muted-foreground">{blName(cl?.CL_Business_Lead)}</td>
+                      <td className="py-1.5 pl-3 text-left text-muted-foreground">{(listBy === "gmPod" ? cl?.CL_Agency : cl?.GM_Pod) || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
             ))}
-          </tbody>
-          <tfoot>
-            <tr className={TOT}>
-              <td className="py-2 text-left">Total</td>
-              <td className="py-2 pl-3 text-right tabular-nums">{money(totals.target)}</td>
-              <td className="py-2 pl-3 text-right tabular-nums">{noBookings ? "—" : money(totals.booked)}</td>
-              <td className={`py-2 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(paceOf(totals.target, totals.booked)))}`}>
-                {pct(paceOf(totals.target, totals.booked))}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+            <tfoot>
+              <tr className="border-t-2 border-gray-900 font-semibold">
+                <td className="py-2 pr-3 text-left">Total</td>
+                <td className="py-2 pl-3 text-right tabular-nums">{pct(total.share, 1)}</td>
+                {hasTarget && <td className="py-2 pl-3 text-right tabular-nums">{money(total.target)}</td>}
+                {showBooked && <td className="py-2 pl-3 text-right tabular-nums">{money(total.booked)}</td>}
+                {showBooked && <td className={`py-2 pl-3 text-right tabular-nums ${ragCell(ragFromPctOfTarget(pace(total.target, total.booked)))}`}>{pct(pace(total.target, total.booked))}</td>}
+                <td colSpan={cols - 2 - (hasTarget ? 1 : 0) - (showBooked ? 2 : 0)} />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       )}
     </div>
   );
