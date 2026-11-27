@@ -86,6 +86,13 @@ export interface SplitInputs {
   mir: Map<string, Map<string, Map<string, number>>>;
   /** Admin overrides: target partner key → client id → share (0..1). */
   overrides: Record<string, Record<string, number>>;
+  /**
+   * Where client shares come from:
+   *  - "forecast": the Labs forecast only (Forecaster tab; no MIR fallback);
+   *  - "mir": MIR booked share only (MIR tab — every partner, SSPs included);
+   *  - "auto" (default): forecast for Labs Forecaster partners, MIR for the rest, SSPs not split.
+   */
+  mode?: "auto" | "forecast" | "mir";
 }
 
 export interface ClientAllocation {
@@ -128,23 +135,25 @@ export function computePartnerSplits(i: SplitInputs): PartnerSplit[] {
     const key = partnerKey(t.partner);
     const target = t.mediaSpendTarget ?? 0;
 
-    // Basis: forecast for Labs Forecaster partners, else MIR this year, else last year.
-    const isSsp = t.dealType === "Labs - SSP";
+    // Basis: forecast for Labs Forecaster partners, else MIR this year, else last year
+    // ("forecast" mode: forecast only; "mir" mode: MIR only, SSPs included).
+    const mode = i.mode ?? "auto";
+    const isSsp = t.dealType === "Labs - SSP" && mode === "auto";
     let basis: SplitBasis = isSsp ? "ssp" : "none";
     let amounts = new Map<string, number>();
-    if (t.inLabsForecaster2 && !isSsp) {
+    if (mode !== "mir" && t.inLabsForecaster2 && !isSsp) {
       for (const [clientId, byPartner] of i.forecast) {
         const v = byPartner.get(key) ?? 0;
         if (v > 0) amounts.set(clientId, v);
       }
       if (amounts.size) basis = "forecast";
     }
-    if (basis === "none") {
+    if (basis === "none" && mode !== "forecast") {
       amounts = positive(i.mir.get(y)?.get(key));
       amounts.delete("");
       if (amounts.size) basis = "mir";
     }
-    if (basis === "none") {
+    if (basis === "none" && mode !== "forecast") {
       amounts = positive(i.mir.get(prev)?.get(key));
       amounts.delete("");
       if (amounts.size) basis = "mir-previous";
