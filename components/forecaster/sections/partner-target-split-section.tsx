@@ -372,14 +372,40 @@ export default function PartnerTargetSplitSection({
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {sourceNote} Target = partner target × %.{" "}
-            {noBookings
-              ? `No ${selectedYear} MIR bookings yet — booked appears with the first ${selectedYear} MIR pull.`
-              : "Booked = MIR booked net (CAD); green = 90%+ of the agency's target, yellow 70–89%, red below 70%."}
-            {tab === "mir" ? " Magnite and Index (SSPs) have few direct MIR lines, so their split rests on very little data." : ""}
-            {" "}Clients lost or inactive in {selectedYear} are left out. Admin-fixed shares apply in both tabs.
-          </p>
+          <ol className="list-decimal space-y-0.5 pl-5 text-xs text-muted-foreground">
+            <li>
+              <span className="font-medium text-foreground">%</span>: {sourceNote.replace(/^% = /, "")}{" "}
+              {tab === "forecast"
+                ? "Each client's share = its forecast with that partner ÷ all clients' forecast with that partner."
+                : "Each client's share = what it booked with that partner ÷ what all clients booked with that partner (Mediaocean, table PCC_Dashboard_NATIVE)."}{" "}
+              An agency&apos;s % = the sum of its clients&apos; shares.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Target</span> = the partner&apos;s target (Deal Targets page) × the agency&apos;s %.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Booked</span>:{" "}
+              {noBookings
+                ? `no ${selectedYear} Mediaocean bookings yet — it appears with the first ${selectedYear} MIR pull.`
+                : `Mediaocean booked net (CAD) for ${selectedYear}; green = 90%+ of the agency's target, yellow 70–89%, red below 70%.`}
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Who&apos;s included</span>: clients active in {selectedYear} (Lost / Inactive
+              clients, test and hidden clients are left out — their share goes to the others). Agency columns use each client&apos;s
+              agency + BU region on the Clients page: CM ROC = Cossette Media Ontario + West, CM MTL/QC = Cossette Media QC/East, MEK ROC =
+              Mekanism Ontario + West, Jungle QC = Jungle QC/East (Showroom and Mekanism USA under &ldquo;Show all agencies&rdquo;).
+            </li>
+            {tab === "mir" && (
+              <li>
+                <span className="font-medium text-foreground">Thin data</span>: partners with few Mediaocean lines (Media Pulse, Magnite,
+                Trader Interactive, Index) can land 100% on one agency — read those with care.
+              </li>
+            )}
+            <li>
+              <span className="font-medium text-foreground">Fixed shares</span>: an admin can fix a client&apos;s % per partner (Edit
+              split, below); it applies in both tabs and the rest is spread over the other clients.
+            </li>
+          </ol>
 
           {/* Drill-down: the clients behind one cell */}
           {selected && selectedSplit && (
@@ -586,6 +612,11 @@ function MoreBreakdowns({
             </tbody>
           </table>
           {clientLines.length === 0 && <p className="py-3 text-sm text-muted-foreground">No client shares to show.</p>}
+          <p className="mt-2 text-xs text-muted-foreground">
+            % share of partner = the client&apos;s share of that partner&apos;s whole target (all agencies together); Target = partner
+            target × that %. &ldquo;Based on&rdquo; = where the % comes from (a forecast round, or Mediaocean bookings). (fixed) = set by
+            an admin.
+          </p>
         </div>
       ) : (
       <div className="max-h-[420px] overflow-auto">
