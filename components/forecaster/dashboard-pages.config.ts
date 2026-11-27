@@ -35,13 +35,21 @@ export const EXEC_KPIS_SUBTABS = [
   { id: "labs-pacing", label: "Deal Pacing" },
   { id: "billups", label: "Billups" },
   { id: "local-media", label: "Local Media" },
+] as const satisfies readonly SubTabDef[];
+export type ExecSubTab = (typeof EXEC_KPIS_SUBTABS)[number]["id"];
+
+// The Investments Team pages (formerly Looker). Moved out of Exec KPI into
+// their own tab on 2026-11-27 (Noble). Local Media is on both dashboards;
+// PCC Deals here also carries Deal Pacing (Exec KPI keeps its own Deal Pacing).
+export const INVESTMENTS_SUBTABS = [
   { id: "media-yoy", label: "Media YOY" },
   { id: "pcc-deals", label: "PCC Deals" },
   { id: "broadcast", label: "Broadcast" },
+  { id: "local-media", label: "Local Media" },
   { id: "programmatic", label: "Programmatic" },
   { id: "partner-data", label: "Partner Data" },
 ] as const satisfies readonly SubTabDef[];
-export type ExecSubTab = (typeof EXEC_KPIS_SUBTABS)[number]["id"];
+export type InvestmentsSubTab = (typeof INVESTMENTS_SUBTABS)[number]["id"];
 
 export const MEDIAOCEAN_SUBTABS = [
   { id: "investments", label: "Media Investments" },
@@ -59,6 +67,7 @@ export type ReportsSubTab = (typeof REPORTS_SUBTABS)[number]["id"];
 const SUBTABS_BY_TAB: Partial<Record<ForecasterTab, readonly SubTabDef[]>> = {
   forecaster: FORECASTER_SUBTABS,
   "exec-kpis": EXEC_KPIS_SUBTABS,
+  investments: INVESTMENTS_SUBTABS,
   mediaocean: MEDIAOCEAN_SUBTABS,
   reports: REPORTS_SUBTABS,
 };

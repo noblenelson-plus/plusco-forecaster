@@ -47,7 +47,8 @@ service firebase.storage {
     function anyGrantCoversAgency(agency) {
       let t = myGrantTabs();
       return grantCoversAgency(t, 'forecaster', agency) || grantCoversAgency(t, 'labs-pacing', agency) ||
-        grantCoversAgency(t, 'exec-kpis', agency) || grantCoversAgency(t, 'mediaocean', agency) ||
+        grantCoversAgency(t, 'exec-kpis', agency) || grantCoversAgency(t, 'investments', agency) ||
+        grantCoversAgency(t, 'mediaocean', agency) ||
         grantCoversAgency(t, 'mediabox', agency) || grantCoversAgency(t, 'reports', agency);
     }
     function isCompanyDomain() {

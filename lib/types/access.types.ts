@@ -45,7 +45,7 @@ export interface UserRecord {
 // ─── Dashboard access ─────────────────────────────────────────────────────────
 
 /**
- * The six dashboard tabs, in tab-bar order. Ids match FORECASTER_TABS in
+ * The seven dashboard tabs, in tab-bar order. Ids match FORECASTER_TABS in
  * components/forecaster/forecaster-tabs.config.ts.
  *
  * Who sees a tab (lib/format/access.ts; mirrored by the security rules):
@@ -54,13 +54,15 @@ export interface UserRecord {
  *     Reports (AGENCY_DEFAULT_TABS): every company email, for the agencies its
  *     domain maps to (a company-wide domain such as pluscompany.com: every
  *     agency) + people granted it.
- *   - Exec KPI, MediaBox Adoption: only people granted it.
+ *   - Exec KPI, Investments Team Dashboard, MediaBox Adoption: only people
+ *     granted it.
  *   - Admins: every tab, every client — hidden tabs included.
  */
 export const DASHBOARD_TABS = [
   "forecaster",
   "labs-pacing",
   "exec-kpis",
+  "investments",
   "mediaocean",
   "mediabox",
   "reports",
@@ -72,6 +74,7 @@ export type DashboardTabId = (typeof DASHBOARD_TABS)[number];
 export const GRANTABLE_DASHBOARDS = [
   "labs-pacing",
   "exec-kpis",
+  "investments",
   "mediaocean",
   "mediabox",
   "reports",
@@ -124,6 +127,7 @@ export const CLIENT_GRANT_TABS: readonly DashboardTabId[] = [
   "forecaster",
   "labs-pacing",
   "exec-kpis",
+  "investments",
   "mediabox",
 ];
 
